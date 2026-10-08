@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\AgentApi\AgentReadService;
 use App\Services\Authorization\AgentTokenScopes;
+use App\Support\AgentApi\InvoiceListFilters;
 use Closure;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -105,6 +106,7 @@ final class AgentReadController extends Controller
             $request->string('status')->toString(),
             $this->limit($request),
             $request->query('cursor'),
+            InvoiceListFilters::from($request->only(array_keys(InvoiceListFilters::rules()))),
         ));
     }
 

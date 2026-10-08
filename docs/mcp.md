@@ -669,3 +669,74 @@ same private attachment storage adapter as the web receipt screen and record
 success, replay, and refusal in the mutation audit.
 
 Receipt upload bytes are staged, promoted and verified before the expense lock. A durable staged recovery row records both object keys before promotion. The locked mutation only checks the current expense version, publishes the prepared row and advances the expense revision. A process termination or rollback leaves recoverable staged state; failed cleanup preserves that state for `svc:attachments:repair`. Replays return the original receipt and discard their unused preparation.
+
+### Completing an invoice workflow
+
+All paths below start with `/api/v1/workspaces/{workspace}`. The four writes
+require an `Idempotency-Key`, the current `expected_version`, a workspace
+manager, and both `AGENT_API_WRITES_ENABLED` and
+`AGENT_API_INVOICE_WRITES_ENABLED`. The required `billing:read` scope lets the caller obtain the current invoice or agreement version. MCP uses the same actions and receipts.
+
+| Tool | REST path | Scope |
+| --- | --- | --- |
+| `invoices.hold_delivery` | `POST /invoices/{invoice}/automatic-delivery/hold` | `billing:write`, `billing:read` |
+| `invoices.release_delivery` | `POST /invoices/{invoice}/automatic-delivery/release` | `billing:deliver`, `billing:read` |
+| `invoices.add_time` | `POST /invoices/{invoice}/time` | `billing:write`, `billing:read` |
+| `invoices.generate_period` | `POST /agreements/{agreement}/invoices` | `billing:write`, `billing:read` |
+| `invoices.pdf` | `GET /invoices/{invoice}/pdf-link` | `billing:read` |
+| `billing_audit.stale_and_missing` | `GET /billing-audits/stale-and-missing` | `billing:read` |
+
+Holding applies to scheduled or failed automatic delivery on an issued invoice.
+Release requires `confirm: true` and a held invoice; it schedules delivery through
+the existing delivery flow. Neither operation sends the document immediately. Managers can inspect
+`automatic_delivery_status` and `automatic_delivery_due_at` on invoice reads;
+other viewers receive null for these operational fields.
+
+`invoices.add_time` accepts 1–100 distinct approved, billable, unallocated
+`time_entry_ids` from that invoice's workspace and client. Ad-hoc drafts retain
+their existing lines. Cadence and interim overage drafts regenerate their whole
+period with the shared billing engine; every selected entry must belong to that
+service period and agreement project and appear in the resulting draft. This
+preserves retainer, rollover and overage accounting. Other draft kinds are
+refused. Use the returned version for a subsequent write.
+
+`invoices.generate_period` requires an active recurring agreement, its version,
+`confirm: true`, and an explicit `period_start` on a cadence boundary that has
+already begun. This is the **retainer cycle start**: the resulting invoice's
+`service_period_start` and `service_period_end` describe the preceding work
+cycle. Monthly agreements use calendar months; other cadences follow the
+agreement start date. Generation creates a draft and uses the canonical billing
+engine, including any interim reconciliation it requires. It does not issue or
+send. Repeating the same key replays the result; another key for a period with a
+non-void invoice is refused. No automatic cadence-draft generation job is
+deployed: inspect the missing-period audit and request a period deliberately.
+
+`invoices.pdf` returns a URL and `expires_at`, valid for five minutes. The URL
+uses the configured service origin and still requires current authentication,
+`billing:read`, and visibility of that invoice. It is not a public bearer link.
+The binary REST route is `GET /invoices/{invoice}/pdf`; supplied signatures are
+validated and expired or altered signed links are refused.
+
+`invoices.list` accepts `company_id`, `invoice_kind`, inclusive
+`issue_date_from`/`issue_date_to` and `due_date_from`/`due_date_to`,
+`service_period_overlaps: {from, to}`, and boolean `collectible`/`overdue`. REST
+encodes the overlap as `service_period_overlaps[from]` and
+`service_period_overlaps[to]`. An overlap requires both dates and excludes
+invoices with no stored period. Collectible means issued or partially paid with
+a positive balance; overdue additionally means due before today in the
+workspace timezone. List and detail include `company_name` and nullable service
+period dates. Cursors are bound to the chosen filters.
+
+The manager-only stale/missing audit counts drafts due before today and sums
+minor-unit balances separately by currency. It also counts started, active
+recurring agreements without a non-void cadence invoice for the current
+retainer period. Each identifier list contains at most 100 entries; counts and
+balances remain complete, and truncation flags say when more rows exist.
+
+The web payment form, `payments.record`, and `invoices.issue` with a payment
+share `RecordReceivedPayment` and immutable `ReceivedPaymentData` facts.
+Transport adapters retain their own permission and receipt checks. Standalone
+agent payment keys retain their historical namespace, and issue-with-payment
+keys remain separate; existing receipts continue to replay. The web form keeps
+its optional date, status and bookkeeping fields, while agent recording remains
+limited to succeeded money already received. No processor charge is initiated.

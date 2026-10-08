@@ -9,8 +9,11 @@ use App\Models\Workspace;
 use App\Services\Authorization\AgentAccess;
 use App\Services\Billing\InvoiceAdministratorNotificationService;
 use App\Services\Billing\InvoiceLifecycleService;
+use App\Services\Billing\RecordReceivedPayment;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\AgentApi\AgentWriteCutover;
+use App\Support\AgentApi\ExplicitConfirmation;
+use App\Support\Billing\ReceivedPaymentData;
 use DomainException;
 use Illuminate\Support\Facades\Validator;
 
@@ -40,6 +43,7 @@ final class IssueInvoiceAction
         private readonly InvoiceLifecycleService $invoices,
         private readonly AgentAccess $access,
         private readonly InvoiceAdministratorNotificationService $administratorNotifications,
+        private readonly RecordReceivedPayment $receivedPayments,
     ) {}
 
     /**
@@ -71,14 +75,10 @@ final class IssueInvoiceAction
                 }
                 $data = Validator::make($body, [
                     'expected_version' => ['required', 'string', 'size:64'],
-                    'confirm' => ['accepted'],
+                    'confirm' => ['required', new ExplicitConfirmation],
                     'payment' => ['sometimes', 'array:amount,currency,received_on,method,reference'],
-                    'payment.amount' => ['required_with:payment', 'integer', 'min:1'],
-                    'payment.currency' => ['required_with:payment', 'string', 'regex:/^[A-Z]{3}$/'],
-                    'payment.received_on' => ['required_with:payment', 'date_format:Y-m-d'],
-                    'payment.method' => ['required_with:payment', 'string', 'max:'.ClientInvoicePayment::METHOD_MAX_LENGTH],
-                    'payment.reference' => ['nullable', 'string', 'max:255'],
                 ])->validate();
+                $paymentFacts = $paying ? ReceivedPaymentData::from($data['payment'], errorPrefix: 'payment') : null;
                 // Both checks are asked of the row issue() locks for the
                 // transition, not of this read: an invoice issued by another
                 // request in between would otherwise pass them here and then be
@@ -96,16 +96,10 @@ final class IssueInvoiceAction
                         }
                     },
                 );
-                if (! $paying) {
+                if ($paymentFacts === null) {
                     return [$issued->public_id];
                 }
-                $payment = $data['payment'];
-                // The domain key is workspace-wide. Namespace it by caller, client
-                // and operation so it can collide neither with a CLI/import key
-                // nor with a payments.record call that happens to reuse this key.
-                $payment['idempotency_key'] = 'agent-payment:'.hash('sha256', json_encode([$user->id, $clientId, 'invoices.issue', $key], JSON_THROW_ON_ERROR));
-                $payment['status'] = 'succeeded';
-                $recorded = $this->invoices->applyPayment($issued, $payment, $workspace);
+                $recorded = $this->receivedPayments->record($workspace, $issued, $paymentFacts, RecordReceivedPayment::agentKey($user->id, $clientId, $key, 'invoices.issue'));
                 // issue() snapshotted the administrator's copy while the invoice
                 // was still unpaid, a state this transaction never commits.
                 $this->administratorNotifications->resnapshotIssued($this->invoice($workspace, $issued->public_id));

@@ -7,8 +7,9 @@ use App\Models\ClientInvoicePayment;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\AgentAccess;
-use App\Services\Billing\InvoiceLifecycleService;
+use App\Services\Billing\RecordReceivedPayment;
 use App\Support\AgentApi\AgentWriteCutover;
+use App\Support\Billing\ReceivedPaymentData;
 use Illuminate\Support\Facades\Validator;
 
 /** Records money already received; never initiates a charge or changes a payment status. */
@@ -16,7 +17,7 @@ final class RecordPaymentAction
 {
     public function __construct(
         private readonly AgentMutationExecutor $mutations,
-        private readonly InvoiceLifecycleService $invoices,
+        private readonly RecordReceivedPayment $receivedPayments,
         private readonly AgentAccess $access,
     ) {}
 
@@ -36,19 +37,13 @@ final class RecordPaymentAction
                 $data = Validator::make(['payment' => $payload], [
                     'payment' => ['required', 'array:invoice_id,amount,currency,received_on,method,reference'],
                     'payment.invoice_id' => ['required', 'uuid'],
-                    'payment.amount' => ['required', 'integer', 'min:1'],
-                    'payment.currency' => ['required', 'string', 'regex:/^[A-Z]{3}$/'],
-                    'payment.received_on' => ['required', 'date_format:Y-m-d'],
-                    'payment.method' => ['required', 'string', 'max:'.ClientInvoicePayment::METHOD_MAX_LENGTH],
-                    'payment.reference' => ['nullable', 'string', 'max:255'],
                 ])->validate()['payment'];
+                $facts = ReceivedPaymentData::from($payload, errorPrefix: 'payment');
                 $invoice = ClientInvoice::query()->where('workspace_id', $workspace->id)
                     ->where('public_id', $data['invoice_id'])->firstOrFail();
                 // Domain keys are workspace-wide; namespace them by caller and operation
                 // so an agent receipt cannot collide with a CLI/import receipt.
-                $data['idempotency_key'] = 'agent-payment:'.hash('sha256', json_encode([$user->id, $clientId, $key], JSON_THROW_ON_ERROR));
-                $data['status'] = 'succeeded';
-                $payment = $this->invoices->applyPayment($invoice, $data, $workspace);
+                $payment = $this->receivedPayments->record($workspace, $invoice, $facts, RecordReceivedPayment::agentKey($user->id, $clientId, $key));
 
                 return [$payment->public_id];
             },

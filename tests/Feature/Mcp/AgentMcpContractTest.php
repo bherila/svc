@@ -41,9 +41,43 @@ final class AgentMcpContractTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_invoice_workflow_contract_matches_routes_and_nested_cutovers(): void
+    {
+        config(['agent_api.writes_enabled' => true, 'agent_api.invoice_writes_enabled' => true]);
+        $document = json_decode((string) file_get_contents(public_path('openapi/svc-agent-v1.json')), true, flags: JSON_THROW_ON_ERROR);
+        $expected = [
+            'invoices.hold_delivery' => ['post', '/workspaces/{workspace_id}/invoices/{invoice_id}/automatic-delivery/hold', 'billing:write', true],
+            'invoices.release_delivery' => ['post', '/workspaces/{workspace_id}/invoices/{invoice_id}/automatic-delivery/release', 'billing:deliver', true],
+            'invoices.add_time' => ['post', '/workspaces/{workspace_id}/invoices/{invoice_id}/time', 'billing:write', true],
+            'invoices.generate_period' => ['post', '/workspaces/{workspace_id}/agreements/{agreement_id}/invoices', 'billing:write', true],
+            'invoices.pdf' => ['get', '/workspaces/{workspace_id}/invoices/{invoice_id}/pdf-link', 'billing:read', false],
+            'invoices.download_pdf' => ['get', '/workspaces/{workspace_id}/invoices/{invoice_id}/pdf', 'billing:read', false],
+            'billing_audit.stale_and_missing' => ['get', '/workspaces/{workspace_id}/billing-audits/stale-and-missing', 'billing:read', false],
+        ];
+        foreach ($expected as $id => [$method, $path, $scope, $write]) {
+            $operation = $document['paths'][$path][$method];
+            $this->assertSame($id, $operation['operationId']);
+            $this->assertSame([['oauth2' => $write ? [$scope, 'billing:read'] : [$scope]], ['apiToken' => []]], $operation['security']);
+            $this->assertSame($write ? ['AGENT_API_WRITES_ENABLED', 'AGENT_API_INVOICE_WRITES_ENABLED'] : [], $operation['x-svc-flags'] ?? []);
+            $route = app('router')->getRoutes()->getByName('agent-api.v1.'.$id);
+            $this->assertNotNull($route, $id);
+            $this->assertSame('api/v1'.str_replace(['{workspace_id}', '{invoice_id}', '{agreement_id}'], ['{workspace}', '{invoice}', '{agreement}'], $path), $route->uri());
+            $this->assertContains(strtoupper($method), $route->methods());
+        }
+        $definitions = collect($this->definitions())->keyBy(fn (ToolDefinition $tool): string => $tool->name);
+        foreach (['invoices.hold_delivery', 'invoices.release_delivery', 'invoices.add_time', 'invoices.generate_period'] as $id) {
+            $schema = app(AgentMcpInputSchemaFactory::class)->for($definitions->get($id));
+            $this->assertContains('expected_version', $schema['required']);
+            $this->assertContains('idempotency_key', $schema['required']);
+            if (in_array($id, ['invoices.release_delivery', 'invoices.generate_period'], true)) {
+                $this->assertContains('confirm', $schema['required']);
+            }
+        }
+    }
+
     public function test_every_tool_uses_a_closed_standalone_openapi_response_component(): void
     {
-        config(['agent_api.writes_enabled' => true, 'agent_api.expense_writes_enabled' => true, 'agent_api.payment_writes_enabled' => true]);
+        config(['agent_api.writes_enabled' => true, 'agent_api.invoice_writes_enabled' => true, 'agent_api.expense_writes_enabled' => true, 'agent_api.payment_writes_enabled' => true]);
 
         foreach ($this->definitions() as $definition) {
             $component = AgentApiResponseSchemaCatalog::operationComponent($definition->operationId());
@@ -172,6 +206,7 @@ final class AgentMcpContractTest extends TestCase
             'agreements.list' => ['billing:read'],
             'agreements.terminate' => ['clients:write', 'billing:read'],
             'agreements.update' => ['clients:write', 'billing:read'],
+            'billing_audit.stale_and_missing' => ['billing:read'],
             'clients.archive' => ['clients:write', 'clients:read'],
             'clients.create' => ['clients:write'],
             'clients.get' => ['clients:read'],
@@ -195,12 +230,18 @@ final class AgentMcpContractTest extends TestCase
             'expenses.receipts.upload_url' => ['expenses:read', 'expenses:write'],
             'expenses.unapprove' => ['expenses:read', 'expenses:write'],
             'expenses.update' => ['expenses:write'],
+            'invoices.add_time' => ['billing:write', 'billing:read'],
             'invoices.correct' => ['billing:deliver'],
             'invoices.create_draft' => ['billing:write'],
             'invoices.discard_draft' => ['billing:write'],
+            'invoices.download_pdf' => ['billing:read'],
+            'invoices.generate_period' => ['billing:write', 'billing:read'],
             'invoices.get' => ['billing:read'],
+            'invoices.hold_delivery' => ['billing:write', 'billing:read'],
             'invoices.issue' => ['billing:deliver'],
             'invoices.list' => ['billing:read'],
+            'invoices.pdf' => ['billing:read'],
+            'invoices.release_delivery' => ['billing:deliver', 'billing:read'],
             'invoices.send' => ['billing:deliver'],
             'invoices.update_details' => ['billing:write'],
             'invoices.update_draft' => ['billing:write'],
@@ -265,7 +306,7 @@ final class AgentMcpContractTest extends TestCase
 
     public function test_every_write_tool_inherits_its_body_contract_from_openapi(): void
     {
-        config(['agent_api.writes_enabled' => true, 'agent_api.expense_writes_enabled' => true, 'agent_api.payment_writes_enabled' => true]);
+        config(['agent_api.writes_enabled' => true, 'agent_api.invoice_writes_enabled' => true, 'agent_api.expense_writes_enabled' => true, 'agent_api.payment_writes_enabled' => true]);
         $factory = app(AgentMcpInputSchemaFactory::class);
 
         foreach ($this->definitions() as $definition) {
@@ -293,7 +334,7 @@ final class AgentMcpContractTest extends TestCase
 
     public function test_every_write_operation_requires_an_idempotency_header_and_tool_argument(): void
     {
-        config(['agent_api.writes_enabled' => true, 'agent_api.expense_writes_enabled' => true, 'agent_api.payment_writes_enabled' => true]);
+        config(['agent_api.writes_enabled' => true, 'agent_api.invoice_writes_enabled' => true, 'agent_api.expense_writes_enabled' => true, 'agent_api.payment_writes_enabled' => true]);
         $document = json_decode((string) file_get_contents(public_path('openapi/svc-agent-v1.json')), true, flags: JSON_THROW_ON_ERROR);
         $factory = app(AgentMcpInputSchemaFactory::class);
 
@@ -347,7 +388,7 @@ final class AgentMcpContractTest extends TestCase
 
     public function test_mcp_patch_distinguishes_omitted_fields_from_explicit_null(): void
     {
-        config(['agent_api.writes_enabled' => true, 'agent_api.expense_writes_enabled' => true, 'agent_api.payment_writes_enabled' => true]);
+        config(['agent_api.writes_enabled' => true, 'agent_api.invoice_writes_enabled' => true, 'agent_api.expense_writes_enabled' => true, 'agent_api.payment_writes_enabled' => true]);
         [$user, $workspace, $project] = $this->workspace();
         $task = ClientTask::query()->create([
             'workspace_id' => $workspace->id,

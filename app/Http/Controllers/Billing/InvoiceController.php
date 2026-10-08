@@ -22,10 +22,12 @@ use App\Services\Billing\InvoiceDocumentService;
 use App\Services\Billing\InvoiceEmailService;
 use App\Services\Billing\InvoiceFromTimeService;
 use App\Services\Billing\InvoiceLifecycleService;
+use App\Services\Billing\RecordReceivedPayment;
 use App\Services\Billing\StripePaymentIntentService;
 use App\Services\WorkspaceAuthorization;
 use App\Support\Billing\InvoiceEmailDraft;
 use App\Support\Billing\InvoiceLineDetail;
+use App\Support\Billing\ReceivedPaymentData;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -219,16 +221,14 @@ class InvoiceController extends Controller
         return $this->mutationResponse($request, $invoice, 'Automatic invoice delivery released.');
     }
 
-    public function payment(StorePaymentRequest $request, Workspace $workspace, ClientInvoice $clientInvoice, InvoiceLifecycleService $service): JsonResponse|RedirectResponse
+    public function payment(StorePaymentRequest $request, Workspace $workspace, ClientInvoice $clientInvoice, RecordReceivedPayment $service): JsonResponse|RedirectResponse
     {
         Gate::authorize('manage', $workspace);
-        $service->assertTenant($workspace, $clientInvoice);
-        $data = $request->validated();
-        $data['idempotency_key'] ??= $request->header('Idempotency-Key');
-        $payment = $service->applyPayment($clientInvoice, $data, $workspace);
+        $facts = ReceivedPaymentData::from($request->validated(), requireDate: false, includeBookkeeping: true);
+        $payment = $service->record($workspace, $clientInvoice, $facts, $facts->idempotencyKey ?? $request->header('Idempotency-Key'));
 
         return $request->expectsJson()
-            ? response()->json(['data' => $payment->load('invoice')], 201)
+            ? response()->json(['data' => $payment], 201)
             : redirect()->back()->with('status', 'Payment recorded.');
     }
 

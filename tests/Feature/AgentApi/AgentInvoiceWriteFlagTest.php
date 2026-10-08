@@ -54,6 +54,10 @@ final class AgentInvoiceWriteFlagTest extends TestCase
         'invoices.send',
         'invoices.void',
         'invoices.correct',
+        'invoices.hold_delivery',
+        'invoices.release_delivery',
+        'invoices.add_time',
+        'invoices.generate_period',
     ];
 
     private const WORKFLOW_TOOLS = [

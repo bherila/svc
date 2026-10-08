@@ -17,10 +17,12 @@ use App\Services\Authorization\PortalInvoiceQuery;
 use App\Services\Authorization\ProjectAccess;
 use App\Support\AgentApi\AgentApiCursor;
 use App\Support\AgentApi\AgentApiScopes;
+use App\Support\AgentApi\InvoiceListFilters;
 use App\Support\AgentApi\Presenters\AgentInvoicePresenter;
 use App\Support\AgentApi\Presenters\AgentProjectPresenter;
 use App\Support\AgentApi\Presenters\AgentTaskPresenter;
 use App\Support\AgentApi\Presenters\AgentTimeEntryPresenter;
+use App\Support\Billing\InvoiceKind;
 use App\Support\WorkspaceClock;
 use Closure;
 use Illuminate\Database\Eloquent\Builder;
@@ -278,16 +280,59 @@ final class AgentReadService
     }
 
     /** @return array{data:list<array<string, mixed>>,meta:array{next_cursor:?string}} */
-    public function invoices(User|AgentPrincipal $user, Workspace $workspace, ?string $status, int $limit, ?string $cursor): array
+    public function invoices(User|AgentPrincipal $user, Workspace $workspace, ?string $status, int $limit, ?string $cursor, ?InvoiceListFilters $filters = null): array
     {
         $this->requireWorkspace($user, $workspace);
-        $query = $this->invoiceQuery($user, $workspace)->with('clientCompany')->orderBy('id');
+        $query = $this->invoiceQuery($user, $workspace)->with(['clientCompany' => fn ($companies) => $companies->where('workspace_id', $workspace->id)])->orderBy('id');
         if ($status !== null && $status !== '') {
             $query->where('status', $status);
         }
+        $values = $filters === null ? [] : $filters->values;
+        if (isset($values['company_id'])) {
+            $query->whereHas('clientCompany', fn (Builder $companies) => $companies->where('workspace_id', $workspace->id)->where('public_id', $values['company_id']));
+        }
+        if (isset($values['invoice_kind'])) {
+            $query->where(fn (Builder $kind) => $kind->where('invoice_kind', $values['invoice_kind'])
+                ->when($values['invoice_kind'] === InvoiceKind::CadencePeriod->value, fn (Builder $legacy) => $legacy->orWhereNull('invoice_kind')));
+        }
+        foreach (['issue_date', 'due_date'] as $field) {
+            if (isset($values[$field.'_from'])) {
+                $query->whereDate($field, '>=', $values[$field.'_from']);
+            }
+            if (isset($values[$field.'_to'])) {
+                $query->whereDate($field, '<=', $values[$field.'_to']);
+            }
+        }
+        if (isset($values['service_period_overlaps'])) {
+            $query->whereDate('service_period_start', '<=', $values['service_period_overlaps']['to'])
+                ->whereDate('service_period_end', '>=', $values['service_period_overlaps']['from']);
+        }
+        foreach (['collectible', 'overdue'] as $filter) {
+            if (! array_key_exists($filter, $values)) {
+                continue;
+            }
+            $query->where(function (Builder $condition) use ($workspace, $filter, $values): void {
+                if ((bool) $values[$filter]) {
+                    $condition->whereIn('status', ['issued', 'partially_paid'])->where('balance_amount', '>', 0);
+                    if ($filter === 'overdue') {
+                        $condition->whereDate('due_date', '<', $this->clock->today($workspace)->toDateString());
+                    }
+                } else {
+                    $condition->whereNotIn('status', ['issued', 'partially_paid'])->orWhere('balance_amount', '<=', 0);
+                    if ($filter === 'overdue') {
+                        $condition->orWhereNull('due_date')->orWhereDate('due_date', '>=', $this->clock->today($workspace)->toDateString());
+                    }
+                }
+            });
+        }
         $includeNotes = $this->access->isWorkspaceManager($user, $workspace);
+        $queryKey = 'invoices|status='.($status ?? '');
+        if ($values !== []) {
+            ksort($values);
+            $queryKey .= '|filters='.json_encode($values, JSON_THROW_ON_ERROR);
+        }
 
-        $page = $this->page($query, $workspace, 'invoices|status='.($status ?? ''), $limit, $cursor);
+        $page = $this->page($query, $workspace, $queryKey, $limit, $cursor);
         $data = [];
         foreach ($page['records'] as $invoice) {
             if (! $invoice instanceof ClientInvoice) {
@@ -303,7 +348,7 @@ final class AgentReadService
     public function invoice(User|AgentPrincipal $user, Workspace $workspace, string $invoiceId): array
     {
         $this->requireWorkspace($user, $workspace);
-        $record = $this->invoiceQuery($user, $workspace)->where('public_id', $invoiceId)->with(['clientCompany', 'lines'])->firstOrFail();
+        $record = $this->invoiceQuery($user, $workspace)->where('public_id', $invoiceId)->with(['clientCompany' => fn ($companies) => $companies->where('workspace_id', $workspace->id), 'lines' => fn ($lines) => $lines->where('workspace_id', $workspace->id), 'lines.project' => fn ($projects) => $projects->where('workspace_id', $workspace->id)])->firstOrFail();
 
         return $this->invoicePresenter->present($workspace, $record, $this->access->isWorkspaceManager($user, $workspace)) + [
             'lines' => $record->lines->map(fn ($line): array => [
@@ -361,12 +406,12 @@ final class AgentReadService
     /** @return Builder<ClientInvoice> */
     private function invoiceQuery(User|AgentPrincipal $user, Workspace $workspace): Builder
     {
-        $query = ClientInvoice::query()->where('workspace_id', $workspace->id);
+        $query = ClientInvoice::query()->where('workspace_id', $workspace->id)->whereHas('clientCompany', fn ($companies) => $companies->where('workspace_id', $workspace->id));
         if ($this->access->isWorkspaceManager($user, $workspace)) {
             return $query;
         }
 
-        return $this->portalInvoices->visibleInWorkspace($workspace, $user);
+        return $this->portalInvoices->visibleInWorkspace($workspace, $user)->whereHas('clientCompany', fn ($companies) => $companies->where('workspace_id', $workspace->id));
     }
 
     /**

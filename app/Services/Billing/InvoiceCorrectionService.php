@@ -237,14 +237,14 @@ final class InvoiceCorrectionService
         });
     }
 
-    public function hold(ClientInvoice $invoice, Workspace $workspace): ClientInvoice
+    public function hold(ClientInvoice $invoice, Workspace $workspace, ?Closure $assertVersion = null): ClientInvoice
     {
-        return $this->setHold($invoice, $workspace, true);
+        return $this->setHold($invoice, $workspace, true, $assertVersion);
     }
 
-    public function release(ClientInvoice $invoice, Workspace $workspace): ClientInvoice
+    public function release(ClientInvoice $invoice, Workspace $workspace, ?Closure $assertVersion = null): ClientInvoice
     {
-        return $this->setHold($invoice, $workspace, false);
+        return $this->setHold($invoice, $workspace, false, $assertVersion);
     }
 
     /**
@@ -268,11 +268,14 @@ final class InvoiceCorrectionService
             ->all());
     }
 
-    private function setHold(ClientInvoice $invoice, Workspace $workspace, bool $hold): ClientInvoice
+    private function setHold(ClientInvoice $invoice, Workspace $workspace, bool $hold, ?Closure $assertVersion): ClientInvoice
     {
-        return DB::transaction(function () use ($invoice, $workspace, $hold): ClientInvoice {
+        return DB::transaction(function () use ($invoice, $workspace, $hold, $assertVersion): ClientInvoice {
             $locked = ClientInvoice::query()->where('workspace_id', $workspace->id)->whereKey($invoice->id)
                 ->tap(Locks::forUpdate())->with(['workspace', 'clientCompany'])->firstOrFail();
+            if ($assertVersion !== null) {
+                $assertVersion($locked);
+            }
             $company = $this->loadOwningCompany($locked, $workspace);
             $locked->setRelation('clientCompany', $company);
             if ($locked->status !== InvoiceStatus::Issued->value || $locked->automatic_delivery_due_at === null) {
