@@ -27,6 +27,12 @@ use Tests\TestCase;
 final class WebApiParityTest extends TestCase
 {
     private const array CLASSIFIED = [
+        // Credentials are minted only by the signed-in person in the browser, so
+        // no OAuth credential can create another (#384).
+        'account.api-tokens.destroy' => 'deliberate:credentials are managed only by the signed-in person',
+        'account.api-tokens.store' => 'deliberate:credentials are issued only by the signed-in person',
+        'account.oauth-apps.destroy' => 'deliberate:credentials are managed only by the signed-in person',
+        'account.oauth-apps.store' => 'deliberate:credentials are issued only by the signed-in person',
         'clients.manage' => 'web-only:redirect',
         'clients.store' => 'mcp-only:clients.create',
         'clients.update' => 'mcp-only:clients.update',
@@ -113,6 +119,28 @@ final class WebApiParityTest extends TestCase
                 'web-only', 'deliberate' => $this->assertNotEmpty($detail, "{$route}: give a reason"),
                 default => $this->fail("{$route}: unknown classification {$classification}"),
             };
+        }
+    }
+
+    /**
+     * A connector that was handed an API token instead of running OAuth must be
+     * able to call every REST operation (#384), so each declares both schemes.
+     * The one exception is an operation that needs `mcp:use`: an API token can
+     * never carry it, so offering the alternative would only ever earn a 403.
+     */
+    public function test_every_operation_accepts_oauth_or_an_api_token(): void
+    {
+        $document = json_decode((string) file_get_contents(public_path('openapi/svc-agent-v1.json')), true, flags: JSON_THROW_ON_ERROR);
+        $this->assertSame('bearer', $document['components']['securitySchemes']['apiToken']['scheme'] ?? null);
+
+        foreach ($document['paths'] as $path) {
+            foreach ($path as $operation) {
+                $schemes = array_map(static fn (array $requirement): array => array_keys($requirement), $operation['security'] ?? []);
+                $expected = in_array('mcp:use', $operation['security'][0]['oauth2'] ?? [], true)
+                    ? [['oauth2']]
+                    : [['oauth2'], ['apiToken']];
+                $this->assertSame($expected, $schemes, $operation['operationId']);
+            }
         }
     }
 

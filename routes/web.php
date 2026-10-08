@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\ApiCredentialController;
 use App\Http\Controllers\ClientCompanyController;
 use App\Http\Controllers\ClientDirectoryController;
 use App\Http\Controllers\ClientPortalController;
@@ -8,6 +9,7 @@ use App\Http\Controllers\ClientProjectController;
 use App\Http\Controllers\ClientTaskController;
 use App\Http\Controllers\McpSetupController;
 use App\Http\Controllers\OAuthLoginController;
+use App\Http\Controllers\OpenApiDocumentController;
 use App\Http\Controllers\SearchController;
 use App\Http\Controllers\WorkspaceController;
 use App\Http\Controllers\WorkspaceEntryController;
@@ -18,6 +20,7 @@ use App\Http\Middleware\ResolveWorkspaceNavigation;
 use Bherila\McpLaravelBridge\Http\McpHttpSecurityMiddleware;
 use BWH\Auth\Http\Controllers\OAuthDynamicClientRegistrationController;
 use BWH\Auth\Http\Controllers\OAuthMetadataController;
+use BWH\Auth\Http\Middleware\EnsureOAuthServerEnabled;
 use Illuminate\Support\Facades\Route;
 
 Route::inertia('/', 'welcome')->name('home');
@@ -31,6 +34,7 @@ Route::withoutMiddleware(['web'])->group(function (): void {
     Route::get('/.well-known/oauth-protected-resource/api/v1/mcp', [OAuthMetadataController::class, 'protectedResource'])
         ->middleware(McpHttpSecurityMiddleware::class);
     Route::post('/oauth/register', OAuthDynamicClientRegistrationController::class)->middleware('throttle:10,60');
+    Route::get('/api/openapi.json', OpenApiDocumentController::class)->middleware('throttle:60,1')->name('openapi.document');
 });
 
 Route::get('/login', [OAuthLoginController::class, 'redirect'])->name('login');
@@ -72,6 +76,19 @@ Route::middleware('auth')->group(function (): void {
     // rather than gaining a switcher it is about to lose.
     Route::get('/workspaces/{workspace}/operations', WorkspaceOperationsController::class)
         ->name('workspaces.operations');
+
+    // A person's own REST credentials (#384). Browser-only: an OAuth token can
+    // never mint another credential.
+    // Issuance answers to the OAuth server's kill switch, like every other
+    // way a credential is minted; revoking stays available during an incident.
+    Route::post('/account/api-tokens', [ApiCredentialController::class, 'storeToken'])
+        ->middleware([EnsureOAuthServerEnabled::class, 'throttle:10,1'])->name('account.api-tokens.store');
+    Route::delete('/account/api-tokens/{token}', [ApiCredentialController::class, 'destroyToken'])
+        ->name('account.api-tokens.destroy');
+    Route::post('/account/oauth-apps', [ApiCredentialController::class, 'storeApp'])
+        ->middleware([EnsureOAuthServerEnabled::class, 'throttle:10,1'])->name('account.oauth-apps.store');
+    Route::delete('/account/oauth-apps/{client}', [ApiCredentialController::class, 'destroyApp'])
+        ->whereUuid('client')->name('account.oauth-apps.destroy');
 
     Route::middleware(ResolveWorkspaceNavigation::class)->group(function (): void {
         Route::get('/workspaces/{workspace}/mcp', McpSetupController::class)->name('mcp.setup');

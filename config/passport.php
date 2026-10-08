@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\EnforceOwnedClientScopeCeiling;
 use App\Http\Middleware\OAuthSecurityHeaders;
 use BWH\Auth\Http\Middleware\EnforceOAuthPkce;
 use BWH\Auth\Http\Middleware\EnforceOAuthResourceIndicator;
@@ -24,6 +25,7 @@ return [
         EnsureOAuthServerEnabled::class,
         EnforceOAuthPkce::class,
         EnforceOAuthResourceIndicator::class,
+        EnforceOwnedClientScopeCeiling::class,
         OAuthSecurityHeaders::class,
     ],
 

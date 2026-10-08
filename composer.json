@@ -10,7 +10,7 @@
     "license": "MIT",
     "require": {
         "php": "^8.4",
-        "bherila/auth-laravel": "^0.12",
+        "bherila/auth-laravel": "^0.17",
         "bherila/mcp-laravel-bridge": "^0.2.0",
         "dompdf/dompdf": "^3.1",
         "inertiajs/inertia-laravel": "^3.0",

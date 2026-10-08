@@ -20,8 +20,17 @@ return [
         'registration_endpoint' => rtrim((string) env('APP_URL', 'http://localhost'), '/').'/oauth/register',
         'protected_resource_metadata_url' => rtrim((string) env('APP_URL', 'http://localhost'), '/').'/.well-known/oauth-protected-resource/api/v1/mcp',
         'scopes' => AgentApiScopes::descriptions(),
-        'token_endpoint_auth_methods' => ['none'],
+        // Self-registered (dynamic) clients stay public and PKCE-only - the
+        // package's registration validator accepts nothing else. Apps a person
+        // registers on the setup page may be confidential (#384), so the
+        // secret methods are advertised too. PKCE is still required of all.
+        'token_endpoint_auth_methods' => ['none', 'client_secret_basic', 'client_secret_post'],
         'resource_required_scope' => AgentApiScopes::MCP_USE,
+        // SVC protects exactly one resource, /api/v1. REST clients that never
+        // send RFC 8707 `resource` (most generic OAuth clients) are bound to it
+        // instead of being refused or handed a token /api/v1 rejects (#384). A
+        // different explicit resource is still refused.
+        'assume_omitted_resource' => true,
         'dynamic_clients' => [
             'enabled' => true,
             'required_columns' => ['dynamically_registered_at', 'last_used_at', 'scopes'],

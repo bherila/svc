@@ -7,12 +7,12 @@
   },
   "servers": [{"url": "https://svc.bherila.net/api/v1"}],
   "paths": {
-    "/workspaces/{workspace_id}/expenses": {"get": {"operationId": "expenses.list","security": [{"oauth2": ["expenses:read"]}],"parameters": [{"$ref": "#/components/parameters/WorkspaceId"},{"name": "company_id","in": "query","schema": {"type": "string","format": "uuid"}},{"name": "project_id","in": "query","schema": {"type": "string","format": "uuid"}},{"name": "status","in": "query","schema": {"type": "string","enum": ["draft","approved","invoiced"]}},{"$ref": "#/components/parameters/Limit"},{"$ref": "#/components/parameters/Cursor"}],"responses": {"200": {"description": "Authorized expenses","content": {"application/json": {"schema": {"$ref": "#/components/schemas/ExpenseListResponse"}}}},"default": {"$ref": "#/components/responses/Error"}}},"post": {"operationId": "expenses.log","security": [{"oauth2": ["expenses:write"]}],"parameters": [{"$ref": "#/components/parameters/WorkspaceId"},{"$ref": "#/components/parameters/IdempotencyKey"}],"requestBody": {"required": true,"content": {"application/json": {"schema": {"$ref": "#/components/schemas/ExpenseLogRequest"}}}},"responses": {"201": {"description": "Draft expenses recorded or replayed","content": {"application/json": {"schema": {"$ref": "#/components/schemas/ExpenseBatchResponse"}}}},"default": {"$ref": "#/components/responses/Error"}},"description": "Workspace managers only. Atomic batch of at most 20 expenses; amounts are minor units. Requires both AGENT_API_WRITES_ENABLED and AGENT_API_EXPENSE_WRITES_ENABLED. No approval or receipt attachment."}},
-    "/workspaces/{workspace_id}/expenses/{expense_id}": {"patch": {"operationId": "expenses.update","description": "Replace all draft expense facts using its current version. Omitted project_id preserves attribution; explicit null clears it. Workspace managers only; both expense and workflow write flags required.","security": [{"oauth2": ["expenses:write"]}],"parameters": [{"$ref": "#/components/parameters/WorkspaceId"},{"$ref": "#/components/parameters/ExpenseId"},{"$ref": "#/components/parameters/IdempotencyKey"}],"requestBody": {"required": true,"content": {"application/json": {"schema": {"$ref": "#/components/schemas/ExpenseUpdateRequest"}}}},"responses": {"200": {"description": "Draft expense updated","content": {"application/json": {"schema": {"$ref": "#/components/schemas/ExpenseResponse"}}}},"default": {"$ref": "#/components/responses/Error"}}},"delete": {"operationId": "expenses.delete","security": [{"oauth2": ["expenses:write"]}],"parameters": [{"$ref": "#/components/parameters/WorkspaceId"},{"$ref": "#/components/parameters/ExpenseId"},{"$ref": "#/components/parameters/IdempotencyKey"}],"requestBody": {"required": true,"content": {"application/json": {"schema": {"$ref": "#/components/schemas/ExpectedVersionRequest"}}}},"responses": {"200": {"description": "Draft expense soft-deleted","content": {"application/json": {"schema": {"$ref": "#/components/schemas/DeletionResponse"}}}},"default": {"$ref": "#/components/responses/Error"}},"description": "Soft-delete draft expenses only, using the current version. Approved, invoiced and unknown statuses are refused. Workspace managers only; both write flags required."}},
-    "/workspaces/{workspace_id}/payments": {"get": {"operationId": "payments.list", "description": "List received payments for an explicit invoice_id or company_id (at least one required). Invoice visibility applies; private processor and reconciliation data is excluded.", "security": [{"oauth2": ["payments:read"]}], "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}, {"$ref": "#/components/parameters/Limit"}, {"$ref": "#/components/parameters/Cursor"}, {"name": "invoice_id", "in": "query", "schema": {"type": "string", "format": "uuid"}}, {"name": "company_id", "in": "query", "schema": {"type": "string", "format": "uuid"}}], "responses": {"200": {"description": "Authorized received payments", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ReceivedPaymentListResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}}, "post": {"operationId": "payments.record", "description": "Owner/admin bookkeeping for money already received. Never initiates a charge. Explicit invoice, minor-unit amount, currency, payment date and method required; reference is optional. Overpayment refused. Requires both outer workflow and payment write flags.", "security": [{"oauth2": ["payments:record"]}], "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}, {"$ref": "#/components/parameters/IdempotencyKey"}], "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ReceivedPaymentRecordRequest"}}}}, "responses": {"201": {"description": "Authorized received payments", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ReceivedPaymentBatchResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}}},
-    "/workspaces/{workspace_id}/payments/{payment_id}": {"patch": {"operationId": "payments.correct", "description": "Owner/admin correction of a received payment's descriptive fields: method, reference and received_on, at least one of which must be given. Requires the version from payments.list and a reason, which is kept in the client history. Omitted fields are unchanged; an explicit null reference clears it. A stale version is refused with 409 and a correction that changes nothing records nothing. Amount, currency, status, refunds, the invoice and processor fields cannot be changed. Never initiates a charge or a refund. Requires both outer workflow and payment write flags.", "security": [{"oauth2": ["payments:record"]}], "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}, {"$ref": "#/components/parameters/PaymentId"}, {"$ref": "#/components/parameters/IdempotencyKey"}], "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ReceivedPaymentCorrectionRequest"}}}}, "responses": {"200": {"description": "Corrected payment", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ReceivedPaymentResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}}},
+    "/workspaces/{workspace_id}/expenses": {"get": {"operationId": "expenses.list","security": [{"oauth2": ["expenses:read"]}, {"apiToken": []}],"parameters": [{"$ref": "#/components/parameters/WorkspaceId"},{"name": "company_id","in": "query","schema": {"type": "string","format": "uuid"}},{"name": "project_id","in": "query","schema": {"type": "string","format": "uuid"}},{"name": "status","in": "query","schema": {"type": "string","enum": ["draft","approved","invoiced"]}},{"$ref": "#/components/parameters/Limit"},{"$ref": "#/components/parameters/Cursor"}],"responses": {"200": {"description": "Authorized expenses","content": {"application/json": {"schema": {"$ref": "#/components/schemas/ExpenseListResponse"}}}},"default": {"$ref": "#/components/responses/Error"}}},"post": {"operationId": "expenses.log","security": [{"oauth2": ["expenses:write"]}, {"apiToken": []}],"parameters": [{"$ref": "#/components/parameters/WorkspaceId"},{"$ref": "#/components/parameters/IdempotencyKey"}],"requestBody": {"required": true,"content": {"application/json": {"schema": {"$ref": "#/components/schemas/ExpenseLogRequest"}}}},"responses": {"201": {"description": "Draft expenses recorded or replayed","content": {"application/json": {"schema": {"$ref": "#/components/schemas/ExpenseBatchResponse"}}}},"default": {"$ref": "#/components/responses/Error"}},"description": "Workspace managers only. Atomic batch of at most 20 expenses; amounts are minor units. Requires both AGENT_API_WRITES_ENABLED and AGENT_API_EXPENSE_WRITES_ENABLED. No approval or receipt attachment."}},
+    "/workspaces/{workspace_id}/expenses/{expense_id}": {"patch": {"operationId": "expenses.update","description": "Replace all draft expense facts using its current version. Omitted project_id preserves attribution; explicit null clears it. Workspace managers only; both expense and workflow write flags required.","security": [{"oauth2": ["expenses:write"]}, {"apiToken": []}],"parameters": [{"$ref": "#/components/parameters/WorkspaceId"},{"$ref": "#/components/parameters/ExpenseId"},{"$ref": "#/components/parameters/IdempotencyKey"}],"requestBody": {"required": true,"content": {"application/json": {"schema": {"$ref": "#/components/schemas/ExpenseUpdateRequest"}}}},"responses": {"200": {"description": "Draft expense updated","content": {"application/json": {"schema": {"$ref": "#/components/schemas/ExpenseResponse"}}}},"default": {"$ref": "#/components/responses/Error"}}},"delete": {"operationId": "expenses.delete","security": [{"oauth2": ["expenses:write"]}, {"apiToken": []}],"parameters": [{"$ref": "#/components/parameters/WorkspaceId"},{"$ref": "#/components/parameters/ExpenseId"},{"$ref": "#/components/parameters/IdempotencyKey"}],"requestBody": {"required": true,"content": {"application/json": {"schema": {"$ref": "#/components/schemas/ExpectedVersionRequest"}}}},"responses": {"200": {"description": "Draft expense soft-deleted","content": {"application/json": {"schema": {"$ref": "#/components/schemas/DeletionResponse"}}}},"default": {"$ref": "#/components/responses/Error"}},"description": "Soft-delete draft expenses only, using the current version. Approved, invoiced and unknown statuses are refused. Workspace managers only; both write flags required."}},
+    "/workspaces/{workspace_id}/payments": {"get": {"operationId": "payments.list", "description": "List received payments for an explicit invoice_id or company_id (at least one required). Invoice visibility applies; private processor and reconciliation data is excluded.", "security": [{"oauth2": ["payments:read"]}, {"apiToken": []}], "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}, {"$ref": "#/components/parameters/Limit"}, {"$ref": "#/components/parameters/Cursor"}, {"name": "invoice_id", "in": "query", "schema": {"type": "string", "format": "uuid"}}, {"name": "company_id", "in": "query", "schema": {"type": "string", "format": "uuid"}}], "responses": {"200": {"description": "Authorized received payments", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ReceivedPaymentListResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}}, "post": {"operationId": "payments.record", "description": "Owner/admin bookkeeping for money already received. Never initiates a charge. Explicit invoice, minor-unit amount, currency, payment date and method required; reference is optional. Overpayment refused. Requires both outer workflow and payment write flags.", "security": [{"oauth2": ["payments:record"]}, {"apiToken": []}], "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}, {"$ref": "#/components/parameters/IdempotencyKey"}], "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ReceivedPaymentRecordRequest"}}}}, "responses": {"201": {"description": "Authorized received payments", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ReceivedPaymentBatchResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}}},
+    "/workspaces/{workspace_id}/payments/{payment_id}": {"patch": {"operationId": "payments.correct", "description": "Owner/admin correction of a received payment's descriptive fields: method, reference and received_on, at least one of which must be given. Requires the version from payments.list and a reason, which is kept in the client history. Omitted fields are unchanged; an explicit null reference clears it. A stale version is refused with 409 and a correction that changes nothing records nothing. Amount, currency, status, refunds, the invoice and processor fields cannot be changed. Never initiates a charge or a refund. Requires both outer workflow and payment write flags.", "security": [{"oauth2": ["payments:record"]}, {"apiToken": []}], "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}, {"$ref": "#/components/parameters/PaymentId"}, {"$ref": "#/components/parameters/IdempotencyKey"}], "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ReceivedPaymentCorrectionRequest"}}}}, "responses": {"200": {"description": "Corrected payment", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ReceivedPaymentResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}}},
     "/context": {"get": {
-      "operationId": "context.get", "description": "Returns role capabilities intersected with the current token scopes and write-cutover state. Per-project capability IDs are included only with projects:read.", "security": [{"oauth2": ["identity:read"]}],
+      "operationId": "context.get", "description": "Returns role capabilities intersected with the current token scopes and write-cutover state. Per-project capability IDs are included only with projects:read.", "security": [{"oauth2": ["identity:read"]}, {"apiToken": []}],
       "responses": {"200": {"description": "Authorized context", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ContextResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
     }},
     "/connections/{token}": {"delete": {
@@ -21,12 +21,12 @@
       "responses": {"204": {"description": "Connection revoked"}, "default": {"$ref": "#/components/responses/Error"}}
     }},
     "/workspaces/{workspace_id}/summary": {"get": {
-      "operationId": "operations.summary", "description": "Always returns workspace_id; project, time, and invoice sections are omitted unless the token has their corresponding read scope.", "security": [{"oauth2": ["identity:read"]}],
+      "operationId": "operations.summary", "description": "Always returns workspace_id; project, time, and invoice sections are omitted unless the token has their corresponding read scope.", "security": [{"oauth2": ["identity:read"]}, {"apiToken": []}],
       "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}],
       "responses": {"200": {"description": "Role-sensitive summary", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/SummaryResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
     }},
     "/workspaces/{workspace_id}/projects": {"get": {
-      "operationId": "projects.list", "security": [{"oauth2": ["projects:read"]}],
+      "operationId": "projects.list", "security": [{"oauth2": ["projects:read"]}, {"apiToken": []}],
       "parameters": [
         {"$ref": "#/components/parameters/WorkspaceId"}, {"$ref": "#/components/parameters/Limit"}, {"$ref": "#/components/parameters/Cursor"},
         {"name": "status", "in": "query", "schema": {"type": "string", "enum": ["active", "archived", "completed"]}},
@@ -35,18 +35,18 @@
       "responses": {"200": {"description": "Authorized projects", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ProjectListResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
     }},
     "/workspaces/{workspace_id}/projects/{project_id}": {"get": {
-      "operationId": "projects.get", "description": "Task data is embedded only when the token also has tasks:read.", "security": [{"oauth2": ["projects:read"]}],
+      "operationId": "projects.get", "description": "Task data is embedded only when the token also has tasks:read.", "security": [{"oauth2": ["projects:read"]}, {"apiToken": []}],
       "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}, {"$ref": "#/components/parameters/ProjectId"}],
       "responses": {"200": {"description": "Authorized project detail", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ProjectDetailResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
     }},
     "/workspaces/{workspace_id}/projects/{project_id}/tasks": {"post": {
-      "operationId": "tasks.create", "security": [{"oauth2": ["tasks:write"]}],
+      "operationId": "tasks.create", "security": [{"oauth2": ["tasks:write"]}, {"apiToken": []}],
       "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}, {"$ref": "#/components/parameters/ProjectId"}, {"$ref": "#/components/parameters/IdempotencyKey"}],
       "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/TaskCreateRequest"}}}},
       "responses": {"201": {"description": "Task created", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/TaskResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
     }},
     "/workspaces/{workspace_id}/tasks": {"get": {
-      "operationId": "tasks.list", "security": [{"oauth2": ["tasks:read"]}],
+      "operationId": "tasks.list", "security": [{"oauth2": ["tasks:read"]}, {"apiToken": []}],
       "parameters": [
         {"$ref": "#/components/parameters/WorkspaceId"},
         {"name": "project_id", "in": "query", "schema": {"type": "string", "format": "uuid"}},
@@ -56,13 +56,13 @@
     }},
     "/workspaces/{workspace_id}/tasks/{task_id}": {
       "get": {
-        "operationId": "tasks.get", "security": [{"oauth2": ["tasks:read"]}],
+        "operationId": "tasks.get", "security": [{"oauth2": ["tasks:read"]}, {"apiToken": []}],
         "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}, {"$ref": "#/components/parameters/TaskId"}],
         "responses": {"200": {"description": "Authorized task", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/TaskResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
       },
       "patch": {
         "operationId": "tasks.update", "description": "Omitted properties remain unchanged; explicit null clears nullable properties.",
-        "security": [{"oauth2": ["tasks:write"]}],
+        "security": [{"oauth2": ["tasks:write"]}, {"apiToken": []}],
         "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}, {"$ref": "#/components/parameters/TaskId"}, {"$ref": "#/components/parameters/IdempotencyKey"}],
         "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/TaskUpdateRequest"}}}},
         "responses": {"200": {"description": "Task updated", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/TaskResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
@@ -70,7 +70,7 @@
     },
     "/workspaces/{workspace_id}/time-entries": {
       "get": {
-        "operationId": "time_entries.list", "security": [{"oauth2": ["time:read"]}],
+        "operationId": "time_entries.list", "security": [{"oauth2": ["time:read"]}, {"apiToken": []}],
         "parameters": [
           {"$ref": "#/components/parameters/WorkspaceId"},
           {"name": "project_id", "in": "query", "schema": {"type": "string", "format": "uuid"}},
@@ -82,7 +82,7 @@
         "responses": {"200": {"description": "Authorized time entries", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/TimeEntryListResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
       },
       "post": {
-        "operationId": "time_entries.log", "security": [{"oauth2": ["time:write"]}],
+        "operationId": "time_entries.log", "security": [{"oauth2": ["time:write"]}, {"apiToken": []}],
         "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}, {"$ref": "#/components/parameters/IdempotencyKey"}],
         "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/TimeLogRequest"}}}},
         "responses": {"201": {"description": "Time entries logged or replayed", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/TimeEntryBatchResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
@@ -91,32 +91,32 @@
     "/workspaces/{workspace_id}/time-entries/{entry_id}": {
       "patch": {
         "operationId": "time_entries.update", "description": "Omitted properties remain unchanged; explicit null clears nullable properties.",
-        "security": [{"oauth2": ["time:write"]}],
+        "security": [{"oauth2": ["time:write"]}, {"apiToken": []}],
         "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}, {"$ref": "#/components/parameters/TimeEntryId"}, {"$ref": "#/components/parameters/IdempotencyKey"}],
         "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/TimeUpdateRequest"}}}},
         "responses": {"200": {"description": "Draft time updated", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/TimeEntryResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
       },
       "delete": {
-        "operationId": "time_entries.delete", "security": [{"oauth2": ["time:write"]}],
+        "operationId": "time_entries.delete", "security": [{"oauth2": ["time:write"]}, {"apiToken": []}],
         "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}, {"$ref": "#/components/parameters/TimeEntryId"}, {"$ref": "#/components/parameters/IdempotencyKey"}],
         "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ExpectedVersionRequest"}}}},
         "responses": {"200": {"description": "Draft time soft-deleted", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/DeletionResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
       }
     },
     "/workspaces/{workspace_id}/time-entries/approve": {"post": {
-      "operationId": "time_entries.approve", "security": [{"oauth2": ["time:approve"]}],
+      "operationId": "time_entries.approve", "security": [{"oauth2": ["time:approve"]}, {"apiToken": []}],
       "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}, {"$ref": "#/components/parameters/IdempotencyKey"}],
       "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/TimeApprovalRequest"}}}},
       "responses": {"200": {"description": "Time entries approved", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ApprovalResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
     }},
     "/workspaces/{workspace_id}/invoices": {
       "get": {
-        "operationId": "invoices.list", "security": [{"oauth2": ["billing:read"]}],
+        "operationId": "invoices.list", "security": [{"oauth2": ["billing:read"]}, {"apiToken": []}],
         "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}, {"name": "status", "in": "query", "schema": {"$ref": "#/components/schemas/InvoiceStatus"}}, {"$ref": "#/components/parameters/Limit"}, {"$ref": "#/components/parameters/Cursor"}],
         "responses": {"200": {"description": "Authorized invoices", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/InvoiceListResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
       },
       "post": {
-        "operationId": "invoices.create_draft", "security": [{"oauth2": ["billing:write"]}],
+        "operationId": "invoices.create_draft", "security": [{"oauth2": ["billing:write"]}, {"apiToken": []}],
         "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}, {"$ref": "#/components/parameters/IdempotencyKey"}],
         "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/InvoiceCreateRequest"}}}},
         "responses": {"201": {"description": "Invoice draft created", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/InvoiceMutationResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
@@ -124,57 +124,57 @@
     },
     "/workspaces/{workspace_id}/invoices/{invoice_id}": {
       "get": {
-        "operationId": "invoices.get", "security": [{"oauth2": ["billing:read"]}],
+        "operationId": "invoices.get", "security": [{"oauth2": ["billing:read"]}, {"apiToken": []}],
         "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}, {"$ref": "#/components/parameters/InvoiceId"}],
         "responses": {"200": {"description": "Authorized invoice with browser payment URL", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/InvoiceDetailResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
       },
       "patch": {
         "operationId": "invoices.update_draft", "description": "Replace the explicit time selection and manual lines on a draft invoice.",
-        "security": [{"oauth2": ["billing:write"]}],
+        "security": [{"oauth2": ["billing:write"]}, {"apiToken": []}],
         "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}, {"$ref": "#/components/parameters/InvoiceId"}, {"$ref": "#/components/parameters/IdempotencyKey"}],
         "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/InvoiceUpdateRequest"}}}},
         "responses": {"200": {"description": "Draft invoice updated", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/InvoiceMutationResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
       }
     },
     "/workspaces/{workspace_id}/invoices/{invoice_id}/discard": {"post": {
-      "operationId": "invoices.discard_draft", "security": [{"oauth2": ["billing:write"]}],
+      "operationId": "invoices.discard_draft", "security": [{"oauth2": ["billing:write"]}, {"apiToken": []}],
       "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}, {"$ref": "#/components/parameters/InvoiceId"}, {"$ref": "#/components/parameters/IdempotencyKey"}],
       "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/InvoiceDiscardRequest"}}}},
       "responses": {"200": {"description": "Draft discarded and linked time released", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/InvoiceMutationResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
     }},
     "/workspaces/{workspace_id}/invoices/{invoice_id}/issue": {"post": {
-      "operationId": "invoices.issue", "security": [{"oauth2": ["billing:deliver"]}],
+      "operationId": "invoices.issue", "security": [{"oauth2": ["billing:deliver"]}, {"apiToken": []}],
       "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}, {"$ref": "#/components/parameters/InvoiceId"}, {"$ref": "#/components/parameters/IdempotencyKey"}],
       "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/InvoiceIssueRequest"}}}},
       "responses": {"200": {"description": "Invoice issued, and paid when a payment was supplied", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/InvoiceIssueResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
     }},
     "/workspaces/{workspace_id}/invoices/{invoice_id}/send": {"post": {
-      "operationId": "invoices.send", "security": [{"oauth2": ["billing:deliver"]}],
+      "operationId": "invoices.send", "security": [{"oauth2": ["billing:deliver"]}, {"apiToken": []}],
       "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}, {"$ref": "#/components/parameters/InvoiceId"}, {"$ref": "#/components/parameters/IdempotencyKey"}],
       "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/InvoiceSendRequest"}}}},
       "responses": {"200": {"description": "Invoice delivery queued", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/InvoiceMutationResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
     }},
     "/workspaces/{workspace_id}/invoices/{invoice_id}/void": {"post": {
-      "operationId": "invoices.void", "security": [{"oauth2": ["billing:deliver"]}],
+      "operationId": "invoices.void", "security": [{"oauth2": ["billing:deliver"]}, {"apiToken": []}],
       "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}, {"$ref": "#/components/parameters/InvoiceId"}, {"$ref": "#/components/parameters/IdempotencyKey"}],
       "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/InvoiceVoidRequest"}}}},
       "responses": {"200": {"description": "Invoice voided", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/InvoiceMutationResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
     }},
     "/workspaces/{workspace_id}/invoices/{invoice_id}/details": {"patch": {
-      "operationId": "invoices.update_details", "description": "Change the due date and/or notes of any draft invoice, generated or ad hoc, using its current version. Lines, linked time and the hours statement are unchanged, and a generated draft keeps the change when it is regenerated. A due date may not precede the draft's issue date. Issued invoices are corrected with invoices.correct instead.", "security": [{"oauth2": ["billing:write"]}],
+      "operationId": "invoices.update_details", "description": "Change the due date and/or notes of any draft invoice, generated or ad hoc, using its current version. Lines, linked time and the hours statement are unchanged, and a generated draft keeps the change when it is regenerated. A due date may not precede the draft's issue date. Issued invoices are corrected with invoices.correct instead.", "security": [{"oauth2": ["billing:write"]}, {"apiToken": []}],
       "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}, {"$ref": "#/components/parameters/InvoiceId"}, {"$ref": "#/components/parameters/IdempotencyKey"}],
       "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/InvoiceDetailsUpdateRequest"}}}},
       "responses": {"200": {"description": "Draft invoice details updated", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/InvoiceMutationResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
     }},
     "/workspaces/{workspace_id}/invoices/{invoice_id}/correct": {"post": {
-      "operationId": "invoices.correct", "description": "Make an audited in-place correction to an unpaid issued invoice that has not been emailed to the client: its due date and/or line wording, and money only on operator-authored lines. Omitted lines are kept as they are; supplied lines must name every existing line. The document revision advances and any automatic client delivery is held for explicit release. Requires explicit user confirmation and a reason kept in the client history. Paid, partially paid, sent and void invoices are refused; void and reissue those instead.", "security": [{"oauth2": ["billing:deliver"]}],
+      "operationId": "invoices.correct", "description": "Make an audited in-place correction to an unpaid issued invoice that has not been emailed to the client: its due date and/or line wording, and money only on operator-authored lines. Omitted lines are kept as they are; supplied lines must name every existing line. The document revision advances and any automatic client delivery is held for explicit release. Requires explicit user confirmation and a reason kept in the client history. Paid, partially paid, sent and void invoices are refused; void and reissue those instead.", "security": [{"oauth2": ["billing:deliver"]}, {"apiToken": []}],
       "parameters": [{"$ref": "#/components/parameters/WorkspaceId"}, {"$ref": "#/components/parameters/InvoiceId"}, {"$ref": "#/components/parameters/IdempotencyKey"}],
       "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/InvoiceCorrectionRequest"}}}},
       "responses": {"200": {"description": "Invoice corrected", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/InvoiceMutationResponse"}}}}, "default": {"$ref": "#/components/responses/Error"}}
     }}
   },
   "components": {
-    "securitySchemes": {"oauth2": {
+    "securitySchemes": {"apiToken": {"type": "http", "scheme": "bearer", "bearerFormat": "JWT", "description": "A personal API token created on the SVC setup page. It carries the scopes chosen when it was created and expires after the chosen lifetime."}, "oauth2": {
       "type": "oauth2", "description": "Authorization code with S256 PKCE and interactive Bherila.net login.",
       "flows": {"authorizationCode": {
         "authorizationUrl": "https://svc.bherila.net/oauth/authorize", "tokenUrl": "https://svc.bherila.net/oauth/token",

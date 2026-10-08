@@ -4,20 +4,20 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "3f7b985b76c21dcab4e2ad548eec0e31",
+    "content-hash": "36886f389d63a8c674cc679267419994",
     "packages": [
         {
             "name": "bherila/auth-laravel",
-            "version": "v0.12.0",
+            "version": "v0.17.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/bherila/auth-laravel.git",
-                "reference": "cda94048c952eaaf10726be2c71d6f27cc8c6061"
+                "reference": "43fb879b044a710fa0a3226bb5f84bc85c2f788f"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/bherila/auth-laravel/zipball/cda94048c952eaaf10726be2c71d6f27cc8c6061",
-                "reference": "cda94048c952eaaf10726be2c71d6f27cc8c6061",
+                "url": "https://api.github.com/repos/bherila/auth-laravel/zipball/43fb879b044a710fa0a3226bb5f84bc85c2f788f",
+                "reference": "43fb879b044a710fa0a3226bb5f84bc85c2f788f",
                 "shasum": ""
             },
             "require": {
@@ -31,6 +31,7 @@
                 "illuminate/routing": "^13.0",
                 "illuminate/support": "^13.0",
                 "illuminate/validation": "^13.0",
+                "lcobucci/jwt": "^5.6",
                 "php": "^8.4",
                 "symfony/uid": "^7.4 || ^8.0",
                 "web-auth/webauthn-lib": "^5.3.5"
@@ -65,7 +66,7 @@
                 "issues": "https://github.com/bherila/auth-laravel/issues",
                 "source": "https://github.com/bherila/auth-laravel"
             },
-            "time": "2026-09-05T00:39:46+00:00"
+            "time": "2026-10-08T07:09:34+00:00"
         },
         {
             "name": "bherila/mcp-laravel-bridge",

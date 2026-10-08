@@ -150,39 +150,39 @@ final class AgentOAuthLifecycleTest extends TestCase
         $this->assertLessThan($authenticated, $expected);
     }
 
-    public function test_missing_resource_and_refresh_scope_gain_fail_without_consuming_credentials(): void
+    /**
+     * Generic OAuth clients never send RFC 8707 `resource`, so an omitted one
+     * now means /api/v1, the only resource SVC protects (#384). A different
+     * explicit resource and a scope gain on refresh are still refused, and a
+     * refusal consumes nothing.
+     */
+    public function test_an_omitted_resource_binds_to_the_api_and_a_different_one_or_a_scope_gain_fails_without_consuming_credentials(): void
     {
         $user = User::factory()->create();
         $clientId = $this->registerClient();
         $verifier = $this->verifier();
         $code = $this->authorize($user, $clientId, $verifier);
 
-        $this->exchangeCode($clientId, $code, $verifier, null)
-            ->assertBadRequest()
-            ->assertJsonPath('error', 'invalid_grant');
+        $this->exchangeCode($clientId, $code, $verifier, 'https://other.example.test/api/v1')
+            ->assertBadRequest();
         $this->assertDatabaseHas('oauth_auth_codes', [
             'client_id' => $clientId,
             'revoked' => false,
         ]);
 
-        $tokens = $this->exchangeCode(
-            $clientId,
-            $code,
-            $verifier,
-            OAuthResourceIndicator::resource(),
-        )->assertOk()->json();
+        $tokens = $this->exchangeCode($clientId, $code, $verifier, null)->assertOk()->json();
         $access = Passport::token()->newQuery()
             ->where('client_id', $clientId)
             ->where('revoked', false)
             ->sole();
+        $this->assertSame(OAuthResourceIndicator::resource(), $access->resource_uri);
 
-        $this->refresh($clientId, $tokens['refresh_token'], null)
-            ->assertBadRequest()
-            ->assertJsonPath('error', 'invalid_grant');
+        $this->refresh($clientId, $tokens['refresh_token'], 'https://other.example.test/api/v1')
+            ->assertBadRequest();
         $this->refresh(
             $clientId,
             $tokens['refresh_token'],
-            OAuthResourceIndicator::resource(),
+            null,
             ['scope' => implode(' ', [AgentApiScopes::MCP_USE, AgentApiScopes::IDENTITY_READ, AgentApiScopes::PROJECTS_READ])],
         )->assertBadRequest()->assertJsonPath('error', 'invalid_scope');
 
@@ -191,7 +191,11 @@ final class AgentOAuthLifecycleTest extends TestCase
             'access_token_id' => $access->id,
             'revoked' => false,
         ]);
-        $this->refresh($clientId, $tokens['refresh_token'], OAuthResourceIndicator::resource())->assertOk();
+        $refreshed = $this->refresh($clientId, $tokens['refresh_token'], null)->assertOk()->json();
+        $this->assertSame(
+            OAuthResourceIndicator::resource(),
+            OAuthResourceIndicator::tokenClaims($refreshed['access_token'])['resource'] ?? null,
+        );
     }
 
     public function test_refresh_resource_survives_access_token_row_purge(): void
