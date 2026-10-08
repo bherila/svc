@@ -65,6 +65,12 @@ export async function apiRequest<T = unknown>(
 }
 
 function errorMessage(status: number, payload: unknown): string {
+    // Before the payload: an expired session answers 401 "Unauthenticated." or
+    // 419 "CSRF token mismatch.", neither of which tells the reader what to do.
+    if (status === 401 || status === 419) {
+        return 'Your session has expired. Reload the page and sign in again.';
+    }
+
     if (isRecord(payload)) {
         if (isRecord(payload.errors)) {
             const first = Object.values(payload.errors)[0];
@@ -80,9 +86,6 @@ function errorMessage(status: number, payload: unknown): string {
     }
 
     switch (status) {
-        case 401:
-        case 419:
-            return 'Your session has expired. Reload the page and sign in again.';
         case 403:
             return 'You do not have permission to do that.';
         case 409:
