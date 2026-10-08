@@ -96,6 +96,73 @@ final class AgentProposalApiTest extends TestCase
         $this->assertDatabaseHas('agent_mutation_audits', ['operation' => 'proposals.send', 'outcome' => 'failed', 'error_category' => 'conflict']);
     }
 
+    #[DataProvider('conflictingAcceptanceDetails')]
+    public function test_fresh_acceptance_keys_cannot_ignore_conflicting_signer_details(string $transport, string $field, ?string $value): void
+    {
+        [$workspace, $company, , $owner] = $this->fixture();
+        $proposal = $this->proposal($workspace, $company, $owner, sent: true);
+        $portal = $this->portal($company);
+        $this->agent($portal, ['mcp:use', 'proposals:read', 'proposals:accept']);
+        $body = ['expected_version' => AgentApiVersion::for($proposal), 'confirm' => true, 'signer_name' => 'Synthetic Signer', 'signer_title' => 'Synthetic Director'];
+        $accepted = $this->postJson($this->url($workspace, $proposal->public_id).'/accept', $body, ['Idempotency-Key' => 'synthetic-original-acceptance'])->assertOk()->json('data');
+        $conflicting = array_replace($body, ['expected_version' => $accepted['version'], $field => $value]);
+        $message = 'This proposal was already accepted with different signer details.';
+        if ($transport === 'rest') {
+            $this->postJson($this->url($workspace, $proposal->public_id).'/accept', $conflicting, ['Idempotency-Key' => 'synthetic-conflicting-acceptance'])->assertUnprocessable()->assertJsonPath('message', $message);
+        } else {
+            $result = $this->callTool($this->initialize(), 'proposals.accept', ['workspace_id' => $workspace->public_id, 'proposal_id' => $proposal->public_id, 'idempotency_key' => 'synthetic-conflicting-acceptance', ...$conflicting]);
+            $this->assertTrue($result['result']['isError'] ?? false, json_encode($result));
+            $this->assertStringContainsString($message, json_encode($result));
+        }
+        $this->getJson($this->url($workspace, $proposal->public_id))->assertOk()->assertJsonPath('data.version', $accepted['version']);
+        $this->assertDatabaseCount('agent_mutation_receipts', 1);
+        $this->assertDatabaseCount('client_agreements', 1);
+        $this->assertDatabaseHas('client_agreements', ['signer_name' => 'Synthetic Signer', 'signer_title' => 'Synthetic Director']);
+        $this->assertSame(1, DB::table('agent_mutation_audits')->where('workspace_id', $workspace->id)->where('operation', 'proposals.accept')->where('outcome', 'success')->count());
+        $this->assertDatabaseHas('agent_mutation_audits', ['workspace_id' => $workspace->id, 'operation' => 'proposals.accept', 'outcome' => 'failed', 'error_category' => 'validation']);
+    }
+
+    public static function conflictingAcceptanceDetails(): array
+    {
+        $cases = [];
+        foreach (['rest', 'mcp'] as $transport) {
+            foreach ([['signer_name', 'Different synthetic signer'], ['signer_title', 'Different synthetic title'], ['signer_title', null]] as [$field, $value]) {
+                $cases[] = [$transport, $field, $value];
+            }
+        }
+
+        return $cases;
+    }
+
+    #[DataProvider('proposalCapabilityScopes')]
+    public function test_context_proposal_capabilities_match_usable_mcp_operations(bool $portal, array $scopes): void
+    {
+        [$workspace, $company, , $owner] = $this->fixture();
+        $this->agent($portal ? $this->portal($company) : $owner, ['identity:read', 'mcp:use', ...$scopes]);
+        $capabilities = $this->getJson('/api/v1/context')->assertOk()->json('data.workspaces.0.capabilities');
+        $tools = $this->toolNames($this->initialize());
+        $canCreate = ! $portal && in_array('proposals:write', $scopes, true) && in_array('clients:read', $scopes, true);
+        $canSend = ! $portal && in_array('proposals:write', $scopes, true) && in_array('proposals:read', $scopes, true);
+        $canAccept = in_array('proposals:accept', $scopes, true) && in_array('proposals:read', $scopes, true);
+        $this->assertSame($canCreate || $canSend, in_array('proposals:write', $capabilities, true));
+        $this->assertSame($canAccept, in_array('proposals:accept', $capabilities, true));
+        $this->assertSame($canCreate, in_array('proposals.create', $tools, true));
+        $this->assertSame($canSend, in_array('proposals.send', $tools, true));
+        $this->assertSame($canAccept, in_array('proposals.accept', $tools, true));
+    }
+
+    public static function proposalCapabilityScopes(): array
+    {
+        $cases = [];
+        foreach ([false, true] as $portal) {
+            foreach ([['proposals:write', 'proposals:accept'], ['proposals:write', 'clients:read'], ['proposals:write', 'proposals:read'], ['proposals:write', 'clients:read', 'proposals:read', 'proposals:accept'], ['proposals:accept', 'proposals:read'], ['clients:read', 'proposals:read']] as $scopes) {
+                $cases[] = [$portal, $scopes];
+            }
+        }
+
+        return $cases;
+    }
+
     public function test_create_checks_company_version_and_scopes_company_and_project_references(): void
     {
         [$workspace, $company, , $owner] = $this->fixture();

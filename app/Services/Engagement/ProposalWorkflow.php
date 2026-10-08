@@ -95,6 +95,10 @@ class ProposalWorkflow
             $locked = ClientProposal::query()->where('workspace_id', $proposal->workspace_id)->where('client_company_id', $proposal->client_company_id)->tap(Locks::forUpdate())->findOrFail($proposal->id);
 
             if ($locked->status === 'accepted') {
+                if ($locked->acceptance_signer_name !== $signerName || $locked->acceptance_signer_title !== $signerTitle) {
+                    throw new EngagementException('This proposal was already accepted with different signer details.');
+                }
+
                 return $locked->load(['items' => fn ($items) => $items->where('workspace_id', $locked->workspace_id), 'agreements' => fn ($agreements) => $agreements->where('workspace_id', $locked->workspace_id)->where('client_company_id', $locked->client_company_id)]);
             }
 

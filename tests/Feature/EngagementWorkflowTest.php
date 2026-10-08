@@ -69,9 +69,14 @@ class EngagementWorkflowTest extends TestCase
         ])->assertOk();
 
         $this->actingAs($clientUser)->postJson($acceptPath, [
-            'signer_name' => 'Different Replay Value',
-            'signer_title' => 'Ignored Replay Value',
+            'signer_name' => 'Synthetic Signer',
+            'signer_title' => 'Synthetic Buyer',
         ])->assertOk();
+
+        $this->actingAs($clientUser)->postJson($acceptPath, [
+            'signer_name' => 'Different Replay Value',
+            'signer_title' => 'Different Replay Title',
+        ])->assertUnprocessable()->assertJsonPath('message', 'This proposal was already accepted with different signer details.');
 
         $proposal = $proposal->fresh(['agreements.recurringItems']);
         $agreement = ClientAgreement::query()->sole();

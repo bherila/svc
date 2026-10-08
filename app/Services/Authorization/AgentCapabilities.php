@@ -70,7 +70,7 @@ final class AgentCapabilities
             if ($allowsScope(AgentApiScopes::PROPOSALS_READ)) {
                 $workspaceCapabilities[] = 'proposals:read';
             }
-            if (AgentWriteCutover::proposals() && $allowsScope(AgentApiScopes::PROPOSALS_ACCEPT)) {
+            if (AgentWriteCutover::proposals() && $allowsScope(AgentApiScopes::PROPOSALS_READ) && $allowsScope(AgentApiScopes::PROPOSALS_ACCEPT)) {
                 $workspaceCapabilities[] = 'proposals:accept';
             }
         }
@@ -132,7 +132,8 @@ final class AgentCapabilities
             && ($allowsScope(AgentApiScopes::CLIENTS_READ) || $allowsScope(AgentApiScopes::PROJECTS_READ))) {
             $mapping[AgentApiScopes::PROJECTS_WRITE] = 'projects:write';
         }
-        if (AgentWriteCutover::proposals()) {
+        if (AgentWriteCutover::proposals()
+            && ($allowsScope(AgentApiScopes::CLIENTS_READ) || $allowsScope(AgentApiScopes::PROPOSALS_READ))) {
             $mapping[AgentApiScopes::PROPOSALS_WRITE] = 'proposals:write';
         }
         if (AgentWriteCutover::expenses()) {
