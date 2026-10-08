@@ -240,3 +240,35 @@ describe('an oversized correction record', () => {
         expect(horizontalOverflowRisks(container)).toEqual([]);
     });
 });
+
+/**
+ * A draft's due date moves what the client will be told they owe and when, so
+ * the entry says from which day to which, without expanding system activity.
+ */
+describe('updated draft details', () => {
+    it('shows the old and new due date and whether the notes changed', () => {
+        render(
+            <ActivityTimeline
+                activities={[
+                    {
+                        id: 'activity-details',
+                        action: 'invoice.details_updated',
+                        actor_name: 'Synthetic Operator',
+                        payload: {
+                            invoice_kind: 'cadence_period',
+                            due_date: { old: '2026-09-30', new: '2026-10-15' },
+                            notes_changed: true,
+                        },
+                        created_at: '2026-10-08T18:00:00.000Z',
+                    },
+                ]}
+            />,
+        );
+
+        expect(screen.getByText('Invoice details updated')).toBeVisible();
+        expect(
+            screen.getByText(/^due date .+ → .+, notes changed$/),
+        ).toBeVisible();
+        expect(screen.queryByText('cadence period')).not.toBeInTheDocument();
+    });
+});
