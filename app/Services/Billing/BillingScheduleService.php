@@ -5,6 +5,7 @@ namespace App\Services\Billing;
 use App\Models\ClientAgreement;
 use App\Models\ClientBillingSchedule;
 use App\Models\ClientInvoice;
+use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Billing\BillingPeriod;
 use App\Support\Billing\BillingScheduleLineTemplate;
 use App\Support\Billing\PeriodClaim;
@@ -49,10 +50,13 @@ final class BillingScheduleService
      *
      * @return list<ClientInvoice>
      */
-    public function generateDue(ClientBillingSchedule $schedule, CarbonImmutable $through): array
+    public function generateDue(ClientBillingSchedule $schedule, CarbonImmutable $through, ?string $expectedVersion = null): array
     {
-        return DB::transaction(function () use ($schedule, $through): array {
-            $locked = ClientBillingSchedule::query()->whereKey($schedule->id)->tap(Locks::forUpdate())->firstOrFail();
+        return DB::transaction(function () use ($schedule, $through, $expectedVersion): array {
+            $locked = ClientBillingSchedule::query()->where('workspace_id', $schedule->workspace_id)->whereKey($schedule->id)->tap(Locks::forUpdate())->firstOrFail();
+            if ($expectedVersion !== null) {
+                abort_unless(AgentApiVersion::matches($locked, $expectedVersion), 409, 'The billing schedule has changed; read it and retry.');
+            }
             if (! $locked->is_active) {
                 return [];
             }
@@ -68,6 +72,7 @@ final class BillingScheduleService
             // this is an acquisition in order, not a new pair.
             ClientAgreement::query()
                 ->where('workspace_id', $locked->workspace_id)
+                ->where('client_company_id', $locked->client_company_id)
                 ->whereKey($locked->client_agreement_id)
                 ->tap(Locks::forUpdate())
                 ->firstOrFail();

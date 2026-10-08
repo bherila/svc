@@ -86,6 +86,7 @@ final class AgentMcpCapabilityRegistryFactory
             str_starts_with($name, 'time_entries.') => 'AgentAccess::canViewTime',
             $name === 'payments.record', $name === 'payments.correct' => 'AgentAccess::isWorkspaceManager',
             $name === 'payments.list' => 'AgentAccess::canViewInvoice',
+            str_starts_with($name, 'billing_schedules.') => 'AgentAccess::isWorkspaceManager',
             str_starts_with($name, 'invoices.') => 'AgentAccess::canViewInvoice',
             default => 'Agent API workflow policy',
         };
@@ -300,10 +301,11 @@ final class AgentMcpCapabilityRegistryFactory
         return [
             'type' => 'object',
             'additionalProperties' => false,
-            'required' => ['id', 'agreement_id', 'cadence', 'next_run_on', 'is_active'],
+            'required' => ['id', 'agreement_id', 'version', 'cadence', 'next_run_on', 'is_active'],
             'properties' => [
                 'id' => ['type' => 'string', 'format' => 'uuid'],
                 'agreement_id' => ['type' => 'string', 'format' => 'uuid'],
+                'version' => ['type' => 'string', 'minLength' => 64, 'maxLength' => 64],
                 'cadence' => ['type' => 'string', 'maxLength' => 32],
                 'next_run_on' => ['type' => 'string', 'format' => 'date'],
                 'is_active' => ['type' => 'boolean'],

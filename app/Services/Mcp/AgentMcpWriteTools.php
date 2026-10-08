@@ -530,6 +530,45 @@ final class AgentMcpWriteTools
         return $this->send('POST', "workspaces/{$workspace_id}/invoices/{$invoice_id}/void", compact('expected_version', 'reason', 'confirm'), $idempotency_key);
     }
 
+    /** @param list<array<string, mixed>> $line_template
+     * @return array<string, mixed> */
+    public function billingSchedulesCreate(
+        #[Schema(format: 'uuid')] string $workspace_id,
+        #[Schema(format: 'uuid')] string $company_id,
+        #[Schema(format: 'uuid')] string $client_agreement,
+        #[Schema(minLength: 64, maxLength: 64)] string $expected_version,
+        #[Schema(enum: ['monthly', 'quarterly', 'semi_annual', 'annual'])] string $cadence,
+        #[Schema(format: 'date')] string $next_run_on,
+        #[Schema(minimum: 0, maximum: 365)] int $due_days,
+        #[Schema(pattern: '^[A-Z]{3}$')] string $currency,
+        #[Schema(minItems: 1, maxItems: 100)] array $line_template,
+        #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key,
+        RequestContext $request,
+        #[Schema(minimum: 1, maximum: 12)] ?int $anchor_month = null,
+        #[Schema(minimum: 1, maximum: 31)] ?int $anchor_day = null,
+        #[Schema] bool $is_active = true,
+    ): array {
+        $body = compact('company_id', 'client_agreement', 'expected_version', 'cadence', 'next_run_on', 'due_days', 'currency', 'line_template');
+        foreach (compact('anchor_month', 'anchor_day', 'is_active') as $name => $value) {
+            if ($this->requestArguments->has($request, $name)) {
+                $body[$name] = $value;
+            }
+        }
+
+        return $this->send('POST', "workspaces/{$workspace_id}/billing-schedules", $body, $idempotency_key);
+    }
+
+    /** @return array<string, mixed> */
+    public function billingSchedulesGenerate(
+        #[Schema(format: 'uuid')] string $workspace_id,
+        #[Schema(format: 'uuid')] string $schedule_id,
+        #[Schema(minLength: 64, maxLength: 64)] string $expected_version,
+        #[Schema] bool $confirm,
+        #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key,
+    ): array {
+        return $this->send('POST', "workspaces/{$workspace_id}/billing-schedules/{$schedule_id}/generate", compact('expected_version', 'confirm'), $idempotency_key);
+    }
+
     /** @param array<string, mixed> $body
      * @return array<string, mixed> */
     private function send(string $method, string $path, array $body, ?string $idempotencyKey = null): array

@@ -4,11 +4,11 @@ namespace App\Http\Controllers\Billing;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Billing\StoreBillingScheduleRequest;
-use App\Models\ClientAgreement;
 use App\Models\ClientBillingSchedule;
 use App\Models\ClientCompany;
 use App\Models\Workspace;
 use App\Services\Billing\BillingScheduleService;
+use App\Services\Billing\CreateBillingScheduleAction;
 use App\Services\WorkspaceAuthorization;
 use App\Support\WorkspaceClock;
 use Illuminate\Contracts\View\View;
@@ -18,23 +18,11 @@ use Illuminate\Support\Facades\Gate;
 
 class BillingScheduleController extends Controller
 {
-    public function store(StoreBillingScheduleRequest $request, Workspace $workspace, ClientCompany $clientCompany, WorkspaceAuthorization $authorization): JsonResponse|RedirectResponse
+    public function store(StoreBillingScheduleRequest $request, Workspace $workspace, ClientCompany $clientCompany, WorkspaceAuthorization $authorization, CreateBillingScheduleAction $create): JsonResponse|RedirectResponse
     {
         Gate::authorize('manage', $workspace);
         $authorization->assertOwnedBy($workspace, $clientCompany);
-        $data = $request->validated();
-        $agreement = ClientAgreement::query()
-            ->where('public_id', $data['client_agreement'])
-            ->where('workspace_id', $workspace->id)
-            ->where('client_company_id', $clientCompany->id)
-            ->firstOrFail();
-        unset($data['client_agreement']);
-        $schedule = ClientBillingSchedule::query()->create([
-            ...$data,
-            'workspace_id' => $workspace->id,
-            'client_company_id' => $clientCompany->id,
-            'client_agreement_id' => $agreement->id,
-        ]);
+        $schedule = $create->create($workspace, $clientCompany, $request->validated());
 
         return $request->expectsJson()
             ? response()->json(['data' => $schedule], 201)

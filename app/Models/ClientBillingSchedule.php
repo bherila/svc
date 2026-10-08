@@ -6,6 +6,7 @@ use App\Casts\DateOnly;
 use App\Contracts\WorkspaceOwned;
 use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
+use App\Models\Concerns\IncrementsAgentRevision;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -25,11 +26,12 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 #[Hidden(['id', 'workspace_id', 'client_company_id', 'client_agreement_id'])]
 class ClientBillingSchedule extends Model implements WorkspaceOwned
 {
-    use BelongsToWorkspace, HasPublicId;
+    use BelongsToWorkspace, HasPublicId, IncrementsAgentRevision;
 
     protected function casts(): array
     {
         return [
+            'lock_version' => 'integer',
             'next_run_on' => DateOnly::class,
             'anchor_month' => 'integer',
             'anchor_day' => 'integer',

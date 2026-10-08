@@ -740,3 +740,26 @@ agent payment keys retain their historical namespace, and issue-with-payment
 keys remain separate; existing receipts continue to replay. The web form keeps
 its optional date, status and bookkeeping fields, while agent recording remains
 limited to succeeded money already received. No processor charge is initiated.
+### Recurring billing schedules
+
+`billing_schedules.list` and `billing_schedules.get` now also have REST endpoints
+at `/workspaces/{workspace_id}/billing-schedules`. Reads require `billing:read`
+and workspace owner/admin access; list supports `is_active`, `limit`, and a
+filter-bound cursor. Both transports return the current opaque schedule version.
+
+`billing_schedules.create` (`billing:write` and `billing:read`) takes an explicit `company_id`,
+`client_agreement`, cadence, next run date, due days, currency and bounded line
+ template. Its `expected_version` is the **parent agreement** version from
+`agreements.get`; there is no schedule row yet. One schedule per agreement is
+allowed. Creation does not issue an invoice.
+
+`billing_schedules.generate` (`billing:deliver` and `billing:read`) requires the **schedule** version
+and `confirm: true` after explicit user confirmation. It invokes the same atomic
+preflight and generation service as the website, generating and issuing every due
+period through today. Normal automatic client delivery settings apply. An inactive
+or not-yet-due schedule returns no invoices and keeps its revision. The result
+contains the updated schedule revision and issued invoice references. Both writes
+require an `Idempotency-Key` (MCP `idempotency_key`), current manager access on
+replay, and both `AGENT_API_WRITES_ENABLED` and `AGENT_API_INVOICE_WRITES_ENABLED`.
+Changed retry payloads and stale versions return 409; the original key replays the
+original operation without generating additional invoices.
