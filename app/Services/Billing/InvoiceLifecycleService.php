@@ -234,7 +234,7 @@ final class InvoiceLifecycleService
                 occurrence: (string) Str::uuid(),
             );
 
-            return $locked->fresh(['lines', 'clientCompany']);
+            return $locked->refresh()->load(['lines', 'clientCompany']);
         });
     }
 
