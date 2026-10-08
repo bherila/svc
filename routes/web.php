@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\ApiCredentialController;
 use App\Http\Controllers\ClientCompanyController;
 use App\Http\Controllers\ClientDirectoryController;
 use App\Http\Controllers\ClientPortalController;
@@ -72,6 +73,17 @@ Route::middleware('auth')->group(function (): void {
     // rather than gaining a switcher it is about to lose.
     Route::get('/workspaces/{workspace}/operations', WorkspaceOperationsController::class)
         ->name('workspaces.operations');
+
+    // A person's own REST credentials (#384). Browser-only: an OAuth token can
+    // never mint another credential.
+    Route::post('/account/api-tokens', [ApiCredentialController::class, 'storeToken'])
+        ->middleware('throttle:10,1')->name('account.api-tokens.store');
+    Route::delete('/account/api-tokens/{token}', [ApiCredentialController::class, 'destroyToken'])
+        ->name('account.api-tokens.destroy');
+    Route::post('/account/oauth-apps', [ApiCredentialController::class, 'storeApp'])
+        ->middleware('throttle:10,1')->name('account.oauth-apps.store');
+    Route::delete('/account/oauth-apps/{client}', [ApiCredentialController::class, 'destroyApp'])
+        ->whereUuid('client')->name('account.oauth-apps.destroy');
 
     Route::middleware(ResolveWorkspaceNavigation::class)->group(function (): void {
         Route::get('/workspaces/{workspace}/mcp', McpSetupController::class)->name('mcp.setup');

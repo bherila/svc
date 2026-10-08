@@ -120,6 +120,19 @@ operation as a finished URL plus the record's opaque version, call it through
 generated from the OpenAPI document (`pnpm run api:types`; CI fails when the
 generated file is stale).
 
+Apps that use the REST API without MCP connect one of two ways (#384). A person
+registers an OAuth app on the setup page - exact HTTPS or loopback redirect URIs,
+public (PKCE only) or confidential (a client secret shown once, used with
+`client_secret_basic` or `client_secret_post`) - with a scope ceiling, and the app
+runs the authorization-code flow with S256 PKCE. Or the person mints a personal
+API token with chosen scopes and a 30, 90 or 365-day lifetime, shown once. Both are
+bound to `/api/v1`, never carry `mcp:use`, are revocable from the setup page, and
+are issued only in the browser: no OAuth credential can mint another. Because
+generic OAuth clients rarely send RFC 8707 `resource`, an omitted resource is bound
+to `/api/v1` (`assume_omitted_resource`); a different explicit resource is still
+refused. The OpenAPI document declares both the `oauth2` scheme and an `apiToken`
+bearer scheme on every operation.
+
 Browser MCP traffic uses an exact configured origin allowlist for preflight and the
 actual POST/DELETE request. A disallowed preflight receives no allow-origin header;
 an actual disallowed-origin request is rejected. Origin-less native clients remain

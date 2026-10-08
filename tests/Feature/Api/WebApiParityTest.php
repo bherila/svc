@@ -27,6 +27,12 @@ use Tests\TestCase;
 final class WebApiParityTest extends TestCase
 {
     private const array CLASSIFIED = [
+        // Credentials are minted only by the signed-in person in the browser, so
+        // no OAuth credential can create another (#384).
+        'account.api-tokens.destroy' => 'deliberate:credentials are managed only by the signed-in person',
+        'account.api-tokens.store' => 'deliberate:credentials are issued only by the signed-in person',
+        'account.oauth-apps.destroy' => 'deliberate:credentials are managed only by the signed-in person',
+        'account.oauth-apps.store' => 'deliberate:credentials are issued only by the signed-in person',
         'clients.manage' => 'web-only:redirect',
         'clients.store' => 'mcp-only:clients.create',
         'clients.update' => 'mcp-only:clients.update',
