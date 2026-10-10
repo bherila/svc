@@ -39,6 +39,61 @@ final class PassportConnectionIsolationTest extends TestCase
         $this->assertTrue($schema->hasColumn('oauth_refresh_tokens', 'resource_uri'));
     }
 
+    /**
+     * Every migration that touches a Passport table runs on Passport's
+     * configured connection, as Passport's own migrations and models do. A
+     * migration on the default connection would alter tables Passport never
+     * reads, or fail on a database that has none.
+     */
+    public function test_every_migration_touching_passport_tables_uses_the_passport_connection(): void
+    {
+        $this->configurePassportConnection();
+        $files = array_filter(
+            glob(database_path('migrations/*.php')) ?: [],
+            static fn (string $file): bool => preg_match("/'oauth_(clients|auth_codes|access_tokens|refresh_tokens|device_codes)'/", (string) file_get_contents($file)) === 1,
+        );
+        $this->assertGreaterThanOrEqual(8, count($files));
+
+        foreach ($files as $file) {
+            $migration = require $file;
+            $this->assertSame('passport_test', $migration->getConnection(), basename($file));
+        }
+    }
+
+    public function test_oauth_column_migrations_alter_only_the_passport_connection(): void
+    {
+        $this->configurePassportConnection();
+        $this->createConnectionTables();
+        $schema = Schema::connection('passport_test');
+        $schema->create('oauth_auth_codes', static function (Blueprint $table): void {
+            $table->char('id', 80)->primary();
+        });
+        $before = Schema::getColumnListing('oauth_clients');
+
+        $audiences = require database_path('migrations/2026_08_23_200000_add_oauth_resource_audiences.php');
+        $registration = require database_path('migrations/2026_08_23_235000_add_dynamic_registration_metadata_to_oauth_clients.php');
+        $identity = require database_path('migrations/2026_10_11_000000_add_provider_identity_to_oauth_credentials.php');
+        // Called directly, without the migrator selecting the connection for them.
+        $audiences->up();
+        $registration->up();
+        $identity->up();
+
+        $this->assertTrue($schema->hasColumn('oauth_auth_codes', 'resource_uri'));
+        $this->assertTrue($schema->hasColumn('oauth_access_tokens', 'resource_uri'));
+        $this->assertTrue($schema->hasColumns('oauth_clients', ['dynamically_registered_at', 'last_used_at']));
+        foreach (['oauth_auth_codes', 'oauth_access_tokens', 'oauth_refresh_tokens'] as $table) {
+            $this->assertTrue($schema->hasColumns($table, ['provider_subject', 'provider_generation']), $table);
+        }
+        $this->assertTrue($schema->hasColumn('oauth_refresh_tokens', 'provider_user_id'));
+        $this->assertSame($before, Schema::getColumnListing('oauth_clients'), 'The default connection is untouched.');
+
+        $registration->down();
+        $audiences->down();
+        $this->assertFalse($schema->hasColumn('oauth_clients', 'dynamically_registered_at'));
+        $this->assertFalse($schema->hasColumn('oauth_access_tokens', 'resource_uri'));
+        $this->assertSame($before, Schema::getColumnListing('oauth_clients'));
+    }
+
     public function test_connection_revocation_is_atomic_on_the_configured_passport_connection(): void
     {
         $this->configurePassportConnection();
