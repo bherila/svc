@@ -60,10 +60,14 @@ final class AgentApiScopes
      */
     public static function rest(): array
     {
-        return array_values(array_filter(
-            array_keys(self::descriptions()),
-            static fn (string $scope): bool => $scope !== self::MCP_USE,
-        ));
+        $scopes = [];
+        foreach (array_keys(self::descriptions()) as $scope) {
+            if ($scope !== self::MCP_USE) {
+                $scopes[] = $scope;
+            }
+        }
+
+        return $scopes;
     }
 
     /**

@@ -99,14 +99,15 @@ final readonly class PersonalAccessTokenIdentity
         if ($binding === null) {
             return true;
         }
-        $subject = $token->getAttribute(ProviderIdentityTokens::SUBJECT_COLUMN);
-        $generation = $token->getAttribute(ProviderIdentityTokens::GENERATION_COLUMN);
-        if (! is_string($subject) || $subject !== $binding->subject || ! is_numeric($generation) || (int) $generation < 0) {
+        // An integer however the driver returns it (MariaDB: a string); the policy
+        // refuses a negative baseline itself.
+        $generation = filter_var($token->getAttribute(ProviderIdentityTokens::GENERATION_COLUMN), FILTER_VALIDATE_INT);
+        if ($token->getAttribute(ProviderIdentityTokens::SUBJECT_COLUMN) !== $binding->subject || $generation === false) {
             return false;
         }
 
         try {
-            $this->policy->verify($subject, (int) $generation, fresh: app()->bound('request') && ! request()->isMethodSafe());
+            $this->policy->verify($binding->subject, $generation, fresh: ! request()->isMethodSafe());
         } catch (ProviderSessionExpired) {
             return false;
         }
