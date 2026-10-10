@@ -124,6 +124,12 @@ ClientInvoiceEmailDelivery                                    post-commit client
 ClientInvoiceAdministratorNotification                        post-commit administrator notification claim
 StripePaymentMethodState, ClientStripeCustomer,
     ClientStripePaymentMethod                                  provider sync
+Workspace, WorkspaceMembership                                 staff grant
+Workspace, ClientProject, WorkspaceMembership                  staff role change
+Workspace, ClientProject, WorkspaceMembership,
+    ClientProjectMembership                                    staff removal
+Workspace, WorkspaceMembership, ClientCompanyMembership,
+    ClientPortalProjectAccess                                  portal grant, scope change, revocation
 ```
 
 ## The known inversions
@@ -508,3 +514,34 @@ attachment action shares storage/deletion behavior; staged web uploads retain th
 storage adapter's repair contract. Signed URL preparation takes no mutation lock
 and does not reserve a receipt. These order assertions are also covered by the
 focused workspace/misc API fixture; SQLite checks ordering, not contention.
+
+### Workspace access mutations
+
+Staff memberships, staff project assignments and portal memberships change only
+through `App\Services\Access\WorkspaceAccess` (and, for one project's
+assignment, `WorkspaceProjectMutationAction::updateAccess`, which shares its
+coordination). Each mutation runs in one transaction that:
+
+1. refuses early from an unlocked read, so an obviously unauthorised call takes
+   no lock;
+2. locks the `workspaces` row first - the workspace-wide access lock, which
+   serialises access changes within a workspace (it is the same row invoice
+   numbering serialises on; both hold it briefly);
+3. locks any projects whose revision it will advance, in id order;
+4. re-reads the actor's staff membership with a locking read and decides again.
+   A locking read sees the latest committed role even inside an enclosing
+   transaction whose snapshot predates the lock, so an actor demoted or removed
+   after the early check cannot complete the change;
+5. locks and writes the assignment or portal rows, advances each affected
+   project's revision, and appends an `access_audit_events` row carrying the
+   context's operation and request ids.
+
+Staff removal deletes the person's `client_project_memberships` explicitly, one
+by one, each advancing its project's revision and leaving its own audit event,
+before deleting the `workspace_memberships` row. The cascading composite key is
+only a backstop. The project ids it locks first come from a plain read; the
+assignments it deletes come from a locking read, and any project that read adds
+is locked before the delete.
+
+`LockOrderConformanceTest` drives every one of these writers. As elsewhere, the
+assertions run on one connection and prove ordering, not contention.

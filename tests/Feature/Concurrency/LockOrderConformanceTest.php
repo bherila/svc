@@ -6,12 +6,14 @@ use App\Models\ClientAgreement;
 use App\Models\ClientBillingSchedule;
 use App\Models\ClientCompany;
 use App\Models\ClientProject;
+use App\Models\ClientProjectMembership;
 use App\Models\ClientProposal;
 use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Queries\Expenses\WorkspaceExpenses;
+use App\Services\Access\WorkspaceAccess;
 use App\Services\Billing\AllocationService;
 use App\Services\Billing\BillingScheduleService;
 use App\Services\Billing\ClientInvoicingService;
@@ -21,6 +23,9 @@ use App\Services\Billing\TimeEntrySplitter;
 use App\Services\Engagement\AgreementWorkflow;
 use App\Services\Engagement\ProposalWorkflow;
 use App\Services\Finance\PaymentReconciliationService;
+use App\Support\Access\AccessMutationContext;
+use App\Support\Access\PortalAccessScope;
+use App\Support\Access\StaffRole;
 use App\Support\Concurrency\LockOrderRecorder;
 use App\Support\Concurrency\LockResource;
 use App\Support\Expenses\NewExpense;
@@ -149,6 +154,14 @@ final class LockOrderConformanceTest extends TestCase
             'The workflows below stopped taking locks, so this test is no longer proving anything about their order.',
         );
 
+        // The access tables are registered for the access boundary alone, so
+        // each has to be reached through a real transaction here, or its
+        // position in the registry is declared rather than recorded.
+        $recorded = array_unique(array_map(static fn (LockResource $resource): string => $resource->name, array_merge(...$sequences)));
+        foreach ([LockResource::ClientProjectMembership, LockResource::ClientCompanyMembership, LockResource::ClientPortalProjectAccess] as $accessResource) {
+            $this->assertContains($accessResource->name, $recorded, $accessResource->name.' is registered but no driven transaction locked it.');
+        }
+
         $found = [];
 
         foreach ($sequences as $sequence) {
@@ -239,6 +252,40 @@ final class LockOrderConformanceTest extends TestCase
         app(AllocationService::class)->recombineUnlinkedFragments($this->workspace, $this->company);
 
         $this->driveTheExpenseLifecycle();
+        $this->driveTheAccessMutations();
+    }
+
+    /**
+     * Staff and portal access changes through the access boundary.
+     *
+     * Each takes the workspace access lock first, then any projects whose
+     * revision it advances, then the staff memberships it re-checks authority
+     * against, and only then the assignment or portal rows it writes. The
+     * person removed holds a project assignment, so removal locks a project,
+     * memberships and assignments in one transaction.
+     */
+    private function driveTheAccessMutations(): void
+    {
+        $access = app(WorkspaceAccess::class);
+        $owner = User::factory()->create();
+        $this->workspace->memberships()->create(['user_id' => $owner->id, 'role' => 'owner']);
+        $context = AccessMutationContext::user($owner);
+
+        $person = User::factory()->create();
+        $access->grantStaff($context, $this->workspace, $person, StaffRole::Member);
+        ClientProjectMembership::query()->create([
+            'workspace_id' => $this->workspace->id, 'client_project_id' => $this->project->id,
+            'user_id' => $person->id, 'role' => 'viewer',
+        ]);
+        $access->changeStaffRole($context, $this->workspace, $person, StaffRole::Admin);
+        $access->changeStaffRole($context, $this->workspace, $person, StaffRole::Member);
+        $access->removeStaff($context, $this->workspace, $person);
+
+        $client = User::factory()->create();
+        $access->grantPortal($context, $this->company, $client, PortalAccessScope::Projects, [$this->project->public_id]);
+        $access->changePortalScope($context, $this->company, $client, PortalAccessScope::Company);
+        $access->changePortalScope($context, $this->company, $client, PortalAccessScope::Projects, [$this->project->public_id]);
+        $access->revokePortal($context, $this->company, $client);
     }
 
     /**
