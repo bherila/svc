@@ -8,12 +8,16 @@ use App\Services\AgentApi\AgentBillingScheduleReadService;
 use App\Services\AgentApi\AgentCapacityLedgerReadService;
 use App\Services\AgentApi\AgentClientReadService;
 use App\Services\AgentApi\AgentReadService;
+use App\Services\AgentApi\Operations\AgentAvailability;
+use App\Services\AgentApi\Operations\AgentOperationCatalog;
+use App\Services\AgentApi\Operations\AgentOperationPrincipal;
 use App\Services\Mcp\Context\McpAccountContextResolver;
 use App\Services\Mcp\Context\McpAuthorizer;
 use App\Services\Mcp\Context\McpPrincipalResolverInterface;
 use App\Services\Mcp\Context\McpRequestContext;
-use App\Services\Mcp\Registry\McpCapabilityDefinition;
-use App\Services\Mcp\Registry\McpCapabilityKind;
+use Bherila\McpLaravelBridge\Capabilities\Effect;
+use Bherila\McpLaravelBridge\Capabilities\McpKind;
+use Bherila\McpLaravelBridge\Capabilities\Operation;
 use Bherila\McpLaravelBridge\Http\InternalAgentApiTransport;
 use Bherila\McpLaravelBridge\Mcp\CredentialSessionNamespace;
 use Bherila\McpLaravelBridge\Mcp\OriginalShapeSchemaValidator;
@@ -50,8 +54,9 @@ final class AgentMcpServerFactory
 {
     public function __construct(
         private readonly CacheRepository $cache,
-        private readonly AgentMcpCapabilityRegistryFactory $capabilities,
-        private readonly McpFeatureFlags $featureFlags,
+        private readonly AgentOperationCatalog $catalog,
+        private readonly AgentAvailability $availability,
+        private readonly AgentMcpToolSchemas $schemas,
         private readonly AgentReadService $readService,
         private readonly AgentAgreementReadService $agreementReadService,
         private readonly AgentBillingScheduleReadService $billingScheduleReadService,
@@ -86,47 +91,55 @@ final class AgentMcpServerFactory
         $clients = new AgentMcpClientTools($this->clientReadService, $this->accounts, $context);
         $clientWrites = new AgentMcpClientWriteTools(app(InternalAgentApiTransport::class), $this->requestArguments);
         $writes = $this->writes->forContext($context);
+        $instances = [
+            AgentMcpReadTools::class => $reads,
+            AgentMcpContextResource::class => $contextResource,
+            AgentMcpAgreementTools::class => $agreements,
+            AgentMcpAgreementResource::class => $agreementResource,
+            AgentMcpBillingScheduleTools::class => $schedules,
+            AgentMcpCapacityLedgerTools::class => $capacityLedger,
+            AgentMcpBillingAuditTools::class => $billingAudits,
+            AgentMcpClientTools::class => $clients,
+            AgentMcpClientWriteTools::class => $clientWrites,
+            AgentMcpWriteTools::class => $writes,
+            AgentMcpPrompts::class => $this->prompts,
+        ];
         $resultLimiter = new McpCapabilityResultLimiter;
         $cacheStore = $this->cache instanceof Repository ? $this->cache->getStore() : null;
         $concurrencyLimiter = new McpCapabilityConcurrencyLimiter($cacheStore instanceof LockProvider ? $cacheStore : null);
-        $definitions = $this->capabilities->make($reads, $contextResource, $agreements, $agreementResource, $schedules, $capacityLedger, $billingAudits, $this->prompts, $writes, $clients, $clientWrites)->all();
-        $hasManagerCapabilities = false;
-        foreach ($definitions as $definition) {
-            if ($definition->policyAbility === 'AgentAccess::isWorkspaceManager') {
-                $hasManagerCapabilities = true;
-                break;
-            }
-        }
-        $hasManagedWorkspace = $hasManagerCapabilities ? $this->authorizer->hasManagedWorkspace($context) : null;
-        // Split deliberately. A feature flag is a server-side kill switch, so a
-        // flagged-off group genuinely is not served here; authorization is about
-        // this one caller and must not change what the server says it implements.
-        $implementedCapabilities = array_values(array_filter(
-            $definitions,
-            fn (McpCapabilityDefinition $definition): bool => $this->featureFlags->enabled($definition),
+        $operations = array_values(array_filter(
+            $this->catalog->registry()->all(),
+            static fn (Operation $operation): bool => $operation->mcp !== null,
         ));
-        $availableCapabilities = array_values(array_filter(
-            $implementedCapabilities,
-            fn (McpCapabilityDefinition $definition): bool => $this->authorizer->allowsDiscovery($context, $definition, $hasManagedWorkspace),
+        // Split deliberately. A deployment switch is server-side, so a
+        // switched-off group genuinely is not served here; authorization is
+        // about this one caller and must not change what the server says it
+        // implements. Dependencies are not followed for this: a prompt whose
+        // tools are cut over is still a prompt this server implements.
+        $flags = $this->availability->agentFlags();
+        $implementedOperations = array_values(array_filter(
+            $operations,
+            static fn (Operation $operation): bool => array_filter($operation->requirement->flags, static fn (string $flag): bool => ! $flags->enabled($flag)) === [],
         ));
-        $availableNames = array_fill_keys(array_map(
-            static fn (McpCapabilityDefinition $definition): string => $definition->name,
-            $availableCapabilities,
-        ), true);
-        $availableCapabilities = array_values(array_filter(
-            $availableCapabilities,
-            static fn (McpCapabilityDefinition $definition): bool => array_diff($definition->requiredCapabilities, array_keys($availableNames)) === [],
+        $principal = new AgentOperationPrincipal(
+            static fn (string $scope): bool => $context->principal->hasScope($scope),
+            fn (): bool => $this->authorizer->hasManagedWorkspace($context),
+        );
+        $report = $this->availability->agents()->evaluate($principal);
+        $availableOperations = array_values(array_filter(
+            $operations,
+            static fn (Operation $operation): bool => $report->isAvailable($operation->id),
         ));
-        $exposedDefinitions = array_values(array_filter(
-            $availableCapabilities,
-            static fn (McpCapabilityDefinition $definition): bool => $definition->kind === McpCapabilityKind::Tool,
+        $exposedTools = array_values(array_filter(
+            $availableOperations,
+            static fn (Operation $operation): bool => self::kind($operation) === McpKind::Tool,
         ));
         $exposedToolNames = array_fill_keys(array_map(
-            static fn (McpCapabilityDefinition $definition): string => $definition->name,
-            $exposedDefinitions,
+            static fn (Operation $operation): string => (string) $operation->mcpName(),
+            $exposedTools,
         ), true);
-        $hasWriteTools = collect($exposedDefinitions)->contains(
-            static fn (McpCapabilityDefinition $definition): bool => ! $definition->readOnly,
+        $hasWriteTools = collect($exposedTools)->contains(
+            static fn (Operation $operation): bool => ! $operation->effect->readOnly(),
         );
         // Capability negotiation is a protocol-feature exchange - which request
         // groups this server serves - and not an authorization decision, which is
@@ -141,18 +154,18 @@ final class AgentMcpServerFactory
         // `initialize` outright, so a user granted `mcp:use` alone could not
         // connect (#197). Advertising a group the caller may invoke nothing in
         // costs an empty `tools/list` - a spec-legal answer it can read.
-        $implementsTools = collect($implementedCapabilities)->contains(
-            static fn (McpCapabilityDefinition $definition): bool => $definition->kind === McpCapabilityKind::Tool,
+        $implementsTools = collect($implementedOperations)->contains(
+            static fn (Operation $operation): bool => self::kind($operation) === McpKind::Tool,
         );
-        $implementsResources = collect($implementedCapabilities)->contains(
-            static fn (McpCapabilityDefinition $definition): bool => in_array($definition->kind, [McpCapabilityKind::Resource, McpCapabilityKind::ResourceTemplate], true),
+        $implementsResources = collect($implementedOperations)->contains(
+            static fn (Operation $operation): bool => in_array(self::kind($operation), [McpKind::Resource, McpKind::ResourceTemplate], true),
         );
-        $implementsPrompts = collect($implementedCapabilities)->contains(
-            static fn (McpCapabilityDefinition $definition): bool => $definition->kind === McpCapabilityKind::Prompt,
+        $implementsPrompts = collect($implementedOperations)->contains(
+            static fn (Operation $operation): bool => self::kind($operation) === McpKind::Prompt,
         );
         $schemaIds = [];
-        foreach ($exposedDefinitions as $definition) {
-            $schemaIds[$definition->name] = $definition->name;
+        foreach ($exposedTools as $operation) {
+            $schemaIds[(string) $operation->mcpName()] = (string) $operation->mcpName();
         }
         $builder = Server::builder()
             ->setServerInfo(
@@ -197,7 +210,7 @@ final class AgentMcpServerFactory
                 $concurrencyLimiter,
                 $capabilityAuditor,
                 $context,
-                $this->capabilityMetadata($definitions, McpCapabilityKind::Tool),
+                $this->capabilityMetadata($operations, McpKind::Tool),
             ))
             ->addRequestHandler(new McpUnsupportedOptionalProtocolHandler)
             ->addRequestHandler(new McpUnsupportedResourceSubscriptionHandler)
@@ -209,15 +222,15 @@ final class AgentMcpServerFactory
                 $capabilityAuditor,
                 $context,
                 [
-                    ...$this->capabilityMetadata($definitions, McpCapabilityKind::Resource, static fn (McpCapabilityDefinition $definition): string => $definition->uri ?? $definition->name),
-                    ...$this->capabilityMetadata($definitions, McpCapabilityKind::ResourceTemplate, static fn (McpCapabilityDefinition $definition): string => $definition->uri ?? $definition->name),
+                    ...$this->capabilityMetadata($operations, McpKind::Resource, static fn (Operation $operation): string => $operation->mcp->uri ?? (string) $operation->mcpName()),
+                    ...$this->capabilityMetadata($operations, McpKind::ResourceTemplate, static fn (Operation $operation): string => $operation->mcp->uri ?? (string) $operation->mcpName()),
                 ],
-                function (JsonRpcRequest $request) use ($definitions): string {
+                function (JsonRpcRequest $request) use ($operations): string {
                     if (! $request instanceof ReadResourceRequest) {
                         throw new LogicException('MCP resource audit handler received an invalid request.');
                     }
 
-                    return $this->resourceCapabilityKey($definitions, $request->uri);
+                    return $this->resourceCapabilityKey($operations, $request->uri);
                 },
             ))
             ->addRequestHandler(new McpAuditedCapabilityRequestHandler(
@@ -227,63 +240,67 @@ final class AgentMcpServerFactory
                 $concurrencyLimiter,
                 $capabilityAuditor,
                 $context,
-                $this->capabilityMetadata($definitions, McpCapabilityKind::Prompt),
-                function (JsonRpcRequest $request) use ($definitions): string {
+                $this->capabilityMetadata($operations, McpKind::Prompt),
+                function (JsonRpcRequest $request) use ($operations): string {
                     if (! $request instanceof GetPromptRequest) {
                         throw new LogicException('MCP prompt audit handler received an invalid request.');
                     }
 
-                    return $this->promptCapabilityKey($definitions, $request->name);
+                    return $this->promptCapabilityKey($operations, $request->name);
                 },
             ))
             ->setLazyLoading(false);
 
-        foreach ($exposedDefinitions as $definition) {
+        foreach ($exposedTools as $operation) {
             $builder->addTool(
-                handler: $definition->handler,
-                name: $definition->name,
-                title: $definition->title,
-                description: $definition->description,
-                annotations: new ToolAnnotations(readOnlyHint: $definition->readOnly, destructiveHint: $definition->destructive, idempotentHint: $definition->idempotent, openWorldHint: false),
-                inputSchema: $definition->inputSchema,
-                outputSchema: $definition->outputSchema,
+                handler: $this->handler($operation, $instances),
+                name: (string) $operation->mcpName(),
+                title: $operation->title,
+                description: $operation->description,
+                annotations: new ToolAnnotations(
+                    readOnlyHint: $operation->effect->readOnly(),
+                    destructiveHint: $operation->effect === Effect::Destructive,
+                    idempotentHint: $operation->isIdempotent(),
+                    openWorldHint: false,
+                ),
+                inputSchema: $this->schemas->input($operation),
+                outputSchema: $this->schemas->output($operation),
             );
         }
-        foreach ($availableCapabilities as $definition) {
-            if ($definition->kind !== McpCapabilityKind::Resource || $definition->uri === null) {
+        foreach ($availableOperations as $operation) {
+            $uri = $operation->mcp?->uri;
+            if ($uri === null) {
                 continue;
             }
-            $builder->addResource(
-                handler: $definition->handler,
-                uri: $definition->uri,
-                name: $definition->name,
-                title: $definition->title,
-                description: $definition->description,
-                mimeType: 'application/json',
-            );
+            match (self::kind($operation)) {
+                McpKind::Resource => $builder->addResource(
+                    handler: $this->handler($operation, $instances),
+                    uri: $uri,
+                    name: (string) $operation->mcpName(),
+                    title: $operation->title,
+                    description: $operation->description,
+                    mimeType: 'application/json',
+                ),
+                McpKind::ResourceTemplate => $builder->addResourceTemplate(
+                    handler: $this->handler($operation, $instances),
+                    uriTemplate: $uri,
+                    name: (string) $operation->mcpName(),
+                    title: $operation->title,
+                    description: $operation->description,
+                    mimeType: 'application/json',
+                ),
+                McpKind::Tool, McpKind::Prompt, null => null,
+            };
         }
-        foreach ($availableCapabilities as $definition) {
-            if ($definition->kind !== McpCapabilityKind::ResourceTemplate || $definition->uri === null) {
-                continue;
-            }
-            $builder->addResourceTemplate(
-                handler: $definition->handler,
-                uriTemplate: $definition->uri,
-                name: $definition->name,
-                title: $definition->title,
-                description: $definition->description,
-                mimeType: 'application/json',
-            );
-        }
-        foreach ($availableCapabilities as $definition) {
-            if ($definition->kind !== McpCapabilityKind::Prompt) {
+        foreach ($availableOperations as $operation) {
+            if (self::kind($operation) !== McpKind::Prompt) {
                 continue;
             }
             $builder->addPrompt(
-                handler: $definition->handler,
-                name: $definition->name,
-                title: $definition->title,
-                description: $definition->description,
+                handler: $this->handler($operation, $instances),
+                name: (string) $operation->mcpName(),
+                title: $operation->title,
+                description: $operation->description,
             );
         }
 
@@ -308,53 +325,80 @@ final class AgentMcpServerFactory
             : (string) Str::uuid();
     }
 
+    private static function kind(Operation $operation): ?McpKind
+    {
+        return $operation->mcp?->kind;
+    }
+
     /**
-     * @param  list<McpCapabilityDefinition>  $definitions
-     * @param  (Closure(McpCapabilityDefinition): string)|null  $key
+     * The operation's handler, bound to this request's instance of its class.
+     *
+     * @param  array<class-string, object>  $instances
+     * @return array{0: object, 1: string}
+     */
+    private function handler(Operation $operation, array $instances): array
+    {
+        $handler = $operation->mcp?->handler;
+        if (! is_array($handler) || ! is_string($handler[0]) || ! isset($instances[$handler[0]])) {
+            throw new LogicException("MCP operation [{$operation->id}] has no request-bound handler.");
+        }
+
+        return [$instances[$handler[0]], $handler[1]];
+    }
+
+    /**
+     * @param  list<Operation>  $operations
+     * @param  (Closure(Operation): string)|null  $key
      * @return array<string, array{rate_limit_bucket: string, audit_classification: string}>
      */
-    private function capabilityMetadata(array $definitions, McpCapabilityKind $kind, ?Closure $key = null): array
+    private function capabilityMetadata(array $operations, McpKind $kind, ?Closure $key = null): array
     {
         $metadata = [];
-        foreach ($definitions as $definition) {
-            if ($definition->kind !== $kind) {
+        foreach ($operations as $operation) {
+            if (self::kind($operation) !== $kind) {
                 continue;
             }
-            $metadata[($key ?? static fn (McpCapabilityDefinition $definition): string => $definition->name)($definition)] = [
-                'rate_limit_bucket' => $definition->rateLimitBucket,
-                'audit_classification' => $definition->auditClassification,
+            $read = $operation->effect->readOnly();
+            $metadata[($key ?? static fn (Operation $operation): string => (string) $operation->mcpName())($operation)] = [
+                'rate_limit_bucket' => $read ? 'mcp-read' : 'mcp-write',
+                'audit_classification' => match (true) {
+                    $kind === McpKind::Prompt => 'agent_api.prompt',
+                    $read => 'agent_api.read',
+                    default => 'agent_api.write',
+                },
             ];
         }
 
         return $metadata;
     }
 
-    /** @param list<McpCapabilityDefinition> $definitions */
-    private function resourceCapabilityKey(array $definitions, string $uri): string
+    /** @param list<Operation> $operations */
+    private function resourceCapabilityKey(array $operations, string $uri): string
     {
-        foreach ($definitions as $definition) {
-            if ($definition->kind === McpCapabilityKind::Resource && $definition->uri === $uri) {
+        foreach ($operations as $operation) {
+            if (self::kind($operation) === McpKind::Resource && $operation->mcp?->uri === $uri) {
                 return $uri;
             }
         }
-        foreach ($definitions as $definition) {
-            if ($definition->kind !== McpCapabilityKind::ResourceTemplate || $definition->uri === null) {
+        foreach ($operations as $operation) {
+            $binding = $operation->mcp;
+            if ($binding === null || $binding->kind !== McpKind::ResourceTemplate || $binding->uri === null || ! is_array($binding->handler)) {
                 continue;
             }
-            $template = new ResourceTemplate($definition->uri, $definition->name);
-            if ((new ResourceTemplateReference($template, $definition->handler))->matches($uri)) {
-                return $definition->uri;
+            $template = $binding->uri;
+            if ((new ResourceTemplateReference(new ResourceTemplate($template, (string) $operation->mcpName()), $binding->handler))->matches($uri)) {
+                return $template;
             }
         }
 
         return 'mcp.unknown_resource';
     }
 
-    /** @param list<McpCapabilityDefinition> $definitions */
-    private function promptCapabilityKey(array $definitions, string $name): string
+    /** @param list<Operation> $operations */
+    private function promptCapabilityKey(array $operations, string $name): string
     {
-        foreach ($definitions as $definition) {
-            if ($definition->kind === McpCapabilityKind::Prompt && $definition->name === $name) {
+        foreach ($operations as $operation) {
+            if (self::kind($operation) === McpKind::Prompt && $operation->mcpName() === $name) {
                 return $name;
             }
         }

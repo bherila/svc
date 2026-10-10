@@ -2,7 +2,7 @@
 
 namespace Tests\Feature\Mcp;
 
-use App\Http\Middleware\EnsureAgentClientWritesEnabled;
+use App\Http\Middleware\EnsureOperationDeployed;
 use App\Models\ClientCompany;
 use App\Models\ClientProject;
 use App\Models\ClientTask;
@@ -10,35 +10,27 @@ use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Models\WorkspaceMembership;
-use App\Services\Mcp\AgentMcpAgreementResource;
-use App\Services\Mcp\AgentMcpAgreementTools;
-use App\Services\Mcp\AgentMcpBillingAuditTools;
-use App\Services\Mcp\AgentMcpBillingScheduleTools;
-use App\Services\Mcp\AgentMcpCapabilityRegistryFactory;
-use App\Services\Mcp\AgentMcpCapacityLedgerTools;
-use App\Services\Mcp\AgentMcpClientTools;
-use App\Services\Mcp\AgentMcpClientWriteTools;
-use App\Services\Mcp\AgentMcpContextResource;
-use App\Services\Mcp\AgentMcpInputSchemaFactory;
-use App\Services\Mcp\AgentMcpPrompts;
-use App\Services\Mcp\AgentMcpReadTools;
-use App\Services\Mcp\AgentMcpToolCatalog;
-use App\Services\Mcp\AgentMcpWriteTools;
+use App\Services\AgentApi\Operations\AgentDeploymentFlags;
+use App\Services\AgentApi\Operations\AgentOperationCatalog;
 use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
 use App\Support\AgentApi\AgentApiScopes;
 use App\Support\AgentApi\AgentApiVersion;
-use Bherila\McpLaravelBridge\Mcp\ToolDefinition;
+use Bherila\McpLaravelBridge\Capabilities\IdempotencyKey;
+use Bherila\McpLaravelBridge\Capabilities\Operation;
+use Bherila\McpLaravelBridge\Capabilities\SchemaRef;
+use Bherila\McpLaravelBridge\Http\GateOperation;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Testing\TestResponse;
-use Laravel\Passport\Http\Middleware\CheckToken;
 use Mcp\Capability\Discovery\SchemaValidator;
 use stdClass;
 use Symfony\Component\HttpFoundation\Response;
+use Tests\Concerns\InspectsAgentOperations;
 use Tests\TestCase;
 
 final class AgentMcpContractTest extends TestCase
 {
+    use InspectsAgentOperations;
     use RefreshDatabase;
 
     public function test_invoice_workflow_contract_matches_routes_and_nested_cutovers(): void
@@ -64,9 +56,9 @@ final class AgentMcpContractTest extends TestCase
             $this->assertSame('api/v1'.str_replace(['{workspace_id}', '{invoice_id}', '{agreement_id}'], ['{workspace}', '{invoice}', '{agreement}'], $path), $route->uri());
             $this->assertContains(strtoupper($method), $route->methods());
         }
-        $definitions = collect($this->definitions())->keyBy(fn (ToolDefinition $tool): string => $tool->name);
         foreach (['invoices.hold_delivery', 'invoices.release_delivery', 'invoices.add_time', 'invoices.generate_period'] as $id) {
-            $schema = app(AgentMcpInputSchemaFactory::class)->for($definitions->get($id));
+            $this->assertSame([AgentDeploymentFlags::INVOICES], array_values(array_filter($this->agentOperation($id)->requirement->flags, static fn (string $flag): bool => ! AgentDeploymentFlags::isMcpSwitch($flag))));
+            $schema = $this->toolInputSchema($id);
             $this->assertContains('expected_version', $schema['required']);
             $this->assertContains('idempotency_key', $schema['required']);
             if (in_array($id, ['invoices.release_delivery', 'invoices.generate_period'], true)) {
@@ -80,16 +72,16 @@ final class AgentMcpContractTest extends TestCase
         config(['agent_api.project_writes_enabled' => true, 'agent_api.writes_enabled' => true, 'agent_api.invoice_writes_enabled' => true, 'agent_api.expense_writes_enabled' => true, 'agent_api.payment_writes_enabled' => true]);
 
         foreach ($this->definitions() as $definition) {
-            $component = AgentApiResponseSchemaCatalog::operationComponent($definition->operationId());
+            $component = AgentApiResponseSchemaCatalog::operationComponent($definition->id);
             $schema = AgentApiResponseSchemaCatalog::schema($component);
             $encoded = json_encode($schema, JSON_THROW_ON_ERROR);
 
-            $this->assertSame('object', $schema['type'] ?? null, $definition->name);
-            $this->assertFalse($schema['additionalProperties'] ?? true, $definition->name);
-            $this->assertStringNotContainsString('#/components/schemas/', $encoded, $definition->name);
+            $this->assertSame('object', $schema['type'] ?? null, $definition->id);
+            $this->assertFalse($schema['additionalProperties'] ?? true, $definition->id);
+            $this->assertStringNotContainsString('#/components/schemas/', $encoded, $definition->id);
             preg_match_all('~"\$ref":"#/\$defs/([A-Za-z0-9_]+)"~', $encoded, $matches);
             foreach ($matches[1] as $target) {
-                $this->assertArrayHasKey($target, $schema['$defs'] ?? [], $definition->name);
+                $this->assertArrayHasKey($target, $schema['$defs'] ?? [], $definition->id);
             }
         }
     }
@@ -112,8 +104,11 @@ final class AgentMcpContractTest extends TestCase
                 $this->assertNotNull($route, $operation['operationId']);
                 $this->assertSame('api/v1'.str_replace(['{workspace_id}', '{client_id}', '{agreement_id}'], ['{workspace}', '{client}', '{agreement}'], $path), $route->uri());
                 $this->assertContains(strtoupper($method), $route->methods());
-                $this->assertContains(CheckToken::using(...$operation['security'][0]['oauth2']), $route->gatherMiddleware());
-                $this->assertSame($method !== 'get', in_array(EnsureAgentClientWritesEnabled::class, $route->gatherMiddleware(), true));
+                $this->assertContains(GateOperation::class.':'.$operation['operationId'], $route->gatherMiddleware());
+                $this->assertContains(EnsureOperationDeployed::class.':'.$operation['operationId'], $route->gatherMiddleware());
+                $declared = $this->agentOperation($operation['operationId']);
+                $this->assertSame($operation['security'][0]['oauth2'], $declared->requirement->scopes);
+                $this->assertSame($method !== 'get', in_array(AgentDeploymentFlags::CLIENTS, $declared->requirement->flags, true));
             }
         }
     }
@@ -121,16 +116,19 @@ final class AgentMcpContractTest extends TestCase
     public function test_client_and_agreement_rest_operations_match_the_manager_registry_contract(): void
     {
         config(['agent_api.writes_enabled' => true, 'agent_api.client_writes_enabled' => true]);
-        foreach (app(AgentMcpToolCatalog::class)->clientDefinitions(app(AgentMcpClientTools::class), app(AgentMcpClientWriteTools::class)) as $definition) {
-            $this->assertSame(AgentApiResponseSchemaCatalog::forOperation($definition->name), $definition->outputSchema);
-            $this->assertSame(AgentApiResponseSchemaCatalog::scopesForOperation($definition->name), $definition->requiredScopes);
-            if (! $definition->readOnly) {
-                $body = AgentApiResponseSchemaCatalog::requestForOperation($definition->name);
+        foreach (['clients.list', 'clients.get', 'clients.create', 'clients.update', 'clients.archive', 'clients.restore', 'agreements.create', 'agreements.update', 'agreements.activate', 'agreements.terminate'] as $id) {
+            $definition = $this->agentOperation($id);
+            $this->assertTrue(app(AgentOperationCatalog::class)->isManagerOnly($id), $id);
+            $this->assertSame(AgentApiResponseSchemaCatalog::forOperation($id), $this->toolOutputSchema($id));
+            $this->assertSame(AgentApiResponseSchemaCatalog::scopesForOperation($id), $definition->requirement->scopes);
+            if (! $definition->effect->readOnly()) {
+                $input = $this->toolInputSchema($id);
+                $body = AgentApiResponseSchemaCatalog::requestForOperation($id);
                 foreach ($body['properties'] as $name => $property) {
-                    $this->assertSame($property, $definition->inputSchema['properties'][$name]);
+                    $this->assertSame($property, $input['properties'][$name]);
                 }
                 foreach ($body['required'] as $name) {
-                    $this->assertContains($name, $definition->inputSchema['required']);
+                    $this->assertContains($name, $input['required']);
                 }
             }
         }
@@ -138,43 +136,16 @@ final class AgentMcpContractTest extends TestCase
 
     public function test_context_resource_uses_the_canonical_context_response_contract(): void
     {
-        $registry = app(AgentMcpCapabilityRegistryFactory::class)->make(
-            app(AgentMcpReadTools::class),
-            app(AgentMcpContextResource::class),
-            app(AgentMcpAgreementTools::class),
-            app(AgentMcpAgreementResource::class),
-            app(AgentMcpBillingScheduleTools::class),
-            app(AgentMcpCapacityLedgerTools::class),
-            app(AgentMcpBillingAuditTools::class),
-            app(AgentMcpPrompts::class),
-            app(AgentMcpWriteTools::class),
-            app(AgentMcpClientTools::class),
-            app(AgentMcpClientWriteTools::class),
-        );
+        $resource = $this->agentOperation('resources.current_context');
 
-        $this->assertSame(
-            AgentApiResponseSchemaCatalog::forOperation('context.get'),
-            $registry->get('current-context')->outputSchema,
-        );
+        $this->assertSame('current-context', $resource->mcpName());
+        $this->assertEquals(SchemaRef::responseOf('context.get'), $resource->output);
+        $this->assertSame(AgentApiResponseSchemaCatalog::forOperation('context.get'), SchemaRef::responseOf('context.get')->resolve(AgentApiResponseSchemaCatalog::catalog()));
     }
 
     public function test_agreement_status_schema_includes_paused(): void
     {
-        $registry = app(AgentMcpCapabilityRegistryFactory::class)->make(
-            app(AgentMcpReadTools::class),
-            app(AgentMcpContextResource::class),
-            app(AgentMcpAgreementTools::class),
-            app(AgentMcpAgreementResource::class),
-            app(AgentMcpBillingScheduleTools::class),
-            app(AgentMcpCapacityLedgerTools::class),
-            app(AgentMcpBillingAuditTools::class),
-            app(AgentMcpPrompts::class),
-            app(AgentMcpWriteTools::class),
-            app(AgentMcpClientTools::class),
-            app(AgentMcpClientWriteTools::class),
-        );
-
-        $this->assertContains('paused', $registry->get('agreements.list')->inputSchema['properties']['status']['enum']);
+        $this->assertContains('paused', $this->toolInputSchema('agreements.list')['properties']['status']['enum']);
     }
 
     public function test_openapi_inventory_and_scopes_match_every_shipped_agent_route(): void
@@ -291,10 +262,7 @@ final class AgentMcpContractTest extends TestCase
     public function test_nested_mutation_input_schemas_advertise_the_rest_constraints(): void
     {
         config(['agent_api.project_writes_enabled' => true, 'agent_api.writes_enabled' => true, 'agent_api.invoice_writes_enabled' => true]);
-        $definitions = collect($this->definitions())->keyBy('name');
-        $factory = app(AgentMcpInputSchemaFactory::class);
-
-        $log = $factory->for($definitions->get('time_entries.log'));
+        $log = $this->toolInputSchema('time_entries.log');
         $this->assertSame(20, $log['properties']['entries']['maxItems']);
         $this->assertSame('#/$defs/TimeLogItem', $log['properties']['entries']['items']['$ref']);
         $this->assertFalse($log['$defs']['TimeLogItem']['additionalProperties']);
@@ -302,23 +270,23 @@ final class AgentMcpContractTest extends TestCase
         $this->assertTrue($log['$defs']['TimeLogItem']['allOf'][0]['if']['properties']['is_visible_to_client']['const']);
         $this->assertSame(['client_visible_description'], $log['$defs']['TimeLogItem']['allOf'][0]['then']['required']);
 
-        $invoice = $factory->for($definitions->get('invoices.create_draft'));
+        $invoice = $this->toolInputSchema('invoices.create_draft');
         $this->assertTrue($invoice['properties']['time_entry_ids']['uniqueItems']);
         $this->assertSame('#/$defs/InvoiceManualLine', $invoice['properties']['manual_lines']['items']['$ref']);
         $this->assertFalse($invoice['$defs']['InvoiceManualLine']['additionalProperties']);
         $this->assertSame(['type', 'description', 'quantity', 'unit_amount'], $invoice['$defs']['InvoiceManualLine']['required']);
 
-        $task = $factory->for($definitions->get('tasks.update'));
+        $task = $this->toolInputSchema('tasks.update');
         $this->assertArrayHasKey('is_visible_to_client', $task['properties']);
         $this->assertSame(['string', 'null'], $task['properties']['description']['type']);
 
-        $time = $factory->for($definitions->get('time_entries.update'));
+        $time = $this->toolInputSchema('time_entries.update');
         foreach (['is_billable', 'is_deferred', 'is_visible_to_client', 'client_visible_description'] as $property) {
             $this->assertArrayHasKey($property, $time['properties']);
         }
         $this->assertTrue($time['allOf'][0]['if']['properties']['is_visible_to_client']['const']);
 
-        $approval = $factory->for($definitions->get('time_entries.approve'));
+        $approval = $this->toolInputSchema('time_entries.approve');
         $approvalItem = $approval['$defs']['TimeApprovalItem'];
         $this->assertSame(0, $approvalItem['properties']['billing_rate_amount']['minimum']);
         $this->assertSame('#/$defs/Currency', $approvalItem['properties']['currency']['$ref']);
@@ -330,27 +298,25 @@ final class AgentMcpContractTest extends TestCase
     public function test_every_write_tool_inherits_its_body_contract_from_openapi(): void
     {
         config(['agent_api.project_writes_enabled' => true, 'agent_api.writes_enabled' => true, 'agent_api.invoice_writes_enabled' => true, 'agent_api.expense_writes_enabled' => true, 'agent_api.payment_writes_enabled' => true]);
-        $factory = app(AgentMcpInputSchemaFactory::class);
-
         foreach ($this->definitions() as $definition) {
-            if ($definition->readOnly) {
+            if ($definition->effect->readOnly()) {
                 continue;
             }
-            $body = AgentApiResponseSchemaCatalog::requestForOperation($definition->operationId());
-            $input = $factory->for($definition);
+            $body = AgentApiResponseSchemaCatalog::requestForOperation($definition->id);
+            $input = $this->toolInputSchema($definition->id);
             $encoded = json_encode($input, JSON_THROW_ON_ERROR);
 
             foreach ($body['properties'] as $name => $property) {
-                $this->assertSame($property, $input['properties'][$name] ?? null, "{$definition->name}:{$name}");
+                $this->assertSame($property, $input['properties'][$name] ?? null, "{$definition->id}:{$name}");
             }
             foreach ($body['required'] ?? [] as $required) {
-                $this->assertContains($required, $input['required'] ?? [], $definition->name);
+                $this->assertContains($required, $input['required'] ?? [], $definition->id);
             }
-            $this->assertSame($body['$defs'] ?? null, $input['$defs'] ?? null, $definition->name);
-            $this->assertStringNotContainsString('#/components/schemas/', $encoded, $definition->name);
+            $this->assertSame($body['$defs'] ?? null, $input['$defs'] ?? null, $definition->id);
+            $this->assertStringNotContainsString('#/components/schemas/', $encoded, $definition->id);
             preg_match_all('~"\$ref":"#/\$defs/([A-Za-z0-9_]+)"~', $encoded, $matches);
             foreach ($matches[1] as $target) {
-                $this->assertArrayHasKey($target, $input['$defs'] ?? [], $definition->name);
+                $this->assertArrayHasKey($target, $input['$defs'] ?? [], $definition->id);
             }
         }
     }
@@ -359,19 +325,18 @@ final class AgentMcpContractTest extends TestCase
     {
         config(['agent_api.project_writes_enabled' => true, 'agent_api.writes_enabled' => true, 'agent_api.invoice_writes_enabled' => true, 'agent_api.expense_writes_enabled' => true, 'agent_api.payment_writes_enabled' => true]);
         $document = json_decode((string) file_get_contents(public_path('openapi/svc-agent-v1.json')), true, flags: JSON_THROW_ON_ERROR);
-        $factory = app(AgentMcpInputSchemaFactory::class);
-
         foreach ($this->definitions() as $definition) {
-            if ($definition->readOnly) {
+            if ($definition->effect->readOnly()) {
                 continue;
             }
             $operation = collect($document['paths'])->flatMap(fn (array $path): array => array_values($path))
-                ->firstWhere('operationId', $definition->operationId());
+                ->firstWhere('operationId', $definition->id);
             $parameterRefs = collect($operation['parameters'] ?? [])->pluck('$ref');
-            $input = $factory->for($definition);
+            $input = $this->toolInputSchema($definition->id);
+            $this->assertSame(IdempotencyKey::HeaderAndArgument, $definition->safety->idempotencyKey, $definition->id);
 
-            $this->assertContains('#/components/parameters/IdempotencyKey', $parameterRefs, $definition->name);
-            $this->assertContains('idempotency_key', $input['required'] ?? [], $definition->name);
+            $this->assertContains('#/components/parameters/IdempotencyKey', $parameterRefs, $definition->id);
+            $this->assertContains('idempotency_key', $input['required'] ?? [], $definition->id);
         }
     }
 
@@ -516,12 +481,14 @@ final class AgentMcpContractTest extends TestCase
     /** @return list<ToolDefinition> */
     private function definitions(): array
     {
-        return app(AgentMcpToolCatalog::class)->definitions(
-            app(AgentMcpReadTools::class),
-            app(AgentMcpWriteTools::class),
-            app(AgentMcpClientTools::class),
-            app(AgentMcpClientWriteTools::class),
-        );
+        // The documented tools whose schemas come from the OpenAPI document.
+        $definitions = array_values(array_filter(
+            $this->mcpTools(),
+            static fn (Operation $operation): bool => $operation->rest !== null && $operation->output instanceof SchemaRef && ! is_array($operation->input),
+        ));
+        $this->assertGreaterThan(60, count($definitions));
+
+        return $definitions;
     }
 
     /** @return array{User, Workspace, ClientProject} */

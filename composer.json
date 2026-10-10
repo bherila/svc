@@ -11,7 +11,7 @@
     "require": {
         "php": "^8.4",
         "bherila/auth-laravel": "^0.20",
-        "bherila/mcp-laravel-bridge": "^0.2.0",
+        "bherila/mcp-laravel-bridge": "^0.4",
         "dompdf/dompdf": "^3.1",
         "inertiajs/inertia-laravel": "^3.0",
         "laravel/framework": "^13.17",

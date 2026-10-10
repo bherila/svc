@@ -10,10 +10,6 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\AgentCapabilities;
 use App\Services\Billing\InvoiceLifecycleService;
-use App\Services\Mcp\AgentMcpInputSchemaFactory;
-use App\Services\Mcp\AgentMcpReadTools;
-use App\Services\Mcp\AgentMcpToolCatalog;
-use App\Services\Mcp\AgentMcpWriteTools;
 use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
 use App\Support\AgentApi\AgentApiVersion;
 use Illuminate\Database\Events\QueryExecuted;
@@ -21,6 +17,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Mcp\Capability\Discovery\SchemaValidator;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Tests\Concerns\InspectsAgentOperations;
 use Tests\TestCase;
 
 /**
@@ -32,6 +29,7 @@ use Tests\TestCase;
  */
 final class AgentPaymentCorrectionTest extends TestCase
 {
+    use InspectsAgentOperations;
     use RefreshDatabase;
 
     /** @return iterable<string, array{string}> */
@@ -137,7 +135,7 @@ final class AgentPaymentCorrectionTest extends TestCase
     {
         [$user, $workspace, $payment] = $this->fixture();
         config(['agent_api.writes_enabled' => $outer, 'agent_api.payment_writes_enabled' => $inner]);
-        $names = array_map(fn ($tool) => $tool->name, app(AgentMcpToolCatalog::class)->definitions(app(AgentMcpReadTools::class), app(AgentMcpWriteTools::class)));
+        $names = $this->deployedToolNames();
         $capabilities = app(AgentCapabilities::class)->forWorkspace($user, $workspace, fn (string $scope): bool => true)['capabilities'];
 
         $this->assertSame($outer && $inner, in_array('payments.correct', $names, true));
@@ -263,10 +261,8 @@ final class AgentPaymentCorrectionTest extends TestCase
     {
         config(['agent_api.writes_enabled' => true, 'agent_api.payment_writes_enabled' => true]);
         $request = AgentApiResponseSchemaCatalog::requestForOperation('payments.correct');
-        $tool = collect(app(AgentMcpToolCatalog::class)->definitions(app(AgentMcpReadTools::class), app(AgentMcpWriteTools::class)))
-            ->firstWhere('name', 'payments.correct');
-        $this->assertNotNull($tool);
-        $input = app(AgentMcpInputSchemaFactory::class)->for($tool);
+        $this->assertContains('payments.correct', $this->deployedToolNames());
+        $input = $this->toolInputSchema('payments.correct');
         $validator = new SchemaValidator;
         $version = str_repeat('a', 64);
         $base = ['expected_version' => $version, 'reason' => 'Synthetic'];

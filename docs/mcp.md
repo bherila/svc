@@ -192,9 +192,10 @@ so an agent needs no follow-up list call. That includes the list's rule that
 rates are shown to workspace owners and admins only, so a project-role manager
 who approves sees the status but not the rate.
 
-The tool catalog is `AgentMcpToolCatalog`; `AgentMcpInputSchemaFactory` and
-`AgentMcpOutputSchemaFactory` derive public schemas from the checked-in
-OpenAPI response catalog. Inputs are validated before dispatch, output is
+Every agent operation is declared once in `AgentOperationCatalog`, on the shared
+operation registry (`bherila/mcp-laravel-bridge`, #408); `AgentMcpToolSchemas`
+derives tool schemas from the checked-in OpenAPI document (spec-first
+`SchemaRef`), except for the few tools that declare theirs inline. Inputs are validated before dispatch, output is
 validated after dispatch, and failures are mapped to safe MCP errors. Read
 tools and the REST controller both use `AgentReadService`, the single
 tenant-scoped query/presentation boundary. Read tools and the direct
@@ -252,10 +253,13 @@ Current coverage includes initialization, scope-filtered discovery, prompts,
 tool schema closure, input and output validation, REST parity, credential
 session isolation, route authentication, origin handling, optimistic versions,
 idempotency, tenant isolation, persisted credential validation, request
-context selection, and safe time-entry mutations. `McpCapabilityRegistry`
-now drives tool discovery and registration, including required scope, policy
-reference, schemas, workspace requirement, rate-limit/audit classification,
-and global/per-capability configuration kill switches. Cursor envelopes are
+context selection, and safe time-entry mutations. The operation
+registry drives tool discovery and registration and the REST route gate:
+required scopes, the workspace-manager policy, schemas, rate-limit/audit
+classification, write cutovers and the global/per-capability MCP kill switches,
+evaluated by `Availability` (`AgentAvailability`). REST routes are bound with
+`Route::operation()`; `EnsureOperationDeployed` answers 404 for a switched-off
+cutover before the gate, which answers 401/403 with the withheld reason. Cursor envelopes are
 encrypted and bound to the workspace and canonical filter query. A temporary
 legacy base64 cursor reader remains for existing REST/MCP clients and is
 controlled by `AGENT_API_ACCEPT_LEGACY_CURSORS`; newly emitted cursors never
@@ -857,9 +861,10 @@ remain separate. The focused `AgentWorkspaceMiscTest` covers both transports,
 replay/digest conflicts, rollback compensation, versions, tenant isolation,
 scope/role/flag refusals, URL expiry and lock ordering.
 
-`context.get` includes `withheld_tools`, generated from the full registry,
-with `deployment_disabled`, `scope_not_granted` (and its missing `scope`), or
-`role`. Use this metadata to explain absent capabilities before suggesting
+`context.get` includes `withheld_tools`, from the same `Availability`
+evaluation as `tools/list`, with `deployment_disabled`, `scope_not_granted`
+(and its missing `scope`), or `role`. Use this metadata to explain absent capabilities before suggesting
 website work. Invoice descriptions never promise payment recording unless the
-connection actually exposes the tool. New cutover groups must participate in
-`AgentMcpToolCatalog::inventoryDefinitions` as well as normal definitions.
+connection actually exposes the tool. A new cutover is a flag in `AgentDeploymentFlags`, named by each operation it
+withholds; nothing else needs to change for it to reach discovery, context and
+REST.

@@ -9,9 +9,6 @@ use App\Models\ClientProjectMembership;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Queries\Expenses\WorkspaceExpenses;
-use App\Services\Mcp\AgentMcpReadTools;
-use App\Services\Mcp\AgentMcpToolCatalog;
-use App\Services\Mcp\AgentMcpWriteTools;
 use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Expenses\NewExpense;
@@ -21,10 +18,12 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Mcp\Capability\Discovery\SchemaValidator;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Tests\Concerns\InspectsAgentOperations;
 use Tests\TestCase;
 
 final class AgentExpenseApiTest extends TestCase
 {
+    use InspectsAgentOperations;
     use RefreshDatabase;
 
     protected function setUp(): void
@@ -167,7 +166,7 @@ final class AgentExpenseApiTest extends TestCase
         config(['agent_api.writes_enabled' => $outer, 'agent_api.expense_writes_enabled' => $inner]);
         [$workspace, $company, $project, $owner] = $this->fixture();
         $this->agent($owner, ['identity:read', 'expenses:read', 'expenses:write']);
-        $names = array_column(app(AgentMcpToolCatalog::class)->definitions(app(AgentMcpReadTools::class), app(AgentMcpWriteTools::class)), 'name');
+        $names = $this->deployedToolNames();
         $this->assertContains('expenses.list', $names);
         foreach (['expenses.log', 'expenses.update', 'expenses.delete', 'expenses.approve', 'expenses.unapprove', 'expenses.receipts.upload_url', 'expense_schedules.create', 'expense_schedules.update', 'expense_schedules.generate'] as $name) {
             $this->assertSame($outer && $inner, in_array($name, $names, true));

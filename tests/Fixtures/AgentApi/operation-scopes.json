@@ -1,0 +1,1048 @@
+{
+    "agreements.activate": {
+        "scopes": [
+            "clients:write",
+            "billing:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.clients",
+            "mcp",
+            "mcp.switch:mcp.write.clients",
+            "mcp.switch:agreements.activate"
+        ]
+    },
+    "agreements.create": {
+        "scopes": [
+            "clients:write",
+            "clients:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.clients",
+            "mcp",
+            "mcp.switch:mcp.write.clients",
+            "mcp.switch:agreements.create"
+        ]
+    },
+    "agreements.get": {
+        "scopes": [
+            "billing:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read.agreements",
+            "mcp.switch:agreements.get"
+        ]
+    },
+    "agreements.list": {
+        "scopes": [
+            "billing:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read.agreements",
+            "mcp.switch:agreements.list"
+        ]
+    },
+    "agreements.terminate": {
+        "scopes": [
+            "clients:write",
+            "billing:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.clients",
+            "mcp",
+            "mcp.switch:mcp.write.clients",
+            "mcp.switch:agreements.terminate"
+        ]
+    },
+    "agreements.update": {
+        "scopes": [
+            "clients:write",
+            "billing:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.clients",
+            "mcp",
+            "mcp.switch:mcp.write.clients",
+            "mcp.switch:agreements.update"
+        ]
+    },
+    "attachments.delete": {
+        "scopes": [
+            "files:write",
+            "files:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.files",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:attachments.delete"
+        ]
+    },
+    "attachments.download": {
+        "scopes": [
+            "files:read"
+        ]
+    },
+    "attachments.download_url": {
+        "scopes": [
+            "files:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:attachments.download_url"
+        ]
+    },
+    "attachments.get": {
+        "scopes": [
+            "files:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:attachments.get"
+        ]
+    },
+    "attachments.list": {
+        "scopes": [
+            "files:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:attachments.list"
+        ]
+    },
+    "attachments.upload": {
+        "scopes": [
+            "files:write"
+        ],
+        "flags": [
+            "agent.writes.files"
+        ]
+    },
+    "attachments.upload_url": {
+        "scopes": [
+            "files:write"
+        ],
+        "flags": [
+            "agent.writes.files",
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:attachments.upload_url"
+        ]
+    },
+    "billing.audit_missing_billed_overage": {
+        "scopes": [
+            "billing:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read.billing.audit_missing_billed_overage",
+            "mcp.switch:billing.audit_missing_billed_overage"
+        ]
+    },
+    "billing.audit_opening_rollover": {
+        "scopes": [
+            "billing:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read.billing.audit_opening_rollover",
+            "mcp.switch:billing.audit_opening_rollover"
+        ]
+    },
+    "billing.audit_undated_collectible_invoices": {
+        "scopes": [
+            "billing:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read.billing.audit_undated_collectible_invoices",
+            "mcp.switch:billing.audit_undated_collectible_invoices"
+        ]
+    },
+    "billing.audit_unplaceable_invoices": {
+        "scopes": [
+            "billing:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read.billing.audit_unplaceable_invoices",
+            "mcp.switch:billing.audit_unplaceable_invoices"
+        ]
+    },
+    "billing_audit.stale_and_missing": {
+        "scopes": [
+            "billing:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:billing_audit.stale_and_missing"
+        ]
+    },
+    "billing_schedules.create": {
+        "scopes": [
+            "billing:write",
+            "billing:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.invoices",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:billing_schedules.create"
+        ]
+    },
+    "billing_schedules.generate": {
+        "scopes": [
+            "billing:deliver",
+            "billing:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.invoices",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:billing_schedules.generate"
+        ]
+    },
+    "billing_schedules.get": {
+        "scopes": [
+            "billing:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read.billing_schedules",
+            "mcp.switch:billing_schedules.get"
+        ]
+    },
+    "billing_schedules.list": {
+        "scopes": [
+            "billing:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read.billing_schedules",
+            "mcp.switch:billing_schedules.list"
+        ]
+    },
+    "capacity_ledger.get": {
+        "scopes": [
+            "billing:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read.capacity_ledger",
+            "mcp.switch:capacity_ledger.get"
+        ]
+    },
+    "clients.archive": {
+        "scopes": [
+            "clients:write",
+            "clients:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.clients",
+            "mcp",
+            "mcp.switch:mcp.write.clients",
+            "mcp.switch:clients.archive"
+        ]
+    },
+    "clients.create": {
+        "scopes": [
+            "clients:write"
+        ],
+        "flags": [
+            "agent.writes.clients",
+            "mcp",
+            "mcp.switch:mcp.write.clients",
+            "mcp.switch:clients.create"
+        ]
+    },
+    "clients.get": {
+        "scopes": [
+            "clients:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read.clients",
+            "mcp.switch:clients.get"
+        ]
+    },
+    "clients.list": {
+        "scopes": [
+            "clients:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read.clients",
+            "mcp.switch:clients.list"
+        ]
+    },
+    "clients.restore": {
+        "scopes": [
+            "clients:write",
+            "clients:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.clients",
+            "mcp",
+            "mcp.switch:mcp.write.clients",
+            "mcp.switch:clients.restore"
+        ]
+    },
+    "clients.update": {
+        "scopes": [
+            "clients:write",
+            "clients:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.clients",
+            "mcp",
+            "mcp.switch:mcp.write.clients",
+            "mcp.switch:clients.update"
+        ]
+    },
+    "connections.revoke": {
+        "scopes": [
+            "mcp:use"
+        ]
+    },
+    "context.get": {
+        "scopes": [
+            "identity:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:context.get"
+        ]
+    },
+    "expense_schedules.create": {
+        "scopes": [
+            "clients:read",
+            "expenses:write"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.expenses",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:expense_schedules.create"
+        ]
+    },
+    "expense_schedules.generate": {
+        "scopes": [
+            "expenses:read",
+            "expenses:write"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.expenses",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:expense_schedules.generate"
+        ]
+    },
+    "expense_schedules.list": {
+        "scopes": [
+            "expenses:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:expense_schedules.list"
+        ]
+    },
+    "expense_schedules.update": {
+        "scopes": [
+            "expenses:read",
+            "expenses:write"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.expenses",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:expense_schedules.update"
+        ]
+    },
+    "expenses.approve": {
+        "scopes": [
+            "expenses:read",
+            "expenses:write"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.expenses",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:expenses.approve"
+        ]
+    },
+    "expenses.delete": {
+        "scopes": [
+            "expenses:write"
+        ],
+        "flags": [
+            "agent.writes.expenses",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:expenses.delete"
+        ]
+    },
+    "expenses.list": {
+        "scopes": [
+            "expenses:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:expenses.list"
+        ]
+    },
+    "expenses.log": {
+        "scopes": [
+            "expenses:write"
+        ],
+        "flags": [
+            "agent.writes.expenses",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:expenses.log"
+        ]
+    },
+    "expenses.receipts.content": {
+        "scopes": [
+            "expenses:read"
+        ]
+    },
+    "expenses.receipts.download": {
+        "scopes": [
+            "expenses:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:expenses.receipts.download"
+        ]
+    },
+    "expenses.receipts.list": {
+        "scopes": [
+            "expenses:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:expenses.receipts.list"
+        ]
+    },
+    "expenses.receipts.upload": {
+        "scopes": [
+            "expenses:read",
+            "expenses:write"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.expenses"
+        ]
+    },
+    "expenses.receipts.upload_url": {
+        "scopes": [
+            "expenses:read",
+            "expenses:write"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.expenses",
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:expenses.receipts.upload_url"
+        ]
+    },
+    "expenses.unapprove": {
+        "scopes": [
+            "expenses:read",
+            "expenses:write"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.expenses",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:expenses.unapprove"
+        ]
+    },
+    "expenses.update": {
+        "scopes": [
+            "expenses:write"
+        ],
+        "flags": [
+            "agent.writes.expenses",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:expenses.update"
+        ]
+    },
+    "invoices.add_time": {
+        "scopes": [
+            "billing:write",
+            "billing:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.invoices",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:invoices.add_time"
+        ]
+    },
+    "invoices.correct": {
+        "scopes": [
+            "billing:deliver"
+        ],
+        "flags": [
+            "agent.writes.invoices",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:invoices.correct"
+        ]
+    },
+    "invoices.create_draft": {
+        "scopes": [
+            "billing:write"
+        ],
+        "flags": [
+            "agent.writes.invoices",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:invoices.create_draft"
+        ]
+    },
+    "invoices.discard_draft": {
+        "scopes": [
+            "billing:write"
+        ],
+        "flags": [
+            "agent.writes.invoices",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:invoices.discard_draft"
+        ]
+    },
+    "invoices.download_pdf": {
+        "scopes": [
+            "billing:read"
+        ]
+    },
+    "invoices.generate_period": {
+        "scopes": [
+            "billing:write",
+            "billing:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.invoices",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:invoices.generate_period"
+        ]
+    },
+    "invoices.get": {
+        "scopes": [
+            "billing:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:invoices.get"
+        ]
+    },
+    "invoices.hold_delivery": {
+        "scopes": [
+            "billing:write",
+            "billing:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.invoices",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:invoices.hold_delivery"
+        ]
+    },
+    "invoices.issue": {
+        "scopes": [
+            "billing:deliver"
+        ],
+        "flags": [
+            "agent.writes.invoices",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:invoices.issue"
+        ]
+    },
+    "invoices.list": {
+        "scopes": [
+            "billing:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:invoices.list"
+        ]
+    },
+    "invoices.pdf": {
+        "scopes": [
+            "billing:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:invoices.pdf"
+        ]
+    },
+    "invoices.release_delivery": {
+        "scopes": [
+            "billing:deliver",
+            "billing:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.invoices",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:invoices.release_delivery"
+        ]
+    },
+    "invoices.send": {
+        "scopes": [
+            "billing:deliver"
+        ],
+        "flags": [
+            "agent.writes.invoices",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:invoices.send"
+        ]
+    },
+    "invoices.update_details": {
+        "scopes": [
+            "billing:write"
+        ],
+        "flags": [
+            "agent.writes.invoices",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:invoices.update_details"
+        ]
+    },
+    "invoices.update_draft": {
+        "scopes": [
+            "billing:write"
+        ],
+        "flags": [
+            "agent.writes.invoices",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:invoices.update_draft"
+        ]
+    },
+    "invoices.void": {
+        "scopes": [
+            "billing:deliver"
+        ],
+        "flags": [
+            "agent.writes.invoices",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:invoices.void"
+        ]
+    },
+    "operations.summary": {
+        "scopes": [
+            "identity:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:operations.summary"
+        ]
+    },
+    "payments.correct": {
+        "scopes": [
+            "payments:record"
+        ],
+        "flags": [
+            "agent.writes.payments",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:payments.correct"
+        ]
+    },
+    "payments.list": {
+        "scopes": [
+            "payments:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:payments.list"
+        ]
+    },
+    "payments.record": {
+        "scopes": [
+            "payments:record"
+        ],
+        "flags": [
+            "agent.writes.payments",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:payments.record"
+        ]
+    },
+    "projects.archive": {
+        "scopes": [
+            "projects:write",
+            "projects:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.projects",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:projects.archive"
+        ]
+    },
+    "projects.create": {
+        "scopes": [
+            "projects:write",
+            "clients:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.projects",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:projects.create"
+        ]
+    },
+    "projects.get": {
+        "scopes": [
+            "projects:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:projects.get"
+        ]
+    },
+    "projects.list": {
+        "scopes": [
+            "projects:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:projects.list"
+        ]
+    },
+    "projects.members.list": {
+        "scopes": [
+            "projects:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:projects.members.list"
+        ]
+    },
+    "projects.members.update": {
+        "scopes": [
+            "projects:write",
+            "projects:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.projects",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:projects.members.update"
+        ]
+    },
+    "projects.update": {
+        "scopes": [
+            "projects:write",
+            "projects:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.projects",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:projects.update"
+        ]
+    },
+    "prompts.log_time_across_projects": {
+        "scopes": [
+            "identity:read",
+            "projects:read",
+            "time:write"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.prompt.log_time_across_projects",
+            "mcp.switch:log-time-across-projects"
+        ],
+        "requires": [
+            "context.get",
+            "projects.list",
+            "time_entries.log"
+        ]
+    },
+    "prompts.prepare_invoice_safely": {
+        "scopes": [
+            "identity:read",
+            "projects:read",
+            "time:read",
+            "billing:read",
+            "billing:write"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.prompt.prepare_invoice_safely",
+            "mcp.switch:prepare-invoice-safely"
+        ],
+        "requires": [
+            "context.get",
+            "projects.get",
+            "time_entries.list",
+            "invoices.get",
+            "invoices.create_draft",
+            "invoices.update_draft"
+        ]
+    },
+    "proposals.accept": {
+        "scopes": [
+            "proposals:accept",
+            "proposals:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.proposals",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:proposals.accept"
+        ]
+    },
+    "proposals.create": {
+        "scopes": [
+            "proposals:write",
+            "clients:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.proposals",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:proposals.create"
+        ]
+    },
+    "proposals.get": {
+        "scopes": [
+            "proposals:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:proposals.get"
+        ]
+    },
+    "proposals.list": {
+        "scopes": [
+            "proposals:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:proposals.list"
+        ]
+    },
+    "proposals.send": {
+        "scopes": [
+            "proposals:write",
+            "proposals:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.proposals",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:proposals.send"
+        ]
+    },
+    "resources.agreement": {
+        "scopes": [
+            "billing:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read.agreements",
+            "mcp.switch:agreement"
+        ]
+    },
+    "resources.current_context": {
+        "scopes": [
+            "identity:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read.context",
+            "mcp.switch:current-context"
+        ]
+    },
+    "search": {
+        "scopes": [
+            "identity:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:search"
+        ]
+    },
+    "tasks.create": {
+        "scopes": [
+            "tasks:write"
+        ],
+        "flags": [
+            "agent.writes",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:tasks.create"
+        ]
+    },
+    "tasks.get": {
+        "scopes": [
+            "tasks:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:tasks.get"
+        ]
+    },
+    "tasks.list": {
+        "scopes": [
+            "tasks:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:tasks.list"
+        ]
+    },
+    "tasks.update": {
+        "scopes": [
+            "tasks:write"
+        ],
+        "flags": [
+            "agent.writes",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:tasks.update"
+        ]
+    },
+    "time_entries.approve": {
+        "scopes": [
+            "time:approve"
+        ],
+        "flags": [
+            "agent.writes",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:time_entries.approve"
+        ]
+    },
+    "time_entries.delete": {
+        "scopes": [
+            "time:write"
+        ],
+        "flags": [
+            "agent.writes.time_entries",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:time_entries.delete"
+        ]
+    },
+    "time_entries.list": {
+        "scopes": [
+            "time:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:time_entries.list"
+        ]
+    },
+    "time_entries.log": {
+        "scopes": [
+            "time:write"
+        ],
+        "flags": [
+            "agent.writes.time_entries",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:time_entries.log"
+        ]
+    },
+    "time_entries.unapprove": {
+        "scopes": [
+            "time:approve",
+            "time:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes",
+            "agent.writes.time_entries",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:time_entries.unapprove"
+        ]
+    },
+    "time_entries.update": {
+        "scopes": [
+            "time:write"
+        ],
+        "flags": [
+            "agent.writes.time_entries",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:time_entries.update"
+        ]
+    },
+    "workspaces.create": {
+        "scopes": [
+            "workspaces:create"
+        ],
+        "flags": [
+            "agent.writes.workspaces",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:workspaces.create"
+        ]
+    }
+}

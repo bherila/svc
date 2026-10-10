@@ -2,8 +2,11 @@
 
 use App\Exceptions\InvalidAgentApiCursor;
 use App\Http\Middleware\AuthenticateFirstPartySession;
+use App\Http\Middleware\EnsureAgentWorkspaceVisible;
+use App\Http\Middleware\EnsureOperationDeployed;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Support\Billing\RetryableConflict;
+use Bherila\McpLaravelBridge\Http\GateOperation;
 use Bherila\McpLaravelBridge\Http\McpHttpSecurityMiddleware;
 use BWH\Auth\Http\Middleware\ExpectOAuthResource;
 use Illuminate\Auth\AuthenticationException;
@@ -13,6 +16,7 @@ use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Validation\ValidationException;
 
 return Application::configure(basePath: dirname(__DIR__))
@@ -29,6 +33,15 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->prependToPriorityList(AuthenticatesRequests::class, McpHttpSecurityMiddleware::class);
         $middleware->prependToPriorityList(AuthenticatesRequests::class, ExpectOAuthResource::class);
         $middleware->prependToPriorityList(AuthenticatesRequests::class, AuthenticateFirstPartySession::class);
+        // An agent operation's route checks run in this order: a workspace
+        // the caller cannot see answers 404 exactly as a missing one does,
+        // then a switched-off cutover answers 404, and only then does the
+        // registry's gate check scopes (403) - so neither a hidden workspace
+        // nor the deployment's switches are disclosed to an under-scoped
+        // caller (#408).
+        $middleware->appendToPriorityList(SubstituteBindings::class, EnsureAgentWorkspaceVisible::class);
+        $middleware->appendToPriorityList(EnsureAgentWorkspaceVisible::class, EnsureOperationDeployed::class);
+        $middleware->appendToPriorityList(EnsureOperationDeployed::class, GateOperation::class);
         $middleware->web(append: [
             HandleInertiaRequests::class,
             AddLinkHeadersForPreloadedAssets::class,

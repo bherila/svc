@@ -8,13 +8,20 @@ use App\Models\Workspace;
 use App\Policies\ClientCompanyPolicy;
 use App\Policies\ClientProjectPolicy;
 use App\Policies\WorkspacePolicy;
+use App\Services\AgentApi\Operations\AgentAvailability;
+use App\Services\AgentApi\Operations\AgentOperationCatalog;
+use App\Services\AgentApi\Operations\AgentPrincipalResolver;
 use App\Services\ApiCredentials\OpenApiGrantableScopes;
 use App\Services\Billing\ReplayHistoryBasis;
 use App\Services\Mcp\Context\McpPrincipalResolver;
 use App\Services\Mcp\Context\McpPrincipalResolverInterface;
 use App\Support\AgentApi\AgentApiScopes;
+use Bherila\McpLaravelBridge\Capabilities\Availability;
+use Bherila\McpLaravelBridge\Capabilities\OperationRegistry;
+use Bherila\McpLaravelBridge\Capabilities\PrincipalResolver;
 use Bherila\McpLaravelBridge\Http\InternalAgentApiTransport;
 use Bherila\McpLaravelBridge\Http\McpHttpPolicy;
+use Bherila\McpLaravelBridge\Http\OperationRoutes;
 use BWH\Auth\OAuth\Credentials\GrantableScopes;
 use Carbon\CarbonImmutable;
 use Illuminate\Cache\RateLimiting\Limit;
@@ -46,6 +53,14 @@ class AppServiceProvider extends ServiceProvider
         // Offer a REST credential only scopes some REST operation requires.
         $this->app->bind(GrantableScopes::class, OpenApiGrantableScopes::class);
         $this->app->bind(McpPrincipalResolverInterface::class, McpPrincipalResolver::class);
+        // One declaration per agent operation (#408). The registry is read-only
+        // after it is built; deployment switches are re-read on every
+        // evaluation, so a long-lived worker sees configuration changes.
+        $this->app->singleton(AgentOperationCatalog::class);
+        $this->app->singleton(OperationRegistry::class, static fn ($app): OperationRegistry => $app->make(AgentOperationCatalog::class)->registry());
+        // The REST route gate's view: cutovers and scopes.
+        $this->app->bind(Availability::class, static fn ($app): Availability => $app->make(AgentAvailability::class)->rest());
+        $this->app->bind(PrincipalResolver::class, AgentPrincipalResolver::class);
         $this->app->bind(InternalAgentApiTransport::class, fn ($app): InternalAgentApiTransport => new InternalAgentApiTransport(
             router: $app->make(Router::class),
             exceptions: $app->make(ExceptionHandler::class),
@@ -90,6 +105,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        OperationRoutes::macro();
         Passport::loadKeysFrom(storage_path('app/private/oauth'));
         Passport::authorizationView('bherila-auth::oauth.authorize');
         Passport::tokensCan(AgentApiScopes::descriptions());

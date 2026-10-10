@@ -50,7 +50,7 @@ final class AgentApiResponseSchemaCatalog
         self::$catalog = null;
     }
 
-    private static function catalog(): SchemaCatalog
+    public static function catalog(): SchemaCatalog
     {
         return self::$catalog ??= new SchemaCatalog(public_path('openapi/svc-agent-v1.json'));
     }

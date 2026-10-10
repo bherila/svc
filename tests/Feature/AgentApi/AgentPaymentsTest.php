@@ -12,19 +12,18 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\AgentCapabilities;
 use App\Services\Billing\InvoiceLifecycleService;
-use App\Services\Mcp\AgentMcpReadTools;
-use App\Services\Mcp\AgentMcpToolCatalog;
-use App\Services\Mcp\AgentMcpWriteTools;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Laravel\Passport\AccessToken;
 use Laravel\Passport\Passport;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Tests\Concerns\InspectsAgentOperations;
 use Tests\TestCase;
 
 final class AgentPaymentsTest extends TestCase
 {
+    use InspectsAgentOperations;
     use RefreshDatabase;
 
     public static function transports(): iterable
@@ -148,7 +147,7 @@ final class AgentPaymentsTest extends TestCase
     {
         [$user, $workspace, $invoice] = $this->fixture();
         config(['agent_api.writes_enabled' => $outer, 'agent_api.payment_writes_enabled' => $inner]);
-        $names = array_map(fn ($tool) => $tool->name, app(AgentMcpToolCatalog::class)->definitions(app(AgentMcpReadTools::class), app(AgentMcpWriteTools::class)));
+        $names = $this->deployedToolNames();
         $capabilities = app(AgentCapabilities::class)->forWorkspace($user, $workspace, fn (string $scope): bool => true)['capabilities'];
         $this->assertContains('payments.list', $names);
         $this->assertContains('payments:read', $capabilities);

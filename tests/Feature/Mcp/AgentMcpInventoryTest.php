@@ -4,30 +4,19 @@ namespace Tests\Feature\Mcp;
 
 use App\Models\User;
 use App\Models\Workspace;
-use App\Services\Mcp\AgentMcpAgreementResource;
-use App\Services\Mcp\AgentMcpAgreementTools;
-use App\Services\Mcp\AgentMcpBillingAuditTools;
-use App\Services\Mcp\AgentMcpBillingScheduleTools;
-use App\Services\Mcp\AgentMcpCapabilityRegistryFactory;
-use App\Services\Mcp\AgentMcpCapacityLedgerTools;
-use App\Services\Mcp\AgentMcpClientTools;
-use App\Services\Mcp\AgentMcpClientWriteTools;
-use App\Services\Mcp\AgentMcpContextResource;
-use App\Services\Mcp\AgentMcpPrompts;
-use App\Services\Mcp\AgentMcpReadTools;
-use App\Services\Mcp\AgentMcpWriteTools;
 use App\Services\Mcp\AgentWithheldTools;
-use App\Services\Mcp\Registry\McpCapabilityKind;
-use App\Services\Mcp\Registry\McpCapabilityRegistry;
 use App\Support\AgentApi\AgentApiScopes;
+use Bherila\McpLaravelBridge\Capabilities\Operation;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Concerns\CallsMcp;
+use Tests\Concerns\InspectsAgentOperations;
 use Tests\TestCase;
 
 final class AgentMcpInventoryTest extends TestCase
 {
     use CallsMcp;
+    use InspectsAgentOperations;
     use RefreshDatabase;
 
     // Exact integrated inventory: extend only when the corresponding handlers and contracts land.
@@ -154,12 +143,12 @@ final class AgentMcpInventoryTest extends TestCase
     public function test_inventory_retains_every_tool_when_a_cutover_is_disabled(string $flag, array $disabled): void
     {
         $this->enableAll();
-        $this->assertSame(self::TOOLS, $this->names($this->registry(true)));
-        $this->assertSame(self::TOOLS, $this->names($this->registry(false)));
+        $this->assertSame(self::TOOLS, $this->inventory());
+        $this->assertSame(self::TOOLS, $this->deployed());
         config(['agent_api.'.$flag => false]);
-        $this->assertSame(self::TOOLS, $this->names($this->registry(true)));
+        $this->assertSame(self::TOOLS, $this->inventory());
         $expected = array_values(array_diff(self::TOOLS, $disabled));
-        $this->assertSame($expected, $this->names($this->registry(false)));
+        $this->assertSame($expected, $this->deployed());
         sort($disabled);
         $this->assertSame(array_map(fn (string $name): array => ['name' => $name, 'reason' => 'deployment_disabled'], $disabled),
             app(AgentWithheldTools::class)->for(fn (string $scope): bool => true, true));
@@ -177,8 +166,8 @@ final class AgentMcpInventoryTest extends TestCase
         $disabled = array_values(array_unique($disabled));
         sort($disabled);
         $this->assertCount(84, self::TOOLS);
-        $this->assertSame(self::TOOLS, $this->names($this->registry(true)));
-        $this->assertSame(array_values(array_diff(self::TOOLS, $disabled)), $this->names($this->registry(false)));
+        $this->assertSame(self::TOOLS, $this->inventory());
+        $this->assertSame(array_values(array_diff(self::TOOLS, $disabled)), $this->deployed());
         $this->assertSame(array_map(fn (string $name): array => ['name' => $name, 'reason' => 'deployment_disabled'], $disabled),
             app(AgentWithheldTools::class)->for(fn (string $scope): bool => true, true));
     }
@@ -199,7 +188,7 @@ final class AgentMcpInventoryTest extends TestCase
         config(['agent_api.writes_enabled' => false]);
         $enabled = $this->toolNames($this->initialize());
         sort($enabled);
-        $this->assertSame($this->names($this->registry(false)), $enabled);
+        $this->assertSame($this->deployed(), $enabled);
         $withheld = $this->getJson('/api/v1/context')->assertOk()->json('data.withheld_tools');
         $this->assertSame(app(AgentWithheldTools::class)->for(fn (string $scope): bool => true, true), $withheld);
         foreach ($withheld as $tool) {
@@ -219,7 +208,7 @@ final class AgentMcpInventoryTest extends TestCase
         $legacy = ['capacity_ledger.get', 'billing.audit_unplaceable_invoices', 'billing.audit_undated_collectible_invoices', 'billing.audit_missing_billed_overage', 'billing.audit_opening_rollover'];
         $spec = json_decode((string) file_get_contents(public_path('openapi/svc-agent-v1.json')), true, flags: JSON_THROW_ON_ERROR);
         $mapped = [];
-        $definitions = collect($this->registry(true)->ofKind(McpCapabilityKind::Tool))->keyBy('name');
+        $definitions = collect($this->mcpTools())->keyBy(fn (Operation $operation): string => (string) $operation->mcpName());
         foreach ($spec['paths'] as $operations) {
             foreach ($operations as $operation) {
                 if (! is_array($operation)) {
@@ -232,7 +221,7 @@ final class AgentMcpInventoryTest extends TestCase
                 $this->assertSame($name, $operation['operationId']);
                 $this->assertArrayNotHasKey($name, $mapped, 'An MCP tool must have one canonical REST operation.');
                 $this->assertTrue($definitions->has($name), $name);
-                $this->assertSame($operation['security'][0]['oauth2'], $definitions[$name]->requiredScopes, $name);
+                $this->assertSame($operation['security'][0]['oauth2'], $definitions[$name]->requirement->scopes, $name);
                 $mapped[$name] = true;
             }
         }
@@ -246,9 +235,9 @@ final class AgentMcpInventoryTest extends TestCase
         $this->enableAll();
         $withheld = collect(app(AgentWithheldTools::class)->for(fn (string $scope): bool => false, false))->keyBy('name');
         $this->assertSame(self::TOOLS, $withheld->keys()->all());
-        foreach ($this->registry(true)->ofKind(McpCapabilityKind::Tool) as $definition) {
-            $this->assertNotEmpty($definition->requiredScopes, $definition->name);
-            $this->assertSame(['name' => $definition->name, 'reason' => 'scope_not_granted', 'scope' => $definition->requiredScopes[0]], $withheld[$definition->name]);
+        foreach ($this->mcpTools() as $definition) {
+            $this->assertNotEmpty($definition->requirement->scopes, $definition->id);
+            $this->assertSame(['name' => $definition->mcpName(), 'reason' => 'scope_not_granted', 'scope' => $definition->requirement->scopes[0]], $withheld[$definition->mcpName()]);
         }
     }
 
@@ -297,25 +286,26 @@ final class AgentMcpInventoryTest extends TestCase
         config($configuration);
     }
 
-    /** @return list<string> */
-    private function names(McpCapabilityRegistry $registry): array
+    /**
+     * Every MCP tool the registry declares, whatever is switched off.
+     *
+     * @return list<string>
+     */
+    private function inventory(): array
     {
-        $names = array_map(fn ($definition): string => $definition->name, $registry->ofKind(McpCapabilityKind::Tool));
+        $names = array_map(static fn (Operation $operation): string => (string) $operation->mcpName(), $this->mcpTools());
         $this->assertSame($names, array_values(array_unique($names)));
         sort($names);
 
         return $names;
     }
 
-    private function registry(bool $includeDisabled): McpCapabilityRegistry
+    /** @return list<string> */
+    private function deployed(): array
     {
-        return app(AgentMcpCapabilityRegistryFactory::class)->make(
-            app(AgentMcpReadTools::class), app(AgentMcpContextResource::class),
-            app(AgentMcpAgreementTools::class), app(AgentMcpAgreementResource::class),
-            app(AgentMcpBillingScheduleTools::class), app(AgentMcpCapacityLedgerTools::class),
-            app(AgentMcpBillingAuditTools::class), app(AgentMcpPrompts::class),
-            app(AgentMcpWriteTools::class), app(AgentMcpClientTools::class),
-            app(AgentMcpClientWriteTools::class), $includeDisabled,
-        );
+        $names = $this->deployedToolNames();
+        sort($names);
+
+        return $names;
     }
 }
