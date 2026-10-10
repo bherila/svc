@@ -163,7 +163,7 @@ final class WorkspaceStaffAccessTest extends TestCase
         $revisions = $this->revisions();
         $deletes = [];
         DB::listen(static function (QueryExecuted $query) use (&$deletes): void {
-            if (str_starts_with(strtolower($query->sql), 'delete from "client_project_memberships"')) {
+            if (preg_match('/^delete from [`"]client_project_memberships[`"]/i', $query->sql) === 1) {
                 $deletes[] = $query->sql;
             }
         });

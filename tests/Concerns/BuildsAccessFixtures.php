@@ -30,7 +30,8 @@ trait BuildsAccessFixtures
         $baseline = DB::transactionLevel();
         $fired = false;
         DB::listen(function (QueryExecuted $query) use (&$fired, $baseline, $change): void {
-            if ($fired || DB::transactionLevel() <= $baseline || ! str_contains($query->sql, 'from "workspaces"')) {
+            // Either quoting style: SQLite writes "workspaces", MariaDB `workspaces`.
+            if ($fired || DB::transactionLevel() <= $baseline || preg_match('/from [`"]workspaces[`"]/i', $query->sql) !== 1) {
                 return;
             }
             $fired = true;
