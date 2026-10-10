@@ -1,9 +1,11 @@
 name: cloudflare-ranges
 
-# config/proxies.php pins Cloudflare's published ranges so the app trusts
-# X-Forwarded-For only from Cloudflare. A stale list fails quietly - callers on
-# a new edge share that edge's rate-limit budget - so check it weekly and fail
-# loudly when Cloudflare revises its ranges.
+# The auth package's trusted-proxy helper (bherila-auth.trusted_proxies) trusts
+# X-Forwarded-For only from Cloudflare's published ranges. A stale list fails
+# quietly - callers on a new edge share that edge's rate-limit budget - so check
+# the effective list weekly and fail loudly when Cloudflare revises its ranges.
+# Fix drift by upgrading bherila/auth-laravel, or pin the published ranges in
+# bherila-auth.trusted_proxies.cloudflare until a release ships them.
 on:
   schedule:
     - cron: '17 6 * * 1'
@@ -25,7 +27,19 @@ jobs:
         uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
         with:
           php-version: '8.5'
-          tools: none
+          tools: composer:v2
+          coverage: none
+
+      - name: Authorize private MCP bridge dependency
+        uses: webfactory/ssh-agent@e83874834305fe9a4a2997156cb26c5de65a8555 # v0.10.0
+        with:
+          ssh-private-key: ${{ secrets.MCP_BRIDGE_DEPLOY_KEY }}
+
+      # No --prefer-dist: see the tests workflow.
+      - name: Install Composer dependencies
+        run: |
+          composer install --no-interaction --no-progress
+          test -f .env || cp .env.example .env
 
       - name: Compare with Cloudflare's published ranges
-        run: php scripts/check-cloudflare-ranges.php
+        run: php artisan bherila-auth:check-cloudflare-ranges

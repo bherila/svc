@@ -297,7 +297,7 @@ final class AgentOAuthLifecycleTest extends TestCase
         $registration = $this->postJson('/oauth/register', [
             'client_name' => 'Disabled client',
             'redirect_uris' => ['https://client.example.test/callback'],
-        ])->assertNotFound()->assertJsonPath('error', 'invalid_request');
+        ])->assertNotFound()->assertJsonPath('error', 'not_found');
         $this->assertStringContainsString('no-store', (string) $registration->headers->get('Cache-Control'));
 
         foreach ([

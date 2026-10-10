@@ -6,8 +6,7 @@ use App\Models\ClientCompany;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Queries\AccessibleWorkspacesQuery;
-use App\Services\ApiCredentials\ApiCredentialService;
-use App\Support\AgentApi\AgentApiScopes;
+use BWH\Auth\OAuth\Credentials\ApiCredentialService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Inertia\Inertia;
@@ -37,7 +36,7 @@ class McpSetupController extends Controller
     {
         $base = rtrim((string) config('app.url'), '/');
         $credentials = app(ApiCredentialService::class);
-        $descriptions = AgentApiScopes::descriptions();
+        $issuing = (bool) config('bherila-auth.oauth_server.enabled');
 
         return Inertia::render('mcp-setup', [
             'serverUrl' => $base.'/api/v1/mcp',
@@ -50,19 +49,22 @@ class McpSetupController extends Controller
                 'authorize_url' => (string) config('bherila-auth.oauth_server.authorization_endpoint', $base.'/oauth/authorize'),
                 'token_url' => (string) config('bherila-auth.oauth_server.token_endpoint', $base.'/oauth/token'),
                 'scopes' => array_map(
-                    static fn (string $scope): array => ['id' => $scope, 'description' => $descriptions[$scope]],
-                    ApiCredentialService::grantableScopes(),
+                    static fn (string $id, string $description): array => ['id' => $id, 'description' => $description],
+                    array_keys($credentials->grantableScopes()),
+                    array_values($credentials->grantableScopes()),
                 ),
-                'token_lifetimes' => ApiCredentialService::TOKEN_LIFETIMES_DAYS,
-                'issue_token_href' => route('account.api-tokens.store', absolute: false),
-                'register_app_href' => route('account.oauth-apps.store', absolute: false),
+                // ISO-8601 durations (P30D...), labelled by the page.
+                'token_lifetimes' => $credentials->lifetimes(),
+                // Null while the OAuth server is switched off: revoking stays available.
+                'issue_token_href' => $issuing ? route('bherila-auth.credentials.tokens.store', absolute: false) : null,
+                'register_app_href' => $issuing ? route('bherila-auth.credentials.apps.store', absolute: false) : null,
                 'tokens' => array_map(static fn (array $token): array => [
                     ...$token,
-                    'revoke_href' => route('account.api-tokens.destroy', ['token' => $token['id']], absolute: false),
+                    'revoke_href' => route('bherila-auth.credentials.tokens.destroy', ['token' => $token['id']], absolute: false),
                 ], $credentials->tokens($user)),
                 'apps' => array_map(static fn (array $app): array => [
                     ...$app,
-                    'delete_href' => route('account.oauth-apps.destroy', ['client' => $app['id']], absolute: false),
+                    'delete_href' => route('bherila-auth.credentials.apps.destroy', ['client' => $app['id']], absolute: false),
                 ], $credentials->apps($user)),
             ],
         ]);

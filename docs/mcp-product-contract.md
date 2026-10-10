@@ -133,11 +133,14 @@ to `/api/v1` (`assume_omitted_resource`); a different explicit resource is still
 refused. The OpenAPI document declares both the `oauth2` scheme and an `apiToken`
 bearer scheme on every operation. `/api/openapi.json` serves that document with its server and OAuth endpoints taken from this installation's configuration; connectors import it from the setup page.
 
-Behind Cloudflare, per-client limits key on the real client address:
-`config/proxies.php` trusts `X-Forwarded-For` (and its scheme and port, never the
-host) only from Cloudflare's published ranges, so the client is the address
-Cloudflare appended. The origin also answers direct connections, so it never
-trusts `*`, and a direct caller's forged header is ignored. A weekly workflow fails
+Behind a CDN, per-client limits key on the real client address. The auth
+package's trusted-proxy helper (`bherila-auth.trusted_proxies`, `TRUSTED_PROXIES`:
+`cloudflare` by default, an explicit list, or empty to trust nothing) honours
+`X-Forwarded-For` and its scheme - never the forwarded port, which Cloudflare passes
+through from the client, nor the host - only from the configured proxies, so the
+client is the address the edge appended. The origin also answers direct
+connections, so it never trusts `*`, and a direct caller's forged header is
+ignored. A weekly workflow runs `bherila-auth:check-cloudflare-ranges` and fails
 when Cloudflare revises its ranges.
 
 Browser MCP traffic uses an exact configured origin allowlist for preflight and the
