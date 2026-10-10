@@ -74,8 +74,8 @@ final class WorkspacePortalAccessTest extends TestCase
         $event = AccessAuditEvent::query()->sole();
         $this->assertSame('portal.granted', $event->action);
         $this->assertSame($this->company->public_id, $event->client_company_public_id);
-        $this->assertNull($event->before);
-        $this->assertSame(['scope' => 'company', 'projects' => []], $event->after);
+        $this->assertNull($event->before_state);
+        $this->assertSame(['scope' => 'company', 'projects' => []], $event->after_state);
         $this->assertSame(str_repeat('p', 40), $event->operation_id);
         $this->assertSame('request-portal-1', $event->request_id);
         $this->assertSame($this->client->id, $event->subject_user_id);
@@ -92,7 +92,7 @@ final class WorkspacePortalAccessTest extends TestCase
         );
 
         $this->assertSame([$this->second->id], app(PortalAccess::class)->visibleProjectIds($this->company, $this->client));
-        $this->assertSame(['scope' => 'projects', 'projects' => [$this->second->public_id]], AccessAuditEvent::query()->sole()->after);
+        $this->assertSame(['scope' => 'projects', 'projects' => [$this->second->public_id]], AccessAuditEvent::query()->sole()->after_state);
     }
 
     public function test_only_owners_admins_and_the_system_manage_portal_access(): void
@@ -172,7 +172,7 @@ final class WorkspacePortalAccessTest extends TestCase
         $this->assertSame([
             [['scope' => 'projects', 'projects' => [$this->first->public_id]], ['scope' => 'projects', 'projects' => [$this->second->public_id]]],
             [['scope' => 'projects', 'projects' => [$this->second->public_id]], ['scope' => 'company', 'projects' => []]],
-        ], $changes->map(fn (AccessAuditEvent $event): array => [$event->before, $event->after])->all());
+        ], $changes->map(fn (AccessAuditEvent $event): array => [$event->before_state, $event->after_state])->all());
     }
 
     public function test_changing_or_revoking_access_nobody_holds_is_refused(): void
@@ -199,8 +199,8 @@ final class WorkspacePortalAccessTest extends TestCase
         $this->assertSame('member', $this->workspace->memberships()->where('user_id', $this->member->id)->value('role'));
 
         $event = AccessAuditEvent::query()->where('action', 'portal.revoked')->sole();
-        $this->assertSame(['scope' => 'projects', 'projects' => $expected], $event->before);
-        $this->assertNull($event->after);
+        $this->assertSame(['scope' => 'projects', 'projects' => $expected], $event->before_state);
+        $this->assertNull($event->after_state);
     }
 
     public function test_an_actor_demoted_after_the_fast_check_cannot_change_portal_access(): void

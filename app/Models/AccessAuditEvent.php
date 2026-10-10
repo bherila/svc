@@ -23,15 +23,15 @@ use Illuminate\Support\Carbon;
  * @property int|null $subject_user_id
  * @property string $action
  * @property string|null $client_company_public_id
- * @property array<string, mixed>|null $before
- * @property array<string, mixed>|null $after
+ * @property array<string, mixed>|null $before_state
+ * @property array<string, mixed>|null $after_state
  * @property string|null $operation_id
  * @property string|null $request_id
  * @property Carbon $created_at
  */
 #[Fillable([
     'workspace_id', 'actor_type', 'actor_user_id', 'subject_user_id', 'action',
-    'client_company_public_id', 'before', 'after', 'operation_id', 'request_id', 'created_at',
+    'client_company_public_id', 'before_state', 'after_state', 'operation_id', 'request_id', 'created_at',
 ])]
 #[Hidden(['id', 'workspace_id', 'actor_user_id', 'subject_user_id'])]
 class AccessAuditEvent extends Model implements WorkspaceOwned
@@ -46,6 +46,6 @@ class AccessAuditEvent extends Model implements WorkspaceOwned
 
     protected function casts(): array
     {
-        return ['before' => 'array', 'after' => 'array', 'created_at' => 'datetime'];
+        return ['before_state' => 'array', 'after_state' => 'array', 'created_at' => 'datetime'];
     }
 }

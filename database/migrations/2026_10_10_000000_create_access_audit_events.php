@@ -17,6 +17,10 @@ use Illuminate\Support\Facades\Schema;
  * the account is deleted, so the trail outlives them; projects and companies
  * are named by public id inside the event so a later deletion does not erase
  * what was changed. Nothing here stores a name or an email address.
+ *
+ * `before_state` and `after_state` rather than `before` and `after`: BEFORE is
+ * a reserved word in MariaDB, and a column that only works while every query
+ * quotes it is one raw statement away from a syntax error.
  */
 return new class extends Migration
 {
@@ -31,8 +35,8 @@ return new class extends Migration
             $table->foreignId('subject_user_id')->nullable()->constrained('users')->nullOnDelete();
             $table->string('action', 64);
             $table->uuid('client_company_public_id')->nullable();
-            $table->json('before')->nullable();
-            $table->json('after')->nullable();
+            $table->json('before_state')->nullable();
+            $table->json('after_state')->nullable();
             $table->string('operation_id', 64)->nullable();
             $table->string('request_id', 128)->nullable();
             $table->timestamp('created_at')->useCurrent();

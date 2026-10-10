@@ -84,11 +84,11 @@ final class WorkspaceStaffAccessTest extends TestCase
             'subject_user_id' => $person->id,
             'action' => 'staff.granted',
             'client_company_public_id' => null,
-            'before' => null,
-            'after' => ['role' => 'member'],
+            'before_state' => null,
+            'after_state' => ['role' => 'member'],
             'operation_id' => self::OPERATION,
             'request_id' => 'request-grant-1',
-        ], $event->only(['workspace_id', 'actor_type', 'actor_user_id', 'subject_user_id', 'action', 'client_company_public_id', 'before', 'after', 'operation_id', 'request_id']));
+        ], $event->only(['workspace_id', 'actor_type', 'actor_user_id', 'subject_user_id', 'action', 'client_company_public_id', 'before_state', 'after_state', 'operation_id', 'request_id']));
     }
 
     public function test_the_system_grants_admin_access_and_is_recorded_as_the_system(): void
@@ -136,7 +136,7 @@ final class WorkspaceStaffAccessTest extends TestCase
         $this->assertSame([$revisions[0] + 2, $revisions[1] + 2], $this->revisions());
         $this->assertSame(
             [[['role' => 'member'], ['role' => 'admin']], [['role' => 'admin'], ['role' => 'member']]],
-            AccessAuditEvent::query()->orderBy('id')->get()->map(fn (AccessAuditEvent $event): array => [$event->before, $event->after])->all(),
+            AccessAuditEvent::query()->orderBy('id')->get()->map(fn (AccessAuditEvent $event): array => [$event->before_state, $event->after_state])->all(),
         );
         $this->assertSame(['staff.role_changed', 'staff.role_changed'], AccessAuditEvent::query()->orderBy('id')->pluck('action')->all());
     }
@@ -188,15 +188,15 @@ final class WorkspaceStaffAccessTest extends TestCase
 
         $events = AccessAuditEvent::query()->orderBy('id')->get();
         $this->assertSame(['staff.assignment_removed', 'staff.assignment_removed', 'staff.removed'], $events->pluck('action')->all());
-        $this->assertSame(['project' => $this->first->public_id, 'role' => 'manager'], $events[0]->before);
-        $this->assertSame(['project' => $this->second->public_id, 'role' => 'viewer'], $events[1]->before);
+        $this->assertSame(['project' => $this->first->public_id, 'role' => 'manager'], $events[0]->before_state);
+        $this->assertSame(['project' => $this->second->public_id, 'role' => 'viewer'], $events[1]->before_state);
         $this->assertSame([
             'role' => 'member',
             'assignments' => [
                 ['project' => $this->first->public_id, 'role' => 'manager'],
                 ['project' => $this->second->public_id, 'role' => 'viewer'],
             ],
-        ], $events[2]->before);
+        ], $events[2]->before_state);
         $this->assertSame([self::OPERATION], $events->pluck('operation_id')->unique()->values()->all());
         $this->assertSame([$this->member->id], $events->pluck('subject_user_id')->unique()->values()->all());
     }

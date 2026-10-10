@@ -85,7 +85,7 @@ final class ProjectAssignmentCoordinationTest extends TestCase
             [['project' => $project, 'role' => 'none'], ['project' => $project, 'role' => 'viewer']],
             [['project' => $project, 'role' => 'viewer'], ['project' => $project, 'role' => 'manager']],
             [['project' => $project, 'role' => 'manager'], ['project' => $project, 'role' => 'none']],
-        ], $events->map(fn (AccessAuditEvent $event): array => [$event->before, $event->after])->all(), 'Re-setting the same role changes nothing worth recording.');
+        ], $events->map(fn (AccessAuditEvent $event): array => [$event->before_state, $event->after_state])->all(), 'Re-setting the same role changes nothing worth recording.');
         $this->assertSame([$this->admin->id], $events->pluck('actor_user_id')->unique()->values()->all());
         $this->assertSame([$this->member->id], $events->pluck('subject_user_id')->unique()->values()->all());
         // The revision still advances on every call, as before.
