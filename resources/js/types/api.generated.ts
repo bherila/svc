@@ -4,7 +4,7 @@
  */
 
 export interface paths {
-    '/workspaces': {
+    '/workspaces/{workspace}/agreements/{agreement}/activate': {
         parameters: {
             query?: never;
             header?: never;
@@ -13,23 +13,56 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Create a workspace owned by the actor. Fresh creation has no prior expected_version. Atomic actor/client/key reservation; replay rechecks current membership. Requires outer and workspace write flags. */
-        post: operations['workspaces.create'];
+        /** @description Workspace managers only. Requires both AGENT_API_WRITES_ENABLED and AGENT_API_CLIENT_WRITES_ENABLED. Versioned writes also require the corresponding read scope. Enabling automatic delivery requires a delay and a valid billing email or client portal recipient. Existing records require their current opaque expected_version; agreement creation uses the parent client version. Activation and termination require confirm: true. */
+        post: operations['agreements.activate'];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    '/workspaces/{workspace_id}/search': {
+    '/workspaces/{workspace}/clients/{client}/agreements': {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** @description Search authorized clients, projects, invoices and tasks; each kind additionally requires its read scope. Bounded to five results per kind. */
-        get: operations['search'];
+        get?: never;
+        put?: never;
+        /** @description Workspace managers only. Requires both AGENT_API_WRITES_ENABLED and AGENT_API_CLIENT_WRITES_ENABLED. Versioned writes also require the corresponding read scope. Enabling automatic delivery requires a delay and a valid billing email or client portal recipient. Existing records require their current opaque expected_version; agreement creation uses the parent client version. Activation and termination require confirm: true. */
+        post: operations['agreements.create'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/agreements/{agreement}': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations['agreements.get'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** @description Workspace managers only. Requires both AGENT_API_WRITES_ENABLED and AGENT_API_CLIENT_WRITES_ENABLED. Versioned writes also require the corresponding read scope. Enabling automatic delivery requires a delay and a valid billing email or client portal recipient. Existing records require their current opaque expected_version; agreement creation uses the parent client version. Activation and termination require confirm: true. */
+        patch: operations['agreements.update'];
+        trace?: never;
+    };
+    '/workspaces/{workspace}/agreements': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations['agreements.list'];
         put?: never;
         post?: never;
         delete?: never;
@@ -38,24 +71,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    '/workspaces/{workspace_id}/records/{record_type}/{record_id}/attachments': {
+    '/workspaces/{workspace}/agreements/{agreement}/terminate': {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** @description Manager-only generic attachment listing, bounded to 100 newest files. Expense receipts use separate routes. */
-        get: operations['attachments.list'];
+        get?: never;
         put?: never;
-        post?: never;
+        /** @description Workspace managers only. Requires both AGENT_API_WRITES_ENABLED and AGENT_API_CLIENT_WRITES_ENABLED. Versioned writes also require the corresponding read scope. Enabling automatic delivery requires a delay and a valid billing email or client portal recipient. Existing records require their current opaque expected_version; agreement creation uses the parent client version. Activation and termination require confirm: true. */
+        post: operations['agreements.terminate'];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    '/workspaces/{workspace_id}/attachments/{attachment_id}': {
+    '/workspaces/{workspace}/attachments/{attachment}': {
         parameters: {
             query?: never;
             header?: never;
@@ -73,24 +106,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    '/workspaces/{workspace_id}/attachments/{attachment_id}/download-url': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** @description Prepare a ten-minute signed content URL. Same bearer credential, files:read and current manager permission remain required. */
-        get: operations['attachments.download_url'];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    '/workspaces/{workspace_id}/attachments/{attachment_id}/content': {
+    '/workspaces/{workspace}/attachments/{attachment}/content': {
         parameters: {
             query?: never;
             header?: never;
@@ -107,24 +123,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    '/workspaces/{workspace_id}/records/{record_type}/{record_id}/attachments/upload-url': {
+    '/workspaces/{workspace}/attachments/{attachment}/download-url': {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** @description Prepare a ten-minute signed content URL. Same bearer credential, files:read and current manager permission remain required. */
+        get: operations['attachments.download_url'];
         put?: never;
-        /** @description Read-only URL preparation: does not reserve idempotency or persist bytes. Both file and workflow write flags and manager permission required. Upload file plus expected_version with same bearer credential and Idempotency-Key to returned URL. */
-        post: operations['attachments.upload_url'];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    '/workspaces/{workspace_id}/records/{record_type}/{record_id}/attachments/upload': {
+    '/workspaces/{workspace}/records/{recordType}/{recordPublicId}/attachments': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Manager-only generic attachment listing, bounded to 100 newest files. Expense receipts use separate routes. */
+        get: operations['attachments.list'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/records/{recordType}/{recordPublicId}/attachments/upload': {
         parameters: {
             query?: never;
             header?: never;
@@ -141,7 +174,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    '/workspaces/{workspace_id}/proposals/{proposal_id}/accept': {
+    '/workspaces/{workspace}/records/{recordType}/{recordPublicId}/attachments/upload-url': {
         parameters: {
             query?: never;
             header?: never;
@@ -150,39 +183,22 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Explicit confirmation, signer identity and current proposal version required. Authorized company portal recipient within project grants, or workspace manager recording offline acceptance. Signs and activates the resulting agreement. Both workflow and proposal write cutovers required. */
-        post: operations['proposals.accept'];
+        /** @description Read-only URL preparation: does not reserve idempotency or persist bytes. Both file and workflow write flags and manager permission required. Upload file plus expected_version with same bearer credential and Idempotency-Key to returned URL. */
+        post: operations['attachments.upload_url'];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    '/workspaces/{workspace_id}/proposals/{proposal_id}/send': {
+    '/workspaces/{workspace}/billing-audits/stale-and-missing': {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get?: never;
-        put?: never;
-        /** @description Explicit confirmation and current proposal version required. Manager only; marks sent and publishes to client portal, without email. Both workflow and proposal write cutovers required. */
-        post: operations['proposals.send'];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    '/workspaces/{workspace_id}/proposals/{proposal_id}': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations['proposals.get'];
+        get: operations['billing_audit.stale_and_missing'];
         put?: never;
         post?: never;
         delete?: never;
@@ -191,24 +207,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    '/workspaces/{workspace_id}/proposals': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations['proposals.list'];
-        put?: never;
-        /** @description Workspace managers only. Lock and check the client company version before creating a draft. Both workflow and proposal write cutovers required. */
-        post: operations['proposals.create'];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    '/workspaces/{workspace_id}/billing-schedules': {
+    '/workspaces/{workspace}/billing-schedules': {
         parameters: {
             query?: never;
             header?: never;
@@ -226,24 +225,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    '/workspaces/{workspace_id}/billing-schedules/{schedule_id}': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** @description Get one workspace-scoped billing schedule as a manager. */
-        get: operations['billing_schedules.get'];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    '/workspaces/{workspace_id}/billing-schedules/{schedule_id}/generate': {
+    '/workspaces/{workspace}/billing-schedules/{schedule}/generate': {
         parameters: {
             query?: never;
             header?: never;
@@ -260,80 +242,15 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    '/workspaces/{workspace_id}/invoices/{invoice_id}/automatic-delivery/hold': {
+    '/workspaces/{workspace}/billing-schedules/{schedule}': {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get?: never;
-        put?: never;
-        post: operations['invoices.hold_delivery'];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    '/workspaces/{workspace_id}/invoices/{invoice_id}/automatic-delivery/release': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations['invoices.release_delivery'];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    '/workspaces/{workspace_id}/invoices/{invoice_id}/time': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations['invoices.add_time'];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    '/workspaces/{workspace_id}/agreements/{agreement_id}/invoices': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** @description Manager only. period_start is a started retainer cadence cycle; service dates reconcile the preceding work cycle. Calls the existing cadence engine. A non-void invoice for this period is refused, while identical idempotent retries return the created draft. No automated cadence draft job is deployed. Requires confirmation and the agreement version. */
-        post: operations['invoices.generate_period'];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    '/workspaces/{workspace_id}/invoices/{invoice_id}/pdf-link': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** @description Five-minute signed URL. Download still requires current API or browser authentication and current invoice visibility. */
-        get: operations['invoices.pdf'];
+        /** @description Get one workspace-scoped billing schedule as a manager. */
+        get: operations['billing_schedules.get'];
         put?: never;
         post?: never;
         delete?: never;
@@ -342,312 +259,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    '/workspaces/{workspace_id}/invoices/{invoice_id}/pdf': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations['invoices.download_pdf'];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    '/workspaces/{workspace_id}/billing-audits/stale-and-missing': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations['billing_audit.stale_and_missing'];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    '/workspaces/{workspace_id}/expenses/{expense_id}/approve': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** @description Manager-only lifecycle change. Version checked under expense lock; both expense write flags required. Invoiced and unknown statuses are refused. */
-        post: operations['expenses.approve'];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    '/workspaces/{workspace_id}/expenses/{expense_id}/unapprove': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** @description Manager-only lifecycle change. Version checked under expense lock; both expense write flags required. Invoiced and unknown statuses are refused. */
-        post: operations['expenses.unapprove'];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    '/workspaces/{workspace_id}/expense-schedules': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** @description Manager-only bounded listing; cursor is bound to workspace and company filter. */
-        get: operations['expense_schedules.list'];
-        put?: never;
-        /** @description Manager-only creation. expected_version names the client company and is checked while that parent is locked. Both expense write flags required. */
-        post: operations['expense_schedules.create'];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    '/workspaces/{workspace_id}/expense-schedules/{schedule_id}': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /** @description Manager-only full replacement of editable facts. Omitted/null project_id clears attribution. Calendar anchor, cadence and occurrence cursor are immutable. Current schedule version required under lock; both expense write flags required. */
-        patch: operations['expense_schedules.update'];
-        trace?: never;
-    };
-    '/workspaces/{workspace_id}/expense-schedules/{schedule_id}/generate': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** @description Explicit confirmation and current schedule version required. Materializes at most 24 due draft expenses in workspace calendar. Never approves, issues or sends an invoice. Replay preserves the original generated_count. Both expense write flags required. */
-        post: operations['expense_schedules.generate'];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    '/workspaces/{workspace_id}/expenses/{expense_id}/receipts': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** @description Manager-only list of the 100 newest available receipts; includes current expense_version. */
-        get: operations['expenses.receipts.list'];
-        put?: never;
-        /** @description Manager-only multipart upload, at most 50 MiB. File digest, filename and expense version bind idempotent retries. Version is checked on locked expense and advances on upload. Prepared URLs expire after ten minutes; direct authenticated REST uploads need no preparation. Both expense write flags required. */
-        post: operations['expenses.receipts.upload'];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    '/workspaces/{workspace_id}/expenses/{expense_id}/receipts/upload-url': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** @description Prepare a ten-minute signed multipart upload URL, without mutating expense or receipt. The URL requires the same authorized bearer credential, Idempotency-Key header, expected_version and file form fields. Both expense write flags required. */
-        get: operations['expenses.receipts.upload_url'];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    '/workspaces/{workspace_id}/expenses/{expense_id}/receipts/{receipt_id}': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** @description Manager-only ten-minute download URL for an available receipt on this expense. Signed URL still requires expenses:read and current manager access. */
-        get: operations['expenses.receipts.download'];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    '/workspaces/{workspace_id}/expenses/{expense_id}/receipts/{receipt_id}/content': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** @description Stream receipt bytes only with a valid ten-minute signed URL and current manager bearer credential. */
-        get: operations['expenses.receipts.content'];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    '/workspaces/{workspace_id}/time-entries/{entry_id}/unapprove': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** @description Return approved time to draft as a workspace owner/admin. Draft-invoice allocations are released and the invoice regenerated atomically; issued/paid/void allocations are refused. */
-        post: operations['time_entries.unapprove'];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    '/workspaces/{workspace_id}/agreements/{agreement_id}/terminate': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** @description Workspace managers only. Requires both AGENT_API_WRITES_ENABLED and AGENT_API_CLIENT_WRITES_ENABLED. Versioned writes also require the corresponding read scope. Enabling automatic delivery requires a delay and a valid billing email or client portal recipient. Existing records require their current opaque expected_version; agreement creation uses the parent client version. Activation and termination require confirm: true. */
-        post: operations['agreements.terminate'];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    '/workspaces/{workspace_id}/agreements/{agreement_id}/activate': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** @description Workspace managers only. Requires both AGENT_API_WRITES_ENABLED and AGENT_API_CLIENT_WRITES_ENABLED. Versioned writes also require the corresponding read scope. Enabling automatic delivery requires a delay and a valid billing email or client portal recipient. Existing records require their current opaque expected_version; agreement creation uses the parent client version. Activation and termination require confirm: true. */
-        post: operations['agreements.activate'];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    '/workspaces/{workspace_id}/clients/{client_id}/agreements': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** @description Workspace managers only. Requires both AGENT_API_WRITES_ENABLED and AGENT_API_CLIENT_WRITES_ENABLED. Versioned writes also require the corresponding read scope. Enabling automatic delivery requires a delay and a valid billing email or client portal recipient. Existing records require their current opaque expected_version; agreement creation uses the parent client version. Activation and termination require confirm: true. */
-        post: operations['agreements.create'];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    '/workspaces/{workspace_id}/agreements/{agreement_id}': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations['agreements.get'];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /** @description Workspace managers only. Requires both AGENT_API_WRITES_ENABLED and AGENT_API_CLIENT_WRITES_ENABLED. Versioned writes also require the corresponding read scope. Enabling automatic delivery requires a delay and a valid billing email or client portal recipient. Existing records require their current opaque expected_version; agreement creation uses the parent client version. Activation and termination require confirm: true. */
-        patch: operations['agreements.update'];
-        trace?: never;
-    };
-    '/workspaces/{workspace_id}/agreements': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations['agreements.list'];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    '/workspaces/{workspace_id}/clients/{client_id}/restore': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** @description Workspace managers only. Requires both AGENT_API_WRITES_ENABLED and AGENT_API_CLIENT_WRITES_ENABLED. Versioned writes also require the corresponding read scope. Enabling automatic delivery requires a delay and a valid billing email or client portal recipient. Existing records require their current opaque expected_version; agreement creation uses the parent client version. Activation and termination require confirm: true. */
-        post: operations['clients.restore'];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    '/workspaces/{workspace_id}/clients/{client_id}/archive': {
+    '/workspaces/{workspace}/clients/{client}/archive': {
         parameters: {
             query?: never;
             header?: never;
@@ -664,24 +276,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    '/workspaces/{workspace_id}/clients/{client_id}': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations['clients.get'];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /** @description Workspace managers only. Requires both AGENT_API_WRITES_ENABLED and AGENT_API_CLIENT_WRITES_ENABLED. Versioned writes also require the corresponding read scope. Enabling automatic delivery requires a delay and a valid billing email or client portal recipient. Existing records require their current opaque expected_version; agreement creation uses the parent client version. Activation and termination require confirm: true. */
-        patch: operations['clients.update'];
-        trace?: never;
-    };
-    '/workspaces/{workspace_id}/clients': {
+    '/workspaces/{workspace}/clients': {
         parameters: {
             query?: never;
             header?: never;
@@ -698,23 +293,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    '/workspaces/{workspace_id}/projects/{project_id}/members': {
+    '/workspaces/{workspace}/clients/{client}': {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get: operations['projects.members.list'];
-        put: operations['projects.members.update'];
+        get: operations['clients.get'];
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /** @description Workspace managers only. Requires both AGENT_API_WRITES_ENABLED and AGENT_API_CLIENT_WRITES_ENABLED. Versioned writes also require the corresponding read scope. Enabling automatic delivery requires a delay and a valid billing email or client portal recipient. Existing records require their current opaque expected_version; agreement creation uses the parent client version. Activation and termination require confirm: true. */
+        patch: operations['clients.update'];
         trace?: never;
     };
-    '/workspaces/{workspace_id}/projects/{project_id}/archive': {
+    '/workspaces/{workspace}/clients/{client}/restore': {
         parameters: {
             query?: never;
             header?: never;
@@ -723,94 +319,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        post: operations['projects.archive'];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    '/workspaces/{workspace_id}/expenses': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations['expenses.list'];
-        put?: never;
-        /** @description Workspace managers only. Atomic batch of at most 20 expenses; amounts are minor units. Requires both AGENT_API_WRITES_ENABLED and AGENT_API_EXPENSE_WRITES_ENABLED. No approval or receipt attachment. */
-        post: operations['expenses.log'];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    '/workspaces/{workspace_id}/expenses/{expense_id}': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /** @description Soft-delete draft expenses only, using the current version. Approved, invoiced and unknown statuses are refused. Workspace managers only; both write flags required. */
-        delete: operations['expenses.delete'];
-        options?: never;
-        head?: never;
-        /** @description Replace all draft expense facts using its current version. Omitted project_id preserves attribution; explicit null clears it. Workspace managers only; both expense and workflow write flags required. */
-        patch: operations['expenses.update'];
-        trace?: never;
-    };
-    '/workspaces/{workspace_id}/payments': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** @description List received payments for an explicit invoice_id or company_id (at least one required). Invoice visibility applies; private processor and reconciliation data is excluded. */
-        get: operations['payments.list'];
-        put?: never;
-        /** @description Owner/admin bookkeeping for money already received. Never initiates a charge. Explicit invoice, minor-unit amount, currency, payment date and method required; reference is optional. Overpayment refused. Requires both outer workflow and payment write flags. */
-        post: operations['payments.record'];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    '/workspaces/{workspace_id}/payments/{payment_id}': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /** @description Owner/admin correction of a received payment's descriptive fields: method, reference and received_on, at least one of which must be given. Requires the version from payments.list and a reason, which is kept in the client history. Omitted fields are unchanged; an explicit null reference clears it. A stale version is refused with 409 and a correction that changes nothing records nothing. Amount, currency, status, refunds, the invoice and processor fields cannot be changed. Never initiates a charge or a refund. Requires both outer workflow and payment write flags. */
-        patch: operations['payments.correct'];
-        trace?: never;
-    };
-    '/context': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** @description Returns role capabilities intersected with the current token scopes and write-cutover state. Per-project capability IDs are included only with projects:read. */
-        get: operations['context.get'];
-        put?: never;
-        post?: never;
+        /** @description Workspace managers only. Requires both AGENT_API_WRITES_ENABLED and AGENT_API_CLIENT_WRITES_ENABLED. Versioned writes also require the corresponding read scope. Enabling automatic delivery requires a delay and a valid billing email or client portal recipient. Existing records require their current opaque expected_version; agreement creation uses the parent client version. Activation and termination require confirm: true. */
+        post: operations['clients.restore'];
         delete?: never;
         options?: never;
         head?: never;
@@ -833,15 +343,15 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    '/workspaces/{workspace_id}/summary': {
+    '/context': {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** @description Always returns workspace_id; project, time, and invoice sections are omitted unless the token has their corresponding read scope. */
-        get: operations['operations.summary'];
+        /** @description Returns role capabilities intersected with the current token scopes and write-cutover state. Per-project capability IDs are included only with projects:read. */
+        get: operations['context.get'];
         put?: never;
         post?: never;
         delete?: never;
@@ -850,40 +360,25 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    '/workspaces/{workspace_id}/projects': {
+    '/workspaces/{workspace}/expense-schedules': {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get: operations['projects.list'];
+        /** @description Manager-only bounded listing; cursor is bound to workspace and company filter. */
+        get: operations['expense_schedules.list'];
         put?: never;
-        post: operations['projects.create'];
+        /** @description Manager-only creation. expected_version names the client company and is checked while that parent is locked. Both expense write flags required. */
+        post: operations['expense_schedules.create'];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    '/workspaces/{workspace_id}/projects/{project_id}': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** @description Task data is embedded only when the token also has tasks:read. */
-        get: operations['projects.get'];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch: operations['projects.update'];
-        trace?: never;
-    };
-    '/workspaces/{workspace_id}/projects/{project_id}/tasks': {
+    '/workspaces/{workspace}/expense-schedules/{schedule}/generate': {
         parameters: {
             query?: never;
             header?: never;
@@ -892,193 +387,15 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        post: operations['tasks.create'];
+        /** @description Explicit confirmation and current schedule version required. Materializes at most 24 due draft expenses in workspace calendar. Never approves, issues or sends an invoice. Replay preserves the original generated_count. Both expense write flags required. */
+        post: operations['expense_schedules.generate'];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    '/workspaces/{workspace_id}/tasks': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations['tasks.list'];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    '/workspaces/{workspace_id}/tasks/{task_id}': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations['tasks.get'];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /** @description Omitted properties remain unchanged; explicit null clears nullable properties. */
-        patch: operations['tasks.update'];
-        trace?: never;
-    };
-    '/workspaces/{workspace_id}/time-entries': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations['time_entries.list'];
-        put?: never;
-        post: operations['time_entries.log'];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    '/workspaces/{workspace_id}/time-entries/{entry_id}': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete: operations['time_entries.delete'];
-        options?: never;
-        head?: never;
-        /** @description Omitted properties remain unchanged; explicit null clears nullable properties. */
-        patch: operations['time_entries.update'];
-        trace?: never;
-    };
-    '/workspaces/{workspace_id}/time-entries/approve': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations['time_entries.approve'];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    '/workspaces/{workspace_id}/invoices': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations['invoices.list'];
-        put?: never;
-        post: operations['invoices.create_draft'];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    '/workspaces/{workspace_id}/invoices/{invoice_id}': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations['invoices.get'];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /** @description Replace the explicit time selection and manual lines on a draft invoice. */
-        patch: operations['invoices.update_draft'];
-        trace?: never;
-    };
-    '/workspaces/{workspace_id}/invoices/{invoice_id}/discard': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations['invoices.discard_draft'];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    '/workspaces/{workspace_id}/invoices/{invoice_id}/issue': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations['invoices.issue'];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    '/workspaces/{workspace_id}/invoices/{invoice_id}/send': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations['invoices.send'];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    '/workspaces/{workspace_id}/invoices/{invoice_id}/void': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations['invoices.void'];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    '/workspaces/{workspace_id}/invoices/{invoice_id}/details': {
+    '/workspaces/{workspace}/expense-schedules/{schedule}': {
         parameters: {
             query?: never;
             header?: never;
@@ -1091,11 +408,165 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        /** @description Change the due date and/or notes of any draft invoice, generated or ad hoc, using its current version. Lines, linked time and the hours statement are unchanged, and a generated draft keeps the change when it is regenerated. A due date may not precede the draft's issue date. Issued invoices are corrected with invoices.correct instead. */
-        patch: operations['invoices.update_details'];
+        /** @description Manager-only full replacement of editable facts. Omitted/null project_id clears attribution. Calendar anchor, cadence and occurrence cursor are immutable. Current schedule version required under lock; both expense write flags required. */
+        patch: operations['expense_schedules.update'];
         trace?: never;
     };
-    '/workspaces/{workspace_id}/invoices/{invoice_id}/correct': {
+    '/workspaces/{workspace}/expenses/{expense}/approve': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Manager-only lifecycle change. Version checked under expense lock; both expense write flags required. Invoiced and unknown statuses are refused. */
+        post: operations['expenses.approve'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/expenses/{expense}': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** @description Soft-delete draft expenses only, using the current version. Approved, invoiced and unknown statuses are refused. Workspace managers only; both write flags required. */
+        delete: operations['expenses.delete'];
+        options?: never;
+        head?: never;
+        /** @description Replace all draft expense facts using its current version. Omitted project_id preserves attribution; explicit null clears it. Workspace managers only; both expense and workflow write flags required. */
+        patch: operations['expenses.update'];
+        trace?: never;
+    };
+    '/workspaces/{workspace}/expenses': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations['expenses.list'];
+        put?: never;
+        /** @description Workspace managers only. Atomic batch of at most 20 expenses; amounts are minor units. Requires both AGENT_API_WRITES_ENABLED and AGENT_API_EXPENSE_WRITES_ENABLED. No approval or receipt attachment. */
+        post: operations['expenses.log'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/expenses/{expense}/receipts/{receipt}/content': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Stream receipt bytes only with a valid ten-minute signed URL and current manager bearer credential. */
+        get: operations['expenses.receipts.content'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/expenses/{expense}/receipts/{receipt}': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Manager-only ten-minute download URL for an available receipt on this expense. Signed URL still requires expenses:read and current manager access. */
+        get: operations['expenses.receipts.download'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/expenses/{expense}/receipts': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Manager-only list of the 100 newest available receipts; includes current expense_version. */
+        get: operations['expenses.receipts.list'];
+        put?: never;
+        /** @description Manager-only multipart upload, at most 50 MiB. File digest, filename and expense version bind idempotent retries. Version is checked on locked expense and advances on upload. Prepared URLs expire after ten minutes; direct authenticated REST uploads need no preparation. Both expense write flags required. */
+        post: operations['expenses.receipts.upload'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/expenses/{expense}/receipts/upload-url': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Prepare a ten-minute signed multipart upload URL, without mutating expense or receipt. The URL requires the same authorized bearer credential, Idempotency-Key header, expected_version and file form fields. Both expense write flags required. */
+        get: operations['expenses.receipts.upload_url'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/expenses/{expense}/unapprove': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Manager-only lifecycle change. Version checked under expense lock; both expense write flags required. Invoiced and unknown statuses are refused. */
+        post: operations['expenses.unapprove'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/invoices/{invoice}/time': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations['invoices.add_time'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/invoices/{invoice}/correct': {
         parameters: {
             query?: never;
             header?: never;
@@ -1112,505 +583,539 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    '/workspaces/{workspace}/invoices': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations['invoices.list'];
+        put?: never;
+        post: operations['invoices.create_draft'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/invoices/{invoice}/discard': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations['invoices.discard_draft'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/invoices/{invoice}/pdf': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations['invoices.download_pdf'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/agreements/{agreement}/invoices': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Manager only. period_start is a started retainer cadence cycle; service dates reconcile the preceding work cycle. Calls the existing cadence engine. A non-void invoice for this period is refused, while identical idempotent retries return the created draft. No automated cadence draft job is deployed. Requires confirmation and the agreement version. */
+        post: operations['invoices.generate_period'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/invoices/{invoice}': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations['invoices.get'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** @description Replace the explicit time selection and manual lines on a draft invoice. */
+        patch: operations['invoices.update_draft'];
+        trace?: never;
+    };
+    '/workspaces/{workspace}/invoices/{invoice}/automatic-delivery/hold': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations['invoices.hold_delivery'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/invoices/{invoice}/issue': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations['invoices.issue'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/invoices/{invoice}/pdf-link': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Five-minute signed URL. Download still requires current API or browser authentication and current invoice visibility. */
+        get: operations['invoices.pdf'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/invoices/{invoice}/automatic-delivery/release': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations['invoices.release_delivery'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/invoices/{invoice}/send': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations['invoices.send'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/invoices/{invoice}/details': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** @description Change the due date and/or notes of any draft invoice, generated or ad hoc, using its current version. Lines, linked time and the hours statement are unchanged, and a generated draft keeps the change when it is regenerated. A due date may not precede the draft's issue date. Issued invoices are corrected with invoices.correct instead. */
+        patch: operations['invoices.update_details'];
+        trace?: never;
+    };
+    '/workspaces/{workspace}/invoices/{invoice}/void': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations['invoices.void'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/summary': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Always returns workspace_id; project, time, and invoice sections are omitted unless the token has their corresponding read scope. */
+        get: operations['operations.summary'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/payments/{payment}': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** @description Owner/admin correction of a received payment's descriptive fields: method, reference and received_on, at least one of which must be given. Requires the version from payments.list and a reason, which is kept in the client history. Omitted fields are unchanged; an explicit null reference clears it. A stale version is refused with 409 and a correction that changes nothing records nothing. Amount, currency, status, refunds, the invoice and processor fields cannot be changed. Never initiates a charge or a refund. Requires both outer workflow and payment write flags. */
+        patch: operations['payments.correct'];
+        trace?: never;
+    };
+    '/workspaces/{workspace}/payments': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description List received payments for an explicit invoice_id or company_id (at least one required). Invoice visibility applies; private processor and reconciliation data is excluded. */
+        get: operations['payments.list'];
+        put?: never;
+        /** @description Owner/admin bookkeeping for money already received. Never initiates a charge. Explicit invoice, minor-unit amount, currency, payment date and method required; reference is optional. Overpayment refused. Requires both outer workflow and payment write flags. */
+        post: operations['payments.record'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/projects/{project}/archive': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations['projects.archive'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/projects': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations['projects.list'];
+        put?: never;
+        post: operations['projects.create'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/projects/{project}': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Task data is embedded only when the token also has tasks:read. */
+        get: operations['projects.get'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations['projects.update'];
+        trace?: never;
+    };
+    '/workspaces/{workspace}/projects/{project}/members': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations['projects.members.list'];
+        put: operations['projects.members.update'];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/proposals/{proposal}/accept': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Explicit confirmation, signer identity and current proposal version required. Authorized company portal recipient within project grants, or workspace manager recording offline acceptance. Signs and activates the resulting agreement. Both workflow and proposal write cutovers required. */
+        post: operations['proposals.accept'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/proposals': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations['proposals.list'];
+        put?: never;
+        /** @description Workspace managers only. Lock and check the client company version before creating a draft. Both workflow and proposal write cutovers required. */
+        post: operations['proposals.create'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/proposals/{proposal}': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations['proposals.get'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/proposals/{proposal}/send': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Explicit confirmation and current proposal version required. Manager only; marks sent and publishes to client portal, without email. Both workflow and proposal write cutovers required. */
+        post: operations['proposals.send'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/search': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Search authorized clients, projects, invoices and tasks; each kind additionally requires its read scope. Bounded to five results per kind. */
+        get: operations['search'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/projects/{project}/tasks': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations['tasks.create'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/tasks/{task}': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations['tasks.get'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** @description Omitted properties remain unchanged; explicit null clears nullable properties. */
+        patch: operations['tasks.update'];
+        trace?: never;
+    };
+    '/workspaces/{workspace}/tasks': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations['tasks.list'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/time-entries/approve': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations['time_entries.approve'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/time-entries/{entry}': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations['time_entries.delete'];
+        options?: never;
+        head?: never;
+        /** @description Omitted properties remain unchanged; explicit null clears nullable properties. */
+        patch: operations['time_entries.update'];
+        trace?: never;
+    };
+    '/workspaces/{workspace}/time-entries': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations['time_entries.list'];
+        put?: never;
+        post: operations['time_entries.log'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/time-entries/{entry}/unapprove': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Return approved time to draft as a workspace owner/admin. Draft-invoice allocations are released and the invoice regenerated atomically; issued/paid/void allocations are refused. */
+        post: operations['time_entries.unapprove'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Create a workspace owned by the actor. Fresh creation has no prior expected_version. Atomic actor/client/key reservation; replay rechecks current membership. Requires outer and workspace write flags. */
+        post: operations['workspaces.create'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        WorkspaceCreateRequest: {
-            name: string;
-        };
-        WorkspaceCreated: {
-            /** Format: uuid */
-            id: string;
-            name: string;
-            /** Format: uri */
-            web_url: string;
-        };
-        WorkspaceCreateResponse: {
-            data: components['schemas']['WorkspaceCreated'];
-        };
-        SearchResult: {
-            /** @enum {string} */
-            kind: 'client' | 'project' | 'invoice' | 'task';
-            /** Format: uuid */
-            id: string;
-            title: string;
-            subtitle: string | null;
-            href: string;
-            workspace: string;
-        };
-        SearchResponse: {
-            data: components['schemas']['SearchResult'][];
-        };
-        Attachment: {
-            /** Format: uuid */
-            id: string;
-            /** @enum {string} */
-            record_type:
-                | 'company'
-                | 'project'
-                | 'task'
-                | 'proposal'
-                | 'agreement'
-                | 'invoice';
-            /** Format: uuid */
-            record_id: string;
-            filename: string;
-            media_type: string;
-            bytes: number;
-            sha256: string;
-            /** @enum {string} */
-            status: 'staged' | 'available' | 'deleting' | 'deleted' | 'corrupt';
-            version: string;
-        };
-        AttachmentResponse: {
-            data: components['schemas']['Attachment'];
-        };
-        AttachmentListResponse: {
-            data: components['schemas']['Attachment'][];
-            parent_version: string;
-        };
-        AttachmentDownloadUrl: {
-            /** Format: uri */
-            url: string;
-            /** @constant */
-            expires_in: 600;
-            /** @constant */
-            method: 'GET';
-        };
-        AttachmentDownloadUrlResponse: {
-            data: components['schemas']['AttachmentDownloadUrl'];
-        };
-        AttachmentUploadUrl: {
-            /** Format: uri */
-            url: string;
-            /** @constant */
-            expires_in: 600;
-            /** @constant */
-            method: 'POST';
-            expected_version: string;
-            /** @constant */
-            max_bytes: 52428800;
-            /** @constant */
-            file_field: 'file';
-            /** @constant */
-            version_field: 'expected_version';
-            /** @constant */
-            idempotency_header: 'Idempotency-Key';
-        };
-        AttachmentUploadUrlResponse: {
-            data: components['schemas']['AttachmentUploadUrl'];
-        };
-        AttachmentUploadRequest: {
-            /** Format: binary */
-            file: string;
-            expected_version: string;
-        };
-        AttachmentDeleteRequest: {
-            expected_version: string;
-            /** @constant */
-            confirm: true;
-        };
-        WithheldTool: {
-            name: string;
-            /** @enum {string} */
-            reason: 'deployment_disabled' | 'scope_not_granted' | 'role';
-            scope?: string;
-        };
-        ProposalAcceptRequest: {
-            expected_version: string;
-            /** @constant */
-            confirm: true;
-            signer_name: string;
-            signer_title?: string | null;
-        };
-        ProposalSendRequest: {
-            expected_version: string;
-            /** @constant */
-            confirm: true;
-        };
-        ProposalCreateRequest: {
-            /** Format: uuid */
-            company_id: string;
-            /** Format: uuid */
-            project_id?: string | null;
-            expected_version: string;
-            title: string;
-            summary?: string | null;
-            terms?: string | null;
-            /** Format: date */
-            valid_until?: string | null;
-            currency: string;
-            is_visible_to_client?: boolean;
-            items?: components['schemas']['ProposalItemInput'][];
-        };
-        ProposalListResponse: {
-            data: components['schemas']['Proposal'][];
-            meta: {
-                next_cursor: string | null;
-            };
-        };
-        ProposalResponse: {
-            data: components['schemas']['Proposal'];
-        };
-        Proposal: {
-            /** Format: uuid */
-            id: string;
-            /** Format: uuid */
-            workspace_id: string;
-            /** Format: uuid */
-            company_id: string;
-            /** Format: uuid */
-            project_id: string | null;
-            title: string;
-            summary: string | null;
-            terms: string | null;
-            currency: string;
-            /** @enum {string} */
-            status: 'draft' | 'sent' | 'accepted' | 'declined' | 'expired';
-            is_visible_to_client: boolean;
-            /** Format: date */
-            valid_until: string | null;
-            /** Format: date-time */
-            sent_at: string | null;
-            /** Format: date-time */
-            accepted_at: string | null;
-            version: string;
-            total_amount: number;
-            items: components['schemas']['ProposalItem'][];
-            /** Format: uri */
-            url: string;
-        };
-        ProposalItemInput: {
-            description: string;
-            /** @description Positive quantity up to 10000 */
-            quantity: number | string;
-            unit_amount: number;
-            /** @enum {string} */
-            cadence:
-                'one_time' | 'monthly' | 'quarterly' | 'semi_annual' | 'annual';
-            sort_order?: number;
-        };
-        ProposalItem: {
-            /** Format: uuid */
-            id: string;
-            description: string;
-            quantity: string;
-            unit_amount: number;
-            /** @enum {string} */
-            cadence:
-                'one_time' | 'monthly' | 'quarterly' | 'semi_annual' | 'annual';
-            sort_order: number;
-        };
-        BillingSchedule: {
-            /** Format: uuid */
-            id: string;
-            /** Format: uuid */
-            agreement_id: string;
-            version: string;
-            /** @enum {string} */
-            cadence: 'monthly' | 'quarterly' | 'semi_annual' | 'annual';
-            /** Format: date */
-            next_run_on: string;
-            is_active: boolean;
-        };
-        BillingScheduleResponse: {
-            data: components['schemas']['BillingSchedule'];
-        };
-        BillingScheduleListResponse: {
-            data: components['schemas']['BillingSchedule'][];
-            meta: {
-                next_cursor: string | null;
-            };
-        };
-        BillingScheduleMutation: {
-            /** Format: uuid */
-            id: string;
-            version: string;
-            /** Format: date */
-            next_run_on: string;
-        };
-        BillingScheduleMutationResponse: {
-            data: components['schemas']['BillingScheduleMutation'];
-        };
-        BillingScheduleGenerateResponse: {
-            data: {
-                schedule: components['schemas']['BillingScheduleMutation'];
-                invoices: components['schemas']['InvoiceMutation'][];
-            };
-        };
-        BillingScheduleCreateRequest: {
-            /** Format: uuid */
-            company_id: string;
-            /** Format: uuid */
-            client_agreement: string;
-            expected_version: string;
-            /** @enum {string} */
-            cadence: 'monthly' | 'quarterly' | 'semi_annual' | 'annual';
-            anchor_month?: number | null;
-            anchor_day?: number | null;
-            /** Format: date */
-            next_run_on: string;
-            due_days: number;
-            currency: string;
-            is_active?: boolean;
-            line_template: {
-                type: string;
-                description: string;
-                quantity: string;
-                unit_amount: number;
-                tax_amount?: number | null;
-                sort_order?: number | null;
-            }[];
-        };
-        BillingScheduleGenerateRequest: {
-            expected_version: string;
-            /** @constant */
-            confirm: true;
-        };
-        InvoiceDeliveryHoldRequest: {
-            expected_version: components['schemas']['Version'];
-        };
-        InvoiceDeliveryReleaseRequest: {
-            expected_version: components['schemas']['Version'];
-            /** @constant */
-            confirm: true;
-        };
-        InvoiceAddTimeRequest: {
-            expected_version: components['schemas']['Version'];
-            time_entry_ids: components['schemas']['Uuid'][];
-        };
-        InvoiceGeneratePeriodRequest: {
-            expected_version: components['schemas']['Version'];
-            /** Format: date */
-            period_start: string;
-            /** @constant */
-            confirm: true;
-        };
-        InvoicePdfLink: {
-            /** Format: uri */
-            url: string;
-            /** Format: date-time */
-            expires_at: string;
-        };
-        InvoicePdfLinkResponse: {
-            data: components['schemas']['InvoicePdfLink'];
-        };
-        InvoiceMissingPeriod: {
-            agreement_id: components['schemas']['Uuid'];
-            /** Format: date */
-            period_start: string;
-            /** Format: date */
-            period_end: string;
-        };
-        StaleInvoiceBalance: {
-            currency: components['schemas']['Currency'];
-            balance_amount: number;
-        };
-        StaleAndMissingInvoiceAudit: {
-            /** Format: date */
-            as_of: string;
-            stale_draft_count: number;
-            stale_draft_balances: components['schemas']['StaleInvoiceBalance'][];
-            stale_draft_ids: components['schemas']['Uuid'][];
-            stale_draft_ids_truncated: boolean;
-            missing_period_count: number;
-            missing_periods: components['schemas']['InvoiceMissingPeriod'][];
-            missing_periods_truncated: boolean;
-        };
-        StaleAndMissingInvoiceAuditResponse: {
-            data: components['schemas']['StaleAndMissingInvoiceAudit'];
-        };
-        ExpenseApprovalRequest: {
-            expected_version: components['schemas']['Version'];
-        };
-        ExpenseScheduleCreateRequest: {
-            /** Format: uuid */
-            company_id: string;
-            expected_version: components['schemas']['Version'];
-            /** Format: uuid */
-            project_id?: string | null;
-            /** Format: date */
-            starts_on: string;
-            /** @enum {string} */
-            cadence: 'monthly' | 'quarterly' | 'semi_annual' | 'annual';
-            amount: number;
-            currency: components['schemas']['Currency'];
-            description: string;
-        };
-        ExpenseScheduleUpdateRequest: {
-            expected_version: components['schemas']['Version'];
-            /** Format: uuid */
-            project_id?: string | null;
-            active: boolean;
-            amount: number;
-            currency: components['schemas']['Currency'];
-            description: string;
-        };
-        ExpenseScheduleGenerateRequest: {
-            expected_version: components['schemas']['Version'];
-            /** @constant */
-            confirm: true;
-        };
-        ExpenseSchedule: {
-            /** Format: uuid */
-            id: string;
-            /** Format: uuid */
-            company_id: string;
-            /** Format: uuid */
-            project_id: string | null;
-            /** Format: date */
-            starts_on: string;
-            /** @enum {string} */
-            cadence: 'monthly' | 'quarterly' | 'semi_annual' | 'annual';
-            amount: number;
-            currency: components['schemas']['Currency'];
-            description: string;
-            active: boolean;
-            /** Format: date */
-            next_on: string;
-            version: components['schemas']['Version'];
-        };
-        ExpenseScheduleResponse: {
-            data: components['schemas']['ExpenseSchedule'];
-        };
-        ExpenseScheduleGenerateResponse: {
-            data: components['schemas']['ExpenseSchedule'];
-            generated_count: number;
-        };
-        ExpenseScheduleListResponse: {
-            data: components['schemas']['ExpenseSchedule'][];
-            meta: components['schemas']['PaginationMeta'];
-        };
-        ExpenseReceipt: {
-            /** Format: uuid */
-            id: string;
-            filename: string;
-            media_type: string;
-            bytes: number;
-            sha256: string;
-            /** Format: date-time */
-            uploaded_at: string | null;
-        };
-        ExpenseReceiptListResponse: {
-            data: components['schemas']['ExpenseReceipt'][];
-            expense_version: components['schemas']['Version'];
-        };
-        ExpenseReceiptUploadResponse: {
-            data: components['schemas']['ExpenseReceipt'];
-            expense_version: components['schemas']['Version'];
-        };
-        ExpenseReceiptDownloadResponse: {
-            data: {
-                /** Format: uri */
-                download_url: string;
-                /** Format: date-time */
-                expires_at: string;
-            };
-        };
-        ExpenseReceiptUploadUrlResponse: {
-            data: {
-                /** Format: uri */
-                upload_url: string;
-                /** Format: date-time */
-                expires_at: string;
-                expected_version: components['schemas']['Version'];
-            };
-        };
-        ExpenseReceiptUploadRequest: {
-            expected_version: components['schemas']['Version'];
-            /** Format: binary */
-            file: string;
-        };
-        agreements_terminateRequest: {
-            /** @constant */
-            confirm: true;
-            expected_version: string;
-            /** Format: date */
-            ends_on?: string | null;
-        };
-        agreements_activateRequest: {
-            /** @constant */
-            confirm: true;
-            expected_version: string;
-        };
-        agreements_updateRequest: {
-            expected_version: string;
-            title?: string;
-            /** Format: date */
-            starts_on?: string;
-            /** Format: date */
-            ends_on?: string | null;
-            currency?: string;
-            /** @enum {string} */
-            billing_cadence?:
-                'one_time' | 'monthly' | 'quarterly' | 'semi_annual' | 'annual';
-            agreement_text?: string | null;
-            is_visible_to_client?: boolean;
-            hourly_rate_amount?: number | null;
-            retainer_amount?: number | null;
-            retainer_minutes?: number | null;
-            period_retainer_amount?: number | null;
-            period_retainer_minutes?: number | null;
-            catch_up_threshold_minutes?: number | null;
-            rollover_months?: number | null;
-            rollover_policy?: string | null;
-            /** @enum {string|null} */
-            first_cycle_proration?:
-                'prorate_hours' | 'full_period' | 'align_next_cycle' | null;
-            bill_overage_interim?: boolean | null;
-        };
-        agreements_createRequest: {
-            expected_version: string;
-            title: string;
-            /** Format: date */
-            starts_on: string;
-            /** Format: date */
-            ends_on?: string | null;
-            currency: string;
-            /** @enum {string} */
-            billing_cadence?:
-                'one_time' | 'monthly' | 'quarterly' | 'semi_annual' | 'annual';
-            agreement_text?: string | null;
-            is_visible_to_client?: boolean;
-            hourly_rate_amount?: number | null;
-            retainer_amount?: number | null;
-            retainer_minutes?: number | null;
-        };
-        clients_restoreRequest: {
-            expected_version: string;
-        };
-        clients_archiveRequest: {
-            expected_version: string;
-        };
-        clients_updateRequest: {
-            expected_version: string;
-            name?: string;
-            /** Format: email */
-            billing_email?: string | null;
-            automatic_invoice_email_enabled?: boolean;
-            automatic_invoice_email_delay_days?: number | null;
-            is_active?: boolean;
-        } & unknown;
-        clients_createRequest: {
-            name: string;
-            /** Format: email */
-            billing_email?: string | null;
-        };
-        AgreementListResponse: {
-            data: components['schemas']['Agreement'][];
-            meta: components['schemas']['PaginationMeta'];
-        };
-        AgreementResponse: {
-            data: components['schemas']['Agreement'];
-        };
-        ClientCompanyListResponse: {
-            data: components['schemas']['ClientCompany'][];
-            meta: components['schemas']['PaginationMeta'];
-        };
-        ClientCompanyResponse: {
-            data: components['schemas']['ClientCompany'];
-        };
         Agreement: {
             version: string;
             /** Format: uuid */
@@ -1644,6 +1149,154 @@ export interface components {
             /** Format: uuid */
             project_id: string | null;
         };
+        AgreementListResponse: {
+            data: components['schemas']['Agreement'][];
+            meta: components['schemas']['PaginationMeta'];
+        };
+        AgreementResponse: {
+            data: components['schemas']['Agreement'];
+        };
+        ApprovalReceipt: {
+            approved_ids: components['schemas']['Uuid'][];
+        };
+        ApprovalResponse: {
+            data: components['schemas']['ApprovalReceipt'];
+        };
+        Attachment: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            record_type:
+                | 'company'
+                | 'project'
+                | 'task'
+                | 'proposal'
+                | 'agreement'
+                | 'invoice';
+            /** Format: uuid */
+            record_id: string;
+            filename: string;
+            media_type: string;
+            bytes: number;
+            sha256: string;
+            /** @enum {string} */
+            status: 'staged' | 'available' | 'deleting' | 'deleted' | 'corrupt';
+            version: string;
+        };
+        AttachmentDeleteRequest: {
+            expected_version: string;
+            /** @constant */
+            confirm: true;
+        };
+        AttachmentDownloadUrl: {
+            /** Format: uri */
+            url: string;
+            /** @constant */
+            expires_in: 600;
+            /** @constant */
+            method: 'GET';
+        };
+        AttachmentDownloadUrlResponse: {
+            data: components['schemas']['AttachmentDownloadUrl'];
+        };
+        AttachmentListResponse: {
+            data: components['schemas']['Attachment'][];
+            parent_version: string;
+        };
+        AttachmentResponse: {
+            data: components['schemas']['Attachment'];
+        };
+        AttachmentUploadRequest: {
+            /** Format: binary */
+            file: string;
+            expected_version: string;
+        };
+        AttachmentUploadUrl: {
+            /** Format: uri */
+            url: string;
+            /** @constant */
+            expires_in: 600;
+            /** @constant */
+            method: 'POST';
+            expected_version: string;
+            /** @constant */
+            max_bytes: 52428800;
+            /** @constant */
+            file_field: 'file';
+            /** @constant */
+            version_field: 'expected_version';
+            /** @constant */
+            idempotency_header: 'Idempotency-Key';
+        };
+        AttachmentUploadUrlResponse: {
+            data: components['schemas']['AttachmentUploadUrl'];
+        };
+        BillingSchedule: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            agreement_id: string;
+            version: string;
+            /** @enum {string} */
+            cadence: 'monthly' | 'quarterly' | 'semi_annual' | 'annual';
+            /** Format: date */
+            next_run_on: string;
+            is_active: boolean;
+        };
+        BillingScheduleCreateRequest: {
+            /** Format: uuid */
+            company_id: string;
+            /** Format: uuid */
+            client_agreement: string;
+            expected_version: string;
+            /** @enum {string} */
+            cadence: 'monthly' | 'quarterly' | 'semi_annual' | 'annual';
+            anchor_month?: number | null;
+            anchor_day?: number | null;
+            /** Format: date */
+            next_run_on: string;
+            due_days: number;
+            currency: string;
+            is_active?: boolean;
+            line_template: {
+                type: string;
+                description: string;
+                quantity: string;
+                unit_amount: number;
+                tax_amount?: number | null;
+                sort_order?: number | null;
+            }[];
+        };
+        BillingScheduleGenerateRequest: {
+            expected_version: string;
+            /** @constant */
+            confirm: true;
+        };
+        BillingScheduleGenerateResponse: {
+            data: {
+                schedule: components['schemas']['BillingScheduleMutation'];
+                invoices: components['schemas']['InvoiceMutation'][];
+            };
+        };
+        BillingScheduleListResponse: {
+            data: components['schemas']['BillingSchedule'][];
+            meta: {
+                next_cursor: string | null;
+            };
+        };
+        BillingScheduleMutation: {
+            /** Format: uuid */
+            id: string;
+            version: string;
+            /** Format: date */
+            next_run_on: string;
+        };
+        BillingScheduleMutationResponse: {
+            data: components['schemas']['BillingScheduleMutation'];
+        };
+        BillingScheduleResponse: {
+            data: components['schemas']['BillingSchedule'];
+        };
         ClientCompany: {
             version: string;
             /** Format: uuid */
@@ -1654,56 +1307,42 @@ export interface components {
             automatic_invoice_email_enabled: boolean;
             automatic_invoice_email_delay_days: number | null;
         };
-        ProjectMembersResponse: {
-            data: components['schemas']['ProjectMember'][];
+        ClientCompanyListResponse: {
+            data: components['schemas']['ClientCompany'][];
             meta: components['schemas']['PaginationMeta'];
-            project_id: components['schemas']['Uuid'];
-            version: components['schemas']['Version'];
         };
-        ProjectMember: {
-            user_id: components['schemas']['Uuid'];
+        ClientCompanyResponse: {
+            data: components['schemas']['ClientCompany'];
+        };
+        Context: {
+            id: components['schemas']['Uuid'];
             name: string;
-            /** @enum {string} */
-            role: 'owner' | 'manager' | 'contributor' | 'viewer' | 'none';
+            workspaces: components['schemas']['WorkspaceContext'][];
+            capabilities: 'workspaces:create'[];
+            withheld_tools: components['schemas']['WithheldTool'][];
         };
-        ProjectMemberUpdateRequest: {
+        ContextResponse: {
+            data: components['schemas']['Context'];
+        };
+        Currency: string;
+        CurrencyAmount: {
+            currency: components['schemas']['Currency'];
+            amount: number;
+        };
+        DeletionReceipt: {
+            deleted_id: components['schemas']['Uuid'];
+        };
+        DeletionResponse: {
+            data: components['schemas']['DeletionReceipt'];
+        };
+        Error: {
+            message: string;
+            errors?: {
+                [key: string]: string[];
+            };
+        };
+        ExpectedVersionRequest: {
             expected_version: components['schemas']['Version'];
-            /** @constant */
-            confirm: true;
-            user_id: components['schemas']['Uuid'];
-            /** @enum {string} */
-            role: 'owner' | 'manager' | 'contributor' | 'viewer' | 'none';
-        };
-        ProjectConfirmRequest: {
-            expected_version: components['schemas']['Version'];
-            /** @constant */
-            confirm: true;
-        };
-        ProjectUpdateRequest: {
-            expected_version: components['schemas']['Version'];
-            /** @constant */
-            confirm: true;
-            name?: string;
-            description?: string | null;
-            /** @description Repository remote or canonical host/owner/repository; stored in canonical form. */
-            repository?: string | null;
-            is_visible_to_client?: boolean;
-            /** @enum {string} */
-            status?: 'active' | 'archived';
-        };
-        ProjectCreateRequest: {
-            expected_version: components['schemas']['Version'];
-            /** @constant */
-            confirm: true;
-            company_id: components['schemas']['Uuid'];
-            name: string;
-            description?: string | null;
-            /** @description Repository remote or canonical host/owner/repository; stored in canonical form. */
-            repository?: string | null;
-            is_visible_to_client?: boolean;
-        };
-        ProjectResponse: {
-            data: components['schemas']['Project'];
         };
         Expense: {
             /** Format: uuid */
@@ -1723,15 +1362,15 @@ export interface components {
             can_edit: boolean;
             can_delete: boolean;
         };
-        ExpenseListResponse: {
-            data: components['schemas']['Expense'][];
-            meta: components['schemas']['PaginationMeta'];
-        };
-        ExpenseResponse: {
-            data: components['schemas']['Expense'];
+        ExpenseApprovalRequest: {
+            expected_version: components['schemas']['Version'];
         };
         ExpenseBatchResponse: {
             data: components['schemas']['Expense'][];
+        };
+        ExpenseListResponse: {
+            data: components['schemas']['Expense'][];
+            meta: components['schemas']['PaginationMeta'];
         };
         ExpenseLogItem: {
             /** Format: uuid */
@@ -1747,6 +1386,107 @@ export interface components {
         ExpenseLogRequest: {
             entries: components['schemas']['ExpenseLogItem'][];
         };
+        ExpenseReceipt: {
+            /** Format: uuid */
+            id: string;
+            filename: string;
+            media_type: string;
+            bytes: number;
+            sha256: string;
+            /** Format: date-time */
+            uploaded_at: string | null;
+        };
+        ExpenseReceiptDownloadResponse: {
+            data: {
+                /** Format: uri */
+                download_url: string;
+                /** Format: date-time */
+                expires_at: string;
+            };
+        };
+        ExpenseReceiptListResponse: {
+            data: components['schemas']['ExpenseReceipt'][];
+            expense_version: components['schemas']['Version'];
+        };
+        ExpenseReceiptUploadRequest: {
+            expected_version: components['schemas']['Version'];
+            /** Format: binary */
+            file: string;
+        };
+        ExpenseReceiptUploadResponse: {
+            data: components['schemas']['ExpenseReceipt'];
+            expense_version: components['schemas']['Version'];
+        };
+        ExpenseReceiptUploadUrlResponse: {
+            data: {
+                /** Format: uri */
+                upload_url: string;
+                /** Format: date-time */
+                expires_at: string;
+                expected_version: components['schemas']['Version'];
+            };
+        };
+        ExpenseResponse: {
+            data: components['schemas']['Expense'];
+        };
+        ExpenseSchedule: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            company_id: string;
+            /** Format: uuid */
+            project_id: string | null;
+            /** Format: date */
+            starts_on: string;
+            /** @enum {string} */
+            cadence: 'monthly' | 'quarterly' | 'semi_annual' | 'annual';
+            amount: number;
+            currency: components['schemas']['Currency'];
+            description: string;
+            active: boolean;
+            /** Format: date */
+            next_on: string;
+            version: components['schemas']['Version'];
+        };
+        ExpenseScheduleCreateRequest: {
+            /** Format: uuid */
+            company_id: string;
+            expected_version: components['schemas']['Version'];
+            /** Format: uuid */
+            project_id?: string | null;
+            /** Format: date */
+            starts_on: string;
+            /** @enum {string} */
+            cadence: 'monthly' | 'quarterly' | 'semi_annual' | 'annual';
+            amount: number;
+            currency: components['schemas']['Currency'];
+            description: string;
+        };
+        ExpenseScheduleGenerateRequest: {
+            expected_version: components['schemas']['Version'];
+            /** @constant */
+            confirm: true;
+        };
+        ExpenseScheduleGenerateResponse: {
+            data: components['schemas']['ExpenseSchedule'];
+            generated_count: number;
+        };
+        ExpenseScheduleListResponse: {
+            data: components['schemas']['ExpenseSchedule'][];
+            meta: components['schemas']['PaginationMeta'];
+        };
+        ExpenseScheduleResponse: {
+            data: components['schemas']['ExpenseSchedule'];
+        };
+        ExpenseScheduleUpdateRequest: {
+            expected_version: components['schemas']['Version'];
+            /** Format: uuid */
+            project_id?: string | null;
+            active: boolean;
+            amount: number;
+            currency: components['schemas']['Currency'];
+            description: string;
+        };
         ExpenseUpdateRequest: {
             expected_version: components['schemas']['Version'];
             /** Format: date */
@@ -1756,302 +1496,6 @@ export interface components {
             description: string;
             /** Format: uuid */
             project_id?: string | null;
-        };
-        ReceivedPayment: {
-            /** Format: uuid */
-            id: string;
-            /** Format: uuid */
-            invoice_id: string;
-            amount: number;
-            currency: string;
-            /** Format: date */
-            received_on: string | null;
-            method: string | null;
-            reference: string | null;
-            status: string;
-            refunded_amount: number;
-            version: components['schemas']['Version'];
-        };
-        ReceivedPaymentRecordRequest: {
-            /** Format: uuid */
-            invoice_id: string;
-            amount: number;
-            currency: string;
-            /** Format: date */
-            received_on: string;
-            method: string;
-            reference?: string | null;
-        };
-        ReceivedPaymentCorrectionRequest:
-            | {
-                  expected_version: components['schemas']['Version'];
-                  reason: string;
-                  method?: string;
-                  reference?: string | null;
-                  /** Format: date */
-                  received_on?: string;
-              }
-            | unknown
-            | unknown
-            | unknown;
-        ReceivedPaymentResponse: {
-            data: components['schemas']['ReceivedPayment'];
-        };
-        ReceivedPaymentBatchResponse: {
-            data: components['schemas']['ReceivedPayment'][];
-        };
-        ReceivedPaymentListResponse: {
-            data: components['schemas']['ReceivedPayment'][];
-            next_cursor: string | null;
-        };
-        Error: {
-            message: string;
-            errors?: {
-                [key: string]: string[];
-            };
-        };
-        /** Format: uuid */
-        Uuid: string;
-        Version: string;
-        Currency: string;
-        /** @enum {string} */
-        TimeStatus: 'draft' | 'approved' | 'invoiced';
-        /** @enum {string} */
-        InvoiceStatus: 'draft' | 'issued' | 'partially_paid' | 'paid' | 'void';
-        /** @enum {string} */
-        LinkedTimeState: 'reserved' | 'consumed' | 'released';
-        /** @enum {string} */
-        InvoiceKind:
-            'cadence_period' | 'interim_overage' | 'terminal' | 'ad_hoc';
-        PaginationMeta: {
-            next_cursor: string | null;
-        };
-        WorkspaceContext: {
-            id: components['schemas']['Uuid'];
-            name: string;
-            timezone: string;
-            default_currency: components['schemas']['Currency'];
-            workspace_role: string | null;
-            capabilities: string[];
-            project_capabilities: components['schemas']['ProjectCapability'][];
-            /** Format: uri */
-            web_url: string;
-        };
-        ProjectCapability: {
-            project_id: components['schemas']['Uuid'];
-            /** @enum {string} */
-            role: 'owner' | 'manager' | 'contributor' | 'viewer' | 'client';
-            capabilities: string[];
-        };
-        Context: {
-            id: components['schemas']['Uuid'];
-            name: string;
-            workspaces: components['schemas']['WorkspaceContext'][];
-            capabilities: 'workspaces:create'[];
-            withheld_tools: components['schemas']['WithheldTool'][];
-        };
-        ContextResponse: {
-            data: components['schemas']['Context'];
-        };
-        SummaryTime: {
-            draft_minutes: number;
-            approved_billable_unallocated_minutes: number;
-            allocated_to_draft_minutes: number;
-        };
-        CurrencyAmount: {
-            currency: components['schemas']['Currency'];
-            amount: number;
-        };
-        SummaryInvoices: {
-            draft_count: number;
-            overdue_count: number;
-            draft_amounts: components['schemas']['CurrencyAmount'][];
-            collectible_balances: components['schemas']['CurrencyAmount'][];
-            overdue_balances: components['schemas']['CurrencyAmount'][];
-        };
-        Summary: {
-            workspace_id: components['schemas']['Uuid'];
-            active_projects?: number;
-            time?: components['schemas']['SummaryTime'];
-            invoices?: components['schemas']['SummaryInvoices'];
-        };
-        SummaryResponse: {
-            data: components['schemas']['Summary'];
-        };
-        Project: {
-            id: components['schemas']['Uuid'];
-            company_id: components['schemas']['Uuid'];
-            company_name: string;
-            name: string;
-            description: string | null;
-            /** @description Canonical host/owner/name this project is worked in, or null when unmapped. Absent entirely for a portal client, who is not shown internal repository names. */
-            repository?: string | null;
-            status: string;
-            is_visible_to_client: boolean;
-            version: components['schemas']['Version'];
-            /** Format: uri */
-            web_url: string;
-        };
-        ProjectDetail: {
-            id: components['schemas']['Uuid'];
-            company_id: components['schemas']['Uuid'];
-            company_name: string;
-            name: string;
-            description: string | null;
-            /** @description Canonical host/owner/name this project is worked in, or null when unmapped. Absent entirely for a portal client, who is not shown internal repository names. */
-            repository?: string | null;
-            status: string;
-            is_visible_to_client: boolean;
-            version: components['schemas']['Version'];
-            /** Format: uri */
-            web_url: string;
-            tasks?: components['schemas']['Task'][];
-        };
-        ProjectListResponse: {
-            data: components['schemas']['Project'][];
-            meta: components['schemas']['PaginationMeta'];
-        };
-        ProjectDetailResponse: {
-            data: components['schemas']['ProjectDetail'];
-        };
-        Task: {
-            id: components['schemas']['Uuid'];
-            project_id: components['schemas']['Uuid'];
-            title: string;
-            description: string | null;
-            /** @enum {string} */
-            status: 'open' | 'in_progress' | 'completed';
-            is_visible_to_client: boolean;
-            /** Format: date-time */
-            completed_at: string | null;
-            version: components['schemas']['Version'];
-            /** Format: uri */
-            web_url: string;
-        };
-        TaskListResponse: {
-            data: components['schemas']['Task'][];
-            meta: components['schemas']['PaginationMeta'];
-        };
-        TaskResponse: {
-            data: components['schemas']['Task'];
-        };
-        TaskCreateRequest: {
-            title: string;
-            description?: string | null;
-            is_visible_to_client?: boolean;
-        };
-        TaskUpdateRequest: {
-            expected_version: components['schemas']['Version'];
-            title?: string;
-            description?: string | null;
-            /** @enum {string} */
-            status?: 'open' | 'in_progress' | 'completed';
-            is_visible_to_client?: boolean;
-        };
-        TimeEntry: {
-            /**
-             * Format: uuid
-             * @description Public id of the tenant-owned invoice allocating this time; null when unallocated.
-             */
-            invoice_id: string | null;
-            /**
-             * @description No allocation, a draft-invoice reservation, or an allocation to a non-draft invoice. Legacy approved status does not imply unallocated.
-             * @enum {string}
-             */
-            allocation_state: 'unallocated' | 'reserved' | 'consumed';
-            id: components['schemas']['Uuid'];
-            author_id: components['schemas']['Uuid'];
-            project_id: components['schemas']['Uuid'];
-            /** Format: uuid */
-            task_id: string | null;
-            /** Format: date */
-            worked_on: string;
-            minutes: number;
-            description: string | null;
-            is_billable: boolean;
-            is_deferred: boolean;
-            is_visible_to_client: boolean;
-            /** @description The text a client reads on the invoice. `description` stays the internal note for anyone on the worker's side of the entry; a portal client receives this text there too and never the internal note. */
-            client_visible_description: string | null;
-            status: components['schemas']['TimeStatus'];
-            version: components['schemas']['Version'];
-            /** Format: uri */
-            web_url: string;
-            billing_rate_amount?: number | null;
-            currency?: components['schemas']['Currency'];
-            /** @enum {string|null} */
-            subcontractor_billing_mode?:
-                'flat_hourly' | 'retainer' | 'direct' | null;
-            subcontractor_cost_amount?: number | null;
-            subcontractor_cost_currency?: string | null;
-        };
-        TimeEntryListResponse: {
-            data: components['schemas']['TimeEntry'][];
-            meta: components['schemas']['PaginationMeta'];
-        };
-        TimeEntryResponse: {
-            data: components['schemas']['TimeEntry'];
-        };
-        TimeEntryBatchResponse: {
-            data: components['schemas']['TimeEntry'][];
-        };
-        TimeLogItem: {
-            project_id: components['schemas']['Uuid'];
-            /** Format: uuid */
-            task_id?: string | null;
-            /** Format: date */
-            worked_on: string;
-            minutes: number;
-            description: string;
-            is_billable?: boolean;
-            is_deferred?: boolean;
-            /** @description When omitted, defaults to true if client_visible_description contains text. Send false to keep the entry hidden while staging client text. */
-            is_visible_to_client?: boolean;
-            /** @description Client-facing text. When supplied without is_visible_to_client, the entry defaults to client-visible. */
-            client_visible_description?: string | null;
-            /** @description Explicit rate in minor units; requires the time:approve OAuth scope and a user who can approve project time. */
-            billing_rate_amount?: number | null;
-            currency?: string | null;
-        } & unknown;
-        TimeLogRequest: {
-            entries: components['schemas']['TimeLogItem'][];
-            /** @description Approve the logged entries in the same transaction. Requires the time:approve OAuth scope, a user who can approve time on every project, and the agent write cutover; if approval is refused nothing is logged. */
-            approve?: boolean;
-        };
-        TimeUpdateRequest: {
-            expected_version: components['schemas']['Version'];
-            /** Format: date */
-            worked_on?: string;
-            minutes?: number;
-            description?: string;
-            is_billable?: boolean;
-            is_deferred?: boolean;
-            is_visible_to_client?: boolean;
-            client_visible_description?: string | null;
-        } & unknown;
-        ExpectedVersionRequest: {
-            expected_version: components['schemas']['Version'];
-        };
-        TimeApprovalItem: {
-            id: components['schemas']['Uuid'];
-            expected_version: components['schemas']['Version'];
-            billing_rate_amount?: number;
-            currency?: components['schemas']['Currency'];
-        };
-        TimeApprovalRequest: {
-            entries: components['schemas']['TimeApprovalItem'][];
-        };
-        DeletionReceipt: {
-            deleted_id: components['schemas']['Uuid'];
-        };
-        DeletionResponse: {
-            data: components['schemas']['DeletionReceipt'];
-        };
-        ApprovalReceipt: {
-            approved_ids: components['schemas']['Uuid'][];
-        };
-        ApprovalResponse: {
-            data: components['schemas']['ApprovalReceipt'];
         };
         Invoice: {
             id: components['schemas']['Uuid'];
@@ -2089,16 +1533,42 @@ export interface components {
              */
             automatic_delivery_due_at: string | null;
         };
-        InvoiceLine: {
+        InvoiceAddTimeRequest: {
+            expected_version: components['schemas']['Version'];
+            time_entry_ids: components['schemas']['Uuid'][];
+        };
+        InvoiceCorrectionLine: {
             id: components['schemas']['Uuid'];
-            /** Format: uuid */
-            project_id: string | null;
-            type: string;
             description: string;
             quantity: string;
             unit_amount: number;
             tax_amount: number;
-            total_amount: number;
+        };
+        InvoiceCorrectionRequest: {
+            expected_version: components['schemas']['Version'];
+            /** @constant */
+            confirm: true;
+            reason: string;
+            /** Format: date */
+            due_date?: string | null;
+            lines?: components['schemas']['InvoiceCorrectionLine'][];
+        } & (unknown | unknown);
+        InvoiceCreateRequest: {
+            company_id: components['schemas']['Uuid'];
+            currency?: string | null;
+            /** Format: date */
+            due_date?: string | null;
+            notes?: string | null;
+            time_entry_ids?: components['schemas']['Uuid'][];
+            manual_lines?: components['schemas']['InvoiceManualLine'][];
+        };
+        InvoiceDeliveryHoldRequest: {
+            expected_version: components['schemas']['Version'];
+        };
+        InvoiceDeliveryReleaseRequest: {
+            expected_version: components['schemas']['Version'];
+            /** @constant */
+            confirm: true;
         };
         InvoiceDetail: {
             id: components['schemas']['Uuid'];
@@ -2137,21 +1607,42 @@ export interface components {
              */
             automatic_delivery_due_at: string | null;
         };
-        InvoiceListResponse: {
-            data: components['schemas']['Invoice'][];
-            meta: components['schemas']['PaginationMeta'];
-        };
         InvoiceDetailResponse: {
             data: components['schemas']['InvoiceDetail'];
         };
-        InvoiceMutation: {
-            id: components['schemas']['Uuid'];
-            status: components['schemas']['InvoiceStatus'];
-            linked_time_state: components['schemas']['LinkedTimeState'];
-            invoice_number: string;
-            version: components['schemas']['Version'];
-            /** Format: uri */
-            web_url: string;
+        InvoiceDetailsUpdateRequest: {
+            expected_version: components['schemas']['Version'];
+            /** Format: date */
+            due_date?: string | null;
+            notes?: string | null;
+        } & (unknown | unknown);
+        InvoiceDiscardRequest: {
+            expected_version: components['schemas']['Version'];
+            /** @constant */
+            confirm: true;
+            reason: string;
+        };
+        InvoiceGeneratePeriodRequest: {
+            expected_version: components['schemas']['Version'];
+            /** Format: date */
+            period_start: string;
+            /** @constant */
+            confirm: true;
+        };
+        InvoiceIssuePayment: {
+            amount: number;
+            currency: string;
+            /** Format: date */
+            received_on: string;
+            method: string;
+            reference?: string | null;
+        };
+        InvoiceIssueRequest: {
+            expected_version: components['schemas']['Version'];
+            /** @constant */
+            confirm: true;
+            /** @description Money already received for this draft, recorded in the same transaction so the invoice is issued and paid or not changed at all. Requires the payments:record OAuth scope, a workspace owner/admin, and the payment write cutover; never initiates a charge, refuses overpayment, and cancels the automatic client delivery that issuing schedules. */
+            payment?: components['schemas']['InvoiceIssuePayment'];
         };
         /** @description REST returns the invoice mutation shape. MCP returns the invoice exactly as invoices.get does when the token also holds billing:read and invoices.get is enabled, and the mutation shape otherwise. */
         InvoiceIssueResponse: {
@@ -2159,8 +1650,23 @@ export interface components {
                 | components['schemas']['InvoiceDetail']
                 | components['schemas']['InvoiceMutation'];
         };
-        InvoiceMutationResponse: {
-            data: components['schemas']['InvoiceMutation'];
+        /** @enum {string} */
+        InvoiceKind:
+            'cadence_period' | 'interim_overage' | 'terminal' | 'ad_hoc';
+        InvoiceLine: {
+            id: components['schemas']['Uuid'];
+            /** Format: uuid */
+            project_id: string | null;
+            type: string;
+            description: string;
+            quantity: string;
+            unit_amount: number;
+            tax_amount: number;
+            total_amount: number;
+        };
+        InvoiceListResponse: {
+            data: components['schemas']['Invoice'][];
+            meta: components['schemas']['PaginationMeta'];
         };
         InvoiceManualLine: {
             /** Format: uuid */
@@ -2171,15 +1677,42 @@ export interface components {
             unit_amount: number;
             tax_amount?: number | null;
         };
-        InvoiceCreateRequest: {
-            company_id: components['schemas']['Uuid'];
-            currency?: string | null;
+        InvoiceMissingPeriod: {
+            agreement_id: components['schemas']['Uuid'];
             /** Format: date */
-            due_date?: string | null;
-            notes?: string | null;
-            time_entry_ids?: components['schemas']['Uuid'][];
-            manual_lines?: components['schemas']['InvoiceManualLine'][];
+            period_start: string;
+            /** Format: date */
+            period_end: string;
         };
+        InvoiceMutation: {
+            id: components['schemas']['Uuid'];
+            status: components['schemas']['InvoiceStatus'];
+            linked_time_state: components['schemas']['LinkedTimeState'];
+            invoice_number: string;
+            version: components['schemas']['Version'];
+            /** Format: uri */
+            web_url: string;
+        };
+        InvoiceMutationResponse: {
+            data: components['schemas']['InvoiceMutation'];
+        };
+        InvoicePdfLink: {
+            /** Format: uri */
+            url: string;
+            /** Format: date-time */
+            expires_at: string;
+        };
+        InvoicePdfLinkResponse: {
+            data: components['schemas']['InvoicePdfLink'];
+        };
+        InvoiceSendRequest: {
+            expected_version: components['schemas']['Version'];
+            /** @constant */
+            confirm: true;
+            recipients: string[];
+        };
+        /** @enum {string} */
+        InvoiceStatus: 'draft' | 'issued' | 'partially_paid' | 'paid' | 'void';
         InvoiceUpdateRequest: {
             expected_version: components['schemas']['Version'];
             currency?: string | null;
@@ -2189,14 +1722,232 @@ export interface components {
             time_entry_ids: components['schemas']['Uuid'][];
             manual_lines: components['schemas']['InvoiceManualLine'][];
         };
-        InvoiceIssueRequest: {
+        InvoiceVoidRequest: {
             expected_version: components['schemas']['Version'];
             /** @constant */
             confirm: true;
-            /** @description Money already received for this draft, recorded in the same transaction so the invoice is issued and paid or not changed at all. Requires the payments:record OAuth scope, a workspace owner/admin, and the payment write cutover; never initiates a charge, refuses overpayment, and cancels the automatic client delivery that issuing schedules. */
-            payment?: components['schemas']['InvoiceIssuePayment'];
+            reason: string;
         };
-        InvoiceIssuePayment: {
+        /** @enum {string} */
+        LinkedTimeState: 'reserved' | 'consumed' | 'released';
+        PaginationMeta: {
+            next_cursor: string | null;
+        };
+        Project: {
+            id: components['schemas']['Uuid'];
+            company_id: components['schemas']['Uuid'];
+            company_name: string;
+            name: string;
+            description: string | null;
+            /** @description Canonical host/owner/name this project is worked in, or null when unmapped. Absent entirely for a portal client, who is not shown internal repository names. */
+            repository?: string | null;
+            status: string;
+            is_visible_to_client: boolean;
+            version: components['schemas']['Version'];
+            /** Format: uri */
+            web_url: string;
+        };
+        ProjectCapability: {
+            project_id: components['schemas']['Uuid'];
+            /** @enum {string} */
+            role: 'owner' | 'manager' | 'contributor' | 'viewer' | 'client';
+            capabilities: string[];
+        };
+        ProjectConfirmRequest: {
+            expected_version: components['schemas']['Version'];
+            /** @constant */
+            confirm: true;
+        };
+        ProjectCreateRequest: {
+            expected_version: components['schemas']['Version'];
+            /** @constant */
+            confirm: true;
+            company_id: components['schemas']['Uuid'];
+            name: string;
+            description?: string | null;
+            /** @description Repository remote or canonical host/owner/repository; stored in canonical form. */
+            repository?: string | null;
+            is_visible_to_client?: boolean;
+        };
+        ProjectDetail: {
+            id: components['schemas']['Uuid'];
+            company_id: components['schemas']['Uuid'];
+            company_name: string;
+            name: string;
+            description: string | null;
+            /** @description Canonical host/owner/name this project is worked in, or null when unmapped. Absent entirely for a portal client, who is not shown internal repository names. */
+            repository?: string | null;
+            status: string;
+            is_visible_to_client: boolean;
+            version: components['schemas']['Version'];
+            /** Format: uri */
+            web_url: string;
+            tasks?: components['schemas']['Task'][];
+        };
+        ProjectDetailResponse: {
+            data: components['schemas']['ProjectDetail'];
+        };
+        ProjectListResponse: {
+            data: components['schemas']['Project'][];
+            meta: components['schemas']['PaginationMeta'];
+        };
+        ProjectMember: {
+            user_id: components['schemas']['Uuid'];
+            name: string;
+            /** @enum {string} */
+            role: 'owner' | 'manager' | 'contributor' | 'viewer' | 'none';
+        };
+        ProjectMemberUpdateRequest: {
+            expected_version: components['schemas']['Version'];
+            /** @constant */
+            confirm: true;
+            user_id: components['schemas']['Uuid'];
+            /** @enum {string} */
+            role: 'owner' | 'manager' | 'contributor' | 'viewer' | 'none';
+        };
+        ProjectMembersResponse: {
+            data: components['schemas']['ProjectMember'][];
+            meta: components['schemas']['PaginationMeta'];
+            project_id: components['schemas']['Uuid'];
+            version: components['schemas']['Version'];
+        };
+        ProjectResponse: {
+            data: components['schemas']['Project'];
+        };
+        ProjectUpdateRequest: {
+            expected_version: components['schemas']['Version'];
+            /** @constant */
+            confirm: true;
+            name?: string;
+            description?: string | null;
+            /** @description Repository remote or canonical host/owner/repository; stored in canonical form. */
+            repository?: string | null;
+            is_visible_to_client?: boolean;
+            /** @enum {string} */
+            status?: 'active' | 'archived';
+        };
+        Proposal: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            workspace_id: string;
+            /** Format: uuid */
+            company_id: string;
+            /** Format: uuid */
+            project_id: string | null;
+            title: string;
+            summary: string | null;
+            terms: string | null;
+            currency: string;
+            /** @enum {string} */
+            status: 'draft' | 'sent' | 'accepted' | 'declined' | 'expired';
+            is_visible_to_client: boolean;
+            /** Format: date */
+            valid_until: string | null;
+            /** Format: date-time */
+            sent_at: string | null;
+            /** Format: date-time */
+            accepted_at: string | null;
+            version: string;
+            total_amount: number;
+            items: components['schemas']['ProposalItem'][];
+            /** Format: uri */
+            url: string;
+        };
+        ProposalAcceptRequest: {
+            expected_version: string;
+            /** @constant */
+            confirm: true;
+            signer_name: string;
+            signer_title?: string | null;
+        };
+        ProposalCreateRequest: {
+            /** Format: uuid */
+            company_id: string;
+            /** Format: uuid */
+            project_id?: string | null;
+            expected_version: string;
+            title: string;
+            summary?: string | null;
+            terms?: string | null;
+            /** Format: date */
+            valid_until?: string | null;
+            currency: string;
+            is_visible_to_client?: boolean;
+            items?: components['schemas']['ProposalItemInput'][];
+        };
+        ProposalItem: {
+            /** Format: uuid */
+            id: string;
+            description: string;
+            quantity: string;
+            unit_amount: number;
+            /** @enum {string} */
+            cadence:
+                'one_time' | 'monthly' | 'quarterly' | 'semi_annual' | 'annual';
+            sort_order: number;
+        };
+        ProposalItemInput: {
+            description: string;
+            /** @description Positive quantity up to 10000 */
+            quantity: number | string;
+            unit_amount: number;
+            /** @enum {string} */
+            cadence:
+                'one_time' | 'monthly' | 'quarterly' | 'semi_annual' | 'annual';
+            sort_order?: number;
+        };
+        ProposalListResponse: {
+            data: components['schemas']['Proposal'][];
+            meta: {
+                next_cursor: string | null;
+            };
+        };
+        ProposalResponse: {
+            data: components['schemas']['Proposal'];
+        };
+        ProposalSendRequest: {
+            expected_version: string;
+            /** @constant */
+            confirm: true;
+        };
+        ReceivedPayment: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            invoice_id: string;
+            amount: number;
+            currency: string;
+            /** Format: date */
+            received_on: string | null;
+            method: string | null;
+            reference: string | null;
+            status: string;
+            refunded_amount: number;
+            version: components['schemas']['Version'];
+        };
+        ReceivedPaymentBatchResponse: {
+            data: components['schemas']['ReceivedPayment'][];
+        };
+        ReceivedPaymentCorrectionRequest:
+            | {
+                  expected_version: components['schemas']['Version'];
+                  reason: string;
+                  method?: string;
+                  reference?: string | null;
+                  /** Format: date */
+                  received_on?: string;
+              }
+            | unknown
+            | unknown
+            | unknown;
+        ReceivedPaymentListResponse: {
+            data: components['schemas']['ReceivedPayment'][];
+            next_cursor: string | null;
+        };
+        ReceivedPaymentRecordRequest: {
+            /** Format: uuid */
+            invoice_id: string;
             amount: number;
             currency: string;
             /** Format: date */
@@ -2204,46 +1955,295 @@ export interface components {
             method: string;
             reference?: string | null;
         };
-        InvoiceSendRequest: {
-            expected_version: components['schemas']['Version'];
-            /** @constant */
-            confirm: true;
-            recipients: string[];
+        ReceivedPaymentResponse: {
+            data: components['schemas']['ReceivedPayment'];
         };
-        InvoiceDetailsUpdateRequest: {
-            expected_version: components['schemas']['Version'];
+        SearchResponse: {
+            data: components['schemas']['SearchResult'][];
+        };
+        SearchResult: {
+            /** @enum {string} */
+            kind: 'client' | 'project' | 'invoice' | 'task';
+            /** Format: uuid */
+            id: string;
+            title: string;
+            subtitle: string | null;
+            href: string;
+            workspace: string;
+        };
+        StaleAndMissingInvoiceAudit: {
             /** Format: date */
-            due_date?: string | null;
-            notes?: string | null;
-        } & (unknown | unknown);
-        InvoiceCorrectionLine: {
+            as_of: string;
+            stale_draft_count: number;
+            stale_draft_balances: components['schemas']['StaleInvoiceBalance'][];
+            stale_draft_ids: components['schemas']['Uuid'][];
+            stale_draft_ids_truncated: boolean;
+            missing_period_count: number;
+            missing_periods: components['schemas']['InvoiceMissingPeriod'][];
+            missing_periods_truncated: boolean;
+        };
+        StaleAndMissingInvoiceAuditResponse: {
+            data: components['schemas']['StaleAndMissingInvoiceAudit'];
+        };
+        StaleInvoiceBalance: {
+            currency: components['schemas']['Currency'];
+            balance_amount: number;
+        };
+        Summary: {
+            workspace_id: components['schemas']['Uuid'];
+            active_projects?: number;
+            time?: components['schemas']['SummaryTime'];
+            invoices?: components['schemas']['SummaryInvoices'];
+        };
+        SummaryInvoices: {
+            draft_count: number;
+            overdue_count: number;
+            draft_amounts: components['schemas']['CurrencyAmount'][];
+            collectible_balances: components['schemas']['CurrencyAmount'][];
+            overdue_balances: components['schemas']['CurrencyAmount'][];
+        };
+        SummaryResponse: {
+            data: components['schemas']['Summary'];
+        };
+        SummaryTime: {
+            draft_minutes: number;
+            approved_billable_unallocated_minutes: number;
+            allocated_to_draft_minutes: number;
+        };
+        Task: {
             id: components['schemas']['Uuid'];
-            description: string;
-            quantity: string;
-            unit_amount: number;
-            tax_amount: number;
+            project_id: components['schemas']['Uuid'];
+            title: string;
+            description: string | null;
+            /** @enum {string} */
+            status: 'open' | 'in_progress' | 'completed';
+            is_visible_to_client: boolean;
+            /** Format: date-time */
+            completed_at: string | null;
+            version: components['schemas']['Version'];
+            /** Format: uri */
+            web_url: string;
         };
-        InvoiceCorrectionRequest: {
+        TaskCreateRequest: {
+            title: string;
+            description?: string | null;
+            is_visible_to_client?: boolean;
+        };
+        TaskListResponse: {
+            data: components['schemas']['Task'][];
+            meta: components['schemas']['PaginationMeta'];
+        };
+        TaskResponse: {
+            data: components['schemas']['Task'];
+        };
+        TaskUpdateRequest: {
             expected_version: components['schemas']['Version'];
-            /** @constant */
-            confirm: true;
-            reason: string;
+            title?: string;
+            description?: string | null;
+            /** @enum {string} */
+            status?: 'open' | 'in_progress' | 'completed';
+            is_visible_to_client?: boolean;
+        };
+        TimeApprovalItem: {
+            id: components['schemas']['Uuid'];
+            expected_version: components['schemas']['Version'];
+            billing_rate_amount?: number;
+            currency?: components['schemas']['Currency'];
+        };
+        TimeApprovalRequest: {
+            entries: components['schemas']['TimeApprovalItem'][];
+        };
+        TimeEntry: {
+            /**
+             * Format: uuid
+             * @description Public id of the tenant-owned invoice allocating this time; null when unallocated.
+             */
+            invoice_id: string | null;
+            /**
+             * @description No allocation, a draft-invoice reservation, or an allocation to a non-draft invoice. Legacy approved status does not imply unallocated.
+             * @enum {string}
+             */
+            allocation_state: 'unallocated' | 'reserved' | 'consumed';
+            id: components['schemas']['Uuid'];
+            author_id: components['schemas']['Uuid'];
+            project_id: components['schemas']['Uuid'];
+            /** Format: uuid */
+            task_id: string | null;
             /** Format: date */
-            due_date?: string | null;
-            lines?: components['schemas']['InvoiceCorrectionLine'][];
-        } & (unknown | unknown);
-        InvoiceVoidRequest: {
+            worked_on: string;
+            minutes: number;
+            description: string | null;
+            is_billable: boolean;
+            is_deferred: boolean;
+            is_visible_to_client: boolean;
+            /** @description The text a client reads on the invoice. `description` stays the internal note for anyone on the worker's side of the entry; a portal client receives this text there too and never the internal note. */
+            client_visible_description: string | null;
+            status: components['schemas']['TimeStatus'];
+            version: components['schemas']['Version'];
+            /** Format: uri */
+            web_url: string;
+            billing_rate_amount?: number | null;
+            currency?: components['schemas']['Currency'];
+            /** @enum {string|null} */
+            subcontractor_billing_mode?:
+                'flat_hourly' | 'retainer' | 'direct' | null;
+            subcontractor_cost_amount?: number | null;
+            subcontractor_cost_currency?: string | null;
+        };
+        TimeEntryBatchResponse: {
+            data: components['schemas']['TimeEntry'][];
+        };
+        TimeEntryListResponse: {
+            data: components['schemas']['TimeEntry'][];
+            meta: components['schemas']['PaginationMeta'];
+        };
+        TimeEntryResponse: {
+            data: components['schemas']['TimeEntry'];
+        };
+        TimeLogItem: {
+            project_id: components['schemas']['Uuid'];
+            /** Format: uuid */
+            task_id?: string | null;
+            /** Format: date */
+            worked_on: string;
+            minutes: number;
+            description: string;
+            is_billable?: boolean;
+            is_deferred?: boolean;
+            /** @description When omitted, defaults to true if client_visible_description contains text. Send false to keep the entry hidden while staging client text. */
+            is_visible_to_client?: boolean;
+            /** @description Client-facing text. When supplied without is_visible_to_client, the entry defaults to client-visible. */
+            client_visible_description?: string | null;
+            /** @description Explicit rate in minor units; requires the time:approve OAuth scope and a user who can approve project time. */
+            billing_rate_amount?: number | null;
+            currency?: string | null;
+        } & unknown;
+        TimeLogRequest: {
+            entries: components['schemas']['TimeLogItem'][];
+            /** @description Approve the logged entries in the same transaction. Requires the time:approve OAuth scope, a user who can approve time on every project, and the agent write cutover; if approval is refused nothing is logged. */
+            approve?: boolean;
+        };
+        /** @enum {string} */
+        TimeStatus: 'draft' | 'approved' | 'invoiced';
+        TimeUpdateRequest: {
             expected_version: components['schemas']['Version'];
+            /** Format: date */
+            worked_on?: string;
+            minutes?: number;
+            description?: string;
+            is_billable?: boolean;
+            is_deferred?: boolean;
+            is_visible_to_client?: boolean;
+            client_visible_description?: string | null;
+        } & unknown;
+        /** Format: uuid */
+        Uuid: string;
+        Version: string;
+        WithheldTool: {
+            name: string;
+            /** @enum {string} */
+            reason: 'deployment_disabled' | 'scope_not_granted' | 'role';
+            scope?: string;
+        };
+        WorkspaceContext: {
+            id: components['schemas']['Uuid'];
+            name: string;
+            timezone: string;
+            default_currency: components['schemas']['Currency'];
+            workspace_role: string | null;
+            capabilities: string[];
+            project_capabilities: components['schemas']['ProjectCapability'][];
+            /** Format: uri */
+            web_url: string;
+        };
+        WorkspaceCreateRequest: {
+            name: string;
+        };
+        WorkspaceCreateResponse: {
+            data: components['schemas']['WorkspaceCreated'];
+        };
+        WorkspaceCreated: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /** Format: uri */
+            web_url: string;
+        };
+        agreements_activateRequest: {
             /** @constant */
             confirm: true;
-            reason: string;
+            expected_version: string;
         };
-        InvoiceDiscardRequest: {
-            expected_version: components['schemas']['Version'];
+        agreements_createRequest: {
+            expected_version: string;
+            title: string;
+            /** Format: date */
+            starts_on: string;
+            /** Format: date */
+            ends_on?: string | null;
+            currency: string;
+            /** @enum {string} */
+            billing_cadence?:
+                'one_time' | 'monthly' | 'quarterly' | 'semi_annual' | 'annual';
+            agreement_text?: string | null;
+            is_visible_to_client?: boolean;
+            hourly_rate_amount?: number | null;
+            retainer_amount?: number | null;
+            retainer_minutes?: number | null;
+        };
+        agreements_terminateRequest: {
             /** @constant */
             confirm: true;
-            reason: string;
+            expected_version: string;
+            /** Format: date */
+            ends_on?: string | null;
         };
+        agreements_updateRequest: {
+            expected_version: string;
+            title?: string;
+            /** Format: date */
+            starts_on?: string;
+            /** Format: date */
+            ends_on?: string | null;
+            currency?: string;
+            /** @enum {string} */
+            billing_cadence?:
+                'one_time' | 'monthly' | 'quarterly' | 'semi_annual' | 'annual';
+            agreement_text?: string | null;
+            is_visible_to_client?: boolean;
+            hourly_rate_amount?: number | null;
+            retainer_amount?: number | null;
+            retainer_minutes?: number | null;
+            period_retainer_amount?: number | null;
+            period_retainer_minutes?: number | null;
+            catch_up_threshold_minutes?: number | null;
+            rollover_months?: number | null;
+            rollover_policy?: string | null;
+            /** @enum {string|null} */
+            first_cycle_proration?:
+                'prorate_hours' | 'full_period' | 'align_next_cycle' | null;
+            bill_overage_interim?: boolean | null;
+        };
+        clients_archiveRequest: {
+            expected_version: string;
+        };
+        clients_createRequest: {
+            name: string;
+            /** Format: email */
+            billing_email?: string | null;
+        };
+        clients_restoreRequest: {
+            expected_version: string;
+        };
+        clients_updateRequest: {
+            expected_version: string;
+            name?: string;
+            /** Format: email */
+            billing_email?: string | null;
+            automatic_invoice_email_enabled?: boolean;
+            automatic_invoice_email_delay_days?: number | null;
+            is_active?: boolean;
+        } & unknown;
     };
     responses: {
         /** @description OAuth, authorization, tenant, conflict, validation, or rate-limit error */
@@ -2275,1074 +2275,6 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
-    'workspaces.create': {
-        parameters: {
-            query?: never;
-            header: {
-                'Idempotency-Key': components['parameters']['IdempotencyKey'];
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                'application/json': components['schemas']['WorkspaceCreateRequest'];
-            };
-        };
-        responses: {
-            /** @description Create a workspace owned by the actor. Fresh creation has no prior expected_version. Atomic actor/client/key reservation; replay rechecks current membership. Requires outer and workspace write flags. */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    'application/json': components['schemas']['WorkspaceCreateResponse'];
-                };
-            };
-            default: components['responses']['Error'];
-        };
-    };
-    search: {
-        parameters: {
-            query: {
-                q: string;
-            };
-            header?: never;
-            path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Search authorized clients, projects, invoices and tasks; each kind additionally requires its read scope. Bounded to five results per kind. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    'application/json': components['schemas']['SearchResponse'];
-                };
-            };
-            default: components['responses']['Error'];
-        };
-    };
-    'attachments.list': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-                record_type:
-                    | 'company'
-                    | 'project'
-                    | 'task'
-                    | 'proposal'
-                    | 'agreement'
-                    | 'invoice';
-                record_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Manager-only generic attachment listing, bounded to 100 newest files. Expense receipts use separate routes. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    'application/json': components['schemas']['AttachmentListResponse'];
-                };
-            };
-            default: components['responses']['Error'];
-        };
-    };
-    'attachments.get': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-                attachment_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Manager-only metadata, excluding storage and uploader identifiers. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    'application/json': components['schemas']['AttachmentResponse'];
-                };
-            };
-            default: components['responses']['Error'];
-        };
-    };
-    'attachments.delete': {
-        parameters: {
-            query?: never;
-            header: {
-                'Idempotency-Key': components['parameters']['IdempotencyKey'];
-            };
-            path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-                attachment_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                'application/json': components['schemas']['AttachmentDeleteRequest'];
-            };
-        };
-        responses: {
-            /** @description Manager-only deletion, requiring current attachment version and confirm true. Same key replays without deleting twice. Both workflow and file write flags required. */
-            202: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    'application/json': components['schemas']['AttachmentResponse'];
-                };
-            };
-            default: components['responses']['Error'];
-        };
-    };
-    'attachments.download_url': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-                attachment_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Prepare a ten-minute signed content URL. Same bearer credential, files:read and current manager permission remain required. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    'application/json': components['schemas']['AttachmentDownloadUrlResponse'];
-                };
-            };
-            default: components['responses']['Error'];
-        };
-    };
-    'attachments.download': {
-        parameters: {
-            query: {
-                expires: number;
-                signature: string;
-            };
-            header?: never;
-            path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-                attachment_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Stream the private file using the signed URL, same bearer credential and current manager permission. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    'application/octet-stream': string;
-                };
-            };
-            default: components['responses']['Error'];
-        };
-    };
-    'attachments.upload_url': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-                record_type:
-                    | 'company'
-                    | 'project'
-                    | 'task'
-                    | 'proposal'
-                    | 'agreement'
-                    | 'invoice';
-                record_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Read-only URL preparation: does not reserve idempotency or persist bytes. Both file and workflow write flags and manager permission required. Upload file plus expected_version with same bearer credential and Idempotency-Key to returned URL. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    'application/json': components['schemas']['AttachmentUploadUrlResponse'];
-                };
-            };
-            default: components['responses']['Error'];
-        };
-    };
-    'attachments.upload': {
-        parameters: {
-            query: {
-                expires: number;
-                signature: string;
-            };
-            header: {
-                'Idempotency-Key': components['parameters']['IdempotencyKey'];
-            };
-            path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-                record_type:
-                    | 'company'
-                    | 'project'
-                    | 'task'
-                    | 'proposal'
-                    | 'agreement'
-                    | 'invoice';
-                record_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                'multipart/form-data': components['schemas']['AttachmentUploadRequest'];
-            };
-        };
-        responses: {
-            /** @description Manager-only multipart upload, at most 50 MiB. Locked parent version checked; actor/client/key receipt binds parent/version/filename/media/length/SHA256, with replay and audit. Uploading adds an immutable file and leaves parent business facts unchanged. */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    'application/json': components['schemas']['AttachmentResponse'];
-                };
-            };
-            default: components['responses']['Error'];
-        };
-    };
-    'proposals.accept': {
-        parameters: {
-            query?: never;
-            header: {
-                'Idempotency-Key': components['parameters']['IdempotencyKey'];
-            };
-            path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-                proposal_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                'application/json': components['schemas']['ProposalAcceptRequest'];
-            };
-        };
-        responses: {
-            /** @description Authorized proposal result */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    'application/json': components['schemas']['ProposalResponse'];
-                };
-            };
-            default: components['responses']['Error'];
-        };
-    };
-    'proposals.send': {
-        parameters: {
-            query?: never;
-            header: {
-                'Idempotency-Key': components['parameters']['IdempotencyKey'];
-            };
-            path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-                proposal_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                'application/json': components['schemas']['ProposalSendRequest'];
-            };
-        };
-        responses: {
-            /** @description Authorized proposal result */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    'application/json': components['schemas']['ProposalResponse'];
-                };
-            };
-            default: components['responses']['Error'];
-        };
-    };
-    'proposals.get': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-                proposal_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Authorized proposal result */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    'application/json': components['schemas']['ProposalResponse'];
-                };
-            };
-            default: components['responses']['Error'];
-        };
-    };
-    'proposals.list': {
-        parameters: {
-            query?: {
-                company_id?: string;
-                status?: 'draft' | 'sent' | 'accepted' | 'declined' | 'expired';
-                limit?: components['parameters']['Limit'];
-                cursor?: components['parameters']['Cursor'];
-            };
-            header?: never;
-            path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Authorized proposal result */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    'application/json': components['schemas']['ProposalListResponse'];
-                };
-            };
-            default: components['responses']['Error'];
-        };
-    };
-    'proposals.create': {
-        parameters: {
-            query?: never;
-            header: {
-                'Idempotency-Key': components['parameters']['IdempotencyKey'];
-            };
-            path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                'application/json': components['schemas']['ProposalCreateRequest'];
-            };
-        };
-        responses: {
-            /** @description Authorized proposal result */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    'application/json': components['schemas']['ProposalResponse'];
-                };
-            };
-            default: components['responses']['Error'];
-        };
-    };
-    'billing_schedules.list': {
-        parameters: {
-            query?: {
-                is_active?: boolean | null;
-                limit?: components['parameters']['Limit'];
-                cursor?: components['parameters']['Cursor'];
-            };
-            header?: never;
-            path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Result */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    'application/json': components['schemas']['BillingScheduleListResponse'];
-                };
-            };
-            default: components['responses']['Error'];
-        };
-    };
-    'billing_schedules.create': {
-        parameters: {
-            query?: never;
-            header: {
-                'Idempotency-Key': components['parameters']['IdempotencyKey'];
-            };
-            path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                'application/json': components['schemas']['BillingScheduleCreateRequest'];
-            };
-        };
-        responses: {
-            /** @description Result */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    'application/json': components['schemas']['BillingScheduleMutationResponse'];
-                };
-            };
-            default: components['responses']['Error'];
-        };
-    };
-    'billing_schedules.get': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-                schedule_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Result */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    'application/json': components['schemas']['BillingScheduleResponse'];
-                };
-            };
-            default: components['responses']['Error'];
-        };
-    };
-    'billing_schedules.generate': {
-        parameters: {
-            query?: never;
-            header: {
-                'Idempotency-Key': components['parameters']['IdempotencyKey'];
-            };
-            path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-                schedule_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                'application/json': components['schemas']['BillingScheduleGenerateRequest'];
-            };
-        };
-        responses: {
-            /** @description Result */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    'application/json': components['schemas']['BillingScheduleGenerateResponse'];
-                };
-            };
-            default: components['responses']['Error'];
-        };
-    };
-    'invoices.hold_delivery': {
-        parameters: {
-            query?: never;
-            header: {
-                'Idempotency-Key': components['parameters']['IdempotencyKey'];
-            };
-            path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-                invoice_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                'application/json': components['schemas']['InvoiceDeliveryHoldRequest'];
-            };
-        };
-        responses: {
-            /** @description Authorized result */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    'application/json': components['schemas']['InvoiceMutationResponse'];
-                };
-            };
-            default: components['responses']['Error'];
-        };
-    };
-    'invoices.release_delivery': {
-        parameters: {
-            query?: never;
-            header: {
-                'Idempotency-Key': components['parameters']['IdempotencyKey'];
-            };
-            path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-                invoice_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                'application/json': components['schemas']['InvoiceDeliveryReleaseRequest'];
-            };
-        };
-        responses: {
-            /** @description Authorized result */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    'application/json': components['schemas']['InvoiceMutationResponse'];
-                };
-            };
-            default: components['responses']['Error'];
-        };
-    };
-    'invoices.add_time': {
-        parameters: {
-            query?: never;
-            header: {
-                'Idempotency-Key': components['parameters']['IdempotencyKey'];
-            };
-            path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-                invoice_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                'application/json': components['schemas']['InvoiceAddTimeRequest'];
-            };
-        };
-        responses: {
-            /** @description Authorized result */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    'application/json': components['schemas']['InvoiceMutationResponse'];
-                };
-            };
-            default: components['responses']['Error'];
-        };
-    };
-    'invoices.generate_period': {
-        parameters: {
-            query?: never;
-            header: {
-                'Idempotency-Key': components['parameters']['IdempotencyKey'];
-            };
-            path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-                agreement_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                'application/json': components['schemas']['InvoiceGeneratePeriodRequest'];
-            };
-        };
-        responses: {
-            /** @description Authorized result */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    'application/json': components['schemas']['InvoiceMutationResponse'];
-                };
-            };
-            default: components['responses']['Error'];
-        };
-    };
-    'invoices.pdf': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-                invoice_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Authorized result */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    'application/json': components['schemas']['InvoicePdfLinkResponse'];
-                };
-            };
-            default: components['responses']['Error'];
-        };
-    };
-    'invoices.download_pdf': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-                invoice_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Authorized result */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    'application/pdf': string;
-                };
-            };
-            default: components['responses']['Error'];
-        };
-    };
-    'billing_audit.stale_and_missing': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Authorized result */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    'application/json': components['schemas']['StaleAndMissingInvoiceAuditResponse'];
-                };
-            };
-            default: components['responses']['Error'];
-        };
-    };
-    'expenses.approve': {
-        parameters: {
-            query?: never;
-            header: {
-                'Idempotency-Key': components['parameters']['IdempotencyKey'];
-            };
-            path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-                expense_id: components['parameters']['ExpenseId'];
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                'application/json': components['schemas']['ExpenseApprovalRequest'];
-            };
-        };
-        responses: {
-            /** @description Successful operation */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    'application/json': components['schemas']['ExpenseResponse'];
-                };
-            };
-            default: components['responses']['Error'];
-        };
-    };
-    'expenses.unapprove': {
-        parameters: {
-            query?: never;
-            header: {
-                'Idempotency-Key': components['parameters']['IdempotencyKey'];
-            };
-            path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-                expense_id: components['parameters']['ExpenseId'];
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                'application/json': components['schemas']['ExpenseApprovalRequest'];
-            };
-        };
-        responses: {
-            /** @description Successful operation */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    'application/json': components['schemas']['ExpenseResponse'];
-                };
-            };
-            default: components['responses']['Error'];
-        };
-    };
-    'expense_schedules.list': {
-        parameters: {
-            query?: {
-                company_id?: string;
-                limit?: components['parameters']['Limit'];
-                cursor?: components['parameters']['Cursor'];
-            };
-            header?: never;
-            path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful operation */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    'application/json': components['schemas']['ExpenseScheduleListResponse'];
-                };
-            };
-            default: components['responses']['Error'];
-        };
-    };
-    'expense_schedules.create': {
-        parameters: {
-            query?: never;
-            header: {
-                'Idempotency-Key': components['parameters']['IdempotencyKey'];
-            };
-            path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                'application/json': components['schemas']['ExpenseScheduleCreateRequest'];
-            };
-        };
-        responses: {
-            /** @description Successful operation */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    'application/json': components['schemas']['ExpenseScheduleResponse'];
-                };
-            };
-            default: components['responses']['Error'];
-        };
-    };
-    'expense_schedules.update': {
-        parameters: {
-            query?: never;
-            header: {
-                'Idempotency-Key': components['parameters']['IdempotencyKey'];
-            };
-            path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-                schedule_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                'application/json': components['schemas']['ExpenseScheduleUpdateRequest'];
-            };
-        };
-        responses: {
-            /** @description Successful operation */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    'application/json': components['schemas']['ExpenseScheduleResponse'];
-                };
-            };
-            default: components['responses']['Error'];
-        };
-    };
-    'expense_schedules.generate': {
-        parameters: {
-            query?: never;
-            header: {
-                'Idempotency-Key': components['parameters']['IdempotencyKey'];
-            };
-            path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-                schedule_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                'application/json': components['schemas']['ExpenseScheduleGenerateRequest'];
-            };
-        };
-        responses: {
-            /** @description Successful operation */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    'application/json': components['schemas']['ExpenseScheduleGenerateResponse'];
-                };
-            };
-            default: components['responses']['Error'];
-        };
-    };
-    'expenses.receipts.list': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-                expense_id: components['parameters']['ExpenseId'];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful operation */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    'application/json': components['schemas']['ExpenseReceiptListResponse'];
-                };
-            };
-            default: components['responses']['Error'];
-        };
-    };
-    'expenses.receipts.upload': {
-        parameters: {
-            query?: never;
-            header: {
-                'Idempotency-Key': components['parameters']['IdempotencyKey'];
-            };
-            path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-                expense_id: components['parameters']['ExpenseId'];
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                'multipart/form-data': components['schemas']['ExpenseReceiptUploadRequest'];
-            };
-        };
-        responses: {
-            /** @description Successful operation */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    'application/json': components['schemas']['ExpenseReceiptUploadResponse'];
-                };
-            };
-            default: components['responses']['Error'];
-        };
-    };
-    'expenses.receipts.upload_url': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-                expense_id: components['parameters']['ExpenseId'];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful operation */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    'application/json': components['schemas']['ExpenseReceiptUploadUrlResponse'];
-                };
-            };
-            default: components['responses']['Error'];
-        };
-    };
-    'expenses.receipts.download': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-                expense_id: components['parameters']['ExpenseId'];
-                receipt_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful operation */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    'application/json': components['schemas']['ExpenseReceiptDownloadResponse'];
-                };
-            };
-            default: components['responses']['Error'];
-        };
-    };
-    'expenses.receipts.content': {
-        parameters: {
-            query: {
-                expires: number;
-                signature: string;
-            };
-            header?: never;
-            path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-                expense_id: components['parameters']['ExpenseId'];
-                receipt_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Receipt bytes */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    'application/octet-stream': string;
-                };
-            };
-            default: components['responses']['Error'];
-        };
-    };
-    'time_entries.unapprove': {
-        parameters: {
-            query?: never;
-            header: {
-                'Idempotency-Key': components['parameters']['IdempotencyKey'];
-            };
-            path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-                entry_id: components['parameters']['TimeEntryId'];
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                'application/json': components['schemas']['ExpectedVersionRequest'];
-            };
-        };
-        responses: {
-            /** @description Time approval withdrawn or replayed */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    'application/json': components['schemas']['TimeEntryResponse'];
-                };
-            };
-            default: components['responses']['Error'];
-        };
-    };
-    'agreements.terminate': {
-        parameters: {
-            query?: never;
-            header: {
-                'Idempotency-Key': components['parameters']['IdempotencyKey'];
-            };
-            path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-                agreement_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                'application/json': components['schemas']['agreements_terminateRequest'];
-            };
-        };
-        responses: {
-            /** @description Authorized result */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    'application/json': components['schemas']['AgreementResponse'];
-                };
-            };
-            default: components['responses']['Error'];
-        };
-    };
     'agreements.activate': {
         parameters: {
             query?: never;
@@ -3350,8 +2282,8 @@ export interface operations {
                 'Idempotency-Key': components['parameters']['IdempotencyKey'];
             };
             path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-                agreement_id: string;
+                workspace: components['parameters']['WorkspaceId'];
+                agreement: string;
             };
             cookie?: never;
         };
@@ -3380,8 +2312,8 @@ export interface operations {
                 'Idempotency-Key': components['parameters']['IdempotencyKey'];
             };
             path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-                client_id: string;
+                workspace: components['parameters']['WorkspaceId'];
+                client: string;
             };
             cookie?: never;
         };
@@ -3408,8 +2340,8 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-                agreement_id: string;
+                workspace: components['parameters']['WorkspaceId'];
+                agreement: string;
             };
             cookie?: never;
         };
@@ -3434,8 +2366,8 @@ export interface operations {
                 'Idempotency-Key': components['parameters']['IdempotencyKey'];
             };
             path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-                agreement_id: string;
+                workspace: components['parameters']['WorkspaceId'];
+                agreement: string;
             };
             cookie?: never;
         };
@@ -3467,7 +2399,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                workspace_id: components['parameters']['WorkspaceId'];
+                workspace: components['parameters']['WorkspaceId'];
             };
             cookie?: never;
         };
@@ -3485,21 +2417,21 @@ export interface operations {
             default: components['responses']['Error'];
         };
     };
-    'clients.restore': {
+    'agreements.terminate': {
         parameters: {
             query?: never;
             header: {
                 'Idempotency-Key': components['parameters']['IdempotencyKey'];
             };
             path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-                client_id: string;
+                workspace: components['parameters']['WorkspaceId'];
+                agreement: string;
             };
             cookie?: never;
         };
         requestBody: {
             content: {
-                'application/json': components['schemas']['clients_restoreRequest'];
+                'application/json': components['schemas']['agreements_terminateRequest'];
             };
         };
         responses: {
@@ -3509,7 +2441,347 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    'application/json': components['schemas']['ClientCompanyResponse'];
+                    'application/json': components['schemas']['AgreementResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'attachments.get': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                attachment: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Manager-only metadata, excluding storage and uploader identifiers. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['AttachmentResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'attachments.delete': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                attachment: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['AttachmentDeleteRequest'];
+            };
+        };
+        responses: {
+            /** @description Manager-only deletion, requiring current attachment version and confirm true. Same key replays without deleting twice. Both workflow and file write flags required. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['AttachmentResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'attachments.download': {
+        parameters: {
+            query: {
+                expires: number;
+                signature: string;
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                attachment: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Stream the private file using the signed URL, same bearer credential and current manager permission. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/octet-stream': string;
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'attachments.download_url': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                attachment: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Prepare a ten-minute signed content URL. Same bearer credential, files:read and current manager permission remain required. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['AttachmentDownloadUrlResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'attachments.list': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                recordType:
+                    | 'company'
+                    | 'project'
+                    | 'task'
+                    | 'proposal'
+                    | 'agreement'
+                    | 'invoice';
+                recordPublicId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Manager-only generic attachment listing, bounded to 100 newest files. Expense receipts use separate routes. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['AttachmentListResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'attachments.upload': {
+        parameters: {
+            query: {
+                expires: number;
+                signature: string;
+            };
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                recordType:
+                    | 'company'
+                    | 'project'
+                    | 'task'
+                    | 'proposal'
+                    | 'agreement'
+                    | 'invoice';
+                recordPublicId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'multipart/form-data': components['schemas']['AttachmentUploadRequest'];
+            };
+        };
+        responses: {
+            /** @description Manager-only multipart upload, at most 50 MiB. Locked parent version checked; actor/client/key receipt binds parent/version/filename/media/length/SHA256, with replay and audit. Uploading adds an immutable file and leaves parent business facts unchanged. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['AttachmentResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'attachments.upload_url': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                recordType:
+                    | 'company'
+                    | 'project'
+                    | 'task'
+                    | 'proposal'
+                    | 'agreement'
+                    | 'invoice';
+                recordPublicId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Read-only URL preparation: does not reserve idempotency or persist bytes. Both file and workflow write flags and manager permission required. Upload file plus expected_version with same bearer credential and Idempotency-Key to returned URL. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['AttachmentUploadUrlResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'billing_audit.stale_and_missing': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['StaleAndMissingInvoiceAuditResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'billing_schedules.list': {
+        parameters: {
+            query?: {
+                is_active?: boolean | null;
+                limit?: components['parameters']['Limit'];
+                cursor?: components['parameters']['Cursor'];
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['BillingScheduleListResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'billing_schedules.create': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['BillingScheduleCreateRequest'];
+            };
+        };
+        responses: {
+            /** @description Result */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['BillingScheduleMutationResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'billing_schedules.generate': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                schedule: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['BillingScheduleGenerateRequest'];
+            };
+        };
+        responses: {
+            /** @description Result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['BillingScheduleGenerateResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'billing_schedules.get': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                schedule: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['BillingScheduleResponse'];
                 };
             };
             default: components['responses']['Error'];
@@ -3522,68 +2794,14 @@ export interface operations {
                 'Idempotency-Key': components['parameters']['IdempotencyKey'];
             };
             path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-                client_id: string;
+                workspace: components['parameters']['WorkspaceId'];
+                client: string;
             };
             cookie?: never;
         };
         requestBody: {
             content: {
                 'application/json': components['schemas']['clients_archiveRequest'];
-            };
-        };
-        responses: {
-            /** @description Authorized result */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    'application/json': components['schemas']['ClientCompanyResponse'];
-                };
-            };
-            default: components['responses']['Error'];
-        };
-    };
-    'clients.get': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-                client_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Authorized result */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    'application/json': components['schemas']['ClientCompanyResponse'];
-                };
-            };
-            default: components['responses']['Error'];
-        };
-    };
-    'clients.update': {
-        parameters: {
-            query?: never;
-            header: {
-                'Idempotency-Key': components['parameters']['IdempotencyKey'];
-            };
-            path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-                client_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                'application/json': components['schemas']['clients_updateRequest'];
             };
         };
         responses: {
@@ -3608,7 +2826,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                workspace_id: components['parameters']['WorkspaceId'];
+                workspace: components['parameters']['WorkspaceId'];
             };
             cookie?: never;
         };
@@ -3633,7 +2851,7 @@ export interface operations {
                 'Idempotency-Key': components['parameters']['IdempotencyKey'];
             };
             path: {
-                workspace_id: components['parameters']['WorkspaceId'];
+                workspace: components['parameters']['WorkspaceId'];
             };
             cookie?: never;
         };
@@ -3655,146 +2873,273 @@ export interface operations {
             default: components['responses']['Error'];
         };
     };
-    'projects.members.list': {
+    'clients.get': {
         parameters: {
-            query?: {
-                limit?: components['parameters']['Limit'];
-                cursor?: components['parameters']['Cursor'];
-            };
+            query?: never;
             header?: never;
             path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-                project_id: components['parameters']['ProjectId'];
+                workspace: components['parameters']['WorkspaceId'];
+                client: string;
             };
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description Project operation result */
+            /** @description Authorized result */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    'application/json': components['schemas']['ProjectMembersResponse'];
+                    'application/json': components['schemas']['ClientCompanyResponse'];
                 };
             };
             default: components['responses']['Error'];
         };
     };
-    'projects.members.update': {
+    'clients.update': {
         parameters: {
             query?: never;
             header: {
                 'Idempotency-Key': components['parameters']['IdempotencyKey'];
             };
             path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-                project_id: components['parameters']['ProjectId'];
+                workspace: components['parameters']['WorkspaceId'];
+                client: string;
             };
             cookie?: never;
         };
         requestBody: {
             content: {
-                'application/json': components['schemas']['ProjectMemberUpdateRequest'];
+                'application/json': components['schemas']['clients_updateRequest'];
             };
         };
         responses: {
-            /** @description Project operation result */
+            /** @description Authorized result */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    'application/json': components['schemas']['ProjectResponse'];
+                    'application/json': components['schemas']['ClientCompanyResponse'];
                 };
             };
             default: components['responses']['Error'];
         };
     };
-    'projects.archive': {
+    'clients.restore': {
         parameters: {
             query?: never;
             header: {
                 'Idempotency-Key': components['parameters']['IdempotencyKey'];
             };
             path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-                project_id: components['parameters']['ProjectId'];
+                workspace: components['parameters']['WorkspaceId'];
+                client: string;
             };
             cookie?: never;
         };
         requestBody: {
             content: {
-                'application/json': components['schemas']['ProjectConfirmRequest'];
+                'application/json': components['schemas']['clients_restoreRequest'];
             };
         };
         responses: {
-            /** @description Project operation result */
+            /** @description Authorized result */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    'application/json': components['schemas']['ProjectResponse'];
+                    'application/json': components['schemas']['ClientCompanyResponse'];
                 };
             };
             default: components['responses']['Error'];
         };
     };
-    'expenses.list': {
+    'connections.revoke': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: components['parameters']['TokenId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Connection revoked */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'context.get': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized context */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ContextResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'expense_schedules.list': {
         parameters: {
             query?: {
                 company_id?: string;
-                project_id?: string;
-                status?: 'draft' | 'approved' | 'invoiced';
                 limit?: components['parameters']['Limit'];
                 cursor?: components['parameters']['Cursor'];
             };
             header?: never;
             path: {
-                workspace_id: components['parameters']['WorkspaceId'];
+                workspace: components['parameters']['WorkspaceId'];
             };
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description Authorized expenses */
+            /** @description Successful operation */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    'application/json': components['schemas']['ExpenseListResponse'];
+                    'application/json': components['schemas']['ExpenseScheduleListResponse'];
                 };
             };
             default: components['responses']['Error'];
         };
     };
-    'expenses.log': {
+    'expense_schedules.create': {
         parameters: {
             query?: never;
             header: {
                 'Idempotency-Key': components['parameters']['IdempotencyKey'];
             };
             path: {
-                workspace_id: components['parameters']['WorkspaceId'];
+                workspace: components['parameters']['WorkspaceId'];
             };
             cookie?: never;
         };
         requestBody: {
             content: {
-                'application/json': components['schemas']['ExpenseLogRequest'];
+                'application/json': components['schemas']['ExpenseScheduleCreateRequest'];
             };
         };
         responses: {
-            /** @description Draft expenses recorded or replayed */
+            /** @description Successful operation */
             201: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    'application/json': components['schemas']['ExpenseBatchResponse'];
+                    'application/json': components['schemas']['ExpenseScheduleResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'expense_schedules.generate': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                schedule: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['ExpenseScheduleGenerateRequest'];
+            };
+        };
+        responses: {
+            /** @description Successful operation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ExpenseScheduleGenerateResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'expense_schedules.update': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                schedule: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['ExpenseScheduleUpdateRequest'];
+            };
+        };
+        responses: {
+            /** @description Successful operation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ExpenseScheduleResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'expenses.approve': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                expense: components['parameters']['ExpenseId'];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['ExpenseApprovalRequest'];
+            };
+        };
+        responses: {
+            /** @description Successful operation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ExpenseResponse'];
                 };
             };
             default: components['responses']['Error'];
@@ -3807,8 +3152,8 @@ export interface operations {
                 'Idempotency-Key': components['parameters']['IdempotencyKey'];
             };
             path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-                expense_id: components['parameters']['ExpenseId'];
+                workspace: components['parameters']['WorkspaceId'];
+                expense: components['parameters']['ExpenseId'];
             };
             cookie?: never;
         };
@@ -3837,8 +3182,8 @@ export interface operations {
                 'Idempotency-Key': components['parameters']['IdempotencyKey'];
             };
             path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-                expense_id: components['parameters']['ExpenseId'];
+                workspace: components['parameters']['WorkspaceId'];
+                expense: components['parameters']['ExpenseId'];
             };
             cookie?: never;
         };
@@ -3860,527 +3205,280 @@ export interface operations {
             default: components['responses']['Error'];
         };
     };
-    'payments.list': {
+    'expenses.list': {
         parameters: {
             query?: {
-                limit?: components['parameters']['Limit'];
-                cursor?: components['parameters']['Cursor'];
-                invoice_id?: string;
                 company_id?: string;
-            };
-            header?: never;
-            path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Authorized received payments */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    'application/json': components['schemas']['ReceivedPaymentListResponse'];
-                };
-            };
-            default: components['responses']['Error'];
-        };
-    };
-    'payments.record': {
-        parameters: {
-            query?: never;
-            header: {
-                'Idempotency-Key': components['parameters']['IdempotencyKey'];
-            };
-            path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                'application/json': components['schemas']['ReceivedPaymentRecordRequest'];
-            };
-        };
-        responses: {
-            /** @description Authorized received payments */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    'application/json': components['schemas']['ReceivedPaymentBatchResponse'];
-                };
-            };
-            default: components['responses']['Error'];
-        };
-    };
-    'payments.correct': {
-        parameters: {
-            query?: never;
-            header: {
-                'Idempotency-Key': components['parameters']['IdempotencyKey'];
-            };
-            path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-                payment_id: components['parameters']['PaymentId'];
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                'application/json': components['schemas']['ReceivedPaymentCorrectionRequest'];
-            };
-        };
-        responses: {
-            /** @description Corrected payment */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    'application/json': components['schemas']['ReceivedPaymentResponse'];
-                };
-            };
-            default: components['responses']['Error'];
-        };
-    };
-    'context.get': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Authorized context */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    'application/json': components['schemas']['ContextResponse'];
-                };
-            };
-            default: components['responses']['Error'];
-        };
-    };
-    'connections.revoke': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                token: components['parameters']['TokenId'];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Connection revoked */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            default: components['responses']['Error'];
-        };
-    };
-    'operations.summary': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Role-sensitive summary */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    'application/json': components['schemas']['SummaryResponse'];
-                };
-            };
-            default: components['responses']['Error'];
-        };
-    };
-    'projects.list': {
-        parameters: {
-            query?: {
-                limit?: components['parameters']['Limit'];
-                cursor?: components['parameters']['Cursor'];
-                status?: 'active' | 'archived' | 'completed';
-                query?: string;
-            };
-            header?: never;
-            path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Authorized projects */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    'application/json': components['schemas']['ProjectListResponse'];
-                };
-            };
-            default: components['responses']['Error'];
-        };
-    };
-    'projects.create': {
-        parameters: {
-            query?: never;
-            header: {
-                'Idempotency-Key': components['parameters']['IdempotencyKey'];
-            };
-            path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                'application/json': components['schemas']['ProjectCreateRequest'];
-            };
-        };
-        responses: {
-            /** @description Project operation result */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    'application/json': components['schemas']['ProjectResponse'];
-                };
-            };
-            default: components['responses']['Error'];
-        };
-    };
-    'projects.get': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-                project_id: components['parameters']['ProjectId'];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Authorized project detail */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    'application/json': components['schemas']['ProjectDetailResponse'];
-                };
-            };
-            default: components['responses']['Error'];
-        };
-    };
-    'projects.update': {
-        parameters: {
-            query?: never;
-            header: {
-                'Idempotency-Key': components['parameters']['IdempotencyKey'];
-            };
-            path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-                project_id: components['parameters']['ProjectId'];
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                'application/json': components['schemas']['ProjectUpdateRequest'];
-            };
-        };
-        responses: {
-            /** @description Project operation result */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    'application/json': components['schemas']['ProjectResponse'];
-                };
-            };
-            default: components['responses']['Error'];
-        };
-    };
-    'tasks.create': {
-        parameters: {
-            query?: never;
-            header: {
-                'Idempotency-Key': components['parameters']['IdempotencyKey'];
-            };
-            path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-                project_id: components['parameters']['ProjectId'];
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                'application/json': components['schemas']['TaskCreateRequest'];
-            };
-        };
-        responses: {
-            /** @description Task created */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    'application/json': components['schemas']['TaskResponse'];
-                };
-            };
-            default: components['responses']['Error'];
-        };
-    };
-    'tasks.list': {
-        parameters: {
-            query?: {
                 project_id?: string;
+                status?: 'draft' | 'approved' | 'invoiced';
                 limit?: components['parameters']['Limit'];
                 cursor?: components['parameters']['Cursor'];
             };
             header?: never;
             path: {
-                workspace_id: components['parameters']['WorkspaceId'];
+                workspace: components['parameters']['WorkspaceId'];
             };
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description Authorized tasks */
+            /** @description Authorized expenses */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    'application/json': components['schemas']['TaskListResponse'];
+                    'application/json': components['schemas']['ExpenseListResponse'];
                 };
             };
             default: components['responses']['Error'];
         };
     };
-    'tasks.get': {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-                task_id: components['parameters']['TaskId'];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Authorized task */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    'application/json': components['schemas']['TaskResponse'];
-                };
-            };
-            default: components['responses']['Error'];
-        };
-    };
-    'tasks.update': {
+    'expenses.log': {
         parameters: {
             query?: never;
             header: {
                 'Idempotency-Key': components['parameters']['IdempotencyKey'];
             };
             path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-                task_id: components['parameters']['TaskId'];
+                workspace: components['parameters']['WorkspaceId'];
             };
             cookie?: never;
         };
         requestBody: {
             content: {
-                'application/json': components['schemas']['TaskUpdateRequest'];
+                'application/json': components['schemas']['ExpenseLogRequest'];
             };
         };
         responses: {
-            /** @description Task updated */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    'application/json': components['schemas']['TaskResponse'];
-                };
-            };
-            default: components['responses']['Error'];
-        };
-    };
-    'time_entries.list': {
-        parameters: {
-            query?: {
-                project_id?: string;
-                status?: components['schemas']['TimeStatus'];
-                allocation_state?: 'unallocated' | 'reserved' | 'consumed';
-                is_billable?: boolean;
-                /** @description When true, selects exactly the approved, priced, billable, non-deferred unallocated work counted by operations.summary. allocation_state alone classifies all rows, including drafts and deferred work. */
-                unallocated?: boolean;
-                from?: string;
-                to?: string;
-                limit?: components['parameters']['Limit'];
-                cursor?: components['parameters']['Cursor'];
-            };
-            header?: never;
-            path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Authorized time entries */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    'application/json': components['schemas']['TimeEntryListResponse'];
-                };
-            };
-            default: components['responses']['Error'];
-        };
-    };
-    'time_entries.log': {
-        parameters: {
-            query?: never;
-            header: {
-                'Idempotency-Key': components['parameters']['IdempotencyKey'];
-            };
-            path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                'application/json': components['schemas']['TimeLogRequest'];
-            };
-        };
-        responses: {
-            /** @description Time entries logged or replayed */
+            /** @description Draft expenses recorded or replayed */
             201: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    'application/json': components['schemas']['TimeEntryBatchResponse'];
+                    'application/json': components['schemas']['ExpenseBatchResponse'];
                 };
             };
             default: components['responses']['Error'];
         };
     };
-    'time_entries.delete': {
+    'expenses.receipts.content': {
+        parameters: {
+            query: {
+                expires: number;
+                signature: string;
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                expense: components['parameters']['ExpenseId'];
+                receipt: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Receipt bytes */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/octet-stream': string;
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'expenses.receipts.download': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                expense: components['parameters']['ExpenseId'];
+                receipt: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful operation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ExpenseReceiptDownloadResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'expenses.receipts.list': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                expense: components['parameters']['ExpenseId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful operation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ExpenseReceiptListResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'expenses.receipts.upload': {
         parameters: {
             query?: never;
             header: {
                 'Idempotency-Key': components['parameters']['IdempotencyKey'];
             };
             path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-                entry_id: components['parameters']['TimeEntryId'];
+                workspace: components['parameters']['WorkspaceId'];
+                expense: components['parameters']['ExpenseId'];
             };
             cookie?: never;
         };
         requestBody: {
             content: {
-                'application/json': components['schemas']['ExpectedVersionRequest'];
+                'multipart/form-data': components['schemas']['ExpenseReceiptUploadRequest'];
             };
         };
         responses: {
-            /** @description Draft time soft-deleted */
-            200: {
+            /** @description Successful operation */
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    'application/json': components['schemas']['DeletionResponse'];
+                    'application/json': components['schemas']['ExpenseReceiptUploadResponse'];
                 };
             };
             default: components['responses']['Error'];
         };
     };
-    'time_entries.update': {
+    'expenses.receipts.upload_url': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                expense: components['parameters']['ExpenseId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful operation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ExpenseReceiptUploadUrlResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'expenses.unapprove': {
         parameters: {
             query?: never;
             header: {
                 'Idempotency-Key': components['parameters']['IdempotencyKey'];
             };
             path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-                entry_id: components['parameters']['TimeEntryId'];
+                workspace: components['parameters']['WorkspaceId'];
+                expense: components['parameters']['ExpenseId'];
             };
             cookie?: never;
         };
         requestBody: {
             content: {
-                'application/json': components['schemas']['TimeUpdateRequest'];
+                'application/json': components['schemas']['ExpenseApprovalRequest'];
             };
         };
         responses: {
-            /** @description Draft time updated */
+            /** @description Successful operation */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    'application/json': components['schemas']['TimeEntryResponse'];
+                    'application/json': components['schemas']['ExpenseResponse'];
                 };
             };
             default: components['responses']['Error'];
         };
     };
-    'time_entries.approve': {
+    'invoices.add_time': {
         parameters: {
             query?: never;
             header: {
                 'Idempotency-Key': components['parameters']['IdempotencyKey'];
             };
             path: {
-                workspace_id: components['parameters']['WorkspaceId'];
+                workspace: components['parameters']['WorkspaceId'];
+                invoice: string;
             };
             cookie?: never;
         };
         requestBody: {
             content: {
-                'application/json': components['schemas']['TimeApprovalRequest'];
+                'application/json': components['schemas']['InvoiceAddTimeRequest'];
             };
         };
         responses: {
-            /** @description Time entries approved */
+            /** @description Authorized result */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    'application/json': components['schemas']['ApprovalResponse'];
+                    'application/json': components['schemas']['InvoiceMutationResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'invoices.correct': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                invoice: components['parameters']['InvoiceId'];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['InvoiceCorrectionRequest'];
+            };
+        };
+        responses: {
+            /** @description Invoice corrected */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['InvoiceMutationResponse'];
                 };
             };
             default: components['responses']['Error'];
@@ -4409,7 +3507,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                workspace_id: components['parameters']['WorkspaceId'];
+                workspace: components['parameters']['WorkspaceId'];
             };
             cookie?: never;
         };
@@ -4434,7 +3532,7 @@ export interface operations {
                 'Idempotency-Key': components['parameters']['IdempotencyKey'];
             };
             path: {
-                workspace_id: components['parameters']['WorkspaceId'];
+                workspace: components['parameters']['WorkspaceId'];
             };
             cookie?: never;
         };
@@ -4456,13 +3554,97 @@ export interface operations {
             default: components['responses']['Error'];
         };
     };
+    'invoices.discard_draft': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                invoice: components['parameters']['InvoiceId'];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['InvoiceDiscardRequest'];
+            };
+        };
+        responses: {
+            /** @description Draft discarded and linked time released */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['InvoiceMutationResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'invoices.download_pdf': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                invoice: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/pdf': string;
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'invoices.generate_period': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                agreement: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['InvoiceGeneratePeriodRequest'];
+            };
+        };
+        responses: {
+            /** @description Authorized result */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['InvoiceMutationResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
     'invoices.get': {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-                invoice_id: components['parameters']['InvoiceId'];
+                workspace: components['parameters']['WorkspaceId'];
+                invoice: components['parameters']['InvoiceId'];
             };
             cookie?: never;
         };
@@ -4487,8 +3669,8 @@ export interface operations {
                 'Idempotency-Key': components['parameters']['IdempotencyKey'];
             };
             path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-                invoice_id: components['parameters']['InvoiceId'];
+                workspace: components['parameters']['WorkspaceId'];
+                invoice: components['parameters']['InvoiceId'];
             };
             cookie?: never;
         };
@@ -4510,25 +3692,25 @@ export interface operations {
             default: components['responses']['Error'];
         };
     };
-    'invoices.discard_draft': {
+    'invoices.hold_delivery': {
         parameters: {
             query?: never;
             header: {
                 'Idempotency-Key': components['parameters']['IdempotencyKey'];
             };
             path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-                invoice_id: components['parameters']['InvoiceId'];
+                workspace: components['parameters']['WorkspaceId'];
+                invoice: string;
             };
             cookie?: never;
         };
         requestBody: {
             content: {
-                'application/json': components['schemas']['InvoiceDiscardRequest'];
+                'application/json': components['schemas']['InvoiceDeliveryHoldRequest'];
             };
         };
         responses: {
-            /** @description Draft discarded and linked time released */
+            /** @description Authorized result */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -4547,8 +3729,8 @@ export interface operations {
                 'Idempotency-Key': components['parameters']['IdempotencyKey'];
             };
             path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-                invoice_id: components['parameters']['InvoiceId'];
+                workspace: components['parameters']['WorkspaceId'];
+                invoice: components['parameters']['InvoiceId'];
             };
             cookie?: never;
         };
@@ -4570,6 +3752,60 @@ export interface operations {
             default: components['responses']['Error'];
         };
     };
+    'invoices.pdf': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                invoice: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['InvoicePdfLinkResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'invoices.release_delivery': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                invoice: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['InvoiceDeliveryReleaseRequest'];
+            };
+        };
+        responses: {
+            /** @description Authorized result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['InvoiceMutationResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
     'invoices.send': {
         parameters: {
             query?: never;
@@ -4577,8 +3813,8 @@ export interface operations {
                 'Idempotency-Key': components['parameters']['IdempotencyKey'];
             };
             path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-                invoice_id: components['parameters']['InvoiceId'];
+                workspace: components['parameters']['WorkspaceId'];
+                invoice: components['parameters']['InvoiceId'];
             };
             cookie?: never;
         };
@@ -4600,36 +3836,6 @@ export interface operations {
             default: components['responses']['Error'];
         };
     };
-    'invoices.void': {
-        parameters: {
-            query?: never;
-            header: {
-                'Idempotency-Key': components['parameters']['IdempotencyKey'];
-            };
-            path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-                invoice_id: components['parameters']['InvoiceId'];
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                'application/json': components['schemas']['InvoiceVoidRequest'];
-            };
-        };
-        responses: {
-            /** @description Invoice voided */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    'application/json': components['schemas']['InvoiceMutationResponse'];
-                };
-            };
-            default: components['responses']['Error'];
-        };
-    };
     'invoices.update_details': {
         parameters: {
             query?: never;
@@ -4637,8 +3843,8 @@ export interface operations {
                 'Idempotency-Key': components['parameters']['IdempotencyKey'];
             };
             path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-                invoice_id: components['parameters']['InvoiceId'];
+                workspace: components['parameters']['WorkspaceId'];
+                invoice: components['parameters']['InvoiceId'];
             };
             cookie?: never;
         };
@@ -4660,31 +3866,825 @@ export interface operations {
             default: components['responses']['Error'];
         };
     };
-    'invoices.correct': {
+    'invoices.void': {
         parameters: {
             query?: never;
             header: {
                 'Idempotency-Key': components['parameters']['IdempotencyKey'];
             };
             path: {
-                workspace_id: components['parameters']['WorkspaceId'];
-                invoice_id: components['parameters']['InvoiceId'];
+                workspace: components['parameters']['WorkspaceId'];
+                invoice: components['parameters']['InvoiceId'];
             };
             cookie?: never;
         };
         requestBody: {
             content: {
-                'application/json': components['schemas']['InvoiceCorrectionRequest'];
+                'application/json': components['schemas']['InvoiceVoidRequest'];
             };
         };
         responses: {
-            /** @description Invoice corrected */
+            /** @description Invoice voided */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     'application/json': components['schemas']['InvoiceMutationResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'operations.summary': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Role-sensitive summary */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['SummaryResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'payments.correct': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                payment: components['parameters']['PaymentId'];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['ReceivedPaymentCorrectionRequest'];
+            };
+        };
+        responses: {
+            /** @description Corrected payment */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ReceivedPaymentResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'payments.list': {
+        parameters: {
+            query?: {
+                limit?: components['parameters']['Limit'];
+                cursor?: components['parameters']['Cursor'];
+                invoice_id?: string;
+                company_id?: string;
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized received payments */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ReceivedPaymentListResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'payments.record': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['ReceivedPaymentRecordRequest'];
+            };
+        };
+        responses: {
+            /** @description Authorized received payments */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ReceivedPaymentBatchResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'projects.archive': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                project: components['parameters']['ProjectId'];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['ProjectConfirmRequest'];
+            };
+        };
+        responses: {
+            /** @description Project operation result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ProjectResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'projects.list': {
+        parameters: {
+            query?: {
+                limit?: components['parameters']['Limit'];
+                cursor?: components['parameters']['Cursor'];
+                status?: 'active' | 'archived' | 'completed';
+                query?: string;
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized projects */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ProjectListResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'projects.create': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['ProjectCreateRequest'];
+            };
+        };
+        responses: {
+            /** @description Project operation result */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ProjectResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'projects.get': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                project: components['parameters']['ProjectId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized project detail */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ProjectDetailResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'projects.update': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                project: components['parameters']['ProjectId'];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['ProjectUpdateRequest'];
+            };
+        };
+        responses: {
+            /** @description Project operation result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ProjectResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'projects.members.list': {
+        parameters: {
+            query?: {
+                limit?: components['parameters']['Limit'];
+                cursor?: components['parameters']['Cursor'];
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                project: components['parameters']['ProjectId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Project operation result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ProjectMembersResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'projects.members.update': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                project: components['parameters']['ProjectId'];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['ProjectMemberUpdateRequest'];
+            };
+        };
+        responses: {
+            /** @description Project operation result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ProjectResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'proposals.accept': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                proposal: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['ProposalAcceptRequest'];
+            };
+        };
+        responses: {
+            /** @description Authorized proposal result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ProposalResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'proposals.list': {
+        parameters: {
+            query?: {
+                company_id?: string;
+                status?: 'draft' | 'sent' | 'accepted' | 'declined' | 'expired';
+                limit?: components['parameters']['Limit'];
+                cursor?: components['parameters']['Cursor'];
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized proposal result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ProposalListResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'proposals.create': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['ProposalCreateRequest'];
+            };
+        };
+        responses: {
+            /** @description Authorized proposal result */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ProposalResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'proposals.get': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                proposal: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized proposal result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ProposalResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'proposals.send': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                proposal: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['ProposalSendRequest'];
+            };
+        };
+        responses: {
+            /** @description Authorized proposal result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ProposalResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    search: {
+        parameters: {
+            query: {
+                q: string;
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Search authorized clients, projects, invoices and tasks; each kind additionally requires its read scope. Bounded to five results per kind. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['SearchResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'tasks.create': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                project: components['parameters']['ProjectId'];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['TaskCreateRequest'];
+            };
+        };
+        responses: {
+            /** @description Task created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['TaskResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'tasks.get': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                task: components['parameters']['TaskId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized task */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['TaskResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'tasks.update': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                task: components['parameters']['TaskId'];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['TaskUpdateRequest'];
+            };
+        };
+        responses: {
+            /** @description Task updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['TaskResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'tasks.list': {
+        parameters: {
+            query?: {
+                project_id?: string;
+                limit?: components['parameters']['Limit'];
+                cursor?: components['parameters']['Cursor'];
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized tasks */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['TaskListResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'time_entries.approve': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['TimeApprovalRequest'];
+            };
+        };
+        responses: {
+            /** @description Time entries approved */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ApprovalResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'time_entries.delete': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                entry: components['parameters']['TimeEntryId'];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['ExpectedVersionRequest'];
+            };
+        };
+        responses: {
+            /** @description Draft time soft-deleted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['DeletionResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'time_entries.update': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                entry: components['parameters']['TimeEntryId'];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['TimeUpdateRequest'];
+            };
+        };
+        responses: {
+            /** @description Draft time updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['TimeEntryResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'time_entries.list': {
+        parameters: {
+            query?: {
+                project_id?: string;
+                status?: components['schemas']['TimeStatus'];
+                allocation_state?: 'unallocated' | 'reserved' | 'consumed';
+                is_billable?: boolean;
+                /** @description When true, selects exactly the approved, priced, billable, non-deferred unallocated work counted by operations.summary. allocation_state alone classifies all rows, including drafts and deferred work. */
+                unallocated?: boolean;
+                from?: string;
+                to?: string;
+                limit?: components['parameters']['Limit'];
+                cursor?: components['parameters']['Cursor'];
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized time entries */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['TimeEntryListResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'time_entries.log': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['TimeLogRequest'];
+            };
+        };
+        responses: {
+            /** @description Time entries logged or replayed */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['TimeEntryBatchResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'time_entries.unapprove': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                entry: components['parameters']['TimeEntryId'];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['ExpectedVersionRequest'];
+            };
+        };
+        responses: {
+            /** @description Time approval withdrawn or replayed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['TimeEntryResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'workspaces.create': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['WorkspaceCreateRequest'];
+            };
+        };
+        responses: {
+            /** @description Create a workspace owned by the actor. Fresh creation has no prior expected_version. Atomic actor/client/key reservation; replay rechecks current membership. Requires outer and workspace write flags. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['WorkspaceCreateResponse'];
                 };
             };
             default: components['responses']['Error'];

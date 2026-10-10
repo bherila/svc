@@ -38,13 +38,13 @@ final class AgentMcpContractTest extends TestCase
         config(['agent_api.writes_enabled' => true, 'agent_api.invoice_writes_enabled' => true]);
         $document = json_decode((string) file_get_contents(public_path('openapi/svc-agent-v1.json')), true, flags: JSON_THROW_ON_ERROR);
         $expected = [
-            'invoices.hold_delivery' => ['post', '/workspaces/{workspace_id}/invoices/{invoice_id}/automatic-delivery/hold', 'billing:write', true],
-            'invoices.release_delivery' => ['post', '/workspaces/{workspace_id}/invoices/{invoice_id}/automatic-delivery/release', 'billing:deliver', true],
-            'invoices.add_time' => ['post', '/workspaces/{workspace_id}/invoices/{invoice_id}/time', 'billing:write', true],
-            'invoices.generate_period' => ['post', '/workspaces/{workspace_id}/agreements/{agreement_id}/invoices', 'billing:write', true],
-            'invoices.pdf' => ['get', '/workspaces/{workspace_id}/invoices/{invoice_id}/pdf-link', 'billing:read', false],
-            'invoices.download_pdf' => ['get', '/workspaces/{workspace_id}/invoices/{invoice_id}/pdf', 'billing:read', false],
-            'billing_audit.stale_and_missing' => ['get', '/workspaces/{workspace_id}/billing-audits/stale-and-missing', 'billing:read', false],
+            'invoices.hold_delivery' => ['post', '/workspaces/{workspace}/invoices/{invoice}/automatic-delivery/hold', 'billing:write', true],
+            'invoices.release_delivery' => ['post', '/workspaces/{workspace}/invoices/{invoice}/automatic-delivery/release', 'billing:deliver', true],
+            'invoices.add_time' => ['post', '/workspaces/{workspace}/invoices/{invoice}/time', 'billing:write', true],
+            'invoices.generate_period' => ['post', '/workspaces/{workspace}/agreements/{agreement}/invoices', 'billing:write', true],
+            'invoices.pdf' => ['get', '/workspaces/{workspace}/invoices/{invoice}/pdf-link', 'billing:read', false],
+            'invoices.download_pdf' => ['get', '/workspaces/{workspace}/invoices/{invoice}/pdf', 'billing:read', false],
+            'billing_audit.stale_and_missing' => ['get', '/workspaces/{workspace}/billing-audits/stale-and-missing', 'billing:read', false],
         ];
         foreach ($expected as $id => [$method, $path, $scope, $write]) {
             $operation = $document['paths'][$path][$method];
@@ -53,7 +53,7 @@ final class AgentMcpContractTest extends TestCase
             $this->assertSame($write ? ['AGENT_API_WRITES_ENABLED', 'AGENT_API_INVOICE_WRITES_ENABLED'] : [], $operation['x-svc-flags'] ?? []);
             $route = app('router')->getRoutes()->getByName('agent-api.v1.'.$id);
             $this->assertNotNull($route, $id);
-            $this->assertSame('api/v1'.str_replace(['{workspace_id}', '{invoice_id}', '{agreement_id}'], ['{workspace}', '{invoice}', '{agreement}'], $path), $route->uri());
+            $this->assertSame('api/v1'.$path, $route->uri(), 'The document names the route\'s own placeholders');
             $this->assertContains(strtoupper($method), $route->methods());
         }
         foreach (['invoices.hold_delivery', 'invoices.release_delivery', 'invoices.add_time', 'invoices.generate_period'] as $id) {
