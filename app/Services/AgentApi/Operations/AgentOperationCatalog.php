@@ -162,7 +162,7 @@ final class AgentOperationCatalog
     {
         $registry = new OperationRegistry;
         $registry->register(...$this->tools(), ...$this->restOnly(), ...$this->resourcesAndPrompts());
-        $documented = array_keys(AgentApiResponseSchemaCatalog::catalog()->operations());
+        $documented = array_keys(AgentRestDocumentation::operations());
         $bound = array_keys(self::ROUTES);
         sort($documented);
         sort($bound);
@@ -1152,7 +1152,7 @@ final class AgentOperationCatalog
             description: $description,
             effect: $effect,
             requirement: new Requirement(
-                scopes: $scopes ?? AgentApiResponseSchemaCatalog::scopesForOperation($id),
+                scopes: $scopes ?? AgentRestDocumentation::operations()[$id]['scopes'],
                 flags: [...$cutovers, ...self::mcpSwitches($group, $id)],
             ),
             idempotent: $idempotent,
@@ -1161,6 +1161,7 @@ final class AgentOperationCatalog
             mcp: new McpBinding(handler: $handler),
             input: $input ?? ($write && $documented ? SchemaRef::requestOf($id) : null),
             output: $output ?? ($documented ? SchemaRef::responseOf($id) : null),
+            extensions: $documented ? (AgentRestDocumentation::operations()[$id]['extensions'] ?? []) : [],
         );
     }
 
@@ -1169,19 +1170,20 @@ final class AgentOperationCatalog
      */
     private function restOperation(string $id, string $title, Effect $effect, array $cutovers = [], ?WriteSafety $safety = null, ?bool $idempotent = null): Operation
     {
-        $documented = AgentApiResponseSchemaCatalog::catalog()->operations()[$id] ?? throw new LogicException("Operation [{$id}] is not documented.");
+        $documented = AgentRestDocumentation::operations()[$id] ?? throw new LogicException("Operation [{$id}] is not documented.");
 
         return new Operation(
             id: $id,
             title: $title,
-            description: $documented['description'],
+            description: is_string($documented['description']) ? $documented['description'] : '',
             effect: $effect,
-            requirement: new Requirement(scopes: AgentApiResponseSchemaCatalog::scopesForOperation($id), flags: $cutovers),
+            requirement: new Requirement(scopes: $documented['scopes'], flags: $cutovers),
             idempotent: $idempotent,
             safety: $safety ?? new WriteSafety,
             rest: $this->rest($id),
             // A download answers with the file itself and 204 with nothing.
             output: $effect === Effect::Download || self::ROUTES[$id][2] === [204] ? null : SchemaRef::responseOf($id),
+            extensions: $documented['extensions'] ?? [],
         );
     }
 
@@ -1221,13 +1223,26 @@ final class AgentOperationCatalog
     {
         [$name, $path, $statuses] = self::ROUTES[$id];
         preg_match_all('/\{([^}]+)\}/', $path, $parameters);
+        $documented = AgentRestDocumentation::operations()[$id];
+        $status = $statuses[0];
 
         return new RestBinding(
-            method: AgentApiResponseSchemaCatalog::catalog()->operations()[$id]['method'],
+            method: $documented['method'],
             path: $path,
             routeName: self::ROUTE_PREFIX.$name,
             pathParameters: $parameters[1],
             successStatuses: $statuses,
+            requestContentTypes: $documented['request_types'] ?? ['application/json'],
+            description: $documented['description'],
+            parameters: $documented['parameters'],
+            requestSchema: isset($documented['request']) ? SchemaRef::openApi($documented['request']) : null,
+            responseSchema: isset($documented['response']) ? SchemaRef::openApi($documented['response']) : null,
+            responseDescriptions: isset($documented['response_description']) ? [$status => $documented['response_description']] : [],
+            // A download answers with the file itself.
+            responses: isset($documented['binary']) ? [$status => [
+                'description' => $documented['binary'][1],
+                'content' => [$documented['binary'][0] => ['schema' => ['type' => 'string', 'format' => 'binary']]],
+            ]] : [],
         );
     }
 
