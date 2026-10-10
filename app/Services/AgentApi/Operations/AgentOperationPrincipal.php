@@ -34,7 +34,7 @@ final class AgentOperationPrincipal implements AuthenticatedPrincipal
 
     public function hasScope(string $scope): bool
     {
-        return $this->authenticated && ($this->scopes)($scope);
+        return ($this->scopes)($scope);
     }
 
     public function can(string $permission): bool
@@ -54,6 +54,6 @@ final class AgentOperationPrincipal implements AuthenticatedPrincipal
 
     public function managesWorkspace(): bool
     {
-        return $this->manages ??= $this->authenticated && ($this->managesAnyWorkspace)();
+        return $this->manages ??= ($this->managesAnyWorkspace)();
     }
 }

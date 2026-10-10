@@ -158,12 +158,6 @@ final class AgentOperationCatalog
         return isset($this->managerOnly[$operationId]);
     }
 
-    /** The full route name of a documented operation. */
-    public static function routeName(string $operationId): string
-    {
-        return self::ROUTE_PREFIX.(self::ROUTES[$operationId][0] ?? throw new LogicException("Operation [{$operationId}] has no REST route."));
-    }
-
     private function build(): OperationRegistry
     {
         $registry = new OperationRegistry;

@@ -39,4 +39,18 @@ final class McpFeatureFlagsTest extends TestCase
         config(['agent_api.mcp_enabled' => false]);
         $this->assertFalse(app(McpFeatureFlags::class)->enabledFor($name, $group));
     }
+
+    public function test_the_transport_and_single_switches_read_configuration_on_every_call(): void
+    {
+        $flags = app(McpFeatureFlags::class);
+        config(['agent_api.mcp_enabled' => true, 'agent_api.mcp_feature_flags' => ['mcp.read' => false, 'invoices.get' => 'true']]);
+        $this->assertTrue($flags->transportEnabled());
+        $this->assertFalse($flags->switchedOn('mcp.read'));
+        $this->assertFalse($flags->switchedOn('invoices.get'), 'Only true counts as on');
+        $this->assertTrue($flags->switchedOn('projects.list'), 'An absent key is on');
+
+        config(['agent_api.mcp_enabled' => false, 'agent_api.mcp_feature_flags' => 'not a list']);
+        $this->assertFalse($flags->transportEnabled());
+        $this->assertTrue($flags->switchedOn('mcp.read'), 'A malformed switch list withholds nothing by itself');
+    }
 }

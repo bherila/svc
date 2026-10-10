@@ -2,6 +2,8 @@
 
 namespace App\Services\Mcp;
 
+use Illuminate\Support\Facades\Config;
+
 /**
  * Configuration-backed MCP kill switches: the transport as a whole
  * (`agent_api.mcp_enabled`) and `agent_api.mcp_feature_flags`, keyed by a
@@ -18,7 +20,7 @@ final class McpFeatureFlags
 
     public function transportEnabled(): bool
     {
-        return (bool) config('agent_api.mcp_enabled', true);
+        return Config::boolean('agent_api.mcp_enabled', true);
     }
 
     public function switchedOn(string $key): bool
