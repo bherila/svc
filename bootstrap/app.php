@@ -9,6 +9,7 @@ use App\Support\Billing\RetryableConflict;
 use Bherila\McpLaravelBridge\Http\GateOperation;
 use Bherila\McpLaravelBridge\Http\McpHttpSecurityMiddleware;
 use BWH\Auth\Http\Middleware\ExpectOAuthResource;
+use BWH\Auth\Http\Middleware\RequireActiveProviderSession;
 use BWH\Auth\OAuth\Server\OAuthProtectedResource;
 use BWH\Auth\OAuth\Server\OAuthResourceIndicator;
 use Illuminate\Auth\AuthenticationException;
@@ -44,9 +45,14 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->appendToPriorityList(SubstituteBindings::class, EnsureAgentWorkspaceVisible::class);
         $middleware->appendToPriorityList(EnsureAgentWorkspaceVisible::class, EnsureOperationDeployed::class);
         $middleware->appendToPriorityList(EnsureOperationDeployed::class, GateOperation::class);
+        // Ends a signed-in browser session whose provider identity was
+        // disabled, deleted, reset or ungranted (a no-op until provider
+        // identity enforcement is enabled). Inside Inertia's middleware, so an
+        // ended session's redirect after a PUT or DELETE becomes a 303.
         $middleware->web(append: [
             HandleInertiaRequests::class,
             AddLinkHeadersForPreloadedAssets::class,
+            RequireActiveProviderSession::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

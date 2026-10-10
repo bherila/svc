@@ -29,6 +29,33 @@ return [
         'cloudflare' => null,
     ],
 
+    // Provider identity enforcement: a browser session, an OAuth token and a
+    // personal access token of an account bound to the identity provider stop
+    // working once that identity is disabled, deleted, reset or ungranted
+    // there, checked against the provider's status endpoint with one shared
+    // observation per person (fresh for strictly less than five minutes;
+    // privileged writes check freshly). Off until the operator sets
+    // BHERILA_AUTH_PROVIDER_IDENTITY_ENABLED=true; while off, sign-in still
+    // records the provider's credential generation and new credentials are
+    // stamped with it, so enabling it later keeps them. Credentials issued
+    // before stamping are refused once it is on: connectors authorize again
+    // once. Accounts with no provider binding are left alone.
+    'provider_identity' => [
+        'enabled' => (bool) env('BHERILA_AUTH_PROVIDER_IDENTITY_ENABLED', false),
+        // Null is the default store, which must be shared by every web worker
+        // and support locks (the deployment's database store does).
+        'cache_store' => env('BHERILA_AUTH_PROVIDER_IDENTITY_CACHE_STORE'),
+        'binding' => [
+            'provider_column' => 'oauth_provider',
+            'subject_column' => 'oauth_subject',
+        ],
+        // An ended browser session signs in again.
+        'expired_redirect_route' => 'login',
+        // Signing out stays reachable during a provider outage.
+        'except_routes' => ['logout'],
+        'bearer_guard' => 'api',
+    ],
+
     // The agent-API authorization-server profile: S256 PKCE for every client,
     // public-only self-registration, RFC 8707 binding, and `none` plus the two
     // client-secret methods advertised (apps a person registers on the setup
