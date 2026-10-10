@@ -118,7 +118,21 @@ granted. `PortalAccess` exists to be that one decision;
 `rg -n 'PortalAccess|visibleProjectIds|canViewProject|constrainProjectQuery' app/`
 shows which surfaces currently ask it, which is the question to ask when adding
 one rather than a list this page can keep true.
-`svc:portal:project-access` sets and clears the scope.
+`svc:portal:project-access` sets and clears the scope, as the system actor of
+`App\Services\Access\WorkspaceAccess`.
+
+**Changing access.** Staff memberships, staff project assignments and portal
+memberships are written only through `App\Services\Access\WorkspaceAccess`
+(one project's assignment also through
+`WorkspaceProjectMutationAction::updateAccess`, which shares its coordination).
+Every operation is explicit - grant, change, remove - and refuses with an
+`AccessMutationRefused` carrying a reason code. The authority rules live in
+`App\Support\Access\StaffAuthority`: owners and admins manage `member`; only
+owners manage `admin`; nobody creates, changes or removes `owner` there; nobody
+changes or removes their own staff membership; portal access is managed by
+owners, admins and the system. Each change is recorded in `access_audit_events`
+(ids, roles and scopes only) with its operation and request ids. The locking is
+described in [concurrency](concurrency.md#workspace-access-mutations).
 
 `client_company_memberships.role` defaults to `client`. Nothing in this
 application reads it, and there is no client/subcontractor distinction at the

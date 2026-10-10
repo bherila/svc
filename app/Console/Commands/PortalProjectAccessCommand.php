@@ -2,10 +2,15 @@
 
 namespace App\Console\Commands;
 
+use App\Exceptions\AccessMutationRefused;
 use App\Models\ClientCompany;
 use App\Models\ClientCompanyMembership;
 use App\Models\ClientProject;
 use App\Models\User;
+use App\Services\Access\WorkspaceAccess;
+use App\Support\Access\AccessMutationContext;
+use App\Support\Access\AccessRefusal;
+use App\Support\Access\PortalAccessScope;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 
@@ -64,19 +69,14 @@ final class PortalProjectAccessCommand extends Command
             return $this->report($company, $membership);
         }
 
+        // An operator tool: trusted as the system actor, and still bound by
+        // the access boundary's own rules - its tenant scoping, its locks and
+        // its audit trail.
+        $access = app(WorkspaceAccess::class);
+        $context = AccessMutationContext::system();
+
         if ($this->option('company-wide')) {
-            DB::transaction(function () use ($company, $membership): void {
-                // The workspace is already on the insert this command's other
-                // branch writes, and a membership id is unique - but the rule
-                // is about the statement, and an operator tool that can be
-                // pointed at any company is the last place to leave a delete
-                // that names no tenant.
-                DB::table('client_portal_project_access')
-                    ->where('workspace_id', $company->workspace_id)
-                    ->where('client_company_membership_id', $membership->id)
-                    ->delete();
-                $membership->forceFill(['access_scope' => ClientCompanyMembership::SCOPE_COMPANY])->save();
-            });
+            $access->changePortalScope($context, $company, $user, PortalAccessScope::Company);
 
             $this->components->info('That user sees every client-visible project again.');
 
@@ -91,39 +91,18 @@ final class PortalProjectAccessCommand extends Command
             return self::FAILURE;
         }
 
-        $projects = ClientProject::query()
-            ->where('workspace_id', $company->workspace_id)
-            ->where('client_company_id', $company->id)
-            ->whereIn('public_id', $publicIds)
-            ->get();
-
-        if ($projects->count() !== count(array_unique($publicIds))) {
-            $this->components->error('One or more projects do not belong to that company.');
+        try {
+            // Replace rather than add: the granted set is what was asked for.
+            $access->changePortalScope($context, $company, $user, PortalAccessScope::Projects, $publicIds);
+        } catch (AccessMutationRefused $refused) {
+            $this->components->error($refused->reason === AccessRefusal::ProjectOutsideCompany
+                ? 'One or more projects do not belong to that company.'
+                : $refused->getMessage());
 
             return self::FAILURE;
         }
 
-        DB::transaction(function () use ($company, $membership, $projects): void {
-            $membership->forceFill(['access_scope' => ClientCompanyMembership::SCOPE_PROJECTS])->save();
-
-            // Replace rather than add: the granted set is what was asked for.
-            DB::table('client_portal_project_access')
-                ->where('workspace_id', $company->workspace_id)
-                ->where('client_company_membership_id', $membership->id)
-                ->delete();
-
-            foreach ($projects as $project) {
-                DB::table('client_portal_project_access')->insert([
-                    'workspace_id' => $company->workspace_id,
-                    'client_company_membership_id' => $membership->id,
-                    'client_project_id' => $project->id,
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]);
-            }
-        });
-
-        $this->components->info(sprintf('That user now sees %d project(s) and nothing else.', $projects->count()));
+        $this->components->info(sprintf('That user now sees %d project(s) and nothing else.', count(array_unique($publicIds))));
 
         return self::SUCCESS;
     }

@@ -85,6 +85,18 @@ enum LockResource: string
     // Project access serialises on the project before checking the target's
     // workspace membership, so a concurrent workspace removal cannot admit a grant.
     case WorkspaceMembership = 'workspace_memberships';
+
+    // Access mutations. Each one first takes `Workspace` as the workspace-wide
+    // access lock, then any projects whose revision it advances, then the
+    // staff memberships it re-checks authority against, and only then the
+    // assignment or portal rows it writes: a staff removal deletes the
+    // person's project assignments after locking their membership, and a
+    // portal change locks the company membership before the project limits
+    // hung off it.
+    case ClientProjectMembership = 'client_project_memberships';
+    case ClientCompanyMembership = 'client_company_memberships';
+    case ClientPortalProjectAccess = 'client_portal_project_access';
+
     case User = 'users';
 
     // Prepared bytes publish only after the tenant parent and receipt are locked.

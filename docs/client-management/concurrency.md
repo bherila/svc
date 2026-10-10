@@ -58,7 +58,7 @@ the majority order won and the minority is named as an inversion below.
 | 5 | `payment_reconciliations` | Hangs off a payment already held |
 | 6 | `client_invoices` | Every generator has an agreement or a schedule before it has an invoice |
 | 7 | `client_invoice_lines` | Issued correction locks the invoice before preserving and changing its existing lines |
-| 8 | `workspaces` | Reached only to serialise the number counter, which is reached only once there is an invoice to number |
+| 8 | `workspaces` | Serialises the number counter, which is reached only once there is an invoice to number; also the workspace-wide access lock every access mutation takes first (see *Workspace access mutations*) |
 | 9 | `workspace_invoice_counters` | Locked immediately after the workspace that serialises it |
 | 10 | `client_time_entries` | What an invoice is built out of, drawn after the invoice exists |
 | 11 | `client_invoice_line_time_entries` | Invoice time membership is checked after locking its entry |
@@ -66,15 +66,19 @@ the majority order won and the minority is named as an inversion below.
 | 13 | `client_expense_schedules` | Recurrence generation locks its schedule before expense rows |
 | 14 | `client_expenses` | Drawn into an invoice the way milestones are; #75 puts the generator hook beside the milestone one. **The one row not read off a recorded multi-lock sequence** — see below |
 | 15 | `client_companies` | Last, and this is the surprise — see below |
-| 16 | `client_projects` | Never co-acquired with anything above |
-| 17 | `users` | Never co-acquired with anything above |
-| 18 | `client_attachments` | Prepared attachment publication locks its tenant parent before its recovery row; all byte I/O precedes these locks |
-| 19 | `client_invoice_email_deliveries` | A short post-commit client-email claim, or the result row after its invoice is locked so both sides of the result commit together |
-| 20 | `client_invoice_administrator_notifications` | A short post-commit administrator-email claim; never co-acquired with billing locks |
-| 21 | `oauth_access_tokens` | Agent disconnection, which takes no other lock; orders only against itself |
-| 22 | `stripe_payment_method_states` | Provider state, a family of its own |
-| 23 | `client_stripe_customers` |  |
-| 24 | `client_stripe_payment_methods` |  |
+| 16 | `client_projects` | Never co-acquired with the billing rows above; access mutations lock it after the workspace access lock |
+| 17 | `workspace_memberships` | Project access locks the project before the target's staff membership; every access mutation re-checks the actor's authority here, under the workspace access lock |
+| 18 | `client_project_memberships` | A staff removal deletes the person's assignments explicitly after locking their projects and membership |
+| 19 | `client_company_memberships` | Portal access changes lock the company membership after the workspace access lock and the actor's staff membership |
+| 20 | `client_portal_project_access` | The project limits hung off a portal membership, read and replaced after that membership is locked |
+| 21 | `users` | Never co-acquired with anything above |
+| 22 | `client_attachments` | Prepared attachment publication locks its tenant parent before its recovery row; all byte I/O precedes these locks |
+| 23 | `client_invoice_email_deliveries` | A short post-commit client-email claim, or the result row after its invoice is locked so both sides of the result commit together |
+| 24 | `client_invoice_administrator_notifications` | A short post-commit administrator-email claim; never co-acquired with billing locks |
+| 25 | `oauth_access_tokens` | Agent disconnection, which takes no other lock; orders only against itself |
+| 26 | `stripe_payment_method_states` | Provider state, a family of its own |
+| 27 | `client_stripe_customers` |  |
+| 28 | `client_stripe_payment_methods` |  |
 
 The company being *last* is the one entry that reads wrong and is right. It
 looks like a parent, so the intuitive order puts it first; the code puts it at
@@ -120,6 +124,12 @@ ClientInvoiceEmailDelivery                                    post-commit client
 ClientInvoiceAdministratorNotification                        post-commit administrator notification claim
 StripePaymentMethodState, ClientStripeCustomer,
     ClientStripePaymentMethod                                  provider sync
+Workspace, WorkspaceMembership                                 staff grant
+Workspace, ClientProject, WorkspaceMembership                  staff role change, project assignment
+Workspace, ClientProject, WorkspaceMembership,
+    ClientProjectMembership                                    staff removal
+Workspace, ClientProject, WorkspaceMembership,
+    ClientCompanyMembership, ClientPortalProjectAccess         portal grant, scope change, revocation
 ```
 
 ## The known inversions
@@ -461,8 +471,11 @@ Agent receipt uploads prepare and verify bytes before reserving a mutation recei
 
 Project creation locks its tenant-owned client company before inserting a child.
 Project edits and member access changes lock the tenant-owned project, constrained
-to its company, before checking the expected revision. Access changes then lock
-the target's `workspace_memberships` row and refuse workspace owners/admins.
+to its company, before checking the expected revision. Access changes first take
+the workspace access lock (see *Workspace access mutations*), and after the
+project re-read the actor's own staff membership under it, refusing an actor
+demoted since the fast manager check. They then lock the target's
+`workspace_memberships` row and refuse workspace owners/admins.
 `WorkspaceMembership` therefore follows `ClientProject` in the lock registry.
 Every access change advances the project revision in the same transaction, so a
 concurrent access decision or project edit requires a fresh read. API receipt
@@ -504,3 +517,46 @@ attachment action shares storage/deletion behavior; staged web uploads retain th
 storage adapter's repair contract. Signed URL preparation takes no mutation lock
 and does not reserve a receipt. These order assertions are also covered by the
 focused workspace/misc API fixture; SQLite checks ordering, not contention.
+
+### Workspace access mutations
+
+Staff memberships, staff project assignments and portal memberships change only
+through `App\Services\Access\WorkspaceAccess` (and, for one project's
+assignment, `WorkspaceProjectMutationAction::updateAccess`, which shares its
+coordination). Each mutation runs in one transaction that:
+
+1. refuses early from an unlocked read, so an obviously unauthorised call takes
+   no lock;
+2. locks the `workspaces` row first - the workspace-wide access lock, which
+   serialises access changes within a workspace (it is the same row invoice
+   numbering serialises on; both hold it briefly);
+3. locks any projects whose revision it will advance, in id order;
+4. re-reads the actor's staff membership with a locking read and decides again.
+   A locking read sees the latest committed role even inside an enclosing
+   transaction whose snapshot predates the lock, so an actor demoted or removed
+   after the early check cannot complete the change;
+5. locks and writes the assignment or portal rows, advances each affected
+   project's revision, and appends an `access_audit_events` row carrying the
+   context's operation and request ids.
+
+Staff removal deletes the person's `client_project_memberships` explicitly, one
+by one, each advancing its project's revision and leaving its own audit event,
+before deleting the `workspace_memberships` row. The cascading composite key is
+only a backstop.
+
+Every read that decides what is locked, what revision advances or what an audit
+event records is a current read. Plain reads only *propose*: a role change or
+removal locks the projects a plain read of the person's assignments names, and
+after the authority re-check takes a locking read of the assignments, which is
+what decides - a project only it names is locked then, and one only the plain
+read named is left alone. Portal changes do the same with the projects their
+limits point at and the projects the caller asked for, so both the audit's
+before state and the check that each project belongs to the company come from
+locked rows. Locking a further project after the memberships happens only when
+an enclosing transaction's snapshot predates the workspace lock, and cannot
+deadlock: every other transaction that locks a project and then a membership
+does so under the workspace access lock. Project assignment changes read the
+previous role for their audit event from the locked assignment row.
+
+`LockOrderConformanceTest` drives every one of these writers. As elsewhere, the
+assertions run on one connection and prove ordering, not contention.
