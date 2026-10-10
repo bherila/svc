@@ -3,10 +3,14 @@
 namespace App\Console\Commands;
 
 use App\Models\User;
+use App\Support\Auth\PersonalAccessTokenIdentity;
+use BWH\Auth\OAuth\Session\ProviderStatusUnavailable;
 use Carbon\CarbonImmutable;
 use DateTimeImmutable;
 use DateTimeInterface;
+use DomainException;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\NewAccessToken;
 
@@ -62,8 +66,29 @@ class IssuePersonalAccessTokenCommand extends Command
             return self::FAILURE;
         }
 
+        // Stamped with the provider identity it is issued under, so it stops
+        // working once that identity ends (see PersonalAccessTokenIdentity).
+        try {
+            $stamp = app(PersonalAccessTokenIdentity::class)->stampForIssue($user);
+        } catch (DomainException $exception) {
+            $this->error($exception->getMessage());
+
+            return self::FAILURE;
+        } catch (ProviderStatusUnavailable) {
+            $this->error('Provider identity verification is unavailable. Retry later.');
+
+            return self::FAILURE;
+        }
+
         /** @var NewAccessToken $issuedToken */
-        $issuedToken = $user->createToken($name, $abilities, $expiresAt);
+        $issuedToken = DB::transaction(static function () use ($user, $name, $abilities, $expiresAt, $stamp): NewAccessToken {
+            $issued = $user->createToken($name, $abilities, $expiresAt);
+            if ($stamp !== []) {
+                $issued->accessToken->forceFill($stamp)->save();
+            }
+
+            return $issued;
+        });
 
         $this->components->info('Personal access token issued.');
         $this->components->twoColumnDetail('User public UUID', $publicId);

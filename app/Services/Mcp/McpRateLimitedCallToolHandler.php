@@ -3,6 +3,8 @@
 namespace App\Services\Mcp;
 
 use App\Services\Mcp\Context\McpRequestContext;
+use App\Support\AgentApi\ProviderIdentityWrites;
+use BWH\Auth\OAuth\Session\ProviderStatusUnavailable;
 use Mcp\Schema\Content\TextContent;
 use Mcp\Schema\JsonRpc\Error;
 use Mcp\Schema\JsonRpc\Request;
@@ -32,6 +34,7 @@ final readonly class McpRateLimitedCallToolHandler implements RequestHandlerInte
         private McpCapabilityAuditor $auditor,
         private McpRequestContext $context,
         private array $metadataByTool,
+        private ProviderIdentityWrites $writes,
     ) {}
 
     public function supports(Request $request): bool
@@ -89,7 +92,18 @@ final readonly class McpRateLimitedCallToolHandler implements RequestHandlerInte
         }
         $started = hrtime(true);
         try {
-            $response = $this->inner->handle($request, $session);
+            if ($classification === 'agent_api.write') {
+                $refusal = $this->refuseAnEndedIdentity($request, $capability, $bucket, $classification);
+                if ($refusal !== null) {
+                    return $refusal;
+                }
+                $response = $this->writes->verifiedFor(
+                    $this->context->principal->credentialId,
+                    fn (): Response|Error => $this->inner->handle($request, $session),
+                );
+            } else {
+                $response = $this->inner->handle($request, $session);
+            }
             if ($response instanceof Response && $this->resultLimiter->exceeds($response)) {
                 $response = new Response($request->getId(), CallToolResult::error([
                     new TextContent('This operation produced an unexpectedly large response.'),
@@ -113,5 +127,34 @@ final readonly class McpRateLimitedCallToolHandler implements RequestHandlerInte
         } finally {
             $this->concurrencyLimiter->release($lease);
         }
+    }
+
+    /**
+     * A write tool checks the person's provider identity freshly before it
+     * runs, once per call (see {@see ProviderIdentityWrites}). An ended
+     * identity is refused here; the connection's next request is then refused
+     * outright, because this check refreshed the shared observation.
+     *
+     * @return Response<CallToolResult>|null
+     */
+    private function refuseAnEndedIdentity(CallToolRequest $request, string $capability, string $bucket, string $classification): ?Response
+    {
+        try {
+            $allowed = $this->writes->allows($this->context->principal->subject, $this->context->principal->credentialId);
+        } catch (ProviderStatusUnavailable) {
+            $this->auditor->record($this->context, $capability, $bucket, $classification, 'identity_unavailable', 0);
+
+            return new Response($request->getId(), CallToolResult::error([
+                new TextContent('Sign-in verification is temporarily unavailable. Please retry.'),
+            ]));
+        }
+        if ($allowed) {
+            return null;
+        }
+        $this->auditor->record($this->context, $capability, $bucket, $classification, 'identity_ended', 0);
+
+        return new Response($request->getId(), CallToolResult::error([
+            new TextContent('The sign-in behind this connection has ended. Authorize the connection again.'),
+        ]));
     }
 }
