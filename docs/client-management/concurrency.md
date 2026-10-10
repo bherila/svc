@@ -125,7 +125,7 @@ ClientInvoiceAdministratorNotification                        post-commit admini
 StripePaymentMethodState, ClientStripeCustomer,
     ClientStripePaymentMethod                                  provider sync
 Workspace, WorkspaceMembership                                 staff grant
-Workspace, ClientProject, WorkspaceMembership                  staff role change
+Workspace, ClientProject, WorkspaceMembership                  staff role change, project assignment
 Workspace, ClientProject, WorkspaceMembership,
     ClientProjectMembership                                    staff removal
 Workspace, WorkspaceMembership, ClientCompanyMembership,
@@ -471,8 +471,11 @@ Agent receipt uploads prepare and verify bytes before reserving a mutation recei
 
 Project creation locks its tenant-owned client company before inserting a child.
 Project edits and member access changes lock the tenant-owned project, constrained
-to its company, before checking the expected revision. Access changes then lock
-the target's `workspace_memberships` row and refuse workspace owners/admins.
+to its company, before checking the expected revision. Access changes first take
+the workspace access lock (see *Workspace access mutations*), and after the
+project re-read the actor's own staff membership under it, refusing an actor
+demoted since the fast manager check. They then lock the target's
+`workspace_memberships` row and refuse workspace owners/admins.
 `WorkspaceMembership` therefore follows `ClientProject` in the lock registry.
 Every access change advances the project revision in the same transaction, so a
 concurrent access decision or project edit requires a fresh read. API receipt

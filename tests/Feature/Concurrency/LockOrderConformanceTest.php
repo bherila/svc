@@ -23,6 +23,7 @@ use App\Services\Billing\TimeEntrySplitter;
 use App\Services\Engagement\AgreementWorkflow;
 use App\Services\Engagement\ProposalWorkflow;
 use App\Services\Finance\PaymentReconciliationService;
+use App\Services\WorkspaceProjectMutationAction;
 use App\Support\Access\AccessMutationContext;
 use App\Support\Access\PortalAccessScope;
 use App\Support\Access\StaffRole;
@@ -277,6 +278,9 @@ final class LockOrderConformanceTest extends TestCase
             'workspace_id' => $this->workspace->id, 'client_project_id' => $this->project->id,
             'user_id' => $person->id, 'role' => 'viewer',
         ]);
+        // One project's assignment through the shared project workflow, which
+        // takes the same workspace access lock before the project.
+        app(WorkspaceProjectMutationAction::class)->updateAccess($owner, $this->workspace, $this->project, $person->public_id, 'manager');
         $access->changeStaffRole($context, $this->workspace, $person, StaffRole::Admin);
         $access->changeStaffRole($context, $this->workspace, $person, StaffRole::Member);
         $access->removeStaff($context, $this->workspace, $person);

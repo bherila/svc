@@ -8,7 +8,11 @@ use App\Models\ClientProjectMembership;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Models\WorkspaceMembership;
+use App\Services\Access\AccessAuditLog;
+use App\Services\Access\AccessCoordinator;
 use App\Services\Authorization\ProjectAccess;
+use App\Support\Access\AccessAuditAction;
+use App\Support\Access\AccessMutationContext;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\AgentApi\ProjectRole;
 use App\Support\Concurrency\Locks;
@@ -22,7 +26,11 @@ use Illuminate\Validation\ValidationException;
 /** The workspace-manager project workflow shared by browser and API callers. */
 final class WorkspaceProjectMutationAction
 {
-    public function __construct(private readonly ProjectAccess $access) {}
+    public function __construct(
+        private readonly ProjectAccess $access,
+        private readonly AccessCoordinator $coordinator,
+        private readonly AccessAuditLog $audit,
+    ) {}
 
     /** @param array<string, mixed> $attributes */
     public function create(User $actor, Workspace $workspace, ClientCompany $company, array $attributes, ?string $expectedVersion = null): ClientProject
@@ -63,29 +71,51 @@ final class WorkspaceProjectMutationAction
         });
     }
 
+    /**
+     * Grant, change or remove one member's assignment to one project.
+     *
+     * Coordinated like every other access mutation ({@see AccessCoordinator}):
+     * the manager check before the transaction is only a fast refusal. Inside
+     * it, the workspace access lock comes first, then the project, and then
+     * the actor's authority is read again under the lock - an actor demoted or
+     * removed since the fast check is refused before anything is written -
+     * and only then the target's membership.
+     */
     public function updateAccess(User $actor, Workspace $workspace, ClientProject $project, string $userId, string $role, string|int|null $expectedVersion = null, ?int $companyId = null): ClientProject
     {
         $this->requireManager($actor, $workspace);
         abort_unless($role === 'none' || ProjectRole::tryFrom($role) !== null, 422, 'Choose a supported project role or none.');
 
-        return DB::transaction(function () use ($workspace, $project, $userId, $role, $expectedVersion, $companyId): ClientProject {
-            $locked = $this->lockedProject($workspace, $project, $companyId);
+        return $this->coordinator->locked($workspace, function (Workspace $lockedWorkspace) use ($actor, $project, $userId, $role, $expectedVersion, $companyId): ClientProject {
+            $locked = $this->lockedProject($lockedWorkspace, $project, $companyId);
+            abort_unless($this->coordinator->currentRole($lockedWorkspace, $actor)?->managesWorkspace() === true, 403);
             if ($expectedVersion !== null) {
                 $this->checkVersion($locked, $expectedVersion);
             }
-            $membership = WorkspaceMembership::query()->where('workspace_id', $workspace->id)
+            $membership = WorkspaceMembership::query()->where('workspace_id', $lockedWorkspace->id)
                 ->whereHas('user', fn (Builder $users): Builder => $users->where('public_id', $userId))
                 ->tap(Locks::forUpdate())->firstOrFail();
             abort_if(in_array($membership->role, ['owner', 'admin'], true), 422, 'Workspace owners and admins already have workspace-wide access.');
-            $existing = ClientProjectMembership::query()->where('workspace_id', $workspace->id)->where('client_project_id', $locked->id)->where('user_id', $membership->user_id);
+            $existing = ClientProjectMembership::query()->where('workspace_id', $lockedWorkspace->id)->where('client_project_id', $locked->id)->where('user_id', $membership->user_id);
+            $previous = (clone $existing)->first()?->role->value ?? 'none';
             if ($role === 'none') {
                 $existing->delete();
             } else {
-                $existing->updateOrCreate(['workspace_id' => $workspace->id, 'client_project_id' => $locked->id, 'user_id' => $membership->user_id], ['role' => $role]);
+                $existing->updateOrCreate(['workspace_id' => $lockedWorkspace->id, 'client_project_id' => $locked->id, 'user_id' => $membership->user_id], ['role' => $role]);
             }
             // Access is part of the project's revision. A concurrent grant or
             // removal must invalidate a previously read access decision.
             $locked->advanceAgentRevision();
+            if ($previous !== $role) {
+                $this->audit->record(
+                    AccessMutationContext::user($actor),
+                    $lockedWorkspace,
+                    AccessAuditAction::ProjectAssignmentChanged,
+                    $membership->user()->firstOrFail(),
+                    ['project' => $locked->public_id, 'role' => $previous],
+                    ['project' => $locked->public_id, 'role' => $role],
+                );
+            }
 
             return $locked;
         });
