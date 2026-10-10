@@ -6,11 +6,12 @@ use App\Models\AgentPrincipal;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Models\WorkspaceMembership;
+use App\Services\AgentApi\Operations\AgentOperationCatalog;
+use App\Services\AgentApi\Operations\AgentOperationPolicy;
+use App\Services\AgentApi\Operations\AgentOperationPrincipal;
 use App\Services\Mcp\Context\McpAuthorizer;
 use App\Services\Mcp\Context\McpPrincipal;
 use App\Services\Mcp\Context\McpRequestContext;
-use App\Services\Mcp\Registry\McpCapabilityDefinition;
-use App\Services\Mcp\Registry\McpCapabilityKind;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -33,7 +34,7 @@ final class McpAuthorizerTest extends TestCase
         $this->assertFalse($authorizer->allowsScopes($context, ['mcp:use', 'billing:read']));
     }
 
-    public function test_it_hides_manager_only_capabilities_when_no_workspace_policy_can_succeed(): void
+    public function test_manager_only_operations_are_withheld_while_no_workspace_policy_can_succeed(): void
     {
         $user = User::factory()->create();
         $workspace = Workspace::query()->create(['name' => 'Contributor workspace', 'slug' => 'contributor-workspace']);
@@ -44,33 +45,38 @@ final class McpAuthorizerTest extends TestCase
             'client',
             ['billing:read'],
         ), 'request-id');
+        $policy = app(AgentOperationPolicy::class);
+        $manager = app(AgentOperationCatalog::class)->registry()->find('agreements.list');
+        $ordinary = app(AgentOperationCatalog::class)->registry()->find('invoices.list');
+        $this->assertNotNull($manager);
+        $this->assertNotNull($ordinary);
+        $principal = fn (): AgentOperationPrincipal => new AgentOperationPrincipal(
+            static fn (string $scope): bool => $context->principal->hasScope($scope),
+            fn (): bool => app(McpAuthorizer::class)->hasManagedWorkspace($context),
+        );
 
-        $this->assertFalse(app(McpAuthorizer::class)->allowsDiscovery($context, $this->managerCapability()));
+        $this->assertSame(AgentOperationPolicy::WORKSPACE_MANAGER, $policy->withhold($principal(), $manager));
+        $this->assertNull($policy->withhold($principal(), $ordinary));
 
         WorkspaceMembership::query()->where('workspace_id', $workspace->id)->update(['role' => 'admin']);
 
-        $this->assertTrue(app(McpAuthorizer::class)->allowsDiscovery($context, $this->managerCapability()));
+        $this->assertNull($policy->withhold($principal(), $manager));
     }
 
-    private function managerCapability(): McpCapabilityDefinition
+    /** The manager lookup is only paid for when an operation asks for it, and at most once. */
+    public function test_the_manager_fact_is_evaluated_lazily_and_once(): void
     {
-        return new McpCapabilityDefinition(
-            kind: McpCapabilityKind::Tool,
-            name: 'test.manager_read',
-            title: 'Manager read',
-            description: 'Test-only manager capability.',
-            handler: static fn (): array => [],
-            inputSchema: ['type' => 'object'],
-            outputSchema: ['type' => 'object'],
-            requiredScopes: ['billing:read'],
-            policyAbility: 'AgentAccess::isWorkspaceManager',
-            requiresWorkspace: true,
-            readOnly: true,
-            idempotent: true,
-            destructive: false,
-            rateLimitBucket: 'mcp-read',
-            auditClassification: 'agent_api.read',
-            featureFlag: 'mcp.read.test',
-        );
+        $calls = 0;
+        $principal = new AgentOperationPrincipal(static fn (string $scope): bool => true, function () use (&$calls): bool {
+            $calls++;
+
+            return true;
+        });
+        $this->assertSame(0, $calls);
+        $this->assertTrue($principal->managesWorkspace());
+        $this->assertTrue($principal->managesWorkspace());
+        $this->assertSame(1, $calls);
+        $this->assertFalse(AgentOperationPrincipal::anonymous()->managesWorkspace());
+        $this->assertFalse(AgentOperationPrincipal::anonymous()->hasScope('identity:read'));
     }
 }

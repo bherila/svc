@@ -12,9 +12,6 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\AgentApi\AgentWorkspaceCreationAction;
 use App\Services\Files\AttachmentStorageService;
-use App\Services\Mcp\AgentMcpReadTools;
-use App\Services\Mcp\AgentMcpToolCatalog;
-use App\Services\Mcp\AgentMcpWriteTools;
 use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\AgentApi\FirstPartySession;
@@ -29,11 +26,13 @@ use Illuminate\Support\Str;
 use Mcp\Capability\Discovery\SchemaValidator;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Concerns\CallsMcp;
+use Tests\Concerns\InspectsAgentOperations;
 use Tests\TestCase;
 
 final class AgentWorkspaceMiscTest extends TestCase
 {
     use CallsMcp;
+    use InspectsAgentOperations;
     use RefreshDatabase;
 
     protected function setUp(): void
@@ -378,8 +377,7 @@ final class AgentWorkspaceMiscTest extends TestCase
         $withheld = collect($this->getJson('/api/v1/context')->assertOk()->json('data.withheld_tools'))->keyBy('name');
         $this->assertSame('deployment_disabled', $withheld['attachments.list']['reason']);
         $this->assertSame('deployment_disabled', $withheld['context.get']['reason']);
-        $definition = collect(app(AgentMcpToolCatalog::class)->definitions(
-            app(AgentMcpReadTools::class), app(AgentMcpWriteTools::class)))->firstWhere('name', 'invoices.get');
+        $definition = $this->agentOperation('invoices.get');
         $this->assertStringNotContainsString('MCP can record', $definition->description);
         $this->assertStringContainsString('withheld_tools', $definition->description);
     }

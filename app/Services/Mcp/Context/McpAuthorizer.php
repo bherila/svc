@@ -4,33 +4,17 @@ namespace App\Services\Mcp\Context;
 
 use App\Models\Workspace;
 use App\Services\Authorization\AgentAccess;
-use App\Services\Mcp\Registry\McpCapabilityDefinition;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
- * Central capability eligibility check over authenticated context facts.
- *
- * This deliberately establishes discovery eligibility only. Object and
- * workspace policy enforcement remains in the scoped application read/action
- * invoked by each capability.
+ * Authenticated context facts for capability discovery: the scopes held, and
+ * whether the caller manages any workspace - the fact the operation policy's
+ * workspace-manager rule needs. Object and workspace policy enforcement
+ * remains in the scoped application read/action invoked by each capability.
  */
 final class McpAuthorizer
 {
     public function __construct(private readonly AgentAccess $access) {}
-
-    public function allowsDiscovery(McpRequestContext $context, McpCapabilityDefinition $definition, ?bool $hasManagedWorkspace = null): bool
-    {
-        if (! $this->allowsScopes($context, $definition->requiredScopes)) {
-            return false;
-        }
-
-        // A manager-only capability can never succeed for a portal user or a
-        // non-manager member. Resolve that fact through the same AgentAccess
-        // policy used by the backing read services, before advertising it.
-        // Object-specific policies remain enforced by their scoped reads.
-        return $definition->policyAbility !== 'AgentAccess::isWorkspaceManager'
-            || ($hasManagedWorkspace ?? $this->hasManagedWorkspace($context));
-    }
 
     /** @param list<string> $requiredScopes */
     public function allowsScopes(McpRequestContext $context, array $requiredScopes): bool

@@ -335,7 +335,7 @@ final class AgentMcpWriteTools
         }
         // Approval arriving through log answers to the same kill switch as the
         // approve tool; the action separately enforces the write cutover.
-        if ($approve && ! app(McpFeatureFlags::class)->enabledFor('time_entries.approve', AgentMcpCapabilityRegistryFactory::toolFeatureFlag(false))) {
+        if ($approve && ! app(McpFeatureFlags::class)->enabledFor('time_entries.approve', McpFeatureFlags::WRITE)) {
             throw new ToolCallException('Approving time is not enabled for agents.');
         }
         $actor = User::query()->findOrFail($context->principal->subject->id);
@@ -354,7 +354,7 @@ final class AgentMcpWriteTools
         // returns them, rate and status included, so no follow-up read is needed.
         // It is the list read, so it answers to the list's scope and kill switch.
         if ($context->principal->hasScope('time:read')
-            && app(McpFeatureFlags::class)->enabledFor('time_entries.list', AgentMcpCapabilityRegistryFactory::toolFeatureFlag(true))) {
+            && app(McpFeatureFlags::class)->enabledFor('time_entries.list', McpFeatureFlags::READ)) {
             return ['data' => app(AgentReadService::class)->timeEntriesByIds($context->principal->subject, $workspace, $ids)];
         }
         $entriesById = ClientTimeEntry::query()
@@ -595,7 +595,7 @@ final class AgentMcpWriteTools
         // A payment folded into issue answers to the same kill switch as the
         // payments.record tool; the action separately enforces its cutover,
         // scope and role, and refuses before anything is written.
-        if ($payment !== null && ! $flags->enabledFor('payments.record', AgentMcpCapabilityRegistryFactory::toolFeatureFlag(false))) {
+        if ($payment !== null && ! $flags->enabledFor('payments.record', McpFeatureFlags::WRITE)) {
             throw new ToolCallException('Recording payments is not enabled for agents.');
         }
         $actor = User::query()->findOrFail($context->principal->subject->id);
@@ -615,7 +615,7 @@ final class AgentMcpWriteTools
         // invoices.get returns it. It is that read, so it answers to the read's
         // scope and kill switch; otherwise the plain mutation shape is returned.
         if ($context->principal->hasScope('billing:read')
-            && $flags->enabledFor('invoices.get', AgentMcpCapabilityRegistryFactory::toolFeatureFlag(true))) {
+            && $flags->enabledFor('invoices.get', McpFeatureFlags::READ)) {
             return ['data' => app(AgentReadService::class)->invoice($context->principal->subject, $workspace, $ids[0])];
         }
         $invoice = ClientInvoice::query()->where('workspace_id', $workspace->id)->where('public_id', $ids[0])->firstOrFail();

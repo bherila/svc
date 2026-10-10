@@ -32,8 +32,8 @@ use RuntimeException;
  * The issue asked for a synthetic *tenant*. This is deliberately less than that.
  * Every read-only assertion the smoke makes - discovery, initialization, tool
  * listing, one authorized read, one refusal for a missing scope, and session
- * isolation - is satisfied by `context.get`, which is the one tool declared
- * `requiresWorkspace: false`. So the smoke principal is a user with **no
+ * isolation - is satisfied by `context.get`, which needs no workspace: it
+ * lists the caller's own. So the smoke principal is a user with **no
  * workspace, company or project membership at all**.
  *
  * That is a stronger privacy guarantee than any masking rule: a credential that

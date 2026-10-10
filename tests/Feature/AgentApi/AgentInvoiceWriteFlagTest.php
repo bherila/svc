@@ -6,16 +6,13 @@ use App\Models\ClientCompany;
 use App\Models\ClientProject;
 use App\Models\User;
 use App\Models\Workspace;
-use App\Services\Mcp\AgentMcpReadTools;
-use App\Services\Mcp\AgentMcpToolCatalog;
-use App\Services\Mcp\AgentMcpWriteTools;
 use App\Support\AgentApi\AgentApiScopes;
-use Bherila\McpLaravelBridge\Mcp\ToolDefinition;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Response;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Tests\Concerns\InspectsAgentOperations;
 use Tests\TestCase;
 
 /**
@@ -43,6 +40,7 @@ use Tests\TestCase;
  */
 final class AgentInvoiceWriteFlagTest extends TestCase
 {
+    use InspectsAgentOperations;
     use RefreshDatabase;
 
     private const INVOICE_TOOLS = [
@@ -97,13 +95,7 @@ final class AgentInvoiceWriteFlagTest extends TestCase
             'agent_api.invoice_writes_enabled' => $invoiceWrites,
         ]);
 
-        $names = array_map(
-            static fn (ToolDefinition $definition): string => $definition->name,
-            app(AgentMcpToolCatalog::class)->definitions(
-                app(AgentMcpReadTools::class),
-                app(AgentMcpWriteTools::class),
-            ),
-        );
+        $names = $this->deployedToolNames();
 
         foreach (self::WORKFLOW_TOOLS as $tool) {
             $this->assertSame($expectsWorkflowTools, in_array($tool, $names, true), $tool);
