@@ -58,7 +58,7 @@ the majority order won and the minority is named as an inversion below.
 | 5 | `payment_reconciliations` | Hangs off a payment already held |
 | 6 | `client_invoices` | Every generator has an agreement or a schedule before it has an invoice |
 | 7 | `client_invoice_lines` | Issued correction locks the invoice before preserving and changing its existing lines |
-| 8 | `workspaces` | Reached only to serialise the number counter, which is reached only once there is an invoice to number |
+| 8 | `workspaces` | Serialises the number counter, which is reached only once there is an invoice to number; also the workspace-wide access lock every access mutation takes first (see *Workspace access mutations*) |
 | 9 | `workspace_invoice_counters` | Locked immediately after the workspace that serialises it |
 | 10 | `client_time_entries` | What an invoice is built out of, drawn after the invoice exists |
 | 11 | `client_invoice_line_time_entries` | Invoice time membership is checked after locking its entry |
@@ -66,15 +66,19 @@ the majority order won and the minority is named as an inversion below.
 | 13 | `client_expense_schedules` | Recurrence generation locks its schedule before expense rows |
 | 14 | `client_expenses` | Drawn into an invoice the way milestones are; #75 puts the generator hook beside the milestone one. **The one row not read off a recorded multi-lock sequence** — see below |
 | 15 | `client_companies` | Last, and this is the surprise — see below |
-| 16 | `client_projects` | Never co-acquired with anything above |
-| 17 | `users` | Never co-acquired with anything above |
-| 18 | `client_attachments` | Prepared attachment publication locks its tenant parent before its recovery row; all byte I/O precedes these locks |
-| 19 | `client_invoice_email_deliveries` | A short post-commit client-email claim, or the result row after its invoice is locked so both sides of the result commit together |
-| 20 | `client_invoice_administrator_notifications` | A short post-commit administrator-email claim; never co-acquired with billing locks |
-| 21 | `oauth_access_tokens` | Agent disconnection, which takes no other lock; orders only against itself |
-| 22 | `stripe_payment_method_states` | Provider state, a family of its own |
-| 23 | `client_stripe_customers` |  |
-| 24 | `client_stripe_payment_methods` |  |
+| 16 | `client_projects` | Never co-acquired with the billing rows above; access mutations lock it after the workspace access lock |
+| 17 | `workspace_memberships` | Project access locks the project before the target's staff membership; every access mutation re-checks the actor's authority here, under the workspace access lock |
+| 18 | `client_project_memberships` | A staff removal deletes the person's assignments explicitly after locking their projects and membership |
+| 19 | `client_company_memberships` | Portal access changes lock the company membership after the workspace access lock and the actor's staff membership |
+| 20 | `client_portal_project_access` | The project limits hung off a portal membership, read and replaced after that membership is locked |
+| 21 | `users` | Never co-acquired with anything above |
+| 22 | `client_attachments` | Prepared attachment publication locks its tenant parent before its recovery row; all byte I/O precedes these locks |
+| 23 | `client_invoice_email_deliveries` | A short post-commit client-email claim, or the result row after its invoice is locked so both sides of the result commit together |
+| 24 | `client_invoice_administrator_notifications` | A short post-commit administrator-email claim; never co-acquired with billing locks |
+| 25 | `oauth_access_tokens` | Agent disconnection, which takes no other lock; orders only against itself |
+| 26 | `stripe_payment_method_states` | Provider state, a family of its own |
+| 27 | `client_stripe_customers` |  |
+| 28 | `client_stripe_payment_methods` |  |
 
 The company being *last* is the one entry that reads wrong and is right. It
 looks like a parent, so the intuitive order puts it first; the code puts it at

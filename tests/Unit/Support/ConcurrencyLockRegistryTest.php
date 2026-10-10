@@ -67,6 +67,30 @@ final class ConcurrencyLockRegistryTest extends TestCase
         );
     }
 
+    /**
+     * The order every access mutation walks: the workspace-wide access lock,
+     * the projects whose revision it advances, the staff memberships it
+     * re-checks authority against, and then the rows it writes.
+     */
+    public function test_access_mutation_resources_follow_the_workspace_access_lock(): void
+    {
+        $order = [
+            LockResource::Workspace,
+            LockResource::ClientProject,
+            LockResource::WorkspaceMembership,
+            LockResource::ClientProjectMembership,
+            LockResource::ClientCompanyMembership,
+            LockResource::ClientPortalProjectAccess,
+        ];
+
+        $ranks = array_map(static fn (LockResource $resource): int => $resource->rank(), $order);
+        $sorted = $ranks;
+        sort($sorted);
+
+        $this->assertSame($sorted, $ranks);
+        $this->assertSame(LockResource::ClientPortalProjectAccess, LockResource::forTable('client_portal_project_access'));
+    }
+
     public function test_agent_receipts_are_ranked_before_the_domain_callback_locks(): void
     {
         $this->assertSame(LockResource::AgentMutationReceipt, LockResource::forTable('agent_mutation_receipts'));
