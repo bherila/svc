@@ -52,6 +52,71 @@ class OAuthLoginTest extends TestCase
         $this->assertGuest();
     }
 
+    public function test_an_inertia_sign_out_navigates_the_browser_to_the_provider(): void
+    {
+        $user = User::factory()->create();
+
+        // The account menu posts through Inertia, an XHR, which cannot follow a
+        // redirect to another origin: a plain 302 here ended the session while
+        // the page stayed where it was. A 409 with X-Inertia-Location is what
+        // makes the Inertia client do a full navigation.
+        $this->actingAs($user)
+            ->withHeaders(['X-Inertia' => 'true', 'X-Requested-With' => 'XMLHttpRequest'])
+            ->post('/logout')
+            ->assertStatus(409)
+            ->assertHeader(
+                'X-Inertia-Location',
+                'https://identity.example.test/oauth/end-session?client_id=svc-client'
+                    .'&post_logout_redirect_uri='.urlencode(url('/')),
+            )
+            ->assertHeaderMissing('Location');
+
+        $this->assertGuest();
+    }
+
+    public function test_an_inertia_sign_out_with_no_provider_navigates_home(): void
+    {
+        config(['bherila-auth.oauth_client.client_id' => '']);
+
+        $this->actingAs(User::factory()->create())
+            ->withHeaders(['X-Inertia' => 'true'])
+            ->post('/logout')
+            ->assertStatus(409)
+            ->assertHeader('X-Inertia-Location', route('home'));
+
+        $this->assertGuest();
+    }
+
+    public function test_an_expired_session_can_still_sign_out_at_the_provider(): void
+    {
+        $endSession = 'https://identity.example.test/oauth/end-session?client_id=svc-client'
+            .'&post_logout_redirect_uri='.urlencode(url('/'));
+
+        // A page left open past its session still shows the menu. Behind `auth`
+        // the click was sent to sign in, which the provider answers by signing
+        // the person straight back in - the opposite of what they asked for.
+        $this->post('/logout')->assertRedirect($endSession);
+        $this->withHeaders(['X-Inertia' => 'true'])
+            ->post('/logout')
+            ->assertStatus(409)
+            ->assertHeader('X-Inertia-Location', $endSession);
+
+        $this->assertGuest();
+    }
+
+    public function test_provider_identity_enforcement_skips_the_sign_out_route(): void
+    {
+        // Enforcement skips routes by name, so renaming the route would quietly
+        // put sign-out behind a provider check that fails during an outage.
+        $route = app('router')->getRoutes()->getByName('logout');
+
+        $this->assertNotNull($route);
+        $this->assertSame('logout', $route->uri());
+        $this->assertSame(['POST'], $route->methods());
+        $this->assertContains('logout', config('bherila-auth.provider_identity.except_routes'));
+        $this->assertNotContains('auth', $route->gatherMiddleware());
+    }
+
     public function test_signing_out_stays_local_when_no_provider_is_configured(): void
     {
         config(['bherila-auth.oauth_client.client_id' => '']);

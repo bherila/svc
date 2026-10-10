@@ -39,6 +39,10 @@ Route::get('/oauth/redirect', [OAuthLoginController::class, 'redirect'])
     ->withoutMiddleware(HandleInertiaRequests::class)
     ->name('oauth.redirect');
 Route::get('/oauth/callback', [OAuthLoginController::class, 'callback'])->name('oauth.callback');
+// Outside `auth`: an expired session's sign-out still reaches the provider
+// instead of being sent to sign in. Provider identity enforcement skips it by
+// name (bherila-auth.provider_identity.except_routes).
+Route::post('/logout', [OAuthLoginController::class, 'logout'])->name('logout');
 
 Route::middleware('auth')->group(function (): void {
     // Where signing in lands. One row per workspace and nothing else - the
@@ -52,7 +56,6 @@ Route::middleware('auth')->group(function (): void {
         ->withoutMiddleware(HandleInertiaRequests::class)
         ->middleware('throttle:120,1')
         ->name('search');
-    Route::post('/logout', [OAuthLoginController::class, 'logout'])->name('logout');
 
     Route::post('/workspaces', [WorkspaceController::class, 'store'])->name('workspaces.store');
 

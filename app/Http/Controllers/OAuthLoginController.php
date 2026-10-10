@@ -77,9 +77,24 @@ class OAuthLoginController extends Controller
         return redirect()->intended($returnPoint->landingUrl($user));
     }
 
-    public function logout(Request $request, OAuthClient $oauth): RedirectResponse
+    /**
+     * Outside `auth` on purpose: a page left open past its session still shows
+     * the menu, and clicking it must still end the provider session rather than
+     * bounce the person into signing in again.
+     */
+    public function logout(Request $request, OAuthClient $oauth): SymfonyResponse
     {
-        return $this->signOutThroughProvider($request, $oauth, route('home'));
+        $redirect = $this->signOutThroughProvider($request, $oauth, route('home'));
+
+        // The menu posts through Inertia, an XHR, and an XHR cannot follow a
+        // redirect to the provider's end-session endpoint on another origin:
+        // the session here ended while the page stayed exactly where it was.
+        // A 409 with X-Inertia-Location makes the Inertia client navigate.
+        if ($request->header('X-Inertia')) {
+            return Inertia::location($redirect->getTargetUrl());
+        }
+
+        return $redirect;
     }
 
     private function resolveUser(string $provider, string $subject, string $name, string $email): User
