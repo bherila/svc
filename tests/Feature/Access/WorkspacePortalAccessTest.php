@@ -14,6 +14,10 @@ use App\Support\Access\AccessMutationContext;
 use App\Support\Access\AccessRefusal;
 use App\Support\Access\PortalAccessScope;
 use App\Support\Access\PortalAccessState;
+use App\Support\Concurrency\LockOrderRecorder;
+use App\Support\Concurrency\LockResource;
+use Closure;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\Concerns\BuildsAccessFixtures;
@@ -215,6 +219,52 @@ final class WorkspacePortalAccessTest extends TestCase
         $this->assertSame(1, AccessAuditEvent::query()->count());
     }
 
+    /**
+     * The limits' public ids come from locked project rows, which a locking
+     * read returns as currently committed, rather than from a plain read an
+     * enclosing transaction's older snapshot could answer.
+     */
+    public function test_portal_changes_lock_the_projects_they_name_before_the_rows_they_write(): void
+    {
+        $context = AccessMutationContext::user($this->owner);
+        $this->access()->grantPortal($context, $this->company, $this->client, PortalAccessScope::Projects, [$this->first->public_id]);
+
+        LockOrderRecorder::start();
+        try {
+            $this->access()->changePortalScope($context, $this->company, $this->client, PortalAccessScope::Projects, [$this->second->public_id]);
+            $this->access()->revokePortal($context, $this->company, $this->client);
+            $sequences = LockOrderRecorder::sequences();
+        } finally {
+            LockOrderRecorder::stop();
+        }
+
+        $order = [LockResource::Workspace, LockResource::ClientProject, LockResource::WorkspaceMembership, LockResource::ClientCompanyMembership, LockResource::ClientPortalProjectAccess];
+        $this->assertSame([$order, $order], $sequences);
+    }
+
+    /**
+     * Which limits exist is first a plain read. The listener adds a limit just
+     * after it runs, as a commit an older snapshot would not show.
+     */
+    public function test_a_limit_the_first_read_missed_is_still_in_the_recorded_before_state(): void
+    {
+        $context = AccessMutationContext::user($this->owner);
+        $membership = $this->access()->grantPortal($context, $this->company, $this->client, PortalAccessScope::Projects, [$this->first->public_id]);
+        $this->onceTheLimitsAreListed(fn () => DB::table('client_portal_project_access')->insert([
+            'workspace_id' => $this->workspace->id,
+            'client_company_membership_id' => $membership->id,
+            'client_project_id' => $this->second->id,
+        ]));
+
+        $revoked = $this->access()->revokePortal($context, $this->company, $this->client);
+
+        $expected = [$this->first->public_id, $this->second->public_id];
+        sort($expected);
+        $this->assertSame($expected, $revoked->projectPublicIds);
+        $this->assertSame(['scope' => 'projects', 'projects' => $expected], AccessAuditEvent::query()->where('action', 'portal.revoked')->sole()->before_state);
+        $this->assertSame(0, DB::table('client_portal_project_access')->count());
+    }
+
     public function test_portal_writes_stay_inside_the_companys_workspace(): void
     {
         $elsewhere = Workspace::query()->create(['name' => 'Elsewhere', 'slug' => 'elsewhere']);
@@ -240,6 +290,21 @@ final class WorkspacePortalAccessTest extends TestCase
     private function access(): WorkspaceAccess
     {
         return app(WorkspaceAccess::class);
+    }
+
+    /** Run `$change` once, just after the boundary's plain read of a person's portal limits. */
+    private function onceTheLimitsAreListed(Closure $change): void
+    {
+        $baseline = DB::transactionLevel();
+        $fired = false;
+        DB::listen(function (QueryExecuted $query) use (&$fired, $baseline, $change): void {
+            if ($fired || DB::transactionLevel() <= $baseline
+                || preg_match('/^select [`"]client_project_id[`"] from [`"]client_portal_project_access[`"]/i', $query->sql) !== 1) {
+                return;
+            }
+            $fired = true;
+            $change();
+        });
     }
 
     private function portalMembershipExists(): bool

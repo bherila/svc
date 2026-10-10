@@ -23,6 +23,7 @@ use App\Support\Access\StaffRole;
 use App\Support\AgentApi\ProjectRole;
 use App\Support\Concurrency\Locks;
 use App\Support\WorkspaceClock;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Query\JoinClause;
 use Illuminate\Support\Facades\DB;
@@ -219,9 +220,9 @@ final class WorkspaceAccess
      */
     public function grantPortal(AccessMutationContext $context, ClientCompany $company, User $user, PortalAccessScope $scope, array $projectPublicIds = []): ClientCompanyMembership
     {
-        return $this->portal($context, $company, function (Workspace $workspace, ClientCompany $company) use ($context, $user, $scope, $projectPublicIds): ClientCompanyMembership {
+        return $this->portal($context, $company, $user, $projectPublicIds, function (Workspace $workspace, ClientCompany $company, Collection $locked) use ($context, $user, $scope, $projectPublicIds): ClientCompanyMembership {
             $this->refuseIf($this->lockedPortalMembership($workspace, $company, $user) instanceof ClientCompanyMembership ? AccessRefusal::AlreadyPortalMember : null);
-            $projects = $this->portalProjects($workspace, $company, $scope, $projectPublicIds);
+            $projects = $this->portalProjects($company, $scope, $projectPublicIds, $locked);
 
             $membership = new ClientCompanyMembership;
             $membership->forceFill([
@@ -247,10 +248,10 @@ final class WorkspaceAccess
      */
     public function changePortalScope(AccessMutationContext $context, ClientCompany $company, User $user, PortalAccessScope $scope, array $projectPublicIds = []): ClientCompanyMembership
     {
-        return $this->portal($context, $company, function (Workspace $workspace, ClientCompany $company) use ($context, $user, $scope, $projectPublicIds): ClientCompanyMembership {
+        return $this->portal($context, $company, $user, $projectPublicIds, function (Workspace $workspace, ClientCompany $company, Collection $locked) use ($context, $user, $scope, $projectPublicIds): ClientCompanyMembership {
             $membership = $this->lockedPortalMembership($workspace, $company, $user) ?? throw new AccessMutationRefused(AccessRefusal::NotPortalMember);
-            $before = $this->lockedPortalState($workspace, $membership);
-            $projects = $this->portalProjects($workspace, $company, $scope, $projectPublicIds);
+            $before = $this->lockedPortalState($workspace, $membership, $locked);
+            $projects = $this->portalProjects($company, $scope, $projectPublicIds, $locked);
 
             $membership->forceFill(['access_scope' => $scope->value])->save();
             $after = $this->replaceProjectLimits($workspace, $membership, $scope, $projects);
@@ -266,9 +267,9 @@ final class WorkspaceAccess
      */
     public function revokePortal(AccessMutationContext $context, ClientCompany $company, User $user): PortalAccessState
     {
-        return $this->portal($context, $company, function (Workspace $workspace, ClientCompany $company) use ($context, $user): PortalAccessState {
+        return $this->portal($context, $company, $user, [], function (Workspace $workspace, ClientCompany $company, Collection $locked) use ($context, $user): PortalAccessState {
             $membership = $this->lockedPortalMembership($workspace, $company, $user) ?? throw new AccessMutationRefused(AccessRefusal::NotPortalMember);
-            $before = $this->lockedPortalState($workspace, $membership);
+            $before = $this->lockedPortalState($workspace, $membership, $locked);
 
             $this->deleteProjectLimits($workspace, $membership);
             $membership->delete();
@@ -365,12 +366,20 @@ final class WorkspaceAccess
      * Portal work, refused early from an unlocked read and then re-authorised
      * under the workspace access lock against the company as stored.
      *
+     * Before the re-check it locks, in id order, every project the change can
+     * name: the ones the person's portal limits point at now, and the ones
+     * the caller asked for. Locking them is what makes their reads current -
+     * the limits' public ids for the audit's before state, and the check that
+     * each requested project belongs to this company - rather than a plain
+     * read that an enclosing transaction's older snapshot could answer.
+     *
      * @template TResult
      *
-     * @param  \Closure(Workspace, ClientCompany): TResult  $work
+     * @param  list<string>  $requestedPublicIds
+     * @param  \Closure(Workspace, ClientCompany, Collection<int, ClientProject>): TResult  $work
      * @return TResult
      */
-    private function portal(AccessMutationContext $context, ClientCompany $company, \Closure $work): mixed
+    private function portal(AccessMutationContext $context, ClientCompany $company, User $user, array $requestedPublicIds, \Closure $work): mixed
     {
         $workspace = Workspace::query()->whereKey($company->workspace_id)->firstOrFail();
         $authorize = function (Workspace $workspace, bool $lock) use ($context): void {
@@ -380,12 +389,53 @@ final class WorkspaceAccess
 
         $authorize($workspace, false);
 
-        return $this->coordinator->locked($workspace, function (Workspace $locked) use ($company, $work, $authorize): mixed {
-            $authorize($locked, true);
+        return $this->coordinator->locked($workspace, function (Workspace $locked) use ($company, $user, $requestedPublicIds, $work, $authorize): mixed {
+            // A plain read, so it fails closed: a company it cannot see is not found.
             $stored = ClientCompany::query()->where('workspace_id', $locked->id)->whereKey($company->id)->firstOrFail();
+            $projects = $this->lockPortalProjects($locked, $stored, $user, $requestedPublicIds);
+            $authorize($locked, true);
 
-            return $work($locked, $stored);
+            return $work($locked, $stored, $projects);
         });
+    }
+
+    /**
+     * Lock the projects a portal change can name, keyed by id.
+     *
+     * Which limits exist comes from a plain read here; the locking read in
+     * {@see lockedPortalState()} is what decides, and locks any project only
+     * it finds.
+     *
+     * @param  list<string>  $requestedPublicIds
+     * @return Collection<int, ClientProject>
+     */
+    private function lockPortalProjects(Workspace $workspace, ClientCompany $company, User $user, array $requestedPublicIds): Collection
+    {
+        $limitIds = DB::table('client_portal_project_access')
+            ->where('workspace_id', $workspace->id)
+            ->whereIn('client_company_membership_id', ClientCompanyMembership::query()
+                ->select('id')
+                ->where('workspace_id', $workspace->id)
+                ->where('client_company_id', $company->id)
+                ->where('user_id', $user->id))
+            ->pluck('client_project_id')
+            ->all();
+
+        if ($limitIds === [] && $requestedPublicIds === []) {
+            return new Collection;
+        }
+
+        return ClientProject::query()
+            ->where('workspace_id', $workspace->id)
+            ->where(function (Builder $projects) use ($limitIds, $company, $requestedPublicIds): void {
+                $projects->whereIn('id', $limitIds)->orWhere(function (Builder $requested) use ($company, $requestedPublicIds): void {
+                    $requested->where('client_company_id', $company->id)->whereIn('public_id', $requestedPublicIds);
+                });
+            })
+            ->orderBy('id')
+            ->tap(Locks::forUpdate())
+            ->get()
+            ->keyBy('id');
     }
 
     private function lockedPortalMembership(Workspace $workspace, ClientCompany $company, User $user): ?ClientCompanyMembership
@@ -398,38 +448,52 @@ final class WorkspaceAccess
             ->first();
     }
 
-    /** A portal membership's current reach, reading its project limits under lock. */
-    private function lockedPortalState(Workspace $workspace, ClientCompanyMembership $membership): PortalAccessState
+    /**
+     * A portal membership's current reach, from a locking read of its project
+     * limits and the locked project rows they point at.
+     *
+     * A limit the plain read in {@see lockPortalProjects()} missed - possible
+     * only inside an enclosing transaction whose snapshot predates the
+     * workspace lock - has its project locked here, so its public id is read
+     * current too. That later project lock cannot deadlock: every other
+     * transaction that locks a project and then a membership does so under the
+     * workspace access lock this one holds.
+     *
+     * @param  Collection<int, ClientProject>  $projects  locked, keyed by id
+     */
+    private function lockedPortalState(Workspace $workspace, ClientCompanyMembership $membership, Collection $projects): PortalAccessState
     {
-        $projectIds = DB::table('client_portal_project_access')
+        $projectIds = array_map(intval(...), DB::table('client_portal_project_access')
             ->where('workspace_id', $workspace->id)
             ->where('client_company_membership_id', $membership->id)
             ->orderBy('id')
             ->tap(Locks::forUpdate())
             ->pluck('client_project_id')
-            ->all();
+            ->all());
 
-        $publicIds = ClientProject::query()
-            ->where('workspace_id', $workspace->id)
-            ->whereIn('id', $projectIds)
-            ->orderBy('public_id')
-            ->pluck('public_id')
-            ->all();
+        $missing = array_values(array_diff($projectIds, $projects->keys()->all()));
+        $publicIds = array_values($projects->union($this->coordinator->lockProjects($workspace, $missing))
+            ->filter(static fn (ClientProject $project, int $id): bool => in_array($id, $projectIds, true))
+            ->map(static fn (ClientProject $project): string => $project->public_id)
+            ->sort()
+            ->all());
 
         // Anything but `projects` reaches the whole company, as PortalAccess reads it.
         $scope = $membership->access_scope === PortalAccessScope::Projects->value ? PortalAccessScope::Projects : PortalAccessScope::Company;
 
-        return new PortalAccessState($scope, array_values(array_map(strval(...), $publicIds)));
+        return new PortalAccessState($scope, $publicIds);
     }
 
     /**
-     * The projects a portal scope is limited to, each checked to belong to this
-     * company in this workspace.
+     * The projects a portal scope is limited to, each checked - against the
+     * locked rows from {@see lockPortalProjects()} - to belong to this company
+     * in this workspace.
      *
      * @param  list<string>  $projectPublicIds
+     * @param  Collection<int, ClientProject>  $locked
      * @return Collection<int, ClientProject>
      */
-    private function portalProjects(Workspace $workspace, ClientCompany $company, PortalAccessScope $scope, array $projectPublicIds): Collection
+    private function portalProjects(ClientCompany $company, PortalAccessScope $scope, array $projectPublicIds, Collection $locked): Collection
     {
         $publicIds = array_values(array_unique($projectPublicIds));
 
@@ -439,12 +503,10 @@ final class WorkspaceAccess
             return new Collection;
         }
 
-        $projects = ClientProject::query()
-            ->where('workspace_id', $workspace->id)
-            ->where('client_company_id', $company->id)
-            ->whereIn('public_id', $publicIds)
-            ->orderBy('public_id')
-            ->get();
+        $projects = $locked
+            ->filter(static fn (ClientProject $project): bool => $project->client_company_id === $company->id && in_array($project->public_id, $publicIds, true))
+            ->sortBy('public_id')
+            ->values();
 
         $this->refuseIf($projects->count() === count($publicIds) ? null : AccessRefusal::ProjectOutsideCompany);
 

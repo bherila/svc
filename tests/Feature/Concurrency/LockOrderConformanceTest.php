@@ -260,8 +260,9 @@ final class LockOrderConformanceTest extends TestCase
      * Staff and portal access changes through the access boundary.
      *
      * Each takes the workspace access lock first, then any projects whose
-     * revision it advances, then the staff memberships it re-checks authority
-     * against, and only then the assignment or portal rows it writes. The
+     * revision it advances or whose public id it records, then the staff
+     * memberships it re-checks authority against, and only then the
+     * assignment or portal rows it writes. The
      * person removed holds a project assignment, so removal locks a project,
      * memberships and assignments in one transaction.
      */

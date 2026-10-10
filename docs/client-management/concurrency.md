@@ -128,8 +128,8 @@ Workspace, WorkspaceMembership                                 staff grant
 Workspace, ClientProject, WorkspaceMembership                  staff role change, project assignment
 Workspace, ClientProject, WorkspaceMembership,
     ClientProjectMembership                                    staff removal
-Workspace, WorkspaceMembership, ClientCompanyMembership,
-    ClientPortalProjectAccess                                  portal grant, scope change, revocation
+Workspace, ClientProject, WorkspaceMembership,
+    ClientCompanyMembership, ClientPortalProjectAccess         portal grant, scope change, revocation
 ```
 
 ## The known inversions
@@ -542,9 +542,20 @@ coordination). Each mutation runs in one transaction that:
 Staff removal deletes the person's `client_project_memberships` explicitly, one
 by one, each advancing its project's revision and leaving its own audit event,
 before deleting the `workspace_memberships` row. The cascading composite key is
-only a backstop. The project ids it locks first come from a plain read; the
-assignments it deletes come from a locking read, and any project that read adds
-is locked before the delete.
+only a backstop.
+
+Every read that decides what is locked, what revision advances or what an audit
+event records is a current read. Plain reads only *propose*: a role change or
+removal locks the projects a plain read of the person's assignments names, and
+after the authority re-check takes a locking read of the assignments, which is
+what decides - a project only it names is locked then, and one only the plain
+read named is left alone. Portal changes do the same with the projects their
+limits point at and the projects the caller asked for, so both the audit's
+before state and the check that each project belongs to the company come from
+locked rows. Locking a further project after the memberships happens only when
+an enclosing transaction's snapshot predates the workspace lock, and cannot
+deadlock: every other transaction that locks a project and then a membership
+does so under the workspace access lock.
 
 `LockOrderConformanceTest` drives every one of these writers. As elsewhere, the
 assertions run on one connection and prove ordering, not contention.
