@@ -28,7 +28,13 @@ abstract class TestCase extends BaseTestCase
         config(['passport.private_key' => $privateKey, 'passport.public_key' => $details['key']]);
     }
 
-    /** @param list<string> $scopes */
+    /**
+     * An MCP connection's credential: bound to the MCP resource, as a token an
+     * MCP client obtains is. REST calls made after this reuse the guard's user
+     * without consulting the token's audience.
+     *
+     * @param  list<string>  $scopes
+     */
     protected function actingAsMcp(User $user, array $scopes): AgentPrincipal
     {
         $principal = AgentPrincipal::query()->findOrFail($user->id);
@@ -38,7 +44,7 @@ abstract class TestCase extends BaseTestCase
             'client_id' => 'mcp-test-client',
             'scopes' => $scopes,
             'revoked' => false,
-            'resource_uri' => OAuthResourceIndicator::resource(),
+            'resource_uri' => OAuthResourceIndicator::resource('mcp'),
             'expires_at' => now()->addMinute(),
         ]);
         $token->save();

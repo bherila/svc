@@ -9,11 +9,10 @@ use App\Models\ClientProject;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Models\WorkspaceMembership;
+use App\Services\Mcp\McpConnectionTokens;
 use App\Support\AgentApi\AgentApiScopes;
-use BWH\Auth\OAuth\Server\OAuthResourceIndicator;
 use Illuminate\Contracts\Console\Kernel;
 use Laravel\Passport\ClientRepository;
-use Laravel\Passport\Passport;
 
 require __DIR__.'/../vendor/autoload.php';
 
@@ -62,27 +61,8 @@ $agreement = ClientAgreement::query()->create([
 $client = app(ClientRepository::class)->createPersonalAccessGrantClient('SVC MCP smoke', 'agent-principals');
 $principal = AgentPrincipal::query()->findOrFail($user->id);
 
-/** Without the resource indicator the token is not addressed to this API. */
-$issue = static function (string $name, array $scopes) use ($principal, $client): string {
-    $request = request();
-    $request->attributes->set(
-        OAuthResourceIndicator::REQUEST_ATTRIBUTE,
-        OAuthResourceIndicator::configuredCanonical(),
-    );
-    try {
-        $issued = $principal->createToken($name, $scopes);
-    } finally {
-        $request->attributes->remove(OAuthResourceIndicator::REQUEST_ATTRIBUTE);
-    }
-
-    Passport::token()->newQuery()
-        ->whereKey($issued->accessTokenId)
-        ->where('client_id', $client->id)
-        ->where('resource_uri', OAuthResourceIndicator::resource())
-        ->firstOrFail();
-
-    return $issued->accessToken;
-};
+/** Bound to the MCP resource: the MCP endpoint refuses a REST token. */
+$issue = static fn (string $name, array $scopes): string => app(McpConnectionTokens::class)->issue($principal, (string) $client->id, $name, $scopes);
 
 echo json_encode([
     'token' => $issue('SVC MCP smoke', [

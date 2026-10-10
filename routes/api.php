@@ -70,9 +70,12 @@ Route::middleware(['auth:sanctum', 'throttle:60,1'])
 $operation = static fn (string $operationId, array $action): RoutingRoute => Route::operation($operationId, $action)
     ->middleware(EnsureOperationDeployed::class.':'.$operationId);
 
+// The REST resource (APP_URL/api/v1): only REST-bound tokens and the signed-in
+// website's session. An MCP-bound token is refused here, as a REST token is at
+// the MCP endpoint.
 Route::prefix('v1')
     ->name('agent-api.v1.')
-    ->middleware([ExpectOAuthResource::class, AuthenticateFirstPartySession::class, 'auth:api', 'throttle:60,1', NoStoreAgentResponse::class])
+    ->middleware([ExpectOAuthResource::class.':rest', AuthenticateFirstPartySession::class, 'auth:api', 'throttle:60,1', NoStoreAgentResponse::class])
     ->group(function () use ($operation): void {
         $operation('context.get', [AgentReadController::class, 'context']);
         $operation('workspaces.create', [AgentWorkspaceMiscController::class, 'create']);
@@ -92,7 +95,6 @@ Route::prefix('v1')
             ->whereUuid('recordPublicId')->middleware(EnsureAgentWorkspaceVisible::class)->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']));
         $operation('attachments.delete', [AgentWorkspaceMiscController::class, 'delete'])
             ->whereUuid('attachment')->middleware(EnsureAgentWorkspaceVisible::class)->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']));
-        $operation('connections.revoke', [AgentConnectionController::class, 'destroy']);
         $operation('operations.summary', [AgentReadController::class, 'summary']);
         $operation('clients.list', [AgentClientController::class, 'index'])
             ->middleware(EnsureAgentWorkspaceVisible::class)
@@ -300,9 +302,19 @@ Route::prefix('v1')
             ->whereUuid('invoice');
     });
 
+// Disconnecting takes `mcp:use`, which only the MCP resource admits, so the
+// credential that can disconnect is an MCP connection's own: this route
+// belongs to the MCP audience, not REST's. The session holds no `mcp:use`.
+Route::prefix('v1')
+    ->name('agent-api.v1.')
+    ->middleware([ExpectOAuthResource::class.':mcp', 'auth:api', 'throttle:60,1', NoStoreAgentResponse::class])
+    ->group(function () use ($operation): void {
+        $operation('connections.revoke', [AgentConnectionController::class, 'destroy']);
+    });
+
 Route::options('/v1/mcp', static fn () => response()->noContent())
     ->middleware([McpHttpSecurityMiddleware::class, 'throttle:60,1'])
     ->name('agent-api.v1.mcp.options');
 Route::match(['POST', 'DELETE'], '/v1/mcp', AgentMcpController::class)
-    ->middleware([McpHttpSecurityMiddleware::class, ExpectOAuthResource::class, 'auth:api', CheckToken::using(AgentApiScopes::MCP_USE), 'throttle:60,1', NoStoreAgentResponse::class])
+    ->middleware([McpHttpSecurityMiddleware::class, ExpectOAuthResource::class.':mcp', 'auth:api', CheckToken::using(AgentApiScopes::MCP_USE), 'throttle:60,1', NoStoreAgentResponse::class])
     ->name('agent-api.v1.mcp');

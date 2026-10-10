@@ -57,8 +57,11 @@ wrong_scope=$(printf '%s' "$credentials" | jq -er '.wrong_scope_token | select(t
 echo "::add-mask::$authorized"
 echo "::add-mask::$wrong_scope"
 
+# The MCP endpoint is its own protected resource: its challenge names the
+# MCP document, whose `resource` is the endpoint itself (RFC 9728), and the
+# smoke credentials are bound to it.
 MCP_SMOKE_URL="$DEPLOY_SITE_URL/api/v1/mcp" \
-MCP_SMOKE_EXPECTED_RESOURCE="$DEPLOY_SITE_URL/api/v1" \
+MCP_SMOKE_EXPECTED_RESOURCE="$DEPLOY_SITE_URL/api/v1/mcp" \
 MCP_SMOKE_BEARER_TOKEN="$authorized" \
 MCP_SMOKE_WRONG_SCOPE_BEARER_TOKEN="$wrong_scope" \
     node scripts/mcp-smoke.mjs

@@ -99,6 +99,9 @@ final class AgentOAuthBehaviourSnapshotTest extends TestCase
             'state' => 'snapshot-state',
             'code_challenge' => $challenge,
             'code_challenge_method' => 'S256',
+            // An MCP connection names the MCP endpoint, its own resource; a
+            // request naming nothing is a REST request, which `mcp:use` is not.
+            'resource' => url('/api/v1/mcp'),
         ];
         $observed['authorize_refusals'] = [
             'no_pkce' => $this->authorizeRefusal(array_diff_key($authorize, array_flip(['code_challenge', 'code_challenge_method']))),
@@ -106,6 +109,8 @@ final class AgentOAuthBehaviourSnapshotTest extends TestCase
             'scope_beyond_registration' => $this->authorizeRefusal(['scope' => AgentApiScopes::IDENTITY_READ.' '.AgentApiScopes::BILLING_READ] + $authorize),
             'unknown_scope' => $this->authorizeRefusal(['scope' => 'admin:everything'] + $authorize),
             'other_resource' => $this->authorizeRefusal(['resource' => 'https://other.example.test/api/v1'] + $authorize),
+            'connection_scope_for_rest' => $this->authorizeRefusal(['resource' => url('/api/v1')] + $authorize),
+            'connection_scope_without_resource' => $this->authorizeRefusal(array_diff_key($authorize, ['resource' => true])),
         ];
 
         $consent = $this->get('/oauth/authorize?'.http_build_query($authorize, '', '&', PHP_QUERY_RFC3986));
@@ -135,17 +140,22 @@ final class AgentOAuthBehaviourSnapshotTest extends TestCase
 
         $withoutVerifier = $this->post('/oauth/token', [
             'grant_type' => 'authorization_code', 'client_id' => $clientId, 'redirect_uri' => self::REDIRECT, 'code' => $query['code'] ?? '',
+            'resource' => url('/api/v1/mcp'),
         ], ['Accept' => 'application/json']);
         $observed['token_without_verifier'] = $this->refusal($withoutVerifier);
 
         $tokens = $this->post('/oauth/token', [
             'grant_type' => 'authorization_code', 'client_id' => $clientId, 'redirect_uri' => self::REDIRECT, 'code' => $query['code'] ?? '', 'code_verifier' => $verifier,
+            'resource' => url('/api/v1/mcp'),
         ], ['Accept' => 'application/json']);
         $observed['token'] = ['status' => $tokens->getStatusCode(), 'keys' => $this->sortedKeys($tokens->json()), 'token_type' => $tokens->json('token_type')];
 
         $this->app['auth']->forgetGuards();
         $unauthenticated = $this->postJson('/api/v1/mcp', ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'ping']);
         $observed['mcp_challenge'] = ['status' => $unauthenticated->getStatusCode(), 'www_authenticate' => $unauthenticated->headers->get('WWW-Authenticate')];
+        $this->app['auth']->forgetGuards();
+        $unauthenticated = $this->getJson('/api/v1/context');
+        $observed['rest_challenge'] = ['status' => $unauthenticated->getStatusCode(), 'www_authenticate' => $unauthenticated->headers->get('WWW-Authenticate')];
 
         return $observed;
     }

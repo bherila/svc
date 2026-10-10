@@ -9,6 +9,8 @@ use App\Support\Billing\RetryableConflict;
 use Bherila\McpLaravelBridge\Http\GateOperation;
 use Bherila\McpLaravelBridge\Http\McpHttpSecurityMiddleware;
 use BWH\Auth\Http\Middleware\ExpectOAuthResource;
+use BWH\Auth\OAuth\Server\OAuthProtectedResource;
+use BWH\Auth\OAuth\Server\OAuthResourceIndicator;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests;
 use Illuminate\Foundation\Application;
@@ -62,7 +64,16 @@ return Application::configure(basePath: dirname(__DIR__))
         // without the server echoing it back.
         $exceptions->dontFlash(['repository']);
 
+        // A route that declared its protected resource (ExpectOAuthResource:<name>)
+        // challenges with that resource's own metadata document, from
+        // configuration rather than the request's host (RFC 9728 section 5.1).
+        // Anything else under /api/v1 - the Sanctum finance routes - keeps the
+        // plain JSON 401, pointing at the REST resource it sits under.
         $exceptions->render(function (AuthenticationException $exception, Request $request) {
+            $challenge = OAuthProtectedResource::unauthenticated($request);
+            if ($challenge !== null) {
+                return $challenge;
+            }
             if (! $request->is('api/v1/*')) {
                 return null;
             }
@@ -74,7 +85,7 @@ return Application::configure(basePath: dirname(__DIR__))
                     'Cache-Control' => 'private, no-store',
                     'WWW-Authenticate' => sprintf(
                         'Bearer resource_metadata="%s"',
-                        url('/.well-known/oauth-protected-resource/api/v1/mcp'),
+                        OAuthProtectedResource::metadataUrl(OAuthResourceIndicator::defaultName()),
                     ),
                 ],
             );

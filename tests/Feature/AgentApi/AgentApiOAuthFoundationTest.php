@@ -35,9 +35,22 @@ class AgentApiOAuthFoundationTest extends TestCase
         $this->getJson('/.well-known/oauth-authorization-server')
             ->assertOk()
             ->assertJsonPath('code_challenge_methods_supported.0', 'S256');
-        $this->getJson('/.well-known/oauth-protected-resource/api/v1/mcp')
+        // One document per endpoint, each naming exactly that endpoint and the
+        // scopes it admits (RFC 9728): `mcp:use` only on MCP's.
+        $rest = $this->getJson('/.well-known/oauth-protected-resource/api/v1')
             ->assertOk()
-            ->assertJsonPath('resource', url('/api/v1'));
+            ->assertJsonPath('resource', url('/api/v1'))
+            ->assertJsonPath('authorization_servers', [url('/')]);
+        $this->assertSame(AgentApiScopes::rest(), $rest->json('scopes_supported'));
+        $this->assertNotContains(AgentApiScopes::MCP_USE, $rest->json('scopes_supported'));
+        $mcp = $this->getJson('/.well-known/oauth-protected-resource/api/v1/mcp')
+            ->assertOk()
+            ->assertJsonPath('resource', url('/api/v1/mcp'));
+        $this->assertSame(AgentApiScopes::mcp(), $mcp->json('scopes_supported'));
+        // No document answers for a resource that is not configured, the bare
+        // well-known path included: its `resource` would name no endpoint.
+        $this->getJson('/.well-known/oauth-protected-resource')->assertNotFound();
+        $this->getJson('/.well-known/oauth-protected-resource/api/v2')->assertNotFound();
     }
 
     public function test_protected_resource_metadata_uses_the_exact_mcp_browser_origin_policy(): void

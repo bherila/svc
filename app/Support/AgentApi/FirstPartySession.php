@@ -32,10 +32,7 @@ final class FirstPartySession
     /** @return list<string> */
     public static function scopes(): array
     {
-        return array_values(array_filter(
-            array_keys(AgentApiScopes::descriptions()),
-            static fn (string $scope): bool => $scope !== AgentApiScopes::MCP_USE,
-        ));
+        return AgentApiScopes::rest();
     }
 
     public static function is(?Request $request): bool

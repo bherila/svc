@@ -24,6 +24,7 @@ final class McpPrincipalResolverTest extends TestCase
         $principal = AgentPrincipal::query()->findOrFail(User::factory()->create()->id);
         $principal->withAccessToken($this->token($principal));
         $request = Request::create('/api/v1/mcp', 'POST', ['client_id' => 'untrusted-client']);
+        OAuthResourceIndicator::expectFor($request, 'mcp');
         $request->setUserResolver(fn (): AgentPrincipal => $principal);
 
         $resolved = app(McpPrincipalResolver::class)->resolve($request);
@@ -47,11 +48,14 @@ final class McpPrincipalResolverTest extends TestCase
             [['revoked' => true], null],
             [['user_id' => $otherUser->id], null],
             [['resource_uri' => 'https://other.example/api/v1'], null],
+            // A REST token is another audience, on this application's own host.
+            [['resource_uri' => OAuthResourceIndicator::resource('rest')], null],
             [[], 'different-client'],
         ] as [$overrides, $authenticatedClientId]) {
             $principal = AgentPrincipal::query()->findOrFail(User::factory()->create()->id);
             $principal->withAccessToken($this->token($principal, $overrides, $authenticatedClientId));
             $request = Request::create('/api/v1/mcp', 'POST');
+            OAuthResourceIndicator::expectFor($request, 'mcp');
             $request->setUserResolver(fn (): AgentPrincipal => $principal);
 
             try {
@@ -75,7 +79,7 @@ final class McpPrincipalResolverTest extends TestCase
             'client_id' => 'trusted-client',
             'scopes' => ['mcp:use', 'billing:read'],
             'revoked' => false,
-            'resource_uri' => OAuthResourceIndicator::resource(),
+            'resource_uri' => OAuthResourceIndicator::resource('mcp'),
             'expires_at' => now()->addMinute(),
         ]);
         $token->save();

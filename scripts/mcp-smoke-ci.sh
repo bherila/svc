@@ -2,6 +2,11 @@
 
 set -euo pipefail
 
+# Credentials, both servers and discovery share one application URL, so the
+# tokens' audience (APP_URL/api/v1/mcp) is the resource each server protects,
+# and the challenge's metadata URL resolves to the server under test.
+export APP_URL=http://localhost:8088
+
 mcp_smoke_credentials="$(php scripts/mcp-smoke-credentials.php)"
 mcp_smoke_token="$(php -r '$credentials = json_decode($argv[1], true, flags: JSON_THROW_ON_ERROR); echo $credentials["token"];' "$mcp_smoke_credentials")"
 mcp_smoke_workspace_id="$(php -r '$credentials = json_decode($argv[1], true, flags: JSON_THROW_ON_ERROR); echo $credentials["workspace_id"];' "$mcp_smoke_credentials")"
@@ -35,6 +40,7 @@ for mcp_smoke_attempt in {1..30}; do
 done
 
 MCP_SMOKE_URL=http://localhost:8088/api/v1/mcp \
+MCP_SMOKE_EXPECTED_RESOURCE=http://localhost:8088/api/v1/mcp \
 MCP_SMOKE_BEARER_TOKEN="$mcp_smoke_token" \
 MCP_SMOKE_WRONG_SCOPE_BEARER_TOKEN="$mcp_smoke_wrong_scope_token" \
 MCP_SMOKE_WORKSPACE_ID="$mcp_smoke_workspace_id" \

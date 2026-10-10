@@ -30,8 +30,7 @@ return [
     ],
 
     // The agent-API authorization-server profile: S256 PKCE for every client,
-    // public-only self-registration, RFC 8707 binding to APP_URL/api/v1 with an
-    // omitted `resource` taken as that resource, and `none` plus the two
+    // public-only self-registration, RFC 8707 binding, and `none` plus the two
     // client-secret methods advertised (apps a person registers on the setup
     // page may be confidential). Every URL derives from APP_URL. What follows
     // is only where SVC differs from the profile.
@@ -39,9 +38,21 @@ return [
         // Existing resource-bound credentials remain valid when issuance is
         // disabled; metadata, registration, authorization, and token routes do not.
         'enabled' => (bool) env('AGENT_API_OAUTH_SERVER_ENABLED', true),
-        // MCP clients discover the server from the MCP endpoint's challenge.
-        'protected_resource_metadata_url' => $appUrl.'/.well-known/oauth-protected-resource/api/v1/mcp',
-        // Opening an MCP connection takes this scope; no REST credential is offered it.
+        // Two protected resources, each its own audience with its own RFC 9728
+        // document (at /.well-known/oauth-protected-resource plus the path) and
+        // its own scope ceiling: REST at APP_URL/api/v1 and MCP at
+        // APP_URL/api/v1/mcp. A token is accepted only on routes expecting its
+        // resource (ExpectOAuthResource:<name>), so a REST token cannot open an
+        // MCP connection and an MCP token cannot call REST. A client that names
+        // no resource gets a REST token; an MCP client names the MCP endpoint,
+        // which is where its 401 challenge sends it.
+        'resources' => [
+            'rest' => ['path' => '/api/v1', 'scopes' => AgentApiScopes::rest()],
+            'mcp' => ['path' => '/api/v1/mcp', 'scopes' => AgentApiScopes::mcp()],
+        ],
+        'assume_omitted_resource' => 'rest',
+        // Opening an MCP connection takes this scope, which only the MCP
+        // resource admits; no personal API token is offered it.
         'resource_required_scopes' => [AgentApiScopes::MCP_USE],
         'dynamic_clients' => [
             'enabled' => true,
