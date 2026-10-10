@@ -903,7 +903,7 @@ final class AgentMcpReadOnlyTest extends TestCase
         ])->postJson('/api/v1/mcp', $this->initializeMessage())
             ->assertOk()
             ->assertHeader('Access-Control-Allow-Origin', 'https://approved.example')
-            ->assertHeader('Access-Control-Expose-Headers', 'Mcp-Method, Mcp-Protocol-Version, Mcp-Session-Id, WWW-Authenticate');
+            ->assertHeader('Access-Control-Expose-Headers', 'Mcp-Method, Mcp-Name, Mcp-Protocol-Version, Mcp-Session-Id, WWW-Authenticate');
 
         self::assertAllowedMcpOrigin($response->baseResponse, 'https://approved.example');
         self::assertPrivateMcpResponse($response->baseResponse);
@@ -988,7 +988,7 @@ final class AgentMcpReadOnlyTest extends TestCase
         $this->withHeader('Origin', 'https://chatgpt.com')->mcp($this->initializeMessage())
             ->assertUnauthorized()
             ->assertHeader('Access-Control-Allow-Origin', 'https://chatgpt.com')
-            ->assertHeader('Access-Control-Expose-Headers', 'Mcp-Method, Mcp-Protocol-Version, Mcp-Session-Id, WWW-Authenticate')
+            ->assertHeader('Access-Control-Expose-Headers', 'Mcp-Method, Mcp-Name, Mcp-Protocol-Version, Mcp-Session-Id, WWW-Authenticate')
             ->assertHeader('WWW-Authenticate', sprintf(
                 'Bearer resource_metadata="%s"',
                 url('/.well-known/oauth-protected-resource/api/v1/mcp'),
