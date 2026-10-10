@@ -179,6 +179,13 @@ The canonical wire contract is `public/openapi/svc-agent-v1.json`. MCP output sc
 are packaged from each tool's declared REST success component and enforced at runtime;
 the MCP layer does not maintain a second response-schema tree.
 
+The document stays a checked, hand-maintained artifact until the operation registry can
+generate it byte for byte (#383). `OpenApiGenerationCheckTest` runs the package's
+`OpenApiDocumentBuilder` over every REST operation and pins, in
+`tests/Fixtures/AgentApi/openapi-generation-differences.json`, the operations it cannot
+yet express and the fields where its output still differs. The list may only shrink; when
+it is empty and the whole document matches, generation replaces the checked file.
+
 The MCP initialize response front-loads the operational rules a harness needs for safe
 time and invoice work. Clients that implement MCP prompts can also expose the guided
 `log-time-across-projects` and `prepare-invoice-safely` workflows. Tool descriptions,

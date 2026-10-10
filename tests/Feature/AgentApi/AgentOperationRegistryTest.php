@@ -9,8 +9,10 @@ use App\Models\Workspace;
 use App\Services\AgentApi\Operations\AgentDeploymentFlags;
 use App\Services\AgentApi\Operations\AgentOperationCatalog;
 use App\Services\Mcp\McpFeatureFlags;
+use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
 use App\Support\AgentApi\FirstPartySession;
 use Bherila\McpLaravelBridge\Capabilities\OperationRegistry;
+use Bherila\McpLaravelBridge\Capabilities\SchemaRef;
 use Bherila\McpLaravelBridge\Http\GateOperation;
 use Bherila\McpLaravelBridge\Testing\OperationRegistryAssertions;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -34,6 +36,27 @@ final class AgentOperationRegistryTest extends TestCase
     {
         OperationRegistryAssertions::assertOperationRegistryContract(app(OperationRegistry::class), null, ['mcp:use']);
         $this->assertSame(app(AgentOperationCatalog::class)->registry(), app(OperationRegistry::class));
+    }
+
+    /**
+     * Every schema an operation takes from the document exists there: a
+     * reference to a response or request the document does not declare would
+     * only fail when something finally resolves it.
+     */
+    public function test_every_referenced_schema_resolves_in_the_document(): void
+    {
+        $catalog = AgentApiResponseSchemaCatalog::catalog();
+        $resolved = 0;
+        foreach (app(OperationRegistry::class)->all() as $operation) {
+            foreach ([$operation->input, $operation->output] as $schema) {
+                if ($schema instanceof SchemaRef) {
+                    $this->assertSame('object', $schema->resolve($catalog)['type'] ?? null, $operation->id);
+                    $resolved++;
+                }
+            }
+        }
+        $this->assertGreaterThan(100, $resolved);
+        $this->assertNull(app(OperationRegistry::class)->find('connections.revoke')?->output, 'A 204 answers with no body');
     }
 
     /** A scope or switch change to any operation is a reviewed diff. */

@@ -1180,7 +1180,8 @@ final class AgentOperationCatalog
             idempotent: $idempotent,
             safety: $safety ?? new WriteSafety,
             rest: $this->rest($id),
-            output: $effect === Effect::Download ? null : SchemaRef::responseOf($id),
+            // A download answers with the file itself and 204 with nothing.
+            output: $effect === Effect::Download || self::ROUTES[$id][2] === [204] ? null : SchemaRef::responseOf($id),
         );
     }
 
