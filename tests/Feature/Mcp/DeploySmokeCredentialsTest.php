@@ -59,14 +59,16 @@ class DeploySmokeCredentialsTest extends TestCase
             ->where('revoked', false)
             ->get();
         $this->assertCount(2, $tokens);
+        // Bound to the MCP endpoint, the only resource the smoke calls: the
+        // endpoint refuses any other audience, the REST resource included.
         foreach ($tokens as $token) {
-            $this->assertSame(OAuthResourceIndicator::resource(), $token->resource_uri);
+            $this->assertSame(OAuthResourceIndicator::resource('mcp'), $token->resource_uri);
         }
         foreach (['authorized_token', 'wrong_scope_token'] as $key) {
             $claims = OAuthResourceIndicator::tokenClaims($issued[$key]);
             $this->assertSame(config('bherila-auth.oauth_server.issuer'), $claims['iss'] ?? null);
-            $this->assertSame(OAuthResourceIndicator::resource(), $claims['resource'] ?? null);
-            $this->assertContains(OAuthResourceIndicator::resource(), $claims['aud'] ?? []);
+            $this->assertSame(OAuthResourceIndicator::resource('mcp'), $claims['resource'] ?? null);
+            $this->assertContains(OAuthResourceIndicator::resource('mcp'), $claims['aud'] ?? []);
         }
     }
 

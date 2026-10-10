@@ -29,9 +29,35 @@ return [
         'cloudflare' => null,
     ],
 
+    // Provider identity enforcement: a browser session, an OAuth token and a
+    // personal access token of an account bound to the identity provider stop
+    // working once that identity is disabled, deleted, reset or ungranted
+    // there, checked against the provider's status endpoint with one shared
+    // observation per person (fresh for strictly less than five minutes;
+    // privileged writes check freshly). Off until the operator sets
+    // BHERILA_AUTH_PROVIDER_IDENTITY_ENABLED=true; while off, sign-in still
+    // records the provider's credential generation and new credentials are
+    // stamped with it, so enabling it later keeps them. Credentials issued
+    // before stamping are refused once it is on: connectors authorize again
+    // once. Accounts with no provider binding are left alone.
+    'provider_identity' => [
+        'enabled' => (bool) env('BHERILA_AUTH_PROVIDER_IDENTITY_ENABLED', false),
+        // Null is the default store, which must be shared by every web worker
+        // and support locks (the deployment's database store does).
+        'cache_store' => env('BHERILA_AUTH_PROVIDER_IDENTITY_CACHE_STORE'),
+        'binding' => [
+            'provider_column' => 'oauth_provider',
+            'subject_column' => 'oauth_subject',
+        ],
+        // An ended browser session signs in again.
+        'expired_redirect_route' => 'login',
+        // Signing out stays reachable during a provider outage.
+        'except_routes' => ['logout'],
+        'bearer_guard' => 'api',
+    ],
+
     // The agent-API authorization-server profile: S256 PKCE for every client,
-    // public-only self-registration, RFC 8707 binding to APP_URL/api/v1 with an
-    // omitted `resource` taken as that resource, and `none` plus the two
+    // public-only self-registration, RFC 8707 binding, and `none` plus the two
     // client-secret methods advertised (apps a person registers on the setup
     // page may be confidential). Every URL derives from APP_URL. What follows
     // is only where SVC differs from the profile.
@@ -39,10 +65,29 @@ return [
         // Existing resource-bound credentials remain valid when issuance is
         // disabled; metadata, registration, authorization, and token routes do not.
         'enabled' => (bool) env('AGENT_API_OAUTH_SERVER_ENABLED', true),
-        // MCP clients discover the server from the MCP endpoint's challenge.
-        'protected_resource_metadata_url' => $appUrl.'/.well-known/oauth-protected-resource/api/v1/mcp',
-        // Opening an MCP connection takes this scope; no REST credential is offered it.
+        // Two protected resources, each its own audience with its own RFC 9728
+        // document (at /.well-known/oauth-protected-resource plus the path) and
+        // its own scope ceiling: REST at APP_URL/api/v1 and MCP at
+        // APP_URL/api/v1/mcp. A token is accepted only on routes expecting its
+        // resource (ExpectOAuthResource:<name>), so a REST token cannot open an
+        // MCP connection and an MCP token cannot call REST. A client that names
+        // no resource gets a REST token; an MCP client names the MCP endpoint,
+        // which is where its 401 challenge sends it.
+        'resources' => [
+            'rest' => ['path' => '/api/v1', 'scopes' => AgentApiScopes::rest()],
+            'mcp' => ['path' => '/api/v1/mcp', 'scopes' => AgentApiScopes::mcp()],
+        ],
+        'assume_omitted_resource' => 'rest',
+        // Opening an MCP connection takes this scope, which only the MCP
+        // resource admits; no personal API token is offered it.
         'resource_required_scopes' => [AgentApiScopes::MCP_USE],
+        // Browser-based agents call discovery, registration and the token
+        // endpoint directly. Only these origins get CORS headers there (never
+        // credentials); any other origin gets none. The MCP endpoint keeps its
+        // own origin policy (agent_api.mcp_allowed_origins).
+        'cors' => [
+            'allowed_origins' => ['https://claude.ai', 'https://chatgpt.com'],
+        ],
         'dynamic_clients' => [
             'enabled' => true,
             'required_columns' => ['dynamically_registered_at', 'last_used_at', 'scopes'],

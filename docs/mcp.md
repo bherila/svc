@@ -24,8 +24,8 @@ least one of `due_date` or `lines` must be supplied.
   promise.
 - `bherila/mcp-laravel-bridge` is locked to `v0.2.0`
   (`89736139aa7f1323bbe9dc361e239b175ac1fbe6`).
-- `bherila/auth-laravel` is locked to signed `v0.12.0`
-  (`cda94048c952eaaf10726be2c71d6f27cc8c6061`). Its opt-in Passport
+- `bherila/auth-laravel` is locked to `v0.23.0`
+  (`dbf0363090a8efbeffe0f037965565d1838027f5`). Its opt-in Passport
   repositories own authorization-code, access-token, and refresh-token resource
   binding; SVC does not maintain parallel repository implementations.
 - `POST /api/v1/mcp` is Streamable HTTP. `DELETE /api/v1/mcp` is available for
@@ -79,10 +79,16 @@ SVC enables the shared authorization server explicitly with
 and resource validation on Passport authorization and token routes. Turning it
 off returns non-cacheable 404 responses from metadata, registration,
 authorization, and token/refresh routes while the shared access-token repository
-continues enforcing already-issued credentials. Every protected `/api/v1` route
-sets the configured expected resource before Passport authentication; a bound
-token therefore fails closed on an unmarked or differently marked Passport
-route. Dynamic registrations persist their exact scope ceiling. A legacy
+continues enforcing already-issued credentials. SVC protects two OAuth resources,
+each its own audience with its own RFC 9728 document and scope ceiling: REST at
+`APP_URL/api/v1` (every operation scope, never `mcp:use`) and MCP at
+`APP_URL/api/v1/mcp` (`mcp:use` plus every operation scope). Every protected route
+names its resource (`ExpectOAuthResource:rest` or `:mcp`) before Passport
+authentication, and its 401 challenge names that resource's metadata; a bound token
+therefore fails closed on an unmarked route or one marked for the other resource, so a
+REST token cannot open an MCP connection and an MCP token cannot call REST. A token
+request naming no resource is bound to REST. `DELETE /api/v1/connections/{token}`
+requires `mcp:use` and so belongs to the MCP resource. Dynamic registrations persist their exact scope ceiling. A legacy
 dynamic client whose ceiling is null must re-register and re-authorize; null is
 never interpreted as unrestricted access.
 

@@ -90,7 +90,11 @@ for legacy records that predate this invariant.
 
 Users authenticate in a browser through Bherila.net, then grant SVC-specific OAuth
 access. SVC validates a token's resource audience, scopes, current account status, and
-current workspace/project/company permissions for every request. Initial scopes are
+current workspace/project/company permissions for every request. The MCP endpoint
+(`/api/v1/mcp`) and the REST API (`/api/v1`) are separate protected resources: an MCP
+connection's token is requested for `/api/v1/mcp`, carries `mcp:use`, and is refused
+by REST routes; a REST token never carries `mcp:use` and is refused by the MCP
+endpoint. Initial scopes are
 `mcp:use`, `identity:read`, `projects:read`, `tasks:read`, `tasks:write`, `time:read`,
 `time:write`, `time:approve`, `billing:read`, and `billing:write`; invoice lifecycle
 delivery actions additionally require `billing:deliver`. Received-payment reads
@@ -126,12 +130,25 @@ public (PKCE only) or confidential (a client secret shown once, used with
 `client_secret_basic` or `client_secret_post`) - with a scope ceiling, and the app
 runs the authorization-code flow with S256 PKCE. Or the person mints a personal
 API token with chosen scopes and a 30, 90 or 365-day lifetime, shown once. Both are
-bound to `/api/v1`, never carry `mcp:use`, are revocable from the setup page, and
+bound to the REST resource `/api/v1`, never carry `mcp:use`, are revocable from the setup page, and
 are issued only in the browser: no OAuth credential can mint another. Because
 generic OAuth clients rarely send RFC 8707 `resource`, an omitted resource is bound
 to `/api/v1` (`assume_omitted_resource`); a different explicit resource is still
 refused. The OpenAPI document declares both the `oauth2` scheme and an `apiToken`
 bearer scheme on every operation. `/api/openapi.json` serves that document with its server and OAuth endpoints taken from this installation's configuration; connectors import it from the setup page.
+
+Provider identity enforcement (`BHERILA_AUTH_PROVIDER_IDENTITY_ENABLED`, off until
+the operator enables it) ties every credential of an account bound to the identity
+provider to that identity: the browser session, the session path into `/api/v1`, OAuth
+access and refresh tokens, personal API tokens and the finance integration's Sanctum
+tokens stop working once the provider reports the identity disabled, deleted, reset or
+ungranted. Each credential records the provider subject and credential generation it
+was issued under, every request checks it against one status observation per person
+that is fresh for under five minutes, and writes - website, REST or MCP - ask the
+provider freshly; an MCP write tool asks once per call. An unavailable provider is a
+retryable `503` that keeps the session and the token. Credentials issued before
+stamping are refused once enforcement is on and must be re-authorized. Accounts with
+no provider binding, such as the deployment's smoke principal, are left alone.
 
 Behind a CDN, per-client limits key on the real client address. The auth
 package's trusted-proxy helper (`bherila-auth.trusted_proxies`, `TRUSTED_PROXIES`:

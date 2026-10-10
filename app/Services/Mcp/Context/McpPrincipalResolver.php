@@ -29,6 +29,13 @@ final class McpPrincipalResolver implements McpPrincipalResolverInterface
             throw new AuthenticationException('Invalid MCP credential.');
         }
 
+        // The audience this route accepts (ExpectOAuthResource:mcp). Without
+        // one, nothing here is an MCP endpoint and no credential is.
+        $expectedResource = OAuthResourceIndicator::expectedFor($request);
+        if ($expectedResource === null) {
+            throw new AuthenticationException('Invalid MCP credential.');
+        }
+
         // Passport's authenticated AccessToken is a lightweight claim object.
         // Re-read its backing row so revocation, expiry, audience, and client
         // changes made after discovery take effect before every MCP request.
@@ -40,7 +47,7 @@ final class McpPrincipalResolver implements McpPrincipalResolverInterface
             || (int) $token->user_id !== (int) $subject->id
             || $token->client_id === ''
             || ! hash_equals($token->client_id, $accessToken->oauth_client_id)
-            || ! hash_equals(OAuthResourceIndicator::resource(), (string) $token->getAttribute('resource_uri'))) {
+            || ! hash_equals($expectedResource, (string) $token->getAttribute('resource_uri'))) {
             throw new AuthenticationException('Invalid MCP credential.');
         }
 

@@ -51,47 +51,13 @@
         }
     },
     "protected_resource": {
-        "status": 200,
-        "cache_control": "no-store, private",
-        "body": {
-            "resource": "http://localhost:8000/api/v1",
-            "authorization_servers": [
-                "http://localhost:8000"
-            ],
-            "scopes_supported": [
-                "identity:read",
-                "projects:read",
-                "projects:write",
-                "tasks:read",
-                "tasks:write",
-                "time:read",
-                "time:write",
-                "time:approve",
-                "billing:read",
-                "billing:write",
-                "billing:deliver",
-                "expenses:read",
-                "expenses:write",
-                "payments:read",
-                "payments:record",
-                "clients:read",
-                "clients:write",
-                "proposals:read",
-                "proposals:write",
-                "proposals:accept",
-                "workspaces:create",
-                "files:read",
-                "files:write",
-                "mcp:use"
-            ],
-            "bearer_methods_supported": [
-                "header"
-            ]
-        }
+        "status": 404,
+        "cache_control": null,
+        "body": null
     },
     "protected_resource/api/v1": {
         "status": 200,
-        "cache_control": "no-store, private",
+        "cache_control": "max-age=300, public",
         "body": {
             "resource": "http://localhost:8000/api/v1",
             "authorization_servers": [
@@ -120,8 +86,7 @@
                 "proposals:accept",
                 "workspaces:create",
                 "files:read",
-                "files:write",
-                "mcp:use"
+                "files:write"
             ],
             "bearer_methods_supported": [
                 "header"
@@ -130,13 +95,14 @@
     },
     "protected_resource/api/v1/mcp": {
         "status": 200,
-        "cache_control": "no-store, private",
+        "cache_control": "max-age=300, public",
         "body": {
-            "resource": "http://localhost:8000/api/v1",
+            "resource": "http://localhost:8000/api/v1/mcp",
             "authorization_servers": [
                 "http://localhost:8000"
             ],
             "scopes_supported": [
+                "mcp:use",
                 "identity:read",
                 "projects:read",
                 "projects:write",
@@ -159,8 +125,7 @@
                 "proposals:accept",
                 "workspaces:create",
                 "files:read",
-                "files:write",
-                "mcp:use"
+                "files:write"
             ],
             "bearer_methods_supported": [
                 "header"
@@ -250,6 +215,20 @@
             "error": "invalid_target",
             "state": "snapshot-state",
             "consent_prepared": false
+        },
+        "connection_scope_for_rest": {
+            "status": 302,
+            "redirects_to_client": true,
+            "error": "invalid_scope",
+            "state": "snapshot-state",
+            "consent_prepared": false
+        },
+        "connection_scope_without_resource": {
+            "status": 302,
+            "redirects_to_client": true,
+            "error": "invalid_scope",
+            "state": "snapshot-state",
+            "consent_prepared": false
         }
     },
     "consent": {
@@ -293,6 +272,10 @@
     },
     "mcp_challenge": {
         "status": 401,
-        "www_authenticate": "Bearer resource_metadata=\"http://localhost:8000/.well-known/oauth-protected-resource/api/v1/mcp\""
+        "www_authenticate": "Bearer error=\"invalid_token\", error_description=\"Authentication is required.\", resource_metadata=\"http://localhost:8000/.well-known/oauth-protected-resource/api/v1/mcp\""
+    },
+    "rest_challenge": {
+        "status": 401,
+        "www_authenticate": "Bearer error=\"invalid_token\", error_description=\"Authentication is required.\", resource_metadata=\"http://localhost:8000/.well-known/oauth-protected-resource/api/v1\""
     }
 }

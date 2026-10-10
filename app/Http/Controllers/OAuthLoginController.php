@@ -8,6 +8,8 @@ use App\Support\Concurrency\Locks;
 use BWH\Auth\Concerns\SignsOutThroughProvider;
 use BWH\Auth\OAuth\OAuthClient;
 use BWH\Auth\OAuth\ProviderApplications;
+use BWH\Auth\OAuth\Session\ProviderSession;
+use BWH\Auth\OAuth\Session\ProviderStatusUnavailable;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -46,6 +48,17 @@ class OAuthLoginController extends Controller
 
         Auth::login($user);
         $request->session()->regenerate();
+
+        // The provider credential generation this login was made under, the
+        // baseline every later check of this session compares against.
+        // Recorded while enforcement is off too, so turning it on does not end
+        // every session at once. With enforcement on, a login that cannot be
+        // verified is undone and the person retries.
+        try {
+            app(ProviderSession::class)->establish($request, $identity, Auth::guard('web'));
+        } catch (ProviderStatusUnavailable) {
+            abort(503, 'Sign-in verification is unavailable. Please retry.', ['Retry-After' => '30', 'Cache-Control' => 'private, no-store']);
+        }
 
         // Cached for the session rather than fetched per request: this is navigation chrome,
         // and the callback is the only moment an access token for the provider is in hand.

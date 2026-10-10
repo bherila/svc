@@ -4,8 +4,8 @@ namespace App\Console\Commands\Mcp;
 
 use App\Models\AgentPrincipal;
 use App\Models\User;
+use App\Services\Mcp\McpConnectionTokens;
 use App\Support\AgentApi\AgentApiScopes;
-use BWH\Auth\OAuth\Server\OAuthResourceIndicator;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -197,31 +197,15 @@ final class DeploySmokeCredentialsCommand extends Command
             ->getKey();
     }
 
-    /** @param  list<string>  $scopes */
+    /**
+     * Bound to the MCP resource (APP_URL/api/v1/mcp): the endpoint the smoke
+     * calls refuses any other audience.
+     *
+     * @param  list<string>  $scopes
+     */
     private function issue(AgentPrincipal $principal, string $clientId, string $label, array $scopes): string
     {
-        $request = request();
-        $request->attributes->set(
-            OAuthResourceIndicator::REQUEST_ATTRIBUTE,
-            OAuthResourceIndicator::configuredCanonical(),
-        );
-        try {
-            $issued = $principal->createToken(self::PRINCIPAL_NAME.' '.$label, $scopes);
-        } finally {
-            $request->attributes->remove(OAuthResourceIndicator::REQUEST_ATTRIBUTE);
-        }
-
-        // v0.11 binds the database row and signed JWT during issuance. Checking
-        // the selected personal-access client here prevents a misconfigured
-        // Passport client from producing a credential the deploy cannot revoke
-        // through the expected connection.
-        Passport::token()->newQuery()
-            ->whereKey($issued->accessTokenId)
-            ->where('client_id', $clientId)
-            ->where('resource_uri', OAuthResourceIndicator::resource())
-            ->firstOrFail();
-
-        return $issued->accessToken;
+        return app(McpConnectionTokens::class)->issue($principal, $clientId, self::PRINCIPAL_NAME.' '.$label, $scopes);
     }
 
     private function revokeTokens(AgentPrincipal $principal): int

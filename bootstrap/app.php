@@ -9,6 +9,9 @@ use App\Support\Billing\RetryableConflict;
 use Bherila\McpLaravelBridge\Http\GateOperation;
 use Bherila\McpLaravelBridge\Http\McpHttpSecurityMiddleware;
 use BWH\Auth\Http\Middleware\ExpectOAuthResource;
+use BWH\Auth\Http\Middleware\RequireActiveProviderSession;
+use BWH\Auth\OAuth\Server\OAuthProtectedResource;
+use BWH\Auth\OAuth\Server\OAuthResourceIndicator;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests;
 use Illuminate\Foundation\Application;
@@ -42,9 +45,14 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->appendToPriorityList(SubstituteBindings::class, EnsureAgentWorkspaceVisible::class);
         $middleware->appendToPriorityList(EnsureAgentWorkspaceVisible::class, EnsureOperationDeployed::class);
         $middleware->appendToPriorityList(EnsureOperationDeployed::class, GateOperation::class);
+        // Ends a signed-in browser session whose provider identity was
+        // disabled, deleted, reset or ungranted (a no-op until provider
+        // identity enforcement is enabled). Inside Inertia's middleware, so an
+        // ended session's redirect after a PUT or DELETE becomes a 303.
         $middleware->web(append: [
             HandleInertiaRequests::class,
             AddLinkHeadersForPreloadedAssets::class,
+            RequireActiveProviderSession::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
@@ -62,7 +70,16 @@ return Application::configure(basePath: dirname(__DIR__))
         // without the server echoing it back.
         $exceptions->dontFlash(['repository']);
 
+        // A route that declared its protected resource (ExpectOAuthResource:<name>)
+        // challenges with that resource's own metadata document, from
+        // configuration rather than the request's host (RFC 9728 section 5.1).
+        // Anything else under /api/v1 - the Sanctum finance routes - keeps the
+        // plain JSON 401, pointing at the REST resource it sits under.
         $exceptions->render(function (AuthenticationException $exception, Request $request) {
+            $challenge = OAuthProtectedResource::unauthenticated($request);
+            if ($challenge !== null) {
+                return $challenge;
+            }
             if (! $request->is('api/v1/*')) {
                 return null;
             }
@@ -74,7 +91,7 @@ return Application::configure(basePath: dirname(__DIR__))
                     'Cache-Control' => 'private, no-store',
                     'WWW-Authenticate' => sprintf(
                         'Bearer resource_metadata="%s"',
-                        url('/.well-known/oauth-protected-resource/api/v1/mcp'),
+                        OAuthProtectedResource::metadataUrl(OAuthResourceIndicator::defaultName()),
                     ),
                 ],
             );

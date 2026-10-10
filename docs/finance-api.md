@@ -29,6 +29,16 @@ php artisan svc:auth:revoke-token USER_PUBLIC_UUID "Finance integration"
 
 If duplicate names exist, the command fails closed unless `--all` is supplied.
 
+For a user bound to the identity provider, the token records the provider subject
+and the credential generation it was issued under, and issuing is refused when the
+provider reports the identity inactive. Once provider identity enforcement is enabled
+(`BHERILA_AUTH_PROVIDER_IDENTITY_ENABLED=true`), such a token stops working when the
+identity is disabled, deleted, reset or ungranted at the provider (`401`); while the
+provider cannot be asked the request answers a retryable `503` with `Retry-After`.
+Writes check the provider freshly. A bound user's token issued before this stamping
+existed is refused once enforcement is on, so reissue it first. Tokens of users with
+no provider binding are unaffected.
+
 ## Endpoints
 
 `GET /api/v1/workspaces/{workspace}/invoice-payments`

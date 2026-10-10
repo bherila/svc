@@ -16,6 +16,8 @@ use App\Services\Billing\ReplayHistoryBasis;
 use App\Services\Mcp\Context\McpPrincipalResolver;
 use App\Services\Mcp\Context\McpPrincipalResolverInterface;
 use App\Support\AgentApi\AgentApiScopes;
+use App\Support\AgentApi\ProviderIdentityWrites;
+use App\Support\Auth\PersonalAccessTokenIdentity;
 use Bherila\McpLaravelBridge\Capabilities\Availability;
 use Bherila\McpLaravelBridge\Capabilities\OperationRegistry;
 use Bherila\McpLaravelBridge\Capabilities\PrincipalResolver;
@@ -38,6 +40,8 @@ use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
 use Laravel\Passport\Passport;
+use Laravel\Sanctum\PersonalAccessToken;
+use Laravel\Sanctum\Sanctum;
 use Symfony\Component\Mailer\Bridge\Brevo\Transport\BrevoTransportFactory;
 use Symfony\Component\Mailer\Transport\Dsn;
 
@@ -50,6 +54,8 @@ class AppServiceProvider extends ServiceProvider
     {
         Passport::$deviceCodeGrantEnabled = false;
         $this->app->singleton(ReplayHistoryBasis::class);
+        // Holds which credential an MCP write tool call already verified, for that call only.
+        $this->app->singleton(ProviderIdentityWrites::class);
         // Offer a REST credential only scopes some REST operation requires.
         $this->app->bind(GrantableScopes::class, OpenApiGrantableScopes::class);
         $this->app->bind(McpPrincipalResolverInterface::class, McpPrincipalResolver::class);
@@ -112,6 +118,11 @@ class AppServiceProvider extends ServiceProvider
         Passport::tokensExpireIn(now()->addMinutes(15));
         Passport::refreshTokensExpireIn(now()->addDays(30));
         HandleCors::skipWhen(fn (Request $request): bool => $request->is('api/v1/mcp'));
+        // Sanctum personal access tokens follow their owner's provider identity
+        // (a no-op until provider identity enforcement is enabled).
+        Sanctum::authenticateAccessTokensUsing(
+            static fn (PersonalAccessToken $token, bool $isValid): bool => app(PersonalAccessTokenIdentity::class)->accepts($token, $isValid),
+        );
         Gate::policy(Workspace::class, WorkspacePolicy::class);
         Gate::policy(ClientCompany::class, ClientCompanyPolicy::class);
         Gate::policy(ClientProject::class, ClientProjectPolicy::class);

@@ -990,7 +990,7 @@ final class AgentMcpReadOnlyTest extends TestCase
             ->assertHeader('Access-Control-Allow-Origin', 'https://chatgpt.com')
             ->assertHeader('Access-Control-Expose-Headers', 'Mcp-Method, Mcp-Name, Mcp-Protocol-Version, Mcp-Session-Id, WWW-Authenticate')
             ->assertHeader('WWW-Authenticate', sprintf(
-                'Bearer resource_metadata="%s"',
+                'Bearer error="invalid_token", error_description="Authentication is required.", resource_metadata="%s"',
                 url('/.well-known/oauth-protected-resource/api/v1/mcp'),
             ));
     }

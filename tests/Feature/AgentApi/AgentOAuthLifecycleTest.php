@@ -31,6 +31,10 @@ final class AgentOAuthLifecycleTest extends TestCase
 {
     use RefreshDatabase;
 
+    private const string MCP = 'mcp';
+
+    private const string REST = 'rest';
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -44,29 +48,29 @@ final class AgentOAuthLifecycleTest extends TestCase
         $verifier = $this->verifier();
         $code = $this->authorize($user, $clientId, $verifier);
 
-        $exchange = $this->exchangeCode($clientId, $code, $verifier, OAuthResourceIndicator::resource())
+        $exchange = $this->exchangeCode($clientId, $code, $verifier, OAuthResourceIndicator::resource(self::MCP))
             ->assertOk()
             ->assertJsonStructure(['access_token', 'refresh_token', 'expires_in']);
         $this->assertStringContainsString('no-store', (string) $exchange->headers->get('Cache-Control'));
         $tokens = $exchange->json();
         $firstAccess = Passport::token()->newQuery()->where('client_id', $clientId)->sole();
-        $this->assertSame(OAuthResourceIndicator::resource(), $firstAccess->resource_uri);
+        $this->assertSame(OAuthResourceIndicator::resource(self::MCP), $firstAccess->resource_uri);
         $claims = OAuthResourceIndicator::tokenClaims($tokens['access_token']);
         $this->assertSame(config('bherila-auth.oauth_server.issuer'), $claims['iss'] ?? null);
-        $this->assertSame(OAuthResourceIndicator::resource(), $claims['resource'] ?? null);
-        $this->assertContains(OAuthResourceIndicator::resource(), $claims['aud'] ?? []);
+        $this->assertSame(OAuthResourceIndicator::resource(self::MCP), $claims['resource'] ?? null);
+        $this->assertContains(OAuthResourceIndicator::resource(self::MCP), $claims['aud'] ?? []);
         $this->assertDatabaseHas('oauth_refresh_tokens', [
             'access_token_id' => $firstAccess->id,
-            'resource_uri' => OAuthResourceIndicator::resource(),
+            'resource_uri' => OAuthResourceIndicator::resource(self::MCP),
         ]);
         $this->assertNotNull(Passport::client()->newQuery()->findOrFail($clientId)->last_used_at);
 
-        $rotated = $this->refresh($clientId, $tokens['refresh_token'], OAuthResourceIndicator::resource())
+        $rotated = $this->refresh($clientId, $tokens['refresh_token'], OAuthResourceIndicator::resource(self::MCP))
             ->assertOk()
             ->assertJsonStructure(['access_token', 'refresh_token'])
             ->json();
         $this->assertNotSame($tokens['refresh_token'], $rotated['refresh_token']);
-        $this->refresh($clientId, $tokens['refresh_token'], OAuthResourceIndicator::resource())
+        $this->refresh($clientId, $tokens['refresh_token'], OAuthResourceIndicator::resource(self::MCP))
             ->assertBadRequest()
             ->assertJsonPath('error', 'invalid_grant');
 
@@ -77,7 +81,7 @@ final class AgentOAuthLifecycleTest extends TestCase
         $this->assertStringContainsString('no-store', (string) $revocation->headers->get('Cache-Control'));
         $this->assertTrue((bool) $newAccess->fresh()->revoked);
 
-        $this->refresh($clientId, $rotated['refresh_token'], OAuthResourceIndicator::resource())
+        $this->refresh($clientId, $rotated['refresh_token'], OAuthResourceIndicator::resource(self::MCP))
             ->assertBadRequest()
             ->assertJsonPath('error', 'invalid_grant');
         $this->assertDatabaseHas('oauth_refresh_tokens', ['access_token_id' => $newAccess->id, 'revoked' => true]);
@@ -97,7 +101,7 @@ final class AgentOAuthLifecycleTest extends TestCase
         $this->assertStringNotContainsString($wrong, $codeFailure->getContent());
         $this->assertDatabaseHas('oauth_auth_codes', ['client_id' => $clientId, 'revoked' => false]);
 
-        $tokens = $this->exchangeCode($clientId, $code, $verifier, OAuthResourceIndicator::resource())->assertOk()->json();
+        $tokens = $this->exchangeCode($clientId, $code, $verifier, OAuthResourceIndicator::resource(self::MCP))->assertOk()->json();
         $access = Passport::token()->newQuery()->where('client_id', $clientId)->where('revoked', false)->latest('created_at')->firstOrFail();
         $refreshFailure = $this->refresh($clientId, $tokens['refresh_token'], $wrong)
             ->assertBadRequest()
@@ -105,7 +109,7 @@ final class AgentOAuthLifecycleTest extends TestCase
         $this->assertStringNotContainsString($wrong, $refreshFailure->getContent());
         $this->assertFalse((bool) $access->fresh()->revoked);
         $this->assertDatabaseHas('oauth_refresh_tokens', ['access_token_id' => $access->id, 'revoked' => false]);
-        $this->refresh($clientId, $tokens['refresh_token'], OAuthResourceIndicator::resource())->assertOk();
+        $this->refresh($clientId, $tokens['refresh_token'], OAuthResourceIndicator::resource(self::MCP))->assertOk();
     }
 
     public function test_v011_package_owns_the_resource_repositories_schema_and_middleware_order(): void
@@ -140,28 +144,34 @@ final class AgentOAuthLifecycleTest extends TestCase
             $this->assertLessThan($resource, $pkce);
         }
 
-        $mcp = Route::getRoutes()->getByName('agent-api.v1.mcp');
-        $this->assertNotNull($mcp);
-        $middleware = app('router')->gatherRouteMiddleware($mcp);
-        $expected = array_search(ExpectOAuthResource::class, $middleware, true);
-        $authenticated = array_search(Authenticate::class.':api', $middleware, true);
-        $this->assertIsInt($expected);
-        $this->assertIsInt($authenticated);
-        $this->assertLessThan($authenticated, $expected);
+        foreach ([
+            'agent-api.v1.mcp' => self::MCP,
+            'agent-api.v1.connections.destroy' => self::MCP,
+            'agent-api.v1.context' => self::REST,
+        ] as $name => $resource) {
+            $route = Route::getRoutes()->getByName($name);
+            $this->assertNotNull($route, $name);
+            $middleware = app('router')->gatherRouteMiddleware($route);
+            $expected = array_search(ExpectOAuthResource::class.':'.$resource, $middleware, true);
+            $authenticated = array_search(Authenticate::class.':api', $middleware, true);
+            $this->assertIsInt($expected, $name);
+            $this->assertIsInt($authenticated, $name);
+            $this->assertLessThan($authenticated, $expected, $name);
+        }
     }
 
     /**
      * Generic OAuth clients never send RFC 8707 `resource`, so an omitted one
-     * now means /api/v1, the only resource SVC protects (#384). A different
-     * explicit resource and a scope gain on refresh are still refused, and a
-     * refusal consumes nothing.
+     * means the REST resource, /api/v1 (#384). A different explicit resource
+     * and a scope gain on refresh are still refused, and a refusal consumes
+     * nothing.
      */
     public function test_an_omitted_resource_binds_to_the_api_and_a_different_one_or_a_scope_gain_fails_without_consuming_credentials(): void
     {
         $user = User::factory()->create();
         $clientId = $this->registerClient();
         $verifier = $this->verifier();
-        $code = $this->authorize($user, $clientId, $verifier);
+        $code = $this->authorize($user, $clientId, $verifier, null);
 
         $this->exchangeCode($clientId, $code, $verifier, 'https://other.example.test/api/v1')
             ->assertBadRequest();
@@ -175,7 +185,7 @@ final class AgentOAuthLifecycleTest extends TestCase
             ->where('client_id', $clientId)
             ->where('revoked', false)
             ->sole();
-        $this->assertSame(OAuthResourceIndicator::resource(), $access->resource_uri);
+        $this->assertSame(OAuthResourceIndicator::resource(self::REST), $access->resource_uri);
 
         $this->refresh($clientId, $tokens['refresh_token'], 'https://other.example.test/api/v1')
             ->assertBadRequest();
@@ -183,7 +193,7 @@ final class AgentOAuthLifecycleTest extends TestCase
             $clientId,
             $tokens['refresh_token'],
             null,
-            ['scope' => implode(' ', [AgentApiScopes::MCP_USE, AgentApiScopes::IDENTITY_READ, AgentApiScopes::PROJECTS_READ])],
+            ['scope' => implode(' ', [AgentApiScopes::IDENTITY_READ, AgentApiScopes::PROJECTS_READ])],
         )->assertBadRequest()->assertJsonPath('error', 'invalid_scope');
 
         $this->assertFalse((bool) $access->fresh()->revoked);
@@ -193,7 +203,7 @@ final class AgentOAuthLifecycleTest extends TestCase
         ]);
         $refreshed = $this->refresh($clientId, $tokens['refresh_token'], null)->assertOk()->json();
         $this->assertSame(
-            OAuthResourceIndicator::resource(),
+            OAuthResourceIndicator::resource(self::REST),
             OAuthResourceIndicator::tokenClaims($refreshed['access_token'])['resource'] ?? null,
         );
     }
@@ -204,7 +214,7 @@ final class AgentOAuthLifecycleTest extends TestCase
         $clientId = $this->registerClient();
         $verifier = $this->verifier();
         $code = $this->authorize($user, $clientId, $verifier);
-        $tokens = $this->exchangeCode($clientId, $code, $verifier, OAuthResourceIndicator::resource())
+        $tokens = $this->exchangeCode($clientId, $code, $verifier, OAuthResourceIndicator::resource(self::MCP))
             ->assertOk()
             ->json();
         $claims = OAuthResourceIndicator::tokenClaims($tokens['access_token']);
@@ -212,50 +222,52 @@ final class AgentOAuthLifecycleTest extends TestCase
         $this->assertIsString($accessTokenId);
         $this->assertDatabaseHas('oauth_refresh_tokens', [
             'access_token_id' => $accessTokenId,
-            'resource_uri' => OAuthResourceIndicator::resource(),
+            'resource_uri' => OAuthResourceIndicator::resource(self::MCP),
         ]);
 
         Passport::token()->newQuery()->whereKey($accessTokenId)->delete();
         $this->assertDatabaseMissing('oauth_access_tokens', ['id' => $accessTokenId]);
 
-        $refreshed = $this->refresh($clientId, $tokens['refresh_token'], OAuthResourceIndicator::resource())
+        $refreshed = $this->refresh($clientId, $tokens['refresh_token'], OAuthResourceIndicator::resource(self::MCP))
             ->assertOk()
             ->json();
         $refreshedClaims = OAuthResourceIndicator::tokenClaims($refreshed['access_token']);
-        $this->assertSame(OAuthResourceIndicator::resource(), $refreshedClaims['resource'] ?? null);
-        $this->assertContains(OAuthResourceIndicator::resource(), $refreshedClaims['aud'] ?? []);
+        $this->assertSame(OAuthResourceIndicator::resource(self::MCP), $refreshedClaims['resource'] ?? null);
+        $this->assertContains(OAuthResourceIndicator::resource(self::MCP), $refreshedClaims['aud'] ?? []);
     }
 
     public function test_bound_token_requires_an_explicit_matching_route_resource(): void
     {
         $user = User::factory()->create();
-        $clientId = $this->registerClient();
+        $restClient = $this->registerClient();
         $verifier = $this->verifier();
-        $code = $this->authorize($user, $clientId, $verifier);
-        $token = $this->exchangeCode($clientId, $code, $verifier, OAuthResourceIndicator::resource())
+        $rest = $this->exchangeCode($restClient, $this->authorize($user, $restClient, $verifier, self::REST), $verifier, OAuthResourceIndicator::resource(self::REST))
             ->assertOk()
             ->json('access_token');
-        $this->assertIsString($token);
+        $mcpClient = $this->registerClient();
+        $mcp = $this->exchangeCode($mcpClient, $this->authorize($user, $mcpClient, $verifier), $verifier, OAuthResourceIndicator::resource(self::MCP))
+            ->assertOk()
+            ->json('access_token');
+        $this->assertIsString($rest);
+        $this->assertIsString($mcp);
 
         Auth::forgetGuards();
-        $this->withToken($token)->getJson('/api/v1/context')->assertOk();
-
+        $this->withToken($rest)->getJson('/api/v1/context')->assertOk();
         Auth::forgetGuards();
-        $this->withHeaders([
-            'Authorization' => 'Bearer '.$token,
-            'Mcp-Protocol-Version' => '2025-06-18',
-        ])->postJson('/api/v1/mcp', $this->initializeMessage())->assertOk();
+        $this->mcpInitialize($mcp)->assertOk();
+
+        // An endpoint is its own audience: neither token crosses to the other.
+        Auth::forgetGuards();
+        $this->mcpInitialize($rest)->assertUnauthorized();
+        Auth::forgetGuards();
+        $this->withToken($mcp)->getJson('/api/v1/context')->assertUnauthorized();
 
         Route::get('/api/unmarked-oauth-test', static fn () => response()->json(['ok' => true]))
             ->middleware('auth:api');
-        Auth::forgetGuards();
-        $this->withToken($token)->getJson('/api/unmarked-oauth-test')->assertUnauthorized();
-
-        Route::get('/api/different-oauth-test', static fn () => response()->json(['ok' => true]))
-            ->middleware([ExpectOAuthResource::class, 'auth:api']);
-        config(['bherila-auth.oauth_server.resource' => url('/api/other')]);
-        Auth::forgetGuards();
-        $this->withToken($token)->getJson('/api/different-oauth-test')->assertUnauthorized();
+        foreach ([$rest, $mcp] as $token) {
+            Auth::forgetGuards();
+            $this->withToken($token)->getJson('/api/unmarked-oauth-test')->assertUnauthorized();
+        }
     }
 
     public function test_legacy_dynamic_client_without_scope_metadata_fails_closed(): void
@@ -273,7 +285,7 @@ final class AgentOAuthLifecycleTest extends TestCase
             'state' => 'legacy-client-state',
             'code_challenge' => $this->base64Url(hash('sha256', $verifier, true)),
             'code_challenge_method' => 'S256',
-            'resource' => OAuthResourceIndicator::resource(),
+            'resource' => OAuthResourceIndicator::resource(self::MCP),
         ], '', '&', PHP_QUERY_RFC3986));
 
         $response->assertRedirect();
@@ -288,6 +300,7 @@ final class AgentOAuthLifecycleTest extends TestCase
 
         foreach ([
             $this->getJson('/.well-known/oauth-authorization-server'),
+            $this->getJson('/.well-known/oauth-protected-resource/api/v1'),
             $this->getJson('/.well-known/oauth-protected-resource/api/v1/mcp'),
         ] as $response) {
             $response->assertNotFound()->assertJsonPath('error', 'not_found');
@@ -315,8 +328,8 @@ final class AgentOAuthLifecycleTest extends TestCase
         $user = User::factory()->create();
         $clientId = $this->registerClient();
         $verifier = $this->verifier();
-        $code = $this->authorize($user, $clientId, $verifier);
-        $token = $this->exchangeCode($clientId, $code, $verifier, OAuthResourceIndicator::resource())
+        $code = $this->authorize($user, $clientId, $verifier, self::REST);
+        $token = $this->exchangeCode($clientId, $code, $verifier, OAuthResourceIndicator::resource(self::REST))
             ->assertOk()
             ->json('access_token');
         $this->assertIsString($token);
@@ -338,19 +351,29 @@ final class AgentOAuthLifecycleTest extends TestCase
         ])->assertCreated()->json('client_id');
     }
 
-    private function authorize(User $user, string $clientId, string $verifier): string
+    /**
+     * An MCP connection by default: `mcp:use` plus an operation scope, for the
+     * MCP resource. A REST client asks for operation scopes only, naming the
+     * REST resource or (null) nothing at all.
+     *
+     * @param  list<string>|null  $scopes
+     */
+    private function authorize(User $user, string $clientId, string $verifier, ?string $resource = self::MCP, ?array $scopes = null): string
     {
+        $scopes ??= $resource === self::MCP
+            ? [AgentApiScopes::MCP_USE, AgentApiScopes::IDENTITY_READ]
+            : [AgentApiScopes::IDENTITY_READ];
         $this->actingAs($user, 'web');
-        $response = $this->get('/oauth/authorize?'.http_build_query([
+        $response = $this->get('/oauth/authorize?'.http_build_query(array_filter([
             'client_id' => $clientId,
             'redirect_uri' => 'http://127.0.0.1:3210/callback',
             'response_type' => 'code',
-            'scope' => implode(' ', [AgentApiScopes::MCP_USE, AgentApiScopes::IDENTITY_READ]),
+            'scope' => implode(' ', $scopes),
             'state' => 'oauth-test-state',
             'code_challenge' => $this->base64Url(hash('sha256', $verifier, true)),
             'code_challenge_method' => 'S256',
-            'resource' => OAuthResourceIndicator::resource(),
-        ], '', '&', PHP_QUERY_RFC3986));
+            'resource' => $resource === null ? null : OAuthResourceIndicator::resource($resource),
+        ], static fn (?string $value): bool => $value !== null), '', '&', PHP_QUERY_RFC3986));
         $response->assertOk()->assertSee('Connect Lifecycle client to SVC?');
         $this->assertStringContainsString('no-store', (string) $response->headers->get('Cache-Control'));
         $authToken = $this->app['session']->get('authToken');
@@ -396,6 +419,14 @@ final class AgentOAuthLifecycleTest extends TestCase
         }
 
         return $this->post('/oauth/token', $parameters, ['Accept' => 'application/json']);
+    }
+
+    private function mcpInitialize(string $token): TestResponse
+    {
+        return $this->withHeaders([
+            'Authorization' => 'Bearer '.$token,
+            'Mcp-Protocol-Version' => '2025-06-18',
+        ])->postJson('/api/v1/mcp', $this->initializeMessage());
     }
 
     /** @return array<string, mixed> */

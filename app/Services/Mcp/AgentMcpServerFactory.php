@@ -15,6 +15,7 @@ use App\Services\Mcp\Context\McpAccountContextResolver;
 use App\Services\Mcp\Context\McpAuthorizer;
 use App\Services\Mcp\Context\McpPrincipalResolverInterface;
 use App\Services\Mcp\Context\McpRequestContext;
+use App\Support\AgentApi\ProviderIdentityWrites;
 use Bherila\McpLaravelBridge\Capabilities\Effect;
 use Bherila\McpLaravelBridge\Capabilities\McpKind;
 use Bherila\McpLaravelBridge\Capabilities\Operation;
@@ -211,6 +212,7 @@ final class AgentMcpServerFactory
                 $capabilityAuditor,
                 $context,
                 $this->capabilityMetadata($operations, McpKind::Tool),
+                app(ProviderIdentityWrites::class),
             ))
             ->addRequestHandler(new McpUnsupportedOptionalProtocolHandler)
             ->addRequestHandler(new McpUnsupportedResourceSubscriptionHandler)

@@ -52,6 +52,37 @@ final class AgentApiScopes
 
     public const string MCP_USE = 'mcp:use';
 
+    /**
+     * The REST resource's scope ceiling (`/api/v1`): every operation scope, and
+     * never the MCP connection scope, which opens nothing on REST.
+     *
+     * @return list<string>
+     */
+    public static function rest(): array
+    {
+        $scopes = [];
+        foreach (array_keys(self::descriptions()) as $scope) {
+            if ($scope !== self::MCP_USE) {
+                $scopes[] = $scope;
+            }
+        }
+
+        return $scopes;
+    }
+
+    /**
+     * The MCP resource's scope ceiling (`/api/v1/mcp`): the connection scope plus
+     * the operation scopes its tools, resources and prompts use - today every one,
+     * since each operation scope gates at least one MCP capability (pinned by
+     * AgentOAuthResourceCeilingTest against the operation registry).
+     *
+     * @return list<string>
+     */
+    public static function mcp(): array
+    {
+        return [self::MCP_USE, ...self::rest()];
+    }
+
     /** @return array<string, string> */
     public static function descriptions(): array
     {

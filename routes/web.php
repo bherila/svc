@@ -16,23 +16,21 @@ use App\Http\Controllers\WorkspaceOperationsController;
 use App\Http\Controllers\WorkspaceSelectorController;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\ResolveWorkspaceNavigation;
-use Bherila\McpLaravelBridge\Http\McpHttpSecurityMiddleware;
-use BWH\Auth\Http\Controllers\OAuthMetadataController;
 use BWH\Auth\OAuth\Server\AgentOAuthServer;
 use Illuminate\Support\Facades\Route;
 
 Route::inertia('/', 'welcome')->name('home');
 
-// Discovery documents and self-registration from the agent OAuth preset. The
-// protected-resource document is also served at the MCP endpoint's suffix,
-// which is where an MCP client's 401 challenge points, and at the bare path.
-AgentOAuthServer::routes([McpHttpSecurityMiddleware::class]);
+// Discovery documents and self-registration from the agent OAuth preset: the
+// authorization-server document and one protected-resource document per
+// configured resource, each only at its own path-inserted URL (RFC 9728) -
+// /.well-known/oauth-protected-resource/api/v1 for REST and .../api/v1/mcp for
+// MCP, which is where the MCP endpoint's 401 challenge points. Browser
+// agents get CORS here from oauth_server.cors; MCP's own origin and host
+// validation stays on the MCP endpoint, not on public discovery.
+AgentOAuthServer::routes();
 
 Route::withoutMiddleware(['web'])->group(function (): void {
-    Route::get('/.well-known/oauth-protected-resource', [OAuthMetadataController::class, 'protectedResource'])
-        ->middleware(McpHttpSecurityMiddleware::class);
-    Route::get('/.well-known/oauth-protected-resource/api/v1/mcp', [OAuthMetadataController::class, 'protectedResource'])
-        ->middleware(McpHttpSecurityMiddleware::class);
     Route::get('/api/openapi.json', OpenApiDocumentController::class)->middleware('throttle:60,1')->name('openapi.document');
 });
 
