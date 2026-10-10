@@ -12,6 +12,7 @@ use App\Services\WorkspaceProjectMutationAction;
 use App\Support\Concurrency\LockOrderRecorder;
 use App\Support\Concurrency\LockResource;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpKernel\Exception\HttpException;
@@ -90,6 +91,34 @@ final class ProjectAssignmentCoordinationTest extends TestCase
         $this->assertSame([$this->member->id], $events->pluck('subject_user_id')->unique()->values()->all());
         // The revision still advances on every call, as before.
         $this->assertSame(5, $this->project->refresh()->lock_version);
+    }
+
+    /**
+     * Every write acts on the row the locking read returned. A second, plain
+     * lookup - what `updateOrCreate()` does - could be answered by an
+     * enclosing transaction's older snapshot, miss the assignment and try to
+     * insert it again.
+     */
+    public function test_a_role_change_updates_the_locked_row_without_looking_it_up_again(): void
+    {
+        $this->update('viewer');
+        $id = ClientProjectMembership::query()->sole()->id;
+        $reads = 0;
+        DB::listen(static function (QueryExecuted $query) use (&$reads): void {
+            if (preg_match('/^select .* from [`"]client_project_memberships[`"]/i', $query->sql) === 1) {
+                $reads++;
+            }
+        });
+
+        $this->update('manager');
+
+        $this->assertSame(1, $reads, 'Only the locking read looks the assignment up.');
+        $assignment = ClientProjectMembership::query()->sole();
+        $this->assertSame($id, $assignment->id);
+        $this->assertSame('manager', $assignment->role->value);
+
+        $this->update('none');
+        $this->assertSame(0, ClientProjectMembership::query()->count());
     }
 
     public function test_an_actor_demoted_after_the_fast_check_is_refused_with_nothing_written(): void

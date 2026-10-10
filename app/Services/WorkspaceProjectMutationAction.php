@@ -96,15 +96,20 @@ final class WorkspaceProjectMutationAction
                 ->whereHas('user', fn (Builder $users): Builder => $users->where('public_id', $userId))
                 ->tap(Locks::forUpdate())->firstOrFail();
             abort_if(in_array($membership->role, ['owner', 'admin'], true), 422, 'Workspace owners and admins already have workspace-wide access.');
-            $existing = ClientProjectMembership::query()->where('workspace_id', $lockedWorkspace->id)->where('client_project_id', $locked->id)->where('user_id', $membership->user_id);
-            // A locking read: the role recorded as "before" must be the one
-            // committed now, not whatever an enclosing transaction's older
-            // snapshot still shows.
-            $previous = (clone $existing)->tap(Locks::forUpdate())->first()?->role->value ?? 'none';
+            // A locking read, and the one every write below acts on. The role
+            // recorded as "before" must be the one committed now, and a row
+            // looked up again by a plain read could be hidden by an enclosing
+            // transaction's older snapshot - an insert would then collide with
+            // the assignment this read can see.
+            $current = ClientProjectMembership::query()->where('workspace_id', $lockedWorkspace->id)->where('client_project_id', $locked->id)->where('user_id', $membership->user_id)
+                ->tap(Locks::forUpdate())->first();
+            $previous = $current?->role->value ?? 'none';
             if ($role === 'none') {
-                $existing->delete();
+                $current?->delete();
+            } elseif ($current instanceof ClientProjectMembership) {
+                $current->forceFill(['role' => $role])->save();
             } else {
-                $existing->updateOrCreate(['workspace_id' => $lockedWorkspace->id, 'client_project_id' => $locked->id, 'user_id' => $membership->user_id], ['role' => $role]);
+                ClientProjectMembership::query()->create(['workspace_id' => $lockedWorkspace->id, 'client_project_id' => $locked->id, 'user_id' => $membership->user_id, 'role' => $role]);
             }
             // Access is part of the project's revision. A concurrent grant or
             // removal must invalidate a previously read access decision.
