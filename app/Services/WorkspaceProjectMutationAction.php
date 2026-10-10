@@ -97,7 +97,10 @@ final class WorkspaceProjectMutationAction
                 ->tap(Locks::forUpdate())->firstOrFail();
             abort_if(in_array($membership->role, ['owner', 'admin'], true), 422, 'Workspace owners and admins already have workspace-wide access.');
             $existing = ClientProjectMembership::query()->where('workspace_id', $lockedWorkspace->id)->where('client_project_id', $locked->id)->where('user_id', $membership->user_id);
-            $previous = (clone $existing)->first()?->role->value ?? 'none';
+            // A locking read: the role recorded as "before" must be the one
+            // committed now, not whatever an enclosing transaction's older
+            // snapshot still shows.
+            $previous = (clone $existing)->tap(Locks::forUpdate())->first()?->role->value ?? 'none';
             if ($role === 'none') {
                 $existing->delete();
             } else {

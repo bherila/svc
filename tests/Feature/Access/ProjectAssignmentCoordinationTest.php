@@ -65,9 +65,9 @@ final class ProjectAssignmentCoordinationTest extends TestCase
         LockOrderRecorder::stop();
 
         $this->assertSame(
-            [LockResource::Workspace, LockResource::ClientProject, LockResource::WorkspaceMembership, LockResource::WorkspaceMembership],
+            [LockResource::Workspace, LockResource::ClientProject, LockResource::WorkspaceMembership, LockResource::WorkspaceMembership, LockResource::ClientProjectMembership],
             $sequences[0],
-            'Workspace, then the project, then the actor re-checked under the lock, then the target.',
+            'Workspace, then the project, then the actor re-checked under the lock, then the target, then the assignment whose current role the audit records.',
         );
     }
 

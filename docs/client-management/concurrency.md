@@ -555,7 +555,8 @@ before state and the check that each project belongs to the company come from
 locked rows. Locking a further project after the memberships happens only when
 an enclosing transaction's snapshot predates the workspace lock, and cannot
 deadlock: every other transaction that locks a project and then a membership
-does so under the workspace access lock.
+does so under the workspace access lock. Project assignment changes read the
+previous role for their audit event from the locked assignment row.
 
 `LockOrderConformanceTest` drives every one of these writers. As elsewhere, the
 assertions run on one connection and prove ordering, not contention.
