@@ -165,13 +165,19 @@ Install it for your user account, then complete the browser login:
 ```bash
 # Codex CLI
 codex mcp add svc --url https://svc.bherila.net/api/v1/mcp \
-  --oauth-resource https://svc.bherila.net/api/v1
+  --oauth-resource https://svc.bherila.net/api/v1/mcp
 codex mcp login svc
 
 # Claude Code CLI
 claude mcp add --transport http --scope user svc https://svc.bherila.net/api/v1/mcp
 claude mcp login svc
 ```
+
+The MCP endpoint is its own OAuth protected resource: its 401 challenge points at
+`/.well-known/oauth-protected-resource/api/v1/mcp`, and a token must be requested for
+`resource=<site>/api/v1/mcp`. REST clients use `/api/v1`, the resource a client that
+names none receives. Neither token is accepted on the other endpoint, so an MCP
+connection authorized when MCP shared the REST resource has to authorize again once.
 
 Restart the client if it was already running. The MCP initialization response teaches
 compatible harnesses to call `context.get` before choosing a workspace, and exposes
@@ -201,7 +207,9 @@ their MCP requests are rejected. This browser-origin list does not change which 
 `Host` values the MCP endpoint accepts; service hosts default to `APP_URL` and the
 configured OAuth resource. Reviewed reverse-proxy deployments can replace those defaults
 with exact `host[:port]` authorities in `AGENT_API_MCP_ALLOWED_HOSTS`. Native clients that
-omit `Origin` continue to work.
+omit `Origin` continue to work. OAuth discovery, client registration and the token
+endpoint have their own, separate list (`oauth_server.cors` in `config/bherila-auth.php`),
+which admits the hosted agents' browser origins.
 Dynamic public-client registrations are marked at creation, updated when used, and
 pruned after 30 inactive days by the scheduled
 `svc:oauth:prune-dynamic-clients` command (the retention is configurable).

@@ -94,6 +94,31 @@ all deletions while any such active, unattributed refresh credential exists.
 This favors connection continuity over cleanup; pruning resumes after the
 credential expires or is revoked.
 
+## Per-endpoint resources and provider identity cutover
+
+1. Run the normal migration step. It adds nullable `provider_subject` and
+   `provider_generation` columns to the Passport code, access-token and
+   refresh-token tables (plus an indexed `oauth_refresh_tokens.provider_user_id`)
+   and to `personal_access_tokens`, all on their own tables' connections.
+2. MCP is now its own resource, `APP_URL/api/v1/mcp`. Connectors holding tokens
+   bound to `APP_URL/api/v1` are refused by the MCP endpoint and authorize again
+   once; tell connector users before deploying. REST tokens are unaffected. The
+   deployment smoke issues MCP-bound credentials and expects the MCP endpoint as
+   the discovered resource.
+3. Provider identity enforcement stays off until
+   `BHERILA_AUTH_PROVIDER_IDENTITY_ENABLED=true`. Before enabling it: confirm the
+   identity provider's status endpoint answers for this application's client
+   credential, keep a lock-capable cache store shared by every web worker (the
+   database store qualifies; `BHERILA_AUTH_PROVIDER_IDENTITY_CACHE_STORE` overrides
+   the default store), and reissue the finance integration's Sanctum tokens for
+   provider-bound users. Sign-ins after this deploy record their login generation
+   even while enforcement is off; sessions and credentials from before it are asked
+   to sign in or authorize again once enforcement is on.
+4. Clear the configuration cache after changing the switch. With it on, an
+   unavailable provider answers `503` with `Retry-After` and keeps sessions and
+   tokens; turning the switch off again restores the previous behaviour without
+   any data change.
+
 ## Security release checks
 
 Before publishing an MCP head, run `composer audit --no-interaction` and

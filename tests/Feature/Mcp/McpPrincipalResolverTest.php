@@ -67,6 +67,18 @@ final class McpPrincipalResolverTest extends TestCase
         }
     }
 
+    /** A request no route marked as the MCP resource resolves no MCP principal, whatever its token. */
+    public function test_it_rejects_a_request_whose_route_expects_no_resource(): void
+    {
+        $principal = AgentPrincipal::query()->findOrFail(User::factory()->create()->id);
+        $principal->withAccessToken($this->token($principal));
+        $request = Request::create('/api/v1/mcp', 'POST');
+        $request->setUserResolver(fn (): AgentPrincipal => $principal);
+
+        $this->expectException(AuthenticationException::class);
+        app(McpPrincipalResolver::class)->resolve($request);
+    }
+
     /**
      * @param  array<string, mixed>  $overrides
      * @return AccessToken<mixed>
