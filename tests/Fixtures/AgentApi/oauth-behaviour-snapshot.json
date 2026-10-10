@@ -57,7 +57,7 @@
     },
     "protected_resource/api/v1": {
         "status": 200,
-        "cache_control": "no-store, private",
+        "cache_control": "max-age=300, public",
         "body": {
             "resource": "http://localhost:8000/api/v1",
             "authorization_servers": [
@@ -95,7 +95,7 @@
     },
     "protected_resource/api/v1/mcp": {
         "status": 200,
-        "cache_control": "no-store, private",
+        "cache_control": "max-age=300, public",
         "body": {
             "resource": "http://localhost:8000/api/v1/mcp",
             "authorization_servers": [

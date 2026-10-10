@@ -53,18 +53,40 @@ class AgentApiOAuthFoundationTest extends TestCase
         $this->getJson('/.well-known/oauth-protected-resource/api/v2')->assertNotFound();
     }
 
-    public function test_protected_resource_metadata_uses_the_exact_mcp_browser_origin_policy(): void
+    /**
+     * Browser agents reach discovery, registration and the token endpoint
+     * through the package's CORS list; an unlisted origin is answered without
+     * CORS headers rather than refused, so non-browser clients never notice.
+     * The MCP endpoint keeps its own, separate origin policy.
+     */
+    public function test_oauth_machine_endpoints_give_cors_only_to_listed_browser_origins(): void
     {
-        config(['agent_api.mcp_allowed_origins' => ['https://chatgpt.com']]);
+        config(['agent_api.mcp_allowed_origins' => []]);
 
-        $this->withHeader('Origin', 'https://chatgpt.com')
+        foreach (['https://claude.ai', 'https://chatgpt.com'] as $origin) {
+            foreach (['/.well-known/oauth-authorization-server', '/.well-known/oauth-protected-resource/api/v1', '/.well-known/oauth-protected-resource/api/v1/mcp'] as $path) {
+                $this->withHeader('Origin', $origin)->getJson($path)
+                    ->assertOk()
+                    ->assertHeader('Access-Control-Allow-Origin', $origin)
+                    ->assertHeaderMissing('Access-Control-Allow-Credentials');
+            }
+            foreach (['/oauth/register', '/oauth/token'] as $path) {
+                $this->withHeaders(['Origin' => $origin, 'Access-Control-Request-Method' => 'POST'])
+                    ->options($path)
+                    ->assertNoContent()
+                    ->assertHeader('Access-Control-Allow-Origin', $origin);
+            }
+        }
+
+        $unlisted = $this->withHeader('Origin', 'https://unapproved.example.test')
             ->getJson('/.well-known/oauth-protected-resource/api/v1/mcp')
             ->assertOk()
-            ->assertHeader('Access-Control-Allow-Origin', 'https://chatgpt.com')
-            ->assertHeader('Vary', 'Origin');
+            ->assertHeaderMissing('Access-Control-Allow-Origin');
+        $this->assertStringContainsString('Origin', (string) $unlisted->headers->get('Vary'));
 
-        $this->withHeader('Origin', 'https://unapproved.example')
-            ->getJson('/.well-known/oauth-protected-resource/api/v1/mcp')
+        // Discovery being open to a browser origin does not open the endpoint.
+        $this->withHeaders(['Origin' => 'https://claude.ai', 'Mcp-Protocol-Version' => '2025-06-18'])
+            ->postJson('/api/v1/mcp', ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'ping'])
             ->assertForbidden()
             ->assertHeaderMissing('Access-Control-Allow-Origin');
     }

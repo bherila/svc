@@ -54,6 +54,13 @@ return [
         // Opening an MCP connection takes this scope, which only the MCP
         // resource admits; no personal API token is offered it.
         'resource_required_scopes' => [AgentApiScopes::MCP_USE],
+        // Browser-based agents call discovery, registration and the token
+        // endpoint directly. Only these origins get CORS headers there (never
+        // credentials); any other origin gets none. The MCP endpoint keeps its
+        // own origin policy (agent_api.mcp_allowed_origins).
+        'cors' => [
+            'allowed_origins' => ['https://claude.ai', 'https://chatgpt.com'],
+        ],
         'dynamic_clients' => [
             'enabled' => true,
             'required_columns' => ['dynamically_registered_at', 'last_used_at', 'scopes'],
