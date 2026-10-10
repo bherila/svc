@@ -8,6 +8,7 @@ use App\Support\AgentApi\AgentApiScopes;
 use BWH\Auth\OAuth\Server\OAuthResourceIndicator;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
+use Laravel\Passport\ClientRepository;
 use Laravel\Passport\Passport;
 use League\OAuth2\Server\AuthorizationServer;
 use League\OAuth2\Server\ResourceServer;
@@ -62,7 +63,7 @@ final class ApiCredentialTest extends TestCase
         $this->assertSame('Synthetic connector', $listed[0]['name']);
         $this->assertArrayNotHasKey('token', $listed[0]);
 
-        $this->actingAs($this->user)->delete($listed[0]['revoke_href'])->assertRedirect();
+        $this->actingAs($this->user)->delete($listed[0]['revoke_href'])->assertOk()->assertJsonPath('data.revoked', true);
         $this->assertTrue((bool) $row->fresh()->revoked);
         $this->app['auth']->forgetGuards();
         $this->withToken($token)->getJson('/api/v1/context')->assertUnauthorized();
@@ -75,7 +76,7 @@ final class ApiCredentialTest extends TestCase
     public function test_the_secret_travels_only_in_the_no_store_creation_response(): void
     {
         $response = $this->actingAs($this->user)
-            ->postJson('/account/api-tokens', ['name' => 'Once', 'scopes' => ['identity:read'], 'days' => 30])
+            ->postJson('/account/api-credentials/tokens', ['name' => 'Once', 'scopes' => ['identity:read'], 'lifetime' => 'P30D'])
             ->assertCreated();
         $token = $response->json('data.token');
         $this->assertIsString($token);
@@ -86,7 +87,7 @@ final class ApiCredentialTest extends TestCase
         $this->assertArrayNotHasKey('issued', $props['rest']);
         $this->assertStringNotContainsString($token, json_encode($props, JSON_THROW_ON_ERROR));
 
-        $app = $this->postJson('/account/oauth-apps', [
+        $app = $this->postJson('/account/api-credentials/apps', [
             'name' => 'Once app', 'redirect_uris' => [self::REDIRECT], 'confidential' => true, 'scopes' => ['identity:read'],
         ])->assertCreated();
         $secret = $app->json('data.client_secret');
@@ -98,10 +99,10 @@ final class ApiCredentialTest extends TestCase
     public function test_tokens_are_refused_outside_the_offered_permissions_and_lifetimes(): void
     {
         $this->actingAs($this->user);
-        $this->post('/account/api-tokens', ['name' => 'MCP', 'scopes' => [AgentApiScopes::MCP_USE], 'days' => 30])->assertSessionHasErrors('scopes.0');
-        $this->post('/account/api-tokens', ['name' => 'Unknown', 'scopes' => ['admin:everything'], 'days' => 30])->assertSessionHasErrors('scopes.0');
-        $this->post('/account/api-tokens', ['name' => 'Forever', 'scopes' => ['identity:read'], 'days' => 3650])->assertSessionHasErrors('days');
-        $this->post('/account/api-tokens', ['name' => 'Empty', 'scopes' => [], 'days' => 30])->assertSessionHasErrors('scopes');
+        $this->post('/account/api-credentials/tokens', ['name' => 'MCP', 'scopes' => [AgentApiScopes::MCP_USE], 'lifetime' => 'P30D'])->assertSessionHasErrors('scopes.0');
+        $this->post('/account/api-credentials/tokens', ['name' => 'Unknown', 'scopes' => ['admin:everything'], 'lifetime' => 'P30D'])->assertSessionHasErrors('scopes.0');
+        $this->post('/account/api-credentials/tokens', ['name' => 'Forever', 'scopes' => ['identity:read'], 'lifetime' => 'P3650D'])->assertSessionHasErrors('lifetime');
+        $this->post('/account/api-credentials/tokens', ['name' => 'Empty', 'scopes' => [], 'lifetime' => 'P30D'])->assertSessionHasErrors('scopes');
         $this->assertSame(0, Passport::token()->newQuery()->count());
     }
 
@@ -145,7 +146,7 @@ final class ApiCredentialTest extends TestCase
         $row = Passport::token()->newQuery()->where('user_id', $this->user->id)->sole();
         $other = User::factory()->create(['email' => 'other-'.Str::random(8).'@synthetic.test']);
 
-        $this->actingAs($other)->delete("/account/api-tokens/{$row->getKey()}")->assertNotFound();
+        $this->actingAs($other)->delete("/account/api-credentials/tokens/{$row->getKey()}")->assertNotFound();
         $this->assertFalse((bool) $row->fresh()->revoked);
     }
 
@@ -157,7 +158,7 @@ final class ApiCredentialTest extends TestCase
     public function test_a_confidential_app_completes_the_code_flow_without_a_resource_parameter(): void
     {
         $issued = $this->actingAs($this->user)
-            ->postJson('/account/oauth-apps', [
+            ->postJson('/account/api-credentials/apps', [
                 'name' => 'Synthetic connector app',
                 'redirect_uris' => [self::REDIRECT],
                 'confidential' => true,
@@ -205,7 +206,7 @@ final class ApiCredentialTest extends TestCase
         $app = $this->setupProps()['rest']['apps'][0];
         $this->assertSame($clientId, $app['id']);
         $this->assertTrue($app['confidential']);
-        $this->actingAs($this->user)->delete($app['delete_href'])->assertRedirect();
+        $this->actingAs($this->user)->delete($app['delete_href'])->assertOk()->assertJsonPath('data.deleted', true);
         $this->assertSame(0, Passport::token()->newQuery()->where('client_id', $clientId)->where('revoked', false)->count());
         $this->assertTrue((bool) Passport::client()->newQuery()->findOrFail($clientId)->revoked);
     }
@@ -213,11 +214,13 @@ final class ApiCredentialTest extends TestCase
     /**
      * An app is held to the permissions it was registered with: asking for
      * more at the consent screen is refused outright, before anyone is shown a
-     * consent page listing permissions the app was never meant to have.
+     * consent page listing permissions the app was never meant to have. The
+     * refusal goes back to the app's own registered redirect URI as an RFC 6749
+     * error, as it does for a self-registered client.
      */
     public function test_an_app_cannot_request_more_than_its_registered_permissions(): void
     {
-        $clientId = $this->actingAs($this->user)->postJson('/account/oauth-apps', [
+        $clientId = $this->actingAs($this->user)->postJson('/account/api-credentials/apps', [
             'name' => 'Narrow', 'redirect_uris' => [self::REDIRECT], 'confidential' => false, 'scopes' => ['identity:read'],
         ])->assertCreated()->json('data.client_id');
         $verifier = rtrim(strtr(base64_encode(random_bytes(48)), '+/', '-_'), '=');
@@ -230,9 +233,14 @@ final class ApiCredentialTest extends TestCase
         ];
 
         foreach (['identity:read mcp:use', 'identity:read billing:write', 'billing:read'] as $scope) {
-            $this->get('/oauth/authorize?'.http_build_query($query + ['scope' => $scope]))
-                ->assertStatus(400)
-                ->assertJsonPath('error', 'invalid_scope');
+            $location = (string) $this->get('/oauth/authorize?'.http_build_query($query + ['scope' => $scope, 'state' => 'synthetic-state']))
+                ->assertRedirect()
+                ->headers->get('Location');
+            $this->assertStringStartsWith(self::REDIRECT.'?', $location);
+            parse_str((string) parse_url($location, PHP_URL_QUERY), $error);
+            $this->assertSame('invalid_scope', $error['error'] ?? null);
+            $this->assertSame('synthetic-state', $error['state'] ?? null);
+            $this->assertNull(session('authToken'), 'No consent was prepared for '.$scope);
         }
         $this->get('/oauth/authorize?'.http_build_query($query + ['scope' => 'identity:read']))->assertOk();
     }
@@ -241,16 +249,16 @@ final class ApiCredentialTest extends TestCase
     {
         $this->actingAs($this->user);
         foreach (['http://app.example.test/cb', 'https://app.example.test/cb#frag', 'https://user:pass@app.example.test/cb', 'javascript:alert(1)'] as $uri) {
-            $this->post('/account/oauth-apps', [
+            $this->post('/account/api-credentials/apps', [
                 'name' => 'Unsafe', 'redirect_uris' => [$uri], 'confidential' => false, 'scopes' => ['identity:read'],
             ])->assertSessionHasErrors('credential');
         }
-        $this->post('/account/oauth-apps', [
+        $this->post('/account/api-credentials/apps', [
             'name' => 'MCP', 'redirect_uris' => [self::REDIRECT], 'confidential' => false, 'scopes' => [AgentApiScopes::MCP_USE],
         ])->assertSessionHasErrors('scopes.0');
         $this->assertSame(0, Passport::client()->newQuery()->where('name', 'Unsafe')->count());
 
-        $public = $this->postJson('/account/oauth-apps', [
+        $public = $this->postJson('/account/api-credentials/apps', [
             'name' => 'Loopback', 'redirect_uris' => ['http://localhost:8080/cb', 'https://app.example.test/cb'], 'confidential' => false, 'scopes' => ['identity:read'],
         ])->assertCreated();
         $this->assertNull($public->json('data.client_secret'), 'A public app has no secret');
@@ -258,12 +266,12 @@ final class ApiCredentialTest extends TestCase
 
     public function test_another_person_cannot_delete_an_app(): void
     {
-        $clientId = $this->actingAs($this->user)->postJson('/account/oauth-apps', [
+        $clientId = $this->actingAs($this->user)->postJson('/account/api-credentials/apps', [
             'name' => 'Mine', 'redirect_uris' => [self::REDIRECT], 'confidential' => false, 'scopes' => ['identity:read'],
         ])->assertCreated()->json('data.client_id');
         $other = User::factory()->create(['email' => 'other-'.Str::random(8).'@synthetic.test']);
 
-        $this->actingAs($other)->delete("/account/oauth-apps/{$clientId}")->assertNotFound();
+        $this->actingAs($other)->delete("/account/api-credentials/apps/{$clientId}")->assertNotFound();
         $this->assertFalse((bool) Passport::client()->newQuery()->findOrFail($clientId)->revoked);
     }
 
@@ -275,15 +283,57 @@ final class ApiCredentialTest extends TestCase
         config(['bherila-auth.oauth_server.enabled' => false]);
 
         $this->actingAs($this->user)
-            ->postJson('/account/api-tokens', ['name' => 'During incident', 'scopes' => ['identity:read'], 'days' => 30])
+            ->postJson('/account/api-credentials/tokens', ['name' => 'During incident', 'scopes' => ['identity:read'], 'lifetime' => 'P30D'])
             ->assertNotFound();
-        $this->postJson('/account/oauth-apps', [
+        $this->postJson('/account/api-credentials/apps', [
             'name' => 'During incident', 'redirect_uris' => [self::REDIRECT], 'confidential' => false, 'scopes' => ['identity:read'],
         ])->assertNotFound();
         $this->assertSame(1, Passport::token()->newQuery()->count());
 
-        $this->delete("/account/api-tokens/{$row->getKey()}")->assertRedirect();
+        $this->delete("/account/api-credentials/tokens/{$row->getKey()}")->assertOk()->assertJsonPath('data.revoked', true);
         $this->assertTrue((bool) $row->fresh()->revoked);
+    }
+
+    /**
+     * Personal tokens go through the personal-access client that already
+     * exists for the agent-principal provider - the deployment smoke
+     * command's, say - and never a newer one that would displace it (#393).
+     */
+    public function test_personal_tokens_reuse_the_existing_personal_access_client(): void
+    {
+        $existing = app(ClientRepository::class)->createPersonalAccessGrantClient('Existing personal client', 'agent-principals');
+
+        $this->issueToken(['identity:read'], 30);
+        $this->issueToken(['projects:read'], 90);
+
+        $this->assertSame(1, Passport::client()->newQuery()->where('grant_types', 'like', '%personal_access%')->count());
+        $this->assertSame(
+            [(string) $existing->getKey()],
+            Passport::token()->newQuery()->where('user_id', $this->user->id)->distinct()->pluck('client_id')->map('strval')->all(),
+        );
+    }
+
+    /** With none, one is created for the agent-principal provider under SVC's name. */
+    public function test_a_personal_access_client_is_created_only_when_none_exists(): void
+    {
+        $this->issueToken(['identity:read'], 30);
+
+        $client = Passport::client()->newQuery()->where('grant_types', 'like', '%personal_access%')->sole();
+        $this->assertSame('SVC personal access tokens', $client->name);
+        $this->assertSame('agent-principals', $client->provider);
+    }
+
+    /** The setup page offers no issuing while the OAuth server is off, but keeps revocation. */
+    public function test_the_setup_page_withholds_issuing_while_the_oauth_server_is_switched_off(): void
+    {
+        $this->issueToken(['identity:read'], 30);
+        config(['bherila-auth.oauth_server.enabled' => false]);
+
+        $rest = $this->setupProps()['rest'];
+        $this->assertNull($rest['issue_token_href']);
+        $this->assertNull($rest['register_app_href']);
+        $this->assertSame(['P30D', 'P90D', 'P365D'], $rest['token_lifetimes']);
+        $this->assertStringStartsWith('/account/api-credentials/tokens/', $rest['tokens'][0]['revoke_href']);
     }
 
     /**
@@ -292,7 +342,7 @@ final class ApiCredentialTest extends TestCase
     private function issueToken(array $scopes, int $days): string
     {
         $token = $this->actingAs($this->user)
-            ->postJson('/account/api-tokens', ['name' => 'Synthetic connector', 'scopes' => $scopes, 'days' => $days])
+            ->postJson('/account/api-credentials/tokens', ['name' => 'Synthetic connector', 'scopes' => $scopes, 'lifetime' => "P{$days}D"])
             ->assertCreated()
             ->json('data.token');
         $this->assertIsString($token);

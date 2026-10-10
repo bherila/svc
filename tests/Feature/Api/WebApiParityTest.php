@@ -28,11 +28,12 @@ final class WebApiParityTest extends TestCase
 {
     private const array CLASSIFIED = [
         // Credentials are minted only by the signed-in person in the browser, so
-        // no OAuth credential can create another (#384).
-        'account.api-tokens.destroy' => 'deliberate:credentials are managed only by the signed-in person',
-        'account.api-tokens.store' => 'deliberate:credentials are issued only by the signed-in person',
-        'account.oauth-apps.destroy' => 'deliberate:credentials are managed only by the signed-in person',
-        'account.oauth-apps.store' => 'deliberate:credentials are issued only by the signed-in person',
+        // no OAuth credential can create another (#384). Served by the auth
+        // package's credential routes (#408).
+        'bherila-auth.credentials.apps.destroy' => 'deliberate:credentials are managed only by the signed-in person',
+        'bherila-auth.credentials.apps.store' => 'deliberate:credentials are issued only by the signed-in person',
+        'bherila-auth.credentials.tokens.destroy' => 'deliberate:credentials are managed only by the signed-in person',
+        'bherila-auth.credentials.tokens.store' => 'deliberate:credentials are issued only by the signed-in person',
         'clients.manage' => 'web-only:redirect',
         'clients.store' => 'operation:clients.create',
         'clients.update' => 'operation:clients.update',

@@ -1,0 +1,298 @@
+{
+    "authorization_server": {
+        "status": 200,
+        "cache_control": "max-age=300, public",
+        "body": {
+            "issuer": "http://localhost:8000",
+            "authorization_endpoint": "http://localhost:8000/oauth/authorize",
+            "token_endpoint": "http://localhost:8000/oauth/token",
+            "grant_types_supported": [
+                "authorization_code",
+                "refresh_token"
+            ],
+            "response_types_supported": [
+                "code"
+            ],
+            "code_challenge_methods_supported": [
+                "S256"
+            ],
+            "scopes_supported": [
+                "identity:read",
+                "projects:read",
+                "projects:write",
+                "tasks:read",
+                "tasks:write",
+                "time:read",
+                "time:write",
+                "time:approve",
+                "billing:read",
+                "billing:write",
+                "billing:deliver",
+                "expenses:read",
+                "expenses:write",
+                "payments:read",
+                "payments:record",
+                "clients:read",
+                "clients:write",
+                "proposals:read",
+                "proposals:write",
+                "proposals:accept",
+                "workspaces:create",
+                "files:read",
+                "files:write",
+                "mcp:use"
+            ],
+            "token_endpoint_auth_methods_supported": [
+                "none",
+                "client_secret_basic",
+                "client_secret_post"
+            ],
+            "registration_endpoint": "http://localhost:8000/oauth/register"
+        }
+    },
+    "protected_resource": {
+        "status": 200,
+        "cache_control": "no-store, private",
+        "body": {
+            "resource": "http://localhost:8000/api/v1",
+            "authorization_servers": [
+                "http://localhost:8000"
+            ],
+            "scopes_supported": [
+                "identity:read",
+                "projects:read",
+                "projects:write",
+                "tasks:read",
+                "tasks:write",
+                "time:read",
+                "time:write",
+                "time:approve",
+                "billing:read",
+                "billing:write",
+                "billing:deliver",
+                "expenses:read",
+                "expenses:write",
+                "payments:read",
+                "payments:record",
+                "clients:read",
+                "clients:write",
+                "proposals:read",
+                "proposals:write",
+                "proposals:accept",
+                "workspaces:create",
+                "files:read",
+                "files:write",
+                "mcp:use"
+            ],
+            "bearer_methods_supported": [
+                "header"
+            ]
+        }
+    },
+    "protected_resource/api/v1": {
+        "status": 200,
+        "cache_control": "no-store, private",
+        "body": {
+            "resource": "http://localhost:8000/api/v1",
+            "authorization_servers": [
+                "http://localhost:8000"
+            ],
+            "scopes_supported": [
+                "identity:read",
+                "projects:read",
+                "projects:write",
+                "tasks:read",
+                "tasks:write",
+                "time:read",
+                "time:write",
+                "time:approve",
+                "billing:read",
+                "billing:write",
+                "billing:deliver",
+                "expenses:read",
+                "expenses:write",
+                "payments:read",
+                "payments:record",
+                "clients:read",
+                "clients:write",
+                "proposals:read",
+                "proposals:write",
+                "proposals:accept",
+                "workspaces:create",
+                "files:read",
+                "files:write",
+                "mcp:use"
+            ],
+            "bearer_methods_supported": [
+                "header"
+            ]
+        }
+    },
+    "protected_resource/api/v1/mcp": {
+        "status": 200,
+        "cache_control": "no-store, private",
+        "body": {
+            "resource": "http://localhost:8000/api/v1",
+            "authorization_servers": [
+                "http://localhost:8000"
+            ],
+            "scopes_supported": [
+                "identity:read",
+                "projects:read",
+                "projects:write",
+                "tasks:read",
+                "tasks:write",
+                "time:read",
+                "time:write",
+                "time:approve",
+                "billing:read",
+                "billing:write",
+                "billing:deliver",
+                "expenses:read",
+                "expenses:write",
+                "payments:read",
+                "payments:record",
+                "clients:read",
+                "clients:write",
+                "proposals:read",
+                "proposals:write",
+                "proposals:accept",
+                "workspaces:create",
+                "files:read",
+                "files:write",
+                "mcp:use"
+            ],
+            "bearer_methods_supported": [
+                "header"
+            ]
+        }
+    },
+    "protected_resource/api/v2": {
+        "status": 404,
+        "cache_control": null,
+        "body": null
+    },
+    "registration": {
+        "status": 201,
+        "cache_control": "no-store, private",
+        "keys": [
+            "client_id",
+            "client_id_issued_at",
+            "client_name",
+            "grant_types",
+            "redirect_uris",
+            "response_types",
+            "scope",
+            "token_endpoint_auth_method"
+        ],
+        "values": {
+            "client_name": "Snapshot client",
+            "redirect_uris": [
+                "http://127.0.0.1:3210/callback"
+            ],
+            "grant_types": [
+                "authorization_code",
+                "refresh_token"
+            ],
+            "response_types": [
+                "code"
+            ],
+            "token_endpoint_auth_method": "none",
+            "scope": "mcp:use identity:read"
+        }
+    },
+    "registration_refusals": {
+        "confidential": {
+            "status": 400,
+            "error": "invalid_client_metadata"
+        },
+        "insecure_redirect": {
+            "status": 400,
+            "error": "invalid_client_metadata"
+        },
+        "unknown_scope": {
+            "status": 400,
+            "error": "invalid_client_metadata"
+        }
+    },
+    "authorize_refusals": {
+        "no_pkce": {
+            "status": 400,
+            "redirects_to_client": false,
+            "error": "invalid_request",
+            "state": null,
+            "consent_prepared": false
+        },
+        "plain_pkce": {
+            "status": 400,
+            "redirects_to_client": false,
+            "error": "invalid_request",
+            "state": null,
+            "consent_prepared": false
+        },
+        "scope_beyond_registration": {
+            "status": 302,
+            "redirects_to_client": true,
+            "error": "invalid_scope",
+            "state": "snapshot-state",
+            "consent_prepared": false
+        },
+        "unknown_scope": {
+            "status": 302,
+            "redirects_to_client": true,
+            "error": "invalid_scope",
+            "state": "snapshot-state",
+            "consent_prepared": false
+        },
+        "other_resource": {
+            "status": 302,
+            "redirects_to_client": true,
+            "error": "invalid_target",
+            "state": "snapshot-state",
+            "consent_prepared": false
+        }
+    },
+    "consent": {
+        "status": 200,
+        "no_store": true,
+        "shows": [
+            "Connect Snapshot client to SVC?",
+            "This application is requesting access to your SVC account.",
+            "Only continue if you recognize and trust this application. You can revoke the connection later.",
+            "This application registered automatically. After approval, your browser returns to:",
+            "http://127.0.0.1:3210/callback",
+            "SVC permissions and current workspace and project roles still apply to every request.",
+            "Authorize",
+            "Cancel"
+        ],
+        "scope_descriptions": [
+            "Connect to SVC through MCP",
+            "Read your SVC identity and available workspaces"
+        ]
+    },
+    "approval": {
+        "status": 302,
+        "keys": [
+            "code",
+            "state"
+        ]
+    },
+    "token_without_verifier": {
+        "status": 400,
+        "error": "invalid_request"
+    },
+    "token": {
+        "status": 200,
+        "keys": [
+            "access_token",
+            "expires_in",
+            "refresh_token",
+            "token_type"
+        ],
+        "token_type": "Bearer"
+    },
+    "mcp_challenge": {
+        "status": 401,
+        "www_authenticate": "Bearer resource_metadata=\"http://localhost:8000/.well-known/oauth-protected-resource/api/v1/mcp\""
+    }
+}

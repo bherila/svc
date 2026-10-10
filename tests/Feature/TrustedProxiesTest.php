@@ -20,7 +20,7 @@ final class TrustedProxiesTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        Route::get('/whoami', fn (Request $request) => response()->json(['ip' => $request->ip(), 'secure' => $request->isSecure(), 'host' => $request->getHost()]));
+        Route::get('/whoami', fn (Request $request) => response()->json(['ip' => $request->ip(), 'secure' => $request->isSecure(), 'host' => $request->getHost(), 'port' => $request->getPort(), 'url' => url('/next')]));
     }
 
     public function test_a_cloudflare_edge_forwards_the_client_address(): void
@@ -58,6 +58,27 @@ final class TrustedProxiesTest extends TestCase
     {
         $this->withServerVariables(['REMOTE_ADDR' => '104.16.1.2', 'HTTP_X_FORWARDED_FOR' => '198.51.100.7', 'HTTP_X_FORWARDED_HOST' => 'evil.example.test'])
             ->getJson('/whoami')->assertOk()->assertJsonPath('host', 'localhost');
+    }
+
+    /**
+     * Cloudflare passes a client-supplied X-Forwarded-Port straight through, so
+     * honouring it would let a visitor choose the port in generated absolute
+     * URLs - redirects, discovery documents, signed links (#408).
+     */
+    public function test_the_forwarded_port_is_never_trusted(): void
+    {
+        $edge = ['REMOTE_ADDR' => '104.16.1.2', 'HTTP_X_FORWARDED_FOR' => '198.51.100.7', 'HTTP_X_FORWARDED_PROTO' => 'https'];
+        $baseline = $this->withServerVariables($edge)->getJson('/whoami')->assertOk()->json();
+
+        $forged = $this->withServerVariables($edge + ['HTTP_X_FORWARDED_PORT' => '8444'])->getJson('/whoami')
+            ->assertOk()
+            ->assertJsonPath('ip', '198.51.100.7')
+            ->assertJsonPath('secure', true)
+            ->json();
+        $this->assertNotSame(8444, $forged['port']);
+        $this->assertSame($baseline['port'], $forged['port']);
+        $this->assertSame($baseline['url'], $forged['url']);
+        $this->assertStringNotContainsString('8444', $forged['url']);
     }
 
     public function test_rate_limits_key_on_the_client_behind_cloudflare_and_on_the_peer_otherwise(): void

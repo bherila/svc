@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { lifetimeLabel } from '@/components/api-credentials';
 import type { RestAccess } from '@/components/api-credentials';
 import { horizontalOverflowRisks } from '@/test/horizontal-overflow';
 import McpSetup from './mcp-setup';
@@ -27,9 +28,9 @@ function rest(overrides: Partial<RestAccess> = {}): RestAccess {
             { id: 'billing:read', description: 'Read authorized invoices' },
             { id: 'time:read', description: 'Read authorized time entries' },
         ],
-        token_lifetimes: [30, 90, 365],
-        issue_token_href: '/account/api-tokens',
-        register_app_href: '/account/oauth-apps',
+        token_lifetimes: ['P30D', 'P90D', 'P365D'],
+        issue_token_href: '/account/api-credentials/tokens',
+        register_app_href: '/account/api-credentials/apps',
         tokens: [],
         apps: [],
         ...overrides,
@@ -51,7 +52,7 @@ describe('MCP setup guide', () => {
                             scopes: ['billing:read'],
                             created_at: null,
                             expires_at: '2026-11-07T00:00:00Z',
-                            revoke_href: '/account/api-tokens/t-1',
+                            revoke_href: '/account/api-credentials/tokens/t-1',
                         },
                     ],
                     apps: [
@@ -64,7 +65,7 @@ describe('MCP setup guide', () => {
                             ],
                             scopes: ['billing:read'],
                             created_at: null,
-                            delete_href: '/account/oauth-apps/a',
+                            delete_href: '/account/api-credentials/apps/a',
                         },
                     ],
                 })}
@@ -125,6 +126,7 @@ describe('MCP setup guide', () => {
                         kind: 'token',
                         name: 'Synthetic connector',
                         token: 'eyJ'.repeat(400),
+                        expires_at: '2027-01-08T00:00:00+00:00',
                     },
                 }),
                 { status: 201 },
@@ -147,12 +149,12 @@ describe('MCP setup guide', () => {
         await user.click(create);
 
         const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-        expect(url).toBe('/account/api-tokens');
+        expect(url).toBe('/account/api-credentials/tokens');
         expect(init.method).toBe('POST');
         expect(JSON.parse(String(init.body))).toEqual({
             name: 'Synthetic connector',
             scopes: ['billing:read'],
-            days: 90,
+            lifetime: 'P90D',
         });
         expect(
             await screen.findByText(/will not be shown again/),
@@ -213,7 +215,8 @@ describe('MCP setup guide', () => {
                             redirect_uris: ['https://app.example.test/cb'],
                             scopes: ['billing:read', 'time:read'],
                             created_at: null,
-                            delete_href: '/account/oauth-apps/client-1',
+                            delete_href:
+                                '/account/api-credentials/apps/client-1',
                         },
                     ],
                 })}
@@ -223,5 +226,74 @@ describe('MCP setup guide', () => {
         expect(
             screen.getByText('May request: billing:read, time:read'),
         ).toBeInTheDocument();
+    });
+
+    /** Revoking answers JSON; only the lists reload, never a full Inertia visit. */
+    it('revokes a token through the API and reloads only the lists', async () => {
+        const fetchMock = vi.fn().mockResolvedValue(
+            new Response(JSON.stringify({ data: { revoked: true } }), {
+                status: 200,
+            }),
+        );
+        vi.stubGlobal('fetch', fetchMock);
+        inertia.reload.mockClear();
+        const user = userEvent.setup();
+        render(
+            <McpSetup
+                serverUrl={serverUrl}
+                available
+                rest={rest({
+                    tokens: [
+                        {
+                            id: 't-1',
+                            name: 'Synthetic connector',
+                            scopes: ['billing:read'],
+                            created_at: null,
+                            expires_at: '2026-11-07T00:00:00Z',
+                            revoke_href: '/account/api-credentials/tokens/t-1',
+                        },
+                    ],
+                })}
+            />,
+        );
+
+        await user.click(screen.getByRole('button', { name: 'Revoke' }));
+
+        const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+        expect(url).toBe('/account/api-credentials/tokens/t-1');
+        expect(init.method).toBe('DELETE');
+        expect(inertia.delete).not.toHaveBeenCalled();
+        await vi.waitFor(() =>
+            expect(inertia.reload).toHaveBeenCalledWith({ only: ['rest'] }),
+        );
+    });
+
+    it('hides the creation forms while issuing is switched off', () => {
+        render(
+            <McpSetup
+                serverUrl={serverUrl}
+                available={false}
+                rest={rest({ issue_token_href: null, register_app_href: null })}
+            />,
+        );
+
+        expect(
+            screen.queryByRole('button', { name: 'Create API token' }),
+        ).toBeNull();
+        expect(
+            screen.queryByRole('button', { name: 'Register OAuth app' }),
+        ).toBeNull();
+        expect(
+            screen.getAllByText(/New credentials cannot be created right now/),
+        ).toHaveLength(2);
+    });
+
+    it('labels ISO-8601 token lifetimes', () => {
+        expect(lifetimeLabel('P30D')).toBe('30 days');
+        expect(lifetimeLabel('P1D')).toBe('1 day');
+        expect(lifetimeLabel('PT4H')).toBe('4 hours');
+        expect(lifetimeLabel('P1DT12H')).toBe('1 day 12 hours');
+        expect(lifetimeLabel('P2W')).toBe('2 weeks');
+        expect(lifetimeLabel('nonsense')).toBe('nonsense');
     });
 });

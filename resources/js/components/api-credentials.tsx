@@ -29,7 +29,7 @@ export type OAuthApp = {
 };
 
 export type IssuedCredential =
-    | { kind: 'token'; name: string; token: string }
+    | { kind: 'token'; name: string; token: string; expires_at: string }
     | {
           kind: 'app';
           name: string;
@@ -43,9 +43,11 @@ export type RestAccess = {
     authorize_url: string;
     token_url: string;
     scopes: ApiScope[];
-    token_lifetimes: number[];
-    issue_token_href: string;
-    register_app_href: string;
+    /** ISO-8601 durations, e.g. P30D or PT4H. */
+    token_lifetimes: string[];
+    /** Null while issuing is switched off; revoking stays available. */
+    issue_token_href: string | null;
+    register_app_href: string | null;
     tokens: ApiToken[];
     apps: OAuthApp[];
 };
@@ -131,6 +133,15 @@ function IssuedNotice({
     );
 }
 
+function IssuingPaused() {
+    return (
+        <p className="text-sm text-muted-foreground">
+            New credentials cannot be created right now. Existing ones keep
+            working and can still be revoked.
+        </p>
+    );
+}
+
 function ScopePicker({
     scopes,
     selected,
@@ -200,6 +211,50 @@ async function create(
     return null;
 }
 
+/** Revoke a token or delete an app, then refresh only the lists. */
+async function remove(href: string): Promise<string | null> {
+    const result = await apiRequest('DELETE', href, {});
+
+    if (!result.ok) {
+        return result.message;
+    }
+
+    router.reload({ only: ['rest'] });
+
+    return null;
+}
+
+const DURATION_UNITS: Record<string, [string, string]> = {
+    Y: ['year', 'years'],
+    M: ['month', 'months'],
+    W: ['week', 'weeks'],
+    D: ['day', 'days'],
+    H: ['hour', 'hours'],
+};
+
+/** "P30D" reads "30 days", "PT4H" reads "4 hours"; anything else as sent. */
+export function lifetimeLabel(duration: string): string {
+    const match = /^P(?:(\d+)([YMWD]))?(?:T(\d+)H)?$/.exec(duration);
+
+    if (match === null || (match[1] === undefined && match[3] === undefined)) {
+        return duration;
+    }
+
+    const parts: string[] = [];
+
+    for (const [count, unit] of [
+        [match[1], match[2]],
+        [match[3], 'H'],
+    ] as const) {
+        if (count !== undefined && unit !== undefined) {
+            const [one, many] = DURATION_UNITS[unit] ?? [unit, unit];
+            parts.push(`${count} ${Number(count) === 1 ? one : many}`);
+        }
+    }
+
+    return parts.join(' ');
+}
+
 function TokenSection({
     rest,
     onIssued,
@@ -209,88 +264,96 @@ function TokenSection({
 }) {
     const [name, setName] = useState('');
     const [scopes, setScopes] = useState<string[]>([]);
-    const [days, setDays] = useState(rest.token_lifetimes[0] ?? 30);
+    const [lifetime, setLifetime] = useState(rest.token_lifetimes[0] ?? '');
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const issueHref = rest.issue_token_href;
 
     return (
         <section className="grid min-w-0 grid-cols-1 content-start gap-4 rounded-xl border border-border p-5">
             <h3 className="text-base font-semibold">API tokens</h3>
-            <form
-                className="grid grid-cols-1 gap-3"
-                onSubmit={(event) => {
-                    event.preventDefault();
-                    setBusy(true);
-                    void create(
-                        rest.issue_token_href,
-                        { name, scopes, days },
-                        onIssued,
-                    ).then((refused) => {
-                        setError(refused);
+            {issueHref === null ? (
+                <IssuingPaused />
+            ) : (
+                <form
+                    className="grid grid-cols-1 gap-3"
+                    onSubmit={(event) => {
+                        event.preventDefault();
+                        setBusy(true);
+                        void create(
+                            issueHref,
+                            { name, scopes, lifetime },
+                            onIssued,
+                        ).then((refused) => {
+                            setError(refused);
 
-                        if (refused === null) {
-                            setName('');
-                            setScopes([]);
-                        }
+                            if (refused === null) {
+                                setName('');
+                                setScopes([]);
+                            }
 
-                        setBusy(false);
-                    });
-                }}
-            >
-                <div className="grid grid-cols-1 gap-1.5">
-                    <Label htmlFor="api-token-name">Token name</Label>
-                    <Input
-                        id="api-token-name"
-                        value={name}
-                        maxLength={120}
-                        onChange={(event) => setName(event.target.value)}
-                        placeholder="Which app uses it"
-                    />
-                </div>
-                <ScopePicker
-                    scopes={rest.scopes}
-                    selected={scopes}
-                    onChange={setScopes}
-                    idPrefix="api-token-scope"
-                />
-                <fieldset className="grid grid-cols-1 gap-2">
-                    <legend className="text-sm font-medium">
-                        Expires after
-                    </legend>
-                    <div className="flex flex-wrap gap-4">
-                        {rest.token_lifetimes.map((lifetime) => (
-                            <label
-                                key={lifetime}
-                                className="flex items-center gap-2 text-sm"
-                            >
-                                <input
-                                    type="radio"
-                                    name="api-token-days"
-                                    checked={days === lifetime}
-                                    onChange={() => setDays(lifetime)}
-                                />
-                                {lifetime} days
-                            </label>
-                        ))}
+                            setBusy(false);
+                        });
+                    }}
+                >
+                    <div className="grid grid-cols-1 gap-1.5">
+                        <Label htmlFor="api-token-name">Token name</Label>
+                        <Input
+                            id="api-token-name"
+                            value={name}
+                            maxLength={120}
+                            onChange={(event) => setName(event.target.value)}
+                            placeholder="Which app uses it"
+                        />
                     </div>
-                </fieldset>
-                {error !== null && (
-                    <p role="alert" className="text-sm text-destructive">
-                        {error}
-                    </p>
-                )}
-                <div>
-                    <Button
-                        type="submit"
-                        size="sm"
-                        disabled={
-                            busy || name.trim() === '' || scopes.length === 0
-                        }
-                    >
-                        Create API token
-                    </Button>
-                </div>
-            </form>
+                    <ScopePicker
+                        scopes={rest.scopes}
+                        selected={scopes}
+                        onChange={setScopes}
+                        idPrefix="api-token-scope"
+                    />
+                    <fieldset className="grid grid-cols-1 gap-2">
+                        <legend className="text-sm font-medium">
+                            Expires after
+                        </legend>
+                        <div className="flex flex-wrap gap-4">
+                            {rest.token_lifetimes.map((option) => (
+                                <label
+                                    key={option}
+                                    className="flex items-center gap-2 text-sm"
+                                >
+                                    <input
+                                        type="radio"
+                                        name="api-token-lifetime"
+                                        checked={lifetime === option}
+                                        onChange={() => setLifetime(option)}
+                                    />
+                                    {lifetimeLabel(option)}
+                                </label>
+                            ))}
+                        </div>
+                    </fieldset>
+                    <div>
+                        <Button
+                            type="submit"
+                            size="sm"
+                            disabled={
+                                busy ||
+                                name.trim() === '' ||
+                                scopes.length === 0 ||
+                                lifetime === ''
+                            }
+                        >
+                            Create API token
+                        </Button>
+                    </div>
+                </form>
+            )}
+            {error !== null && (
+                <p role="alert" className="text-sm text-destructive">
+                    {error}
+                </p>
+            )}
             {rest.tokens.length > 0 && (
                 <ul className="grid grid-cols-1 gap-3">
                     {rest.tokens.map((token) => (
@@ -306,9 +369,9 @@ function TokenSection({
                                     variant="outline"
                                     size="sm"
                                     onClick={() =>
-                                        router.delete(token.revoke_href, {
-                                            preserveScroll: true,
-                                        })
+                                        void remove(token.revoke_href).then(
+                                            setError,
+                                        )
                                     }
                                 >
                                     Revoke
@@ -343,6 +406,7 @@ function AppSection({
     const [scopes, setScopes] = useState<string[]>([]);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const registerHref = rest.register_app_href;
     const redirectUris = redirects
         .split('\n')
         .map((line) => line.trim())
@@ -351,106 +415,114 @@ function AppSection({
     return (
         <section className="grid min-w-0 grid-cols-1 content-start gap-4 rounded-xl border border-border p-5">
             <h3 className="text-base font-semibold">OAuth apps</h3>
-            <form
-                className="grid grid-cols-1 gap-3"
-                onSubmit={(event) => {
-                    event.preventDefault();
-                    setBusy(true);
-                    void create(
-                        rest.register_app_href,
-                        {
-                            name,
-                            redirect_uris: redirectUris,
-                            confidential,
-                            scopes,
-                        },
-                        onIssued,
-                    ).then((refused) => {
-                        setError(refused);
+            {registerHref === null ? (
+                <IssuingPaused />
+            ) : (
+                <form
+                    className="grid grid-cols-1 gap-3"
+                    onSubmit={(event) => {
+                        event.preventDefault();
+                        setBusy(true);
+                        void create(
+                            registerHref,
+                            {
+                                name,
+                                redirect_uris: redirectUris,
+                                confidential,
+                                scopes,
+                            },
+                            onIssued,
+                        ).then((refused) => {
+                            setError(refused);
 
-                        if (refused === null) {
-                            setName('');
-                            setRedirects('');
-                            setScopes([]);
-                        }
+                            if (refused === null) {
+                                setName('');
+                                setRedirects('');
+                                setScopes([]);
+                            }
 
-                        setBusy(false);
-                    });
-                }}
-            >
-                <div className="grid grid-cols-1 gap-1.5">
-                    <Label htmlFor="oauth-app-name">App name</Label>
-                    <Input
-                        id="oauth-app-name"
-                        value={name}
-                        maxLength={120}
-                        onChange={(event) => setName(event.target.value)}
-                    />
-                </div>
-                <div className="grid grid-cols-1 gap-1.5">
-                    <Label htmlFor="oauth-app-redirects">
-                        Redirect URIs (one per line)
-                    </Label>
-                    <Textarea
-                        id="oauth-app-redirects"
-                        value={redirects}
-                        rows={3}
-                        onChange={(event) => setRedirects(event.target.value)}
-                        placeholder="https://app.example.test/oauth/callback"
-                    />
-                </div>
-                <fieldset className="grid grid-cols-1 gap-2">
-                    <legend className="text-sm font-medium">Client type</legend>
-                    <label className="flex items-start gap-2 text-sm">
-                        <input
-                            type="radio"
-                            name="oauth-app-type"
-                            className="mt-1"
-                            checked={confidential}
-                            onChange={() => setConfidential(true)}
+                            setBusy(false);
+                        });
+                    }}
+                >
+                    <div className="grid grid-cols-1 gap-1.5">
+                        <Label htmlFor="oauth-app-name">App name</Label>
+                        <Input
+                            id="oauth-app-name"
+                            value={name}
+                            maxLength={120}
+                            onChange={(event) => setName(event.target.value)}
                         />
-                        <span>
-                            Confidential: the app keeps a client secret on its
-                            server
-                        </span>
-                    </label>
-                    <label className="flex items-start gap-2 text-sm">
-                        <input
-                            type="radio"
-                            name="oauth-app-type"
-                            className="mt-1"
-                            checked={!confidential}
-                            onChange={() => setConfidential(false)}
+                    </div>
+                    <div className="grid grid-cols-1 gap-1.5">
+                        <Label htmlFor="oauth-app-redirects">
+                            Redirect URIs (one per line)
+                        </Label>
+                        <Textarea
+                            id="oauth-app-redirects"
+                            value={redirects}
+                            rows={3}
+                            onChange={(event) =>
+                                setRedirects(event.target.value)
+                            }
+                            placeholder="https://app.example.test/oauth/callback"
                         />
-                        <span>Public: no secret, PKCE only</span>
-                    </label>
-                </fieldset>
-                <ScopePicker
-                    scopes={rest.scopes}
-                    selected={scopes}
-                    onChange={setScopes}
-                    idPrefix="oauth-app-scope"
-                />
-                {error !== null && (
-                    <p role="alert" className="text-sm text-destructive">
-                        {error}
-                    </p>
-                )}
-                <div>
-                    <Button
-                        type="submit"
-                        size="sm"
-                        disabled={
-                            busy ||
-                            name.trim() === '' ||
-                            redirectUris.length === 0 ||
-                            scopes.length === 0
-                        }
-                    >
-                        Register OAuth app
-                    </Button>
-                </div>
-            </form>
+                    </div>
+                    <fieldset className="grid grid-cols-1 gap-2">
+                        <legend className="text-sm font-medium">
+                            Client type
+                        </legend>
+                        <label className="flex items-start gap-2 text-sm">
+                            <input
+                                type="radio"
+                                name="oauth-app-type"
+                                className="mt-1"
+                                checked={confidential}
+                                onChange={() => setConfidential(true)}
+                            />
+                            <span>
+                                Confidential: the app keeps a client secret on
+                                its server
+                            </span>
+                        </label>
+                        <label className="flex items-start gap-2 text-sm">
+                            <input
+                                type="radio"
+                                name="oauth-app-type"
+                                className="mt-1"
+                                checked={!confidential}
+                                onChange={() => setConfidential(false)}
+                            />
+                            <span>Public: no secret, PKCE only</span>
+                        </label>
+                    </fieldset>
+                    <ScopePicker
+                        scopes={rest.scopes}
+                        selected={scopes}
+                        onChange={setScopes}
+                        idPrefix="oauth-app-scope"
+                    />
+                    <div>
+                        <Button
+                            type="submit"
+                            size="sm"
+                            disabled={
+                                busy ||
+                                name.trim() === '' ||
+                                redirectUris.length === 0 ||
+                                scopes.length === 0
+                            }
+                        >
+                            Register OAuth app
+                        </Button>
+                    </div>
+                </form>
+            )}
+            {error !== null && (
+                <p role="alert" className="text-sm text-destructive">
+                    {error}
+                </p>
+            )}
             {rest.apps.length > 0 && (
                 <ul className="grid grid-cols-1 gap-3">
                     {rest.apps.map((app) => (
@@ -466,9 +538,9 @@ function AppSection({
                                     variant="outline"
                                     size="sm"
                                     onClick={() =>
-                                        router.delete(app.delete_href, {
-                                            preserveScroll: true,
-                                        })
+                                        void remove(app.delete_href).then(
+                                            setError,
+                                        )
                                     }
                                 >
                                     Delete

@@ -1,10 +1,7 @@
 <?php
 
-use App\Http\Middleware\EnforceOwnedClientScopeCeiling;
 use App\Http\Middleware\OAuthSecurityHeaders;
-use BWH\Auth\Http\Middleware\EnforceOAuthPkce;
-use BWH\Auth\Http\Middleware\EnforceOAuthResourceIndicator;
-use BWH\Auth\Http\Middleware\EnsureOAuthServerEnabled;
+use BWH\Auth\OAuth\Server\AgentOAuthServer;
 
 return [
 
@@ -21,13 +18,11 @@ return [
 
     'guard' => 'web',
 
-    'middleware' => [
-        EnsureOAuthServerEnabled::class,
-        EnforceOAuthPkce::class,
-        EnforceOAuthResourceIndicator::class,
-        EnforceOwnedClientScopeCeiling::class,
+    // The agent preset's kill switch, S256 PKCE, resource binding and scope
+    // ceilings (self-registered and person-registered clients alike).
+    'middleware' => AgentOAuthServer::passportMiddleware([
         OAuthSecurityHeaders::class,
-    ],
+    ]),
 
     /*
     |--------------------------------------------------------------------------

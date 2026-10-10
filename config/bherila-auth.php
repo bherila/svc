@@ -1,6 +1,10 @@
 <?php
 
+use App\Models\AgentPrincipal;
 use App\Support\AgentApi\AgentApiScopes;
+use BWH\Auth\OAuth\Server\AgentOAuthServer;
+
+$appUrl = rtrim((string) env('APP_URL', 'http://localhost'), '/');
 
 return [
     // SVC uses the shared OAuth client service but does not expose the package's
@@ -9,28 +13,36 @@ return [
         'enabled' => false,
     ],
 
-    'oauth_server' => [
+    // Per-client limits key on Request::ip(). Behind a CDN that is only the
+    // client when the CDN is trusted to forward it, and the origin also answers
+    // direct connections, so only the CDN's published ranges are trusted, and
+    // only X-Forwarded-For and its scheme - never the forwarded port (which the
+    // CDN passes through from the client) or host.
+    //
+    // TRUSTED_PROXIES: "cloudflare" (the default), an explicit comma-separated
+    // list of addresses / CIDR ranges, "*" only where an origin firewall admits
+    // the proxy alone, or empty to trust nothing (no proxy in front). The
+    // weekly cloudflare-ranges workflow reports drift in the shipped ranges.
+    'trusted_proxies' => [
+        'apply' => (bool) env('BHERILA_AUTH_TRUSTED_PROXIES', true),
+        'trusted' => env('TRUSTED_PROXIES', 'cloudflare'),
+        'cloudflare' => null,
+    ],
+
+    // The agent-API authorization-server profile: S256 PKCE for every client,
+    // public-only self-registration, RFC 8707 binding to APP_URL/api/v1 with an
+    // omitted `resource` taken as that resource, and `none` plus the two
+    // client-secret methods advertised (apps a person registers on the setup
+    // page may be confidential). Every URL derives from APP_URL. What follows
+    // is only where SVC differs from the profile.
+    'oauth_server' => AgentOAuthServer::config(AgentApiScopes::descriptions(), [
         // Existing resource-bound credentials remain valid when issuance is
         // disabled; metadata, registration, authorization, and token routes do not.
-        'enabled' => env('AGENT_API_OAUTH_SERVER_ENABLED', true),
-        'issuer' => rtrim((string) env('APP_URL', 'http://localhost'), '/'),
-        'resource' => rtrim((string) env('APP_URL', 'http://localhost'), '/').'/api/v1',
-        'authorization_endpoint' => rtrim((string) env('APP_URL', 'http://localhost'), '/').'/oauth/authorize',
-        'token_endpoint' => rtrim((string) env('APP_URL', 'http://localhost'), '/').'/oauth/token',
-        'registration_endpoint' => rtrim((string) env('APP_URL', 'http://localhost'), '/').'/oauth/register',
-        'protected_resource_metadata_url' => rtrim((string) env('APP_URL', 'http://localhost'), '/').'/.well-known/oauth-protected-resource/api/v1/mcp',
-        'scopes' => AgentApiScopes::descriptions(),
-        // Self-registered (dynamic) clients stay public and PKCE-only - the
-        // package's registration validator accepts nothing else. Apps a person
-        // registers on the setup page may be confidential (#384), so the
-        // secret methods are advertised too. PKCE is still required of all.
-        'token_endpoint_auth_methods' => ['none', 'client_secret_basic', 'client_secret_post'],
-        'resource_required_scope' => AgentApiScopes::MCP_USE,
-        // SVC protects exactly one resource, /api/v1. REST clients that never
-        // send RFC 8707 `resource` (most generic OAuth clients) are bound to it
-        // instead of being refused or handed a token /api/v1 rejects (#384). A
-        // different explicit resource is still refused.
-        'assume_omitted_resource' => true,
+        'enabled' => (bool) env('AGENT_API_OAUTH_SERVER_ENABLED', true),
+        // MCP clients discover the server from the MCP endpoint's challenge.
+        'protected_resource_metadata_url' => $appUrl.'/.well-known/oauth-protected-resource/api/v1/mcp',
+        // Opening an MCP connection takes this scope; no REST credential is offered it.
+        'resource_required_scopes' => [AgentApiScopes::MCP_USE],
         'dynamic_clients' => [
             'enabled' => true,
             'required_columns' => ['dynamically_registered_at', 'last_used_at', 'scopes'],
@@ -54,5 +66,19 @@ return [
             'approve_label' => 'Authorize',
             'deny_label' => 'Cancel',
         ],
-    ],
+        // A person's own API tokens and OAuth apps for REST clients (#384).
+        // Browser session routes only, so no OAuth credential can mint another.
+        // Tokens and apps belong to the agent principal the API guard loads,
+        // and personal tokens reuse the existing personal-access client.
+        'credentials' => [
+            'enabled' => true,
+            'prefix' => 'account/api-credentials',
+            'middleware' => ['web', 'auth'],
+            'token_lifetimes' => ['P30D', 'P90D', 'P365D'],
+            'token_name_prefix' => 'api-token: ',
+            'personal_client_name' => 'SVC personal access tokens',
+            'provider' => 'agent-principals',
+            'owner_model' => AgentPrincipal::class,
+        ],
+    ], $appUrl),
 ];
