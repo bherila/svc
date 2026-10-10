@@ -16,6 +16,7 @@ use App\Support\Access\AccessRefusal;
 use App\Support\Access\ProjectAssignment;
 use App\Support\Access\StaffRole;
 use App\Support\AgentApi\ProjectRole;
+use Closure;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -341,6 +342,62 @@ final class WorkspaceStaffAccessTest extends TestCase
         $this->assertCount(2, $this->assignmentIds($this->member));
     }
 
+    /**
+     * The projects to lock come from a plain read. Inside an enclosing
+     * transaction whose snapshot predates the workspace lock, that read can
+     * miss an assignment committed since; the listener reproduces it by
+     * adding the assignment just after the plain read has run.
+     */
+    public function test_a_role_change_advances_an_assignment_the_first_read_missed(): void
+    {
+        $third = $this->project($this->company, 'Third');
+        $revisions = $this->revisions();
+        $thirdRevision = $third->lock_version;
+        $this->onceTheAssignmentsAreListed(fn () => $this->assign($this->member, $third, ProjectRole::Contributor));
+
+        $this->access()->changeStaffRole(AccessMutationContext::user($this->owner), $this->workspace, $this->member, StaffRole::Admin);
+
+        $this->assertSame($thirdRevision + 1, $third->refresh()->lock_version);
+        $this->assertSame([$revisions[0] + 1, $revisions[1] + 1], $this->revisions());
+    }
+
+    public function test_a_role_change_for_someone_listed_with_no_assignments_advances_one_committed_since(): void
+    {
+        $person = $this->staff($this->workspace, 'member');
+        $revisions = $this->revisions();
+        $this->onceTheAssignmentsAreListed(fn () => $this->assign($person, $this->first, ProjectRole::Viewer));
+
+        $this->access()->changeStaffRole(AccessMutationContext::user($this->owner), $this->workspace, $person, StaffRole::Admin);
+
+        $this->assertSame([$revisions[0] + 1, $revisions[1]], $this->revisions());
+    }
+
+    public function test_a_role_change_does_not_advance_a_project_whose_assignment_is_already_gone(): void
+    {
+        $revisions = $this->revisions();
+        $this->onceTheAssignmentsAreListed(fn () => ClientProjectMembership::query()
+            ->where('workspace_id', $this->workspace->id)->where('user_id', $this->member->id)
+            ->where('client_project_id', $this->second->id)->delete());
+
+        $this->access()->changeStaffRole(AccessMutationContext::user($this->owner), $this->workspace, $this->member, StaffRole::Admin);
+
+        $this->assertSame([$revisions[0] + 1, $revisions[1]], $this->revisions());
+    }
+
+    public function test_removal_deletes_and_reports_an_assignment_the_first_read_missed(): void
+    {
+        $third = $this->project($this->company, 'Third');
+        $thirdRevision = $third->lock_version;
+        $this->onceTheAssignmentsAreListed(fn () => $this->assign($this->member, $third, ProjectRole::Contributor));
+
+        $removal = $this->access()->removeStaff(AccessMutationContext::user($this->admin), $this->workspace, $this->member);
+
+        $this->assertContainsEquals(new ProjectAssignment($third->public_id, ProjectRole::Contributor), $removal->removedAssignments);
+        $this->assertCount(3, $removal->removedAssignments);
+        $this->assertSame($thirdRevision + 1, $third->refresh()->lock_version);
+        $this->assertSame(3, AccessAuditEvent::query()->where('action', 'staff.assignment_removed')->count());
+    }
+
     public function test_staff_writes_stay_inside_their_workspace(): void
     {
         $elsewhere = Workspace::query()->create(['name' => 'Elsewhere', 'slug' => 'elsewhere']);
@@ -408,6 +465,21 @@ final class WorkspaceStaffAccessTest extends TestCase
     private function access(): WorkspaceAccess
     {
         return app(WorkspaceAccess::class);
+    }
+
+    /** Run `$change` once, just after the boundary's plain read of a person's assignments. */
+    private function onceTheAssignmentsAreListed(Closure $change): void
+    {
+        $baseline = DB::transactionLevel();
+        $fired = false;
+        DB::listen(function (QueryExecuted $query) use (&$fired, $baseline, $change): void {
+            if ($fired || DB::transactionLevel() <= $baseline
+                || preg_match('/^select [`"]client_project_id[`"] from [`"]client_project_memberships[`"]/i', $query->sql) !== 1) {
+                return;
+            }
+            $fired = true;
+            $change();
+        });
     }
 
     private function membership(User $user): ?WorkspaceMembership

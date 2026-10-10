@@ -153,8 +153,9 @@ final class WorkspaceAccess
                 return $membership;
             }
 
+            [, $assigned] = $this->lockedAssignments($locked, $user, $projects);
             $membership->forceFill(['role' => $role->value])->save();
-            foreach ($projects as $project) {
+            foreach ($assigned as $project) {
                 $project->advanceAgentRevision();
             }
             $this->audit->record($context, $locked, AccessAuditAction::StaffRoleChanged, $user, ['role' => $current->value], ['role' => $role->value]);
@@ -188,19 +189,7 @@ final class WorkspaceAccess
             /** @var WorkspaceMembership $membership */
             [$membership, $current] = $decide($this->coordinator->staff($locked, [$context->actorId(), $user->id], lock: true));
 
-            $assignments = ClientProjectMembership::query()
-                ->where('workspace_id', $locked->id)
-                ->where('user_id', $user->id)
-                ->orderBy('client_project_id')
-                ->tap(Locks::forUpdate())
-                ->get();
-
-            // The ids above were a plain read. Inside an enclosing transaction
-            // whose snapshot predates the workspace lock it can miss an
-            // assignment committed since; the locking read cannot, so lock
-            // whatever projects it adds.
-            $missing = array_values(array_diff($this->projectIdsOf($assignments), $projects->keys()->all()));
-            $projects = $projects->union($this->coordinator->lockProjects($locked, $missing));
+            [$assignments, $projects] = $this->lockedAssignments($locked, $user, $projects);
 
             $removed = [];
             foreach ($assignments as $assignment) {
@@ -306,6 +295,47 @@ final class WorkspaceAccess
         $role = StaffRole::tryFrom($membership->role) ?? throw new AccessMutationRefused(AccessRefusal::UnsupportedRole);
 
         return [$membership, $role];
+    }
+
+    /**
+     * A person's project assignments as they are now, and the locked project
+     * behind each one.
+     *
+     * Called after the staff re-check, with the projects already locked from
+     * {@see assignedProjectIds()}. That was a plain read, and inside an
+     * enclosing transaction whose snapshot predates the workspace lock it can
+     * miss an assignment committed since, or name one removed since. This is a
+     * locking read, which sees the latest committed rows, so it decides: any
+     * project only it names is locked here, and a project only the plain read
+     * named is left out of what is returned, so no revision is advanced for a
+     * project whose assignment is already gone.
+     *
+     * Locking a further project after the staff memberships only happens in
+     * that stale-snapshot case, and cannot deadlock: every other transaction
+     * that locks a project and then a membership or assignment does so under
+     * the workspace access lock this one holds.
+     *
+     * @param  Collection<int, ClientProject>  $projects  locked from the plain read, keyed by id
+     * @return array{Collection<int, ClientProjectMembership>, Collection<int, ClientProject>}
+     */
+    private function lockedAssignments(Workspace $workspace, User $user, Collection $projects): array
+    {
+        $assignments = ClientProjectMembership::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('user_id', $user->id)
+            ->orderBy('client_project_id')
+            ->tap(Locks::forUpdate())
+            ->get();
+
+        $current = $this->projectIdsOf($assignments);
+        $missing = array_values(array_diff($current, $projects->keys()->all()));
+        // Filtered by key rather than with `only()`, which on an Eloquent
+        // collection re-indexes the result and loses the id keys.
+        $projects = $projects->union($this->coordinator->lockProjects($workspace, $missing))
+            ->filter(static fn (ClientProject $project, int $id): bool => in_array($id, $current, true))
+            ->sortKeys();
+
+        return [$assignments, $projects];
     }
 
     /** @return list<int> */
