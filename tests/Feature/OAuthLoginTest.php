@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Models\User;
 use BWH\Auth\OAuth\ProviderApplications;
+use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
@@ -102,6 +103,34 @@ class OAuthLoginTest extends TestCase
             ->assertHeader('X-Inertia-Location', $endSession);
 
         $this->assertGuest();
+    }
+
+    public function test_an_expired_session_sign_out_passes_request_forgery_checks_from_this_origin(): void
+    {
+        // Laravel skips request-forgery checks under PHPUnit, so the test above
+        // cannot see them. Enforce them here: an expired session has no token
+        // left to send, and what lets its sign-out through is the browser's
+        // Sec-Fetch-Site header, which a cross-site form cannot forge.
+        $this->app->bind(PreventRequestForgery::class, fn ($app) => new class($app, $app['encrypter']) extends PreventRequestForgery
+        {
+            protected function runningUnitTests()
+            {
+                return false;
+            }
+        });
+
+        $this->withHeaders(['X-Inertia' => 'true', 'Sec-Fetch-Site' => 'same-origin'])
+            ->post('/logout')
+            ->assertStatus(409)
+            ->assertHeader(
+                'X-Inertia-Location',
+                'https://identity.example.test/oauth/end-session?client_id=svc-client'
+                    .'&post_logout_redirect_uri='.urlencode(url('/')),
+            );
+
+        $this->withHeaders(['X-Inertia' => 'true', 'Sec-Fetch-Site' => 'cross-site'])
+            ->post('/logout')
+            ->assertStatus(419);
     }
 
     public function test_provider_identity_enforcement_skips_the_sign_out_route(): void
