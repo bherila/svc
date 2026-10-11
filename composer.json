@@ -14,7 +14,7 @@
         "bherila/mcp-laravel-bridge": "^0.4.2",
         "dompdf/dompdf": "^3.1",
         "inertiajs/inertia-laravel": "^3.0",
-        "laravel/framework": "^13.17",
+        "laravel/framework": ">=13.17 <13.35",
         "laravel/passport": "^13.0",
         "laravel/sanctum": "^4.3",
         "laravel/tinker": "^3.0",
