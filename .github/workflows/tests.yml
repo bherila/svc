@@ -271,7 +271,20 @@ jobs:
         if: ${{ steps.mutation_scope.outputs.required == 'true' }}
         env:
           MUTATION_BASE: ${{ steps.mutation_scope.outputs.merge_base }}
-        run: composer test:mutation-diff
+        run: |
+          sed -i 's/--configuration=infection.diff.json5/--debug --configuration=infection.diff.json5/' scripts/run-mutation-diff.sh
+          composer test:mutation-diff
+
+      - name: Inspect failed mutation process details
+        if: ${{ failure() && steps.mutation_run.outcome == 'failure' }}
+        run: |
+          python3 - <<'PY'
+          import pathlib
+          for path in pathlib.Path('storage/framework/cache/infection-diff').rglob('*.debug.jsonl'):
+              for line in path.read_text().splitlines():
+                  if 'c46075d1a3e007663f73ca1fb7d26330' in line:
+                      print(line[:20000])
+          PY
 
       - name: Report mutation result
         if: ${{ always() && steps.mutation_scope.outputs.required == 'true' }}
