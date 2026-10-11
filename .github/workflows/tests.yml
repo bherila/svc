@@ -287,7 +287,7 @@ jobs:
           print(timed[:15000], flush=True)
           command = next(line[2:] for line in timed.splitlines() if line.startswith('$ '))
           try:
-              result = subprocess.run(shlex.split(command) + ['--debug'], capture_output=True, text=True, timeout=30)
+              result = subprocess.run(shlex.split(command), capture_output=True, text=True, timeout=30)
               print('exit:', result.returncode)
               print(result.stdout[-25000:])
               print(result.stderr[-10000:])
