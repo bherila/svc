@@ -8,10 +8,13 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Queries\Expenses\WorkspaceExpenses;
 use App\Queries\Expenses\WorkspaceExpenseSchedules;
+use App\Services\Access\WorkspaceAccess;
 use App\Services\Billing\ExpenseInvoiceAllocations;
 use App\Services\Billing\InvoiceFromTimeService;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Services\Files\AttachmentStorageService;
+use App\Support\Access\AccessMutationContext;
+use App\Support\Access\PortalAccessScope;
 use App\Support\Billing\BillingCadence;
 use App\Support\Expenses\NewExpense;
 use App\Support\WorkspaceClock;
@@ -86,6 +89,17 @@ $project = ClientProject::query()->create([
     'workspace_id' => $workspace->id, 'client_company_id' => $company->id,
     'name' => str_repeat('SyntheticProject', 10), 'status' => 'active',
 ]);
+// Portal contacts on the settings page: one reaching the whole client, one limited to the
+// project above, both with a name and an address that will not break on their own.
+foreach ([PortalAccessScope::Company, PortalAccessScope::Projects] as $index => $scope) {
+    $contact = User::factory()->create([
+        'name' => str_repeat('SyntheticPortalContact', 6).$index,
+        'email' => str_repeat('synthetic', 12).$index.'@client.example.test',
+        'oauth_provider' => 'synthetic', 'oauth_subject' => 'synthetic-portal-contact-'.$index,
+    ]);
+    app(WorkspaceAccess::class)->grantPortal(AccessMutationContext::system(), $company, $contact, $scope,
+        $scope === PortalAccessScope::Projects ? [$project->public_id] : []);
+}
 foreach ([
     ['description' => str_repeat('SyntheticUnbrokenWork', 12), 'status' => 'approved', 'minutes' => 100],
     ['description' => $description, 'status' => 'approved', 'minutes' => 60,

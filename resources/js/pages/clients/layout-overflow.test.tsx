@@ -271,6 +271,20 @@ describe('client screens under data that does not fit', () => {
                     },
                 ]}
                 assignable={[{ id: 'user-1', name: LONG_NAME }]}
+                portal={{
+                    add_url:
+                        '/workspaces/workspace-1/clients/company-1/portal-access',
+                    members: [
+                        {
+                            id: 'contact-1',
+                            name: LONG_NAME,
+                            email: `${LONG_NAME}@example.test`,
+                            scope: 'projects',
+                            projects: ['project-1'],
+                            url: '/workspaces/workspace-1/clients/company-1/portal-access/contact-1',
+                        },
+                    ],
+                }}
             />,
         );
 
