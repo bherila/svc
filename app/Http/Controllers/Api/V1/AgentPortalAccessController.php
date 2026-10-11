@@ -50,15 +50,12 @@ final class AgentPortalAccessController extends Controller
     {
         $context = $this->contexts->from($request);
         try {
-            $ids = $this->mutations->run($context->user, $workspace, $context->oauthClientId, $context->idempotencyKey, $operation, $client, $user, $request->all());
+            $data = $this->mutations->run($context->user, $workspace, $context->oauthClientId, $context->idempotencyKey, $operation, $client, $user, $request->all());
         } catch (AccessMutationRefused $refused) {
             abort_if($refused->reason === AccessRefusal::NotAuthorized, 403, $refused->getMessage());
             abort_if($refused->reason === AccessRefusal::PortalRevisionConflict, 409, $refused->getMessage());
             throw $refused;
         }
-        $data = $operation === 'clients.portal_access.revoke'
-            ? ['client_id' => $ids[0], 'user_id' => $ids[1], 'revoked' => true]
-            : $this->contacts->get($context->user, $workspace, $ids[0], $ids[1]);
 
         return response()->json(['data' => $data], $operation === 'clients.portal_access.grant' ? 201 : 200);
     }

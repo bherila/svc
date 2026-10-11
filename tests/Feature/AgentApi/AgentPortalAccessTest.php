@@ -257,6 +257,23 @@ final class AgentPortalAccessTest extends TestCase
         $this->assertSame([$other->public_id], array_column($this->success($this->portalOperation($transport, 'list', $workspace, $company), 'list')['data'][0]['projects'], 'id'));
     }
 
+    #[DataProvider('transports')]
+    public function test_replays_keep_the_original_contact_response_after_scope_changes_and_revocation(string $transport): void
+    {
+        [$workspace, $owner, $company, $person, $project] = $this->fixture();
+        $this->actingAsMcp($owner, self::SCOPES);
+        $grantBody = $this->body('grant', $person, $company);
+        $granted = $this->success($this->portalOperation($transport, 'grant', $workspace, $company, $grantBody, key: 'grant-snapshot'), 'grant');
+        $updateBody = ['confirm' => true, 'scope' => 'projects', 'projects' => [$project->public_id], 'expected_version' => $granted['data']['version']];
+        $updated = $this->success($this->portalOperation($transport, 'update', $workspace, $company, $updateBody, $person, 'update-snapshot'), 'update');
+        $this->assertSame($granted, $this->success($this->portalOperation($transport, 'grant', $workspace, $company, $grantBody, key: 'grant-snapshot'), 'grant'));
+        app(WorkspaceAccess::class)->revokePortal(AccessMutationContext::user($owner), $company, $person);
+        $this->assertSame($granted, $this->success($this->portalOperation($transport, 'grant', $workspace, $company, $grantBody, key: 'grant-snapshot'), 'grant'));
+        $this->assertSame($updated, $this->success($this->portalOperation($transport, 'update', $workspace, $company, $updateBody, $person, 'update-snapshot'), 'update'));
+        $this->assertSame([], $this->success($this->portalOperation($transport, 'list', $workspace, $company), 'list')['data']);
+        $this->assertSame(2, AccessAuditEvent::query()->where('workspace_id', $workspace->id)->whereNotNull('operation_id')->count());
+    }
+
     private function fixture(): array
     {
         $workspace = Workspace::query()->create(['name' => 'Synthetic portal workspace', 'slug' => 'synthetic-portal-'.uniqid()]);

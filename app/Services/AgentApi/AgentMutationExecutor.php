@@ -26,6 +26,7 @@ final class AgentMutationExecutor
      * @param  array<string, mixed>  $payload
      * @param  callable(): list<string>  $callback
      * @param  (callable(list<string>): void)|null  $replayGuard
+     * @param  (callable(list<string>): array<string, mixed>)|null  $responseSnapshot
      * @return list<string>
      */
     public function run(
@@ -38,11 +39,12 @@ final class AgentMutationExecutor
         callable $callback,
         ?callable $replayGuard = null,
         ?string $additionalAuditOperation = null,
+        ?callable $responseSnapshot = null,
     ): array {
         $digest = hash('sha256', json_encode($this->canonicalize($payload), JSON_THROW_ON_ERROR));
 
         try {
-            return DB::transaction(function () use ($user, $workspace, $clientId, $operation, $key, $digest, $callback, $replayGuard, $additionalAuditOperation): array {
+            return DB::transaction(function () use ($user, $workspace, $clientId, $operation, $key, $digest, $callback, $replayGuard, $additionalAuditOperation, $responseSnapshot): array {
                 app(LegacyAgentReceiptNamespace::class)->reserve($user, $workspace, $clientId, $operation, $key);
                 // Keep the compatibility reservation when replaying an existing receipt.
                 // createOrFirst isolates a duplicate insert in a savepoint, not this transaction.
@@ -75,6 +77,7 @@ final class AgentMutationExecutor
                 $receipt->forceFill([
                     'status' => 'completed',
                     'result_public_ids' => $ids,
+                    'response_snapshot' => $responseSnapshot === null ? null : $responseSnapshot($ids),
                     'completed_at' => $this->clock->now($workspace),
                 ])->save();
                 $this->audit($user, $workspace, $clientId, $operation, $ids, 'success');
