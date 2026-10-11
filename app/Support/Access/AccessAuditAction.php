@@ -5,6 +5,8 @@ namespace App\Support\Access;
 /** What an access audit event records. */
 enum AccessAuditAction: string
 {
+    /** An account created for a provider identity, to be granted staff access. */
+    case StaffAccountProvisioned = 'staff.account_provisioned';
     case StaffGranted = 'staff.granted';
     case StaffRoleChanged = 'staff.role_changed';
     case StaffRemoved = 'staff.removed';

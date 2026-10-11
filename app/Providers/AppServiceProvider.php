@@ -8,6 +8,7 @@ use App\Models\Workspace;
 use App\Policies\ClientCompanyPolicy;
 use App\Policies\ClientProjectPolicy;
 use App\Policies\WorkspacePolicy;
+use App\Services\Access\DelegatedStaffAccess;
 use App\Services\AgentApi\Operations\AgentAvailability;
 use App\Services\AgentApi\Operations\AgentOperationCatalog;
 use App\Services\AgentApi\Operations\AgentPrincipalResolver;
@@ -25,6 +26,7 @@ use Bherila\McpLaravelBridge\Http\InternalAgentApiTransport;
 use Bherila\McpLaravelBridge\Http\McpHttpPolicy;
 use Bherila\McpLaravelBridge\Http\OperationRoutes;
 use BWH\Auth\OAuth\Credentials\GrantableScopes;
+use BWH\Auth\OAuth\DelegatedAccess\ApplicationAccessAdapter;
 use Carbon\CarbonImmutable;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Contracts\Debug\ExceptionHandler;
@@ -59,6 +61,9 @@ class AppServiceProvider extends ServiceProvider
         // Offer a REST credential only scopes some REST operation requires.
         $this->app->bind(GrantableScopes::class, OpenApiGrantableScopes::class);
         $this->app->bind(McpPrincipalResolverInterface::class, McpPrincipalResolver::class);
+        // Workspace staff, managed through the identity provider. The package's endpoint exists
+        // only while this is bound, and answers 404 until delegated access is enabled.
+        $this->app->bind(ApplicationAccessAdapter::class, DelegatedStaffAccess::class);
         // One declaration per agent operation (#408). The registry is read-only
         // after it is built; deployment switches are re-read on every
         // evaluation, so a long-lived worker sees configuration changes.

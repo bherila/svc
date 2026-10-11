@@ -9,4 +9,6 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 Schedule::command('svc:oauth:prune-dynamic-clients')->daily()->withoutOverlapping();
+// Expired delegated access assertion nonces and operation receipts past their 30 days.
+Schedule::command('bherila-auth:prune-delegated-nonces')->daily()->withoutOverlapping();
 Schedule::command('svc:billing:dispatch-invoice-emails --limit=50')->everyMinute()->withoutOverlapping();
