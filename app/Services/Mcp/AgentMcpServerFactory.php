@@ -102,6 +102,7 @@ final class AgentMcpServerFactory
             AgentMcpBillingAuditTools::class => $billingAudits,
             AgentMcpClientTools::class => $clients,
             AgentMcpClientWriteTools::class => $clientWrites,
+            AgentMcpPortalAccessTools::class => new AgentMcpPortalAccessTools(app(InternalAgentApiTransport::class), $this->requestArguments),
             AgentMcpWriteTools::class => $writes,
             AgentMcpPrompts::class => $this->prompts,
         ];

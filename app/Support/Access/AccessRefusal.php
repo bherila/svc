@@ -32,6 +32,9 @@ enum AccessRefusal: string
     /** The person has no portal membership for this company. */
     case NotPortalMember = 'not_portal_member';
 
+    /** The portal contact changed since the agent read it. */
+    case PortalRevisionConflict = 'portal_revision_conflict';
+
     /** A project limit names a project outside the company or workspace. */
     case ProjectOutsideCompany = 'project_outside_company';
 
@@ -49,6 +52,7 @@ enum AccessRefusal: string
             self::UnsupportedRole => 'That staff membership has a role this change cannot reason about.',
             self::AlreadyPortalMember => 'That person already has portal access to this client; change its scope instead.',
             self::NotPortalMember => 'That person has no portal access to this client.',
+            self::PortalRevisionConflict => 'Portal access changed. Read it again before confirming.',
             self::ProjectOutsideCompany => 'One or more projects do not belong to that client.',
             self::ProjectsWithCompanyScope => 'Company-wide portal access cannot also be limited to projects.',
         };

@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\Relations\Pivot;
 
 /**
  * @property int $id
+ * @property string $public_id
  * @property int $workspace_id
  * @property int $client_company_id
  * @property int $user_id

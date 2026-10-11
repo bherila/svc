@@ -576,7 +576,7 @@ final class DelegatedStaffAccess implements ApplicationAccessAdapter
             throw self::refusal(match ($refusal->reason) {
                 AccessRefusal::NotAuthorized => DelegatedRefusal::NOT_AUTHORIZED,
                 AccessRefusal::OwnerProtected, AccessRefusal::SelfChange, AccessRefusal::UnsupportedRole => DelegatedRefusal::PROTECTED_MEMBERSHIP,
-                AccessRefusal::AlreadyStaff, AccessRefusal::NotStaff => DelegatedRefusal::REVISION_CONFLICT,
+                AccessRefusal::AlreadyStaff, AccessRefusal::NotStaff, AccessRefusal::PortalRevisionConflict => DelegatedRefusal::REVISION_CONFLICT,
                 AccessRefusal::AlreadyPortalMember, AccessRefusal::NotPortalMember, AccessRefusal::ProjectOutsideCompany, AccessRefusal::ProjectsWithCompanyScope => DelegatedRefusal::INVALID_REQUEST,
             });
         }

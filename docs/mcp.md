@@ -355,6 +355,25 @@ receipt upload, recurrence or invoice claim/release integration.
 
 ### Client and agreement management
 
+Portal contacts use `clients.portal_access.list`, `clients.portal_access.grant`,
+`clients.portal_access.update` and `clients.portal_access.revoke`. Their REST
+routes are GET/POST `/clients/{client}/portal-access` and PATCH/DELETE
+`/clients/{client}/portal-access/{user}` under the workspace API prefix. Owners
+and admins may use them; every write checks that authority under the access lock.
+Listing requires `clients:read`, granting requires `clients:write`, and changing
+scope or revoking requires both scopes. Writes use the client-management cutover
+flags and the MCP `mcp.write.clients` switch.
+
+The listing returns each contact's scope, selected projects, version and finished
+URLs, with cursor pagination capped at 100 contacts. Granting identifies an
+existing account by exact email; it must be bound to the configured identity
+provider and have a subject. Every write requires `confirm: true` and an
+idempotency key. Scope changes and revocations also require `expected_version`
+from the latest listing, checked under the lock against the membership and its
+exact project reach. Company scope takes no project selection; project scope
+requires projects belonging to that client in the same workspace. REST and MCP
+share receipts and the same `WorkspaceAccess` boundary as the web forms.
+
 `clients.create`, `clients.update`, `clients.archive`, `clients.restore`,
 `agreements.create`, `agreements.update`, `agreements.activate` and
 `agreements.terminate` require `clients:write` and workspace owner/admin

@@ -10,6 +10,7 @@ use App\Services\Mcp\AgentMcpCapacityLedgerTools;
 use App\Services\Mcp\AgentMcpClientTools;
 use App\Services\Mcp\AgentMcpClientWriteTools;
 use App\Services\Mcp\AgentMcpContextResource;
+use App\Services\Mcp\AgentMcpPortalAccessTools;
 use App\Services\Mcp\AgentMcpPrompts;
 use App\Services\Mcp\AgentMcpReadTools;
 use App\Services\Mcp\AgentMcpWriteTools;
@@ -75,6 +76,10 @@ final class AgentOperationCatalog
         'clients.create' => ['clients.store', '/workspaces/{workspace}/clients', [201]],
         'clients.get' => ['clients.show', '/workspaces/{workspace}/clients/{client}', [200]],
         'clients.list' => ['clients.index', '/workspaces/{workspace}/clients', [200]],
+        'clients.portal_access.list' => ['clients.portal-access.index', '/workspaces/{workspace}/clients/{client}/portal-access', [200]],
+        'clients.portal_access.grant' => ['clients.portal-access.store', '/workspaces/{workspace}/clients/{client}/portal-access', [201]],
+        'clients.portal_access.update' => ['clients.portal-access.update', '/workspaces/{workspace}/clients/{client}/portal-access/{user}', [200]],
+        'clients.portal_access.revoke' => ['clients.portal-access.destroy', '/workspaces/{workspace}/clients/{client}/portal-access/{user}', [200]],
         'clients.restore' => ['clients.restore', '/workspaces/{workspace}/clients/{client}/restore', [200]],
         'clients.update' => ['clients.update', '/workspaces/{workspace}/clients/{client}', [200]],
         'connections.revoke' => ['connections.destroy', '/connections/{token}', [204]],
@@ -923,6 +928,53 @@ final class AgentOperationCatalog
                 cutovers: [AgentDeploymentFlags::CLIENTS],
                 manager: true,
                 input: AgentInlineSchemas::clientInput('clients.archive', ['client_id' => ['type' => 'string', 'format' => 'uuid'], 'idempotency_key' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 255]], ['client_id', 'idempotency_key'], write: true),
+            ),
+            $this->tool(
+                'clients.portal_access.list',
+                'List portal contacts',
+                'List portal contacts for a client as a workspace owner/admin, including scope, selected projects and finished mutation URLs.',
+                [AgentMcpPortalAccessTools::class, 'list'],
+                Effect::Read,
+                true,
+                'mcp.read.clients',
+                manager: true,
+                input: AgentInlineSchemas::clientInput('clients.portal_access.list', ['client_id' => ['type' => 'string', 'format' => 'uuid'], 'limit' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 100, 'default' => 25], 'cursor' => ['type' => ['string', 'null'], 'maxLength' => 2048]], ['client_id']),
+            ),
+            $this->tool(
+                'clients.portal_access.grant',
+                'Grant portal access',
+                'Grant portal access to an existing account found by exact email and bound to the configured identity provider. Requires explicit confirmation and an idempotency key.',
+                [AgentMcpPortalAccessTools::class, 'grant'],
+                Effect::LocalWrite,
+                true,
+                'mcp.write.clients',
+                cutovers: [AgentDeploymentFlags::CLIENTS],
+                manager: true,
+                input: AgentInlineSchemas::clientInput('clients.portal_access.grant', ['client_id' => ['type' => 'string', 'format' => 'uuid'], 'idempotency_key' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 255]], ['client_id', 'idempotency_key'], write: true),
+            ),
+            $this->tool(
+                'clients.portal_access.update',
+                'Change portal scope',
+                'Change a portal contact to the whole client or selected projects. Requires explicit confirmation and an idempotency key.',
+                [AgentMcpPortalAccessTools::class, 'update'],
+                Effect::Destructive,
+                true,
+                'mcp.write.clients',
+                cutovers: [AgentDeploymentFlags::CLIENTS],
+                manager: true,
+                input: AgentInlineSchemas::clientInput('clients.portal_access.update', ['client_id' => ['type' => 'string', 'format' => 'uuid'], 'user_id' => ['type' => 'string', 'format' => 'uuid'], 'idempotency_key' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 255]], ['client_id', 'user_id', 'idempotency_key'], write: true),
+            ),
+            $this->tool(
+                'clients.portal_access.revoke',
+                'Revoke portal access',
+                'Revoke a contact\'s portal access and project limits. Requires explicit confirmation and an idempotency key.',
+                [AgentMcpPortalAccessTools::class, 'revoke'],
+                Effect::Destructive,
+                true,
+                'mcp.write.clients',
+                cutovers: [AgentDeploymentFlags::CLIENTS],
+                manager: true,
+                input: AgentInlineSchemas::clientInput('clients.portal_access.revoke', ['client_id' => ['type' => 'string', 'format' => 'uuid'], 'user_id' => ['type' => 'string', 'format' => 'uuid'], 'idempotency_key' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 255]], ['client_id', 'user_id', 'idempotency_key'], write: true),
             ),
             $this->tool(
                 'clients.restore',

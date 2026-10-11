@@ -1320,6 +1320,264 @@
                 ]
             }
         },
+        "/workspaces/{workspace}/clients/{client}/portal-access": {
+            "post": {
+                "operationId": "clients.portal_access.grant",
+                "description": "Grant portal access to an existing account found by exact email and bound to the configured identity provider. Requires explicit confirmation and an idempotency key.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "clients:write"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/clients_portal_access_grantRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "client",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Authorized result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PortalContactResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-mcp-tool": "clients.portal_access.grant",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_CLIENT_WRITES_ENABLED"
+                ]
+            },
+            "get": {
+                "operationId": "clients.portal_access.list",
+                "description": "List portal contacts for a client as a workspace owner/admin, including scope, selected projects and finished mutation URLs.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "clients:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "client",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/Limit"
+                    },
+                    {
+                        "$ref": "#/components/parameters/Cursor"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Authorized result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PortalContactListResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-mcp-tool": "clients.portal_access.list",
+                "x-svc-flags": []
+            }
+        },
+        "/workspaces/{workspace}/clients/{client}/portal-access/{user}": {
+            "delete": {
+                "operationId": "clients.portal_access.revoke",
+                "description": "Revoke a contact's portal access and project limits. Requires its current expected_version, explicit confirmation and an idempotency key.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "clients:write",
+                            "clients:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/clients_portal_access_revokeRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "client",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "user",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Authorized result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PortalAccessRevokedResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-mcp-tool": "clients.portal_access.revoke",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_CLIENT_WRITES_ENABLED"
+                ]
+            },
+            "patch": {
+                "operationId": "clients.portal_access.update",
+                "description": "Change a portal contact to the whole client or selected projects. Requires its current expected_version, explicit confirmation and an idempotency key.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "clients:write",
+                            "clients:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/clients_portal_access_updateRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "client",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "user",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Authorized result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PortalContactResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-mcp-tool": "clients.portal_access.update",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_CLIENT_WRITES_ENABLED"
+                ]
+            }
+        },
         "/workspaces/{workspace}/clients/{client}/restore": {
             "post": {
                 "operationId": "clients.restore",
@@ -7269,6 +7527,153 @@
                     }
                 }
             },
+            "PortalAccessRevokedResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "data": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "client_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "user_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "revoked": {
+                                "type": "boolean",
+                                "const": true
+                            }
+                        },
+                        "required": [
+                            "client_id",
+                            "user_id",
+                            "revoked"
+                        ]
+                    }
+                },
+                "required": [
+                    "data"
+                ]
+            },
+            "PortalContact": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "email": {
+                        "type": "string",
+                        "format": "email"
+                    },
+                    "scope": {
+                        "type": "string",
+                        "enum": [
+                            "company",
+                            "projects"
+                        ]
+                    },
+                    "projects": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                                "id": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                },
+                                "name": {
+                                    "type": "string"
+                                },
+                                "href": {
+                                    "type": "string",
+                                    "format": "uri"
+                                }
+                            },
+                            "required": [
+                                "id",
+                                "name",
+                                "href"
+                            ]
+                        }
+                    },
+                    "update_href": {
+                        "type": "string",
+                        "format": "uri"
+                    },
+                    "revoke_href": {
+                        "type": "string",
+                        "format": "uri"
+                    },
+                    "version": {
+                        "type": "string",
+                        "minLength": 64,
+                        "maxLength": 64
+                    }
+                },
+                "required": [
+                    "id",
+                    "name",
+                    "email",
+                    "scope",
+                    "projects",
+                    "update_href",
+                    "revoke_href",
+                    "version"
+                ]
+            },
+            "PortalContactListResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/PortalContact"
+                        }
+                    },
+                    "meta": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "next_cursor": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "next_cursor"
+                        ]
+                    }
+                },
+                "required": [
+                    "data",
+                    "meta"
+                ]
+            },
+            "PortalContactResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/PortalContact"
+                    }
+                },
+                "required": [
+                    "data"
+                ]
+            },
             "Project": {
                 "type": "object",
                 "additionalProperties": false,
@@ -9436,6 +9841,171 @@
                         "maxLength": 255
                     }
                 }
+            },
+            "clients_portal_access_grantRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "confirm": {
+                        "type": "boolean",
+                        "const": true
+                    },
+                    "scope": {
+                        "type": "string",
+                        "enum": [
+                            "company",
+                            "projects"
+                        ]
+                    },
+                    "projects": {
+                        "type": "array",
+                        "maxItems": 500,
+                        "uniqueItems": true,
+                        "items": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    "email": {
+                        "type": "string",
+                        "format": "email",
+                        "maxLength": 255
+                    }
+                },
+                "required": [
+                    "confirm",
+                    "scope",
+                    "email"
+                ],
+                "allOf": [
+                    {
+                        "if": {
+                            "properties": {
+                                "scope": {
+                                    "const": "projects"
+                                }
+                            }
+                        },
+                        "then": {
+                            "required": [
+                                "projects"
+                            ],
+                            "properties": {
+                                "projects": {
+                                    "minItems": 1
+                                }
+                            }
+                        }
+                    },
+                    {
+                        "if": {
+                            "properties": {
+                                "scope": {
+                                    "const": "company"
+                                }
+                            }
+                        },
+                        "then": {
+                            "properties": {
+                                "projects": {
+                                    "maxItems": 0
+                                }
+                            }
+                        }
+                    }
+                ]
+            },
+            "clients_portal_access_revokeRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "confirm": {
+                        "type": "boolean",
+                        "const": true
+                    },
+                    "expected_version": {
+                        "type": "string",
+                        "minLength": 64,
+                        "maxLength": 64
+                    }
+                },
+                "required": [
+                    "confirm",
+                    "expected_version"
+                ]
+            },
+            "clients_portal_access_updateRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "confirm": {
+                        "type": "boolean",
+                        "const": true
+                    },
+                    "scope": {
+                        "type": "string",
+                        "enum": [
+                            "company",
+                            "projects"
+                        ]
+                    },
+                    "projects": {
+                        "type": "array",
+                        "maxItems": 500,
+                        "uniqueItems": true,
+                        "items": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    "expected_version": {
+                        "type": "string",
+                        "minLength": 64,
+                        "maxLength": 64
+                    }
+                },
+                "required": [
+                    "confirm",
+                    "scope",
+                    "expected_version"
+                ],
+                "allOf": [
+                    {
+                        "if": {
+                            "properties": {
+                                "scope": {
+                                    "const": "projects"
+                                }
+                            }
+                        },
+                        "then": {
+                            "required": [
+                                "projects"
+                            ],
+                            "properties": {
+                                "projects": {
+                                    "minItems": 1
+                                }
+                            }
+                        }
+                    },
+                    {
+                        "if": {
+                            "properties": {
+                                "scope": {
+                                    "const": "company"
+                                }
+                            }
+                        },
+                        "then": {
+                            "properties": {
+                                "projects": {
+                                    "maxItems": 0
+                                }
+                            }
+                        }
+                    }
+                ]
             },
             "clients_restoreRequest": {
                 "type": "object",

@@ -15,6 +15,7 @@ use App\Support\Access\AccessMutationContext;
 use App\Support\Access\AccessRefusal;
 use App\Support\Access\PortalAccessScope;
 use App\Support\Access\PortalAccessState;
+use App\Support\Access\PortalAccessVersion;
 use App\Support\Access\ProjectAssignment;
 use App\Support\Access\StaffAccess;
 use App\Support\Access\StaffAuthority;
@@ -62,6 +63,15 @@ final class WorkspaceAccess
         private readonly AccessAuditLog $audit,
         private readonly WorkspaceClock $clock = new WorkspaceClock,
     ) {}
+
+    /** Replays still require present authority, decided under the access lock. */
+    public function assertMayManage(AccessMutationContext $context, Workspace $workspace): void
+    {
+        $this->coordinator->locked($workspace, function (Workspace $locked) use ($context): void {
+            $staff = $this->coordinator->staff($locked, [$context->actorId()], true);
+            $this->refuseIf($this->authority->manage($context, $this->coordinator->actorRole($context, $staff)));
+        });
+    }
 
     /**
      * A person's staff membership and project assignments, in one query, or
@@ -246,11 +256,12 @@ final class WorkspaceAccess
      *
      * @param  list<string>  $projectPublicIds
      */
-    public function changePortalScope(AccessMutationContext $context, ClientCompany $company, User $user, PortalAccessScope $scope, array $projectPublicIds = []): ClientCompanyMembership
+    public function changePortalScope(AccessMutationContext $context, ClientCompany $company, User $user, PortalAccessScope $scope, array $projectPublicIds = [], ?string $expectedVersion = null): ClientCompanyMembership
     {
-        return $this->portal($context, $company, $user, $projectPublicIds, function (Workspace $workspace, ClientCompany $company, Collection $locked) use ($context, $user, $scope, $projectPublicIds): ClientCompanyMembership {
+        return $this->portal($context, $company, $user, $projectPublicIds, function (Workspace $workspace, ClientCompany $company, Collection $locked) use ($context, $user, $scope, $projectPublicIds, $expectedVersion): ClientCompanyMembership {
             $membership = $this->lockedPortalMembership($workspace, $company, $user) ?? throw new AccessMutationRefused(AccessRefusal::NotPortalMember);
             $before = $this->lockedPortalState($workspace, $membership, $locked);
+            $this->assertPortalVersion($membership, $before, $expectedVersion);
             $projects = $this->portalProjects($company, $scope, $projectPublicIds, $locked);
 
             $membership->forceFill(['access_scope' => $scope->value])->save();
@@ -265,11 +276,12 @@ final class WorkspaceAccess
      * Take a person's portal access to a client company away, with its project
      * limits. Returns what it reached, for the caller to disclose.
      */
-    public function revokePortal(AccessMutationContext $context, ClientCompany $company, User $user): PortalAccessState
+    public function revokePortal(AccessMutationContext $context, ClientCompany $company, User $user, ?string $expectedVersion = null): PortalAccessState
     {
-        return $this->portal($context, $company, $user, [], function (Workspace $workspace, ClientCompany $company, Collection $locked) use ($context, $user): PortalAccessState {
+        return $this->portal($context, $company, $user, [], function (Workspace $workspace, ClientCompany $company, Collection $locked) use ($context, $user, $expectedVersion): PortalAccessState {
             $membership = $this->lockedPortalMembership($workspace, $company, $user) ?? throw new AccessMutationRefused(AccessRefusal::NotPortalMember);
             $before = $this->lockedPortalState($workspace, $membership, $locked);
+            $this->assertPortalVersion($membership, $before, $expectedVersion);
 
             $this->deleteProjectLimits($workspace, $membership);
             $membership->delete();
@@ -436,6 +448,12 @@ final class WorkspaceAccess
             ->tap(Locks::forUpdate())
             ->get()
             ->keyBy('id');
+    }
+
+    private function assertPortalVersion(ClientCompanyMembership $membership, PortalAccessState $state, ?string $expectedVersion): void
+    {
+        $this->refuseIf($expectedVersion !== null && ! hash_equals(PortalAccessVersion::for($membership->public_id, $membership->role, $state, (string) config('app.key')), $expectedVersion)
+            ? AccessRefusal::PortalRevisionConflict : null);
     }
 
     private function lockedPortalMembership(Workspace $workspace, ClientCompany $company, User $user): ?ClientCompanyMembership
