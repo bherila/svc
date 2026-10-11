@@ -99,8 +99,8 @@ final class AgentOAuthBehaviourSnapshotTest extends TestCase
             'state' => 'snapshot-state',
             'code_challenge' => $challenge,
             'code_challenge_method' => 'S256',
-            // An MCP connection names the MCP endpoint, its own resource; a
-            // request naming nothing is a REST request, which `mcp:use` is not.
+            // An MCP connection names the MCP endpoint, its own resource. A
+            // client that names none gets the endpoint its scopes belong to.
             'resource' => url('/api/v1/mcp'),
         ];
         $observed['authorize_refusals'] = [
@@ -110,7 +110,13 @@ final class AgentOAuthBehaviourSnapshotTest extends TestCase
             'unknown_scope' => $this->authorizeRefusal(['scope' => 'admin:everything'] + $authorize),
             'other_resource' => $this->authorizeRefusal(['resource' => 'https://other.example.test/api/v1'] + $authorize),
             'connection_scope_for_rest' => $this->authorizeRefusal(['resource' => url('/api/v1')] + $authorize),
-            'connection_scope_without_resource' => $this->authorizeRefusal(array_diff_key($authorize, ['resource' => true])),
+        ];
+        // A connector that never sends RFC 8707 parameters, asking for the MCP connection
+        // scope, reaches consent for the MCP endpoint rather than being refused as REST.
+        $omitted = $this->get('/oauth/authorize?'.http_build_query(array_diff_key($authorize, ['resource' => true]), '', '&', PHP_QUERY_RFC3986));
+        $observed['connection_scope_without_resource'] = [
+            'status' => $omitted->getStatusCode(),
+            'refused' => str_contains((string) $omitted->headers->get('Location'), 'error='),
         ];
 
         $consent = $this->get('/oauth/authorize?'.http_build_query($authorize, '', '&', PHP_QUERY_RFC3986));

@@ -8,16 +8,16 @@
     "packages": [
         {
             "name": "bherila/auth-laravel",
-            "version": "v0.23.0",
+            "version": "v0.23.1",
             "source": {
                 "type": "git",
                 "url": "https://github.com/bherila/auth-laravel.git",
-                "reference": "dbf0363090a8efbeffe0f037965565d1838027f5"
+                "reference": "a3c79e390e55dc400141162e84ad74942e89c899"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/bherila/auth-laravel/zipball/dbf0363090a8efbeffe0f037965565d1838027f5",
-                "reference": "dbf0363090a8efbeffe0f037965565d1838027f5",
+                "url": "https://api.github.com/repos/bherila/auth-laravel/zipball/a3c79e390e55dc400141162e84ad74942e89c899",
+                "reference": "a3c79e390e55dc400141162e84ad74942e89c899",
                 "shasum": ""
             },
             "require": {
@@ -66,7 +66,7 @@
                 "issues": "https://github.com/bherila/auth-laravel/issues",
                 "source": "https://github.com/bherila/auth-laravel"
             },
-            "time": "2026-10-10T22:46:49+00:00"
+            "time": "2026-10-11T00:51:20+00:00"
         },
         {
             "name": "bherila/mcp-laravel-bridge",

@@ -222,14 +222,11 @@
             "error": "invalid_scope",
             "state": "snapshot-state",
             "consent_prepared": false
-        },
-        "connection_scope_without_resource": {
-            "status": 302,
-            "redirects_to_client": true,
-            "error": "invalid_scope",
-            "state": "snapshot-state",
-            "consent_prepared": false
         }
+    },
+    "connection_scope_without_resource": {
+        "status": 200,
+        "refused": false
     },
     "consent": {
         "status": 200,
