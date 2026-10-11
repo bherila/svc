@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\ClientCompanyController;
 use App\Http\Controllers\ClientDirectoryController;
+use App\Http\Controllers\ClientPortalAccessController;
 use App\Http\Controllers\ClientPortalController;
 use App\Http\Controllers\ClientProjectAccessController;
 use App\Http\Controllers\ClientProjectController;
@@ -128,6 +129,12 @@ Route::middleware('auth')->group(function (): void {
         ->name('projects.update');
     Route::put('/workspaces/{workspace}/clients/{clientCompany}/projects/{clientProject}/access', [ClientProjectAccessController::class, 'update'])
         ->name('projects.access.update');
+    Route::post('/workspaces/{workspace}/clients/{clientCompany}/portal-access', [ClientPortalAccessController::class, 'store'])
+        ->name('clients.portal-access.store');
+    Route::put('/workspaces/{workspace}/clients/{clientCompany}/portal-access/{user}', [ClientPortalAccessController::class, 'update'])
+        ->name('clients.portal-access.update');
+    Route::delete('/workspaces/{workspace}/clients/{clientCompany}/portal-access/{user}', [ClientPortalAccessController::class, 'destroy'])
+        ->name('clients.portal-access.destroy');
     Route::post('/workspaces/{workspace}/clients', [ClientCompanyController::class, 'store'])->name('clients.store');
     Route::post('/workspaces/{workspace}/clients/{clientCompany}/projects', [ClientProjectController::class, 'store'])
         ->name('projects.store');

@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\ClientAgreement;
 use App\Models\ClientAgreementRecurringItem;
 use App\Models\ClientCompany;
+use App\Models\ClientCompanyMembership;
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceAdministratorNotification;
 use App\Models\ClientInvoiceEmailDelivery;
@@ -24,6 +25,7 @@ use App\Services\Authorization\ProjectAccess;
 use App\Services\Billing\InvoiceCorrectionService;
 use App\Services\Billing\InvoiceEmailService;
 use App\Services\WorkspaceAuthorization;
+use App\Support\Access\PortalAccessScope;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\AgentApi\Presenters\AgreementReadPresenter;
 use App\Support\Billing\InvoiceKind;
@@ -33,7 +35,9 @@ use App\Support\Files\AttachmentListing;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
+use Illuminate\Database\Query\JoinClause;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -779,7 +783,53 @@ class ClientDirectoryController extends Controller
                 'id' => $member->public_id,
                 'name' => $member->name,
             ])->values()->all(),
+            'portal' => $this->portalAccess($workspace, $clientCompany),
         ]);
+    }
+
+    /**
+     * Who can use this client's portal, and what each of them reaches, with
+     * the finished URLs the settings page posts to. Three queries: the
+     * memberships, their people, and every project limit at once.
+     *
+     * @return array{add_url: string, members: list<array<string, mixed>>}
+     */
+    private function portalAccess(Workspace $workspace, ClientCompany $clientCompany): array
+    {
+        $memberships = ClientCompanyMembership::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('client_company_id', $clientCompany->id)
+            ->with('user')
+            ->orderBy('id')
+            ->get();
+
+        $limits = DB::table('client_portal_project_access')
+            ->join('client_projects', function (JoinClause $join): void {
+                $join->on('client_projects.id', '=', 'client_portal_project_access.client_project_id')
+                    ->on('client_projects.workspace_id', '=', 'client_portal_project_access.workspace_id');
+            })
+            ->where('client_portal_project_access.workspace_id', $workspace->id)
+            ->whereIn('client_portal_project_access.client_company_membership_id', $memberships->pluck('id')->all())
+            ->orderBy('client_projects.name')
+            ->get(['client_portal_project_access.client_company_membership_id as membership_id', 'client_projects.public_id'])
+            ->groupBy('membership_id');
+
+        $base = '/workspaces/'.$workspace->public_id.'/clients/'.$clientCompany->public_id.'/portal-access';
+
+        return [
+            'add_url' => $base,
+            'members' => array_values($memberships
+                ->filter(fn (ClientCompanyMembership $membership): bool => $membership->user instanceof User)
+                ->map(fn (ClientCompanyMembership $membership): array => [
+                    'id' => $membership->user->public_id,
+                    'name' => $membership->user->name,
+                    'email' => $membership->user->email,
+                    // Anything but `projects` reaches the whole client, as PortalAccess reads it.
+                    'scope' => $membership->access_scope === PortalAccessScope::Projects->value ? PortalAccessScope::Projects->value : PortalAccessScope::Company->value,
+                    'projects' => $limits->get($membership->id, collect())->pluck('public_id')->map(strval(...))->values()->all(),
+                    'url' => $base.'/'.$membership->user->public_id,
+                ])->all()),
+        ];
     }
 
     /**

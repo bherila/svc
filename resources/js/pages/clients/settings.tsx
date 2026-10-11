@@ -1,4 +1,6 @@
 import { Head, useForm } from '@inertiajs/react';
+import { PortalAccess } from '@/components/clients/portal-access';
+import type { PortalAccessProps } from '@/components/clients/portal-access';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -515,11 +517,13 @@ export default function ClientManage({
     company,
     projects,
     assignable,
+    portal,
 }: {
     workspace: { id: string };
     company: ManagedCompany;
     projects: ManagedProject[];
     assignable: AssignableMember[];
+    portal: PortalAccessProps['portal'];
 }) {
     return (
         <WorkspaceShell activeModule="home">
@@ -570,6 +574,22 @@ export default function ClientManage({
                         <NewProjectForm
                             workspaceId={workspace.id}
                             companyId={company.id}
+                        />
+                    </CardContent>
+                </Card>
+
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Portal access</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <PortalAccess
+                            clientName={company.name}
+                            portal={portal}
+                            projects={projects.map((project) => ({
+                                id: project.id,
+                                name: project.name,
+                            }))}
                         />
                     </CardContent>
                 </Card>
