@@ -3,6 +3,10 @@
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
+        {{-- The app has its own light and dark themes (the script below picks one). Tell the
+             browser both are supported, and ask Dark Reader not to recolour the page on top. --}}
+        <meta name="color-scheme" content="light dark">
+        <meta name="darkreader-lock">
 
         <script>
             (() => {

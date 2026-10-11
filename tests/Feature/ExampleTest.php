@@ -16,7 +16,11 @@ class ExampleTest extends TestCase
         $response->assertOk()
             ->assertSee('<link rel="icon" href="/favicon.ico" sizes="any">', false)
             ->assertSee('<link rel="apple-touch-icon" href="/apple-touch-icon.png">', false)
-            ->assertSee('<link rel="icon" href="/favicon.svg" type="image/svg+xml">', false);
+            ->assertSee('<link rel="icon" href="/favicon.svg" type="image/svg+xml">', false)
+            // Its own themes: browsers draw native controls to match, and Dark Reader stays off
+            // instead of recolouring the dark theme (it painted every border red).
+            ->assertSee('<meta name="color-scheme" content="light dark">', false)
+            ->assertSee('<meta name="darkreader-lock">', false);
 
         $favicon = file_get_contents(public_path('favicon.svg'));
 
