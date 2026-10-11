@@ -3640,6 +3640,613 @@
                     }
                 },
                 {
+                    "name": "clients.portal_access.grant",
+                    "title": "Grant portal access",
+                    "inputSchema": {
+                        "allOf": [
+                            {
+                                "if": {
+                                    "properties": {
+                                        "scope": {
+                                            "const": "projects"
+                                        }
+                                    }
+                                },
+                                "then": {
+                                    "required": [
+                                        "projects"
+                                    ],
+                                    "properties": {
+                                        "projects": {
+                                            "minItems": 1
+                                        }
+                                    }
+                                }
+                            },
+                            {
+                                "if": {
+                                    "properties": {
+                                        "scope": {
+                                            "const": "company"
+                                        }
+                                    }
+                                },
+                                "then": {
+                                    "properties": {
+                                        "projects": {
+                                            "maxItems": 0
+                                        }
+                                    }
+                                }
+                            }
+                        ],
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "workspace_id",
+                            "client_id",
+                            "idempotency_key",
+                            "confirm",
+                            "scope",
+                            "email"
+                        ],
+                        "properties": {
+                            "workspace_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "client_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "idempotency_key": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 255
+                            },
+                            "confirm": {
+                                "type": "boolean",
+                                "const": true
+                            },
+                            "scope": {
+                                "type": "string",
+                                "enum": [
+                                    "company",
+                                    "projects"
+                                ]
+                            },
+                            "projects": {
+                                "type": "array",
+                                "maxItems": 500,
+                                "uniqueItems": true,
+                                "items": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                }
+                            },
+                            "email": {
+                                "type": "string",
+                                "format": "email",
+                                "maxLength": 255
+                            }
+                        }
+                    },
+                    "description": "Grant portal access to an existing account found by exact email and bound to the configured identity provider. Requires explicit confirmation and an idempotency key.",
+                    "annotations": {
+                        "readOnlyHint": false,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": false
+                    },
+                    "outputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "data": {
+                                "$ref": "#/$defs/PortalContact"
+                            }
+                        },
+                        "required": [
+                            "data"
+                        ],
+                        "$defs": {
+                            "PortalContact": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "properties": {
+                                    "id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "name": {
+                                        "type": "string"
+                                    },
+                                    "email": {
+                                        "type": "string",
+                                        "format": "email"
+                                    },
+                                    "scope": {
+                                        "type": "string",
+                                        "enum": [
+                                            "company",
+                                            "projects"
+                                        ]
+                                    },
+                                    "projects": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "additionalProperties": false,
+                                            "properties": {
+                                                "id": {
+                                                    "type": "string",
+                                                    "format": "uuid"
+                                                },
+                                                "name": {
+                                                    "type": "string"
+                                                },
+                                                "href": {
+                                                    "type": "string",
+                                                    "format": "uri"
+                                                }
+                                            },
+                                            "required": [
+                                                "id",
+                                                "name",
+                                                "href"
+                                            ]
+                                        }
+                                    },
+                                    "update_href": {
+                                        "type": "string",
+                                        "format": "uri"
+                                    },
+                                    "revoke_href": {
+                                        "type": "string",
+                                        "format": "uri"
+                                    },
+                                    "version": {
+                                        "type": "string",
+                                        "minLength": 64,
+                                        "maxLength": 64
+                                    }
+                                },
+                                "required": [
+                                    "id",
+                                    "name",
+                                    "email",
+                                    "scope",
+                                    "projects",
+                                    "update_href",
+                                    "revoke_href",
+                                    "version"
+                                ]
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "clients.portal_access.list",
+                    "title": "List portal contacts",
+                    "inputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "workspace_id",
+                            "client_id"
+                        ],
+                        "properties": {
+                            "workspace_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "client_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "limit": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 100,
+                                "default": 25
+                            },
+                            "cursor": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "maxLength": 2048
+                            }
+                        }
+                    },
+                    "description": "List portal contacts for a client as a workspace owner/admin, including scope, selected projects and finished mutation URLs.",
+                    "annotations": {
+                        "readOnlyHint": true,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": false
+                    },
+                    "outputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "data": {
+                                "type": "array",
+                                "items": {
+                                    "$ref": "#/$defs/PortalContact"
+                                }
+                            },
+                            "meta": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "properties": {
+                                    "next_cursor": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ]
+                                    }
+                                },
+                                "required": [
+                                    "next_cursor"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "data",
+                            "meta"
+                        ],
+                        "$defs": {
+                            "PortalContact": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "properties": {
+                                    "id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "name": {
+                                        "type": "string"
+                                    },
+                                    "email": {
+                                        "type": "string",
+                                        "format": "email"
+                                    },
+                                    "scope": {
+                                        "type": "string",
+                                        "enum": [
+                                            "company",
+                                            "projects"
+                                        ]
+                                    },
+                                    "projects": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "additionalProperties": false,
+                                            "properties": {
+                                                "id": {
+                                                    "type": "string",
+                                                    "format": "uuid"
+                                                },
+                                                "name": {
+                                                    "type": "string"
+                                                },
+                                                "href": {
+                                                    "type": "string",
+                                                    "format": "uri"
+                                                }
+                                            },
+                                            "required": [
+                                                "id",
+                                                "name",
+                                                "href"
+                                            ]
+                                        }
+                                    },
+                                    "update_href": {
+                                        "type": "string",
+                                        "format": "uri"
+                                    },
+                                    "revoke_href": {
+                                        "type": "string",
+                                        "format": "uri"
+                                    },
+                                    "version": {
+                                        "type": "string",
+                                        "minLength": 64,
+                                        "maxLength": 64
+                                    }
+                                },
+                                "required": [
+                                    "id",
+                                    "name",
+                                    "email",
+                                    "scope",
+                                    "projects",
+                                    "update_href",
+                                    "revoke_href",
+                                    "version"
+                                ]
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "clients.portal_access.revoke",
+                    "title": "Revoke portal access",
+                    "inputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "workspace_id",
+                            "client_id",
+                            "user_id",
+                            "idempotency_key",
+                            "confirm",
+                            "expected_version"
+                        ],
+                        "properties": {
+                            "workspace_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "client_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "user_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "idempotency_key": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 255
+                            },
+                            "confirm": {
+                                "type": "boolean",
+                                "const": true
+                            },
+                            "expected_version": {
+                                "type": "string",
+                                "minLength": 64,
+                                "maxLength": 64
+                            }
+                        }
+                    },
+                    "description": "Revoke a contact's portal access and project limits. Requires explicit confirmation and an idempotency key.",
+                    "annotations": {
+                        "readOnlyHint": false,
+                        "destructiveHint": true,
+                        "idempotentHint": true,
+                        "openWorldHint": false
+                    },
+                    "outputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "data": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "properties": {
+                                    "client_id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "user_id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "revoked": {
+                                        "type": "boolean",
+                                        "const": true
+                                    }
+                                },
+                                "required": [
+                                    "client_id",
+                                    "user_id",
+                                    "revoked"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "data"
+                        ]
+                    }
+                },
+                {
+                    "name": "clients.portal_access.update",
+                    "title": "Change portal scope",
+                    "inputSchema": {
+                        "allOf": [
+                            {
+                                "if": {
+                                    "properties": {
+                                        "scope": {
+                                            "const": "projects"
+                                        }
+                                    }
+                                },
+                                "then": {
+                                    "required": [
+                                        "projects"
+                                    ],
+                                    "properties": {
+                                        "projects": {
+                                            "minItems": 1
+                                        }
+                                    }
+                                }
+                            },
+                            {
+                                "if": {
+                                    "properties": {
+                                        "scope": {
+                                            "const": "company"
+                                        }
+                                    }
+                                },
+                                "then": {
+                                    "properties": {
+                                        "projects": {
+                                            "maxItems": 0
+                                        }
+                                    }
+                                }
+                            }
+                        ],
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "workspace_id",
+                            "client_id",
+                            "user_id",
+                            "idempotency_key",
+                            "confirm",
+                            "scope",
+                            "expected_version"
+                        ],
+                        "properties": {
+                            "workspace_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "client_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "user_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "idempotency_key": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 255
+                            },
+                            "confirm": {
+                                "type": "boolean",
+                                "const": true
+                            },
+                            "scope": {
+                                "type": "string",
+                                "enum": [
+                                    "company",
+                                    "projects"
+                                ]
+                            },
+                            "projects": {
+                                "type": "array",
+                                "maxItems": 500,
+                                "uniqueItems": true,
+                                "items": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                }
+                            },
+                            "expected_version": {
+                                "type": "string",
+                                "minLength": 64,
+                                "maxLength": 64
+                            }
+                        }
+                    },
+                    "description": "Change a portal contact to the whole client or selected projects. Requires explicit confirmation and an idempotency key.",
+                    "annotations": {
+                        "readOnlyHint": false,
+                        "destructiveHint": true,
+                        "idempotentHint": true,
+                        "openWorldHint": false
+                    },
+                    "outputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "data": {
+                                "$ref": "#/$defs/PortalContact"
+                            }
+                        },
+                        "required": [
+                            "data"
+                        ],
+                        "$defs": {
+                            "PortalContact": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "properties": {
+                                    "id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "name": {
+                                        "type": "string"
+                                    },
+                                    "email": {
+                                        "type": "string",
+                                        "format": "email"
+                                    },
+                                    "scope": {
+                                        "type": "string",
+                                        "enum": [
+                                            "company",
+                                            "projects"
+                                        ]
+                                    },
+                                    "projects": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "additionalProperties": false,
+                                            "properties": {
+                                                "id": {
+                                                    "type": "string",
+                                                    "format": "uuid"
+                                                },
+                                                "name": {
+                                                    "type": "string"
+                                                },
+                                                "href": {
+                                                    "type": "string",
+                                                    "format": "uri"
+                                                }
+                                            },
+                                            "required": [
+                                                "id",
+                                                "name",
+                                                "href"
+                                            ]
+                                        }
+                                    },
+                                    "update_href": {
+                                        "type": "string",
+                                        "format": "uri"
+                                    },
+                                    "revoke_href": {
+                                        "type": "string",
+                                        "format": "uri"
+                                    },
+                                    "version": {
+                                        "type": "string",
+                                        "minLength": 64,
+                                        "maxLength": 64
+                                    }
+                                },
+                                "required": [
+                                    "id",
+                                    "name",
+                                    "email",
+                                    "scope",
+                                    "projects",
+                                    "update_href",
+                                    "revoke_href",
+                                    "version"
+                                ]
+                            }
+                        }
+                    }
+                },
+                {
                     "name": "clients.restore",
                     "title": "Restore client",
                     "inputSchema": {
@@ -13329,6 +13936,10 @@
                 "clients.create": "28cad48769744c80",
                 "clients.get": "9f7c8b4aaa5ce35d",
                 "clients.list": "a766bca1fb6d495f",
+                "clients.portal_access.grant": "bcee14d933b506f6",
+                "clients.portal_access.list": "629c5ea9b62c442a",
+                "clients.portal_access.revoke": "4c69c78734f42a65",
+                "clients.portal_access.update": "7c94d6dd53da658d",
                 "clients.restore": "6858f509ca07688f",
                 "clients.update": "193ab868ab1a3a3e",
                 "context.get": "dc46b79ea530a869",
@@ -13428,6 +14039,10 @@
                     "clients.create role",
                     "clients.get role",
                     "clients.list role",
+                    "clients.portal_access.grant role",
+                    "clients.portal_access.list role",
+                    "clients.portal_access.revoke role",
+                    "clients.portal_access.update role",
                     "clients.restore role",
                     "clients.update role",
                     "expense_schedules.create role",
@@ -13541,6 +14156,10 @@
                     "clients.create role",
                     "clients.get role",
                     "clients.list role",
+                    "clients.portal_access.grant role",
+                    "clients.portal_access.list role",
+                    "clients.portal_access.revoke role",
+                    "clients.portal_access.update role",
                     "clients.restore role",
                     "clients.update role",
                     "expense_schedules.create role",
@@ -13654,6 +14273,10 @@
                     "clients.create role",
                     "clients.get role",
                     "clients.list role",
+                    "clients.portal_access.grant role",
+                    "clients.portal_access.list role",
+                    "clients.portal_access.revoke role",
+                    "clients.portal_access.update role",
                     "clients.restore role",
                     "clients.update role",
                     "expense_schedules.create role",
@@ -13767,6 +14390,10 @@
                     "clients.create role",
                     "clients.get role",
                     "clients.list role",
+                    "clients.portal_access.grant role",
+                    "clients.portal_access.list role",
+                    "clients.portal_access.revoke role",
+                    "clients.portal_access.update role",
                     "clients.restore role",
                     "clients.update role",
                     "expense_schedules.create role",
@@ -13865,6 +14492,9 @@
                     "billing_schedules.generate scope_not_granted billing:deliver",
                     "clients.archive scope_not_granted clients:write",
                     "clients.create scope_not_granted clients:write",
+                    "clients.portal_access.grant scope_not_granted clients:write",
+                    "clients.portal_access.revoke scope_not_granted clients:write",
+                    "clients.portal_access.update scope_not_granted clients:write",
                     "clients.restore scope_not_granted clients:write",
                     "clients.update scope_not_granted clients:write",
                     "expense_schedules.create scope_not_granted expenses:write",
@@ -13936,6 +14566,7 @@
                 "capacity_ledger.get": "d8a6997ba130cd5a",
                 "clients.get": "9f7c8b4aaa5ce35d",
                 "clients.list": "a766bca1fb6d495f",
+                "clients.portal_access.list": "629c5ea9b62c442a",
                 "context.get": "dc46b79ea530a869",
                 "expense_schedules.list": "dd1832f42c8c0514",
                 "expenses.list": "444aff51ddc70e0d",
@@ -14060,6 +14691,10 @@
                     "clients.create scope_not_granted clients:write",
                     "clients.get role",
                     "clients.list role",
+                    "clients.portal_access.grant scope_not_granted clients:write",
+                    "clients.portal_access.list role",
+                    "clients.portal_access.revoke scope_not_granted clients:write",
+                    "clients.portal_access.update scope_not_granted clients:write",
                     "clients.restore scope_not_granted clients:write",
                     "clients.update scope_not_granted clients:write",
                     "expense_schedules.create scope_not_granted expenses:write",
@@ -14222,6 +14857,10 @@
                     "clients.create scope_not_granted clients:write",
                     "clients.get role",
                     "clients.list role",
+                    "clients.portal_access.grant scope_not_granted clients:write",
+                    "clients.portal_access.list role",
+                    "clients.portal_access.revoke scope_not_granted clients:write",
+                    "clients.portal_access.update scope_not_granted clients:write",
                     "clients.restore scope_not_granted clients:write",
                     "clients.update scope_not_granted clients:write",
                     "expense_schedules.create scope_not_granted expenses:write",
@@ -14371,6 +15010,9 @@
                     "billing_schedules.generate deployment_disabled",
                     "clients.archive deployment_disabled",
                     "clients.create deployment_disabled",
+                    "clients.portal_access.grant deployment_disabled",
+                    "clients.portal_access.revoke deployment_disabled",
+                    "clients.portal_access.update deployment_disabled",
                     "clients.restore deployment_disabled",
                     "clients.update deployment_disabled",
                     "expense_schedules.create deployment_disabled",
@@ -14439,6 +15081,7 @@
                 "capacity_ledger.get": "d8a6997ba130cd5a",
                 "clients.get": "9f7c8b4aaa5ce35d",
                 "clients.list": "a766bca1fb6d495f",
+                "clients.portal_access.list": "629c5ea9b62c442a",
                 "context.get": "dc46b79ea530a869",
                 "expense_schedules.list": "dd1832f42c8c0514",
                 "expenses.list": "444aff51ddc70e0d",
@@ -14485,6 +15128,9 @@
                     "billing_schedules.generate deployment_disabled",
                     "clients.archive deployment_disabled",
                     "clients.create deployment_disabled",
+                    "clients.portal_access.grant deployment_disabled",
+                    "clients.portal_access.revoke deployment_disabled",
+                    "clients.portal_access.update deployment_disabled",
                     "clients.restore deployment_disabled",
                     "clients.update deployment_disabled",
                     "expense_schedules.create deployment_disabled",
@@ -14553,6 +15199,7 @@
                 "capacity_ledger.get": "d8a6997ba130cd5a",
                 "clients.get": "9f7c8b4aaa5ce35d",
                 "clients.list": "a766bca1fb6d495f",
+                "clients.portal_access.list": "629c5ea9b62c442a",
                 "context.get": "dc46b79ea530a869",
                 "expense_schedules.list": "dd1832f42c8c0514",
                 "expenses.list": "444aff51ddc70e0d",
@@ -14614,6 +15261,10 @@
                     "clients.create deployment_disabled",
                     "clients.get role",
                     "clients.list role",
+                    "clients.portal_access.grant deployment_disabled",
+                    "clients.portal_access.list role",
+                    "clients.portal_access.revoke deployment_disabled",
+                    "clients.portal_access.update deployment_disabled",
                     "clients.restore deployment_disabled",
                     "clients.update deployment_disabled",
                     "expense_schedules.create deployment_disabled",
@@ -14726,6 +15377,10 @@
                     "clients.create deployment_disabled",
                     "clients.get role",
                     "clients.list role",
+                    "clients.portal_access.grant deployment_disabled",
+                    "clients.portal_access.list role",
+                    "clients.portal_access.revoke deployment_disabled",
+                    "clients.portal_access.update deployment_disabled",
                     "clients.restore deployment_disabled",
                     "clients.update deployment_disabled",
                     "expense_schedules.create deployment_disabled",
@@ -14838,6 +15493,10 @@
                     "clients.create deployment_disabled",
                     "clients.get role",
                     "clients.list role",
+                    "clients.portal_access.grant deployment_disabled",
+                    "clients.portal_access.list role",
+                    "clients.portal_access.revoke deployment_disabled",
+                    "clients.portal_access.update deployment_disabled",
                     "clients.restore deployment_disabled",
                     "clients.update deployment_disabled",
                     "expense_schedules.create deployment_disabled",
@@ -14950,6 +15609,10 @@
                     "clients.create deployment_disabled",
                     "clients.get role",
                     "clients.list role",
+                    "clients.portal_access.grant deployment_disabled",
+                    "clients.portal_access.list role",
+                    "clients.portal_access.revoke deployment_disabled",
+                    "clients.portal_access.update deployment_disabled",
                     "clients.restore deployment_disabled",
                     "clients.update deployment_disabled",
                     "expense_schedules.create deployment_disabled",
@@ -15049,6 +15712,9 @@
                     "billing_schedules.generate deployment_disabled",
                     "clients.archive deployment_disabled",
                     "clients.create deployment_disabled",
+                    "clients.portal_access.grant deployment_disabled",
+                    "clients.portal_access.revoke deployment_disabled",
+                    "clients.portal_access.update deployment_disabled",
                     "clients.restore deployment_disabled",
                     "clients.update deployment_disabled",
                     "expense_schedules.create deployment_disabled",
@@ -15120,6 +15786,7 @@
                 "capacity_ledger.get": "d8a6997ba130cd5a",
                 "clients.get": "9f7c8b4aaa5ce35d",
                 "clients.list": "a766bca1fb6d495f",
+                "clients.portal_access.list": "629c5ea9b62c442a",
                 "context.get": "dc46b79ea530a869",
                 "expense_schedules.list": "dd1832f42c8c0514",
                 "expenses.list": "444aff51ddc70e0d",
@@ -15161,6 +15828,9 @@
                     "billing_schedules.generate deployment_disabled",
                     "clients.archive deployment_disabled",
                     "clients.create deployment_disabled",
+                    "clients.portal_access.grant deployment_disabled",
+                    "clients.portal_access.revoke deployment_disabled",
+                    "clients.portal_access.update deployment_disabled",
                     "clients.restore deployment_disabled",
                     "clients.update deployment_disabled",
                     "expense_schedules.create deployment_disabled",
@@ -15232,6 +15902,7 @@
                 "capacity_ledger.get": "d8a6997ba130cd5a",
                 "clients.get": "9f7c8b4aaa5ce35d",
                 "clients.list": "a766bca1fb6d495f",
+                "clients.portal_access.list": "629c5ea9b62c442a",
                 "context.get": "dc46b79ea530a869",
                 "expense_schedules.list": "dd1832f42c8c0514",
                 "expenses.list": "444aff51ddc70e0d",
@@ -15288,6 +15959,10 @@
                     "clients.create deployment_disabled",
                     "clients.get role",
                     "clients.list role",
+                    "clients.portal_access.grant deployment_disabled",
+                    "clients.portal_access.list role",
+                    "clients.portal_access.revoke deployment_disabled",
+                    "clients.portal_access.update deployment_disabled",
                     "clients.restore deployment_disabled",
                     "clients.update deployment_disabled",
                     "expense_schedules.create deployment_disabled",
@@ -15398,6 +16073,10 @@
                     "clients.create deployment_disabled",
                     "clients.get role",
                     "clients.list role",
+                    "clients.portal_access.grant deployment_disabled",
+                    "clients.portal_access.list role",
+                    "clients.portal_access.revoke deployment_disabled",
+                    "clients.portal_access.update deployment_disabled",
                     "clients.restore deployment_disabled",
                     "clients.update deployment_disabled",
                     "expense_schedules.create deployment_disabled",
@@ -15508,6 +16187,10 @@
                     "clients.create deployment_disabled",
                     "clients.get role",
                     "clients.list role",
+                    "clients.portal_access.grant deployment_disabled",
+                    "clients.portal_access.list role",
+                    "clients.portal_access.revoke deployment_disabled",
+                    "clients.portal_access.update deployment_disabled",
                     "clients.restore deployment_disabled",
                     "clients.update deployment_disabled",
                     "expense_schedules.create deployment_disabled",
@@ -15618,6 +16301,10 @@
                     "clients.create deployment_disabled",
                     "clients.get role",
                     "clients.list role",
+                    "clients.portal_access.grant deployment_disabled",
+                    "clients.portal_access.list role",
+                    "clients.portal_access.revoke deployment_disabled",
+                    "clients.portal_access.update deployment_disabled",
                     "clients.restore deployment_disabled",
                     "clients.update deployment_disabled",
                     "expense_schedules.create deployment_disabled",
@@ -15715,6 +16402,9 @@
                     "billing_schedules.generate deployment_disabled",
                     "clients.archive deployment_disabled",
                     "clients.create deployment_disabled",
+                    "clients.portal_access.grant deployment_disabled",
+                    "clients.portal_access.revoke deployment_disabled",
+                    "clients.portal_access.update deployment_disabled",
                     "clients.restore deployment_disabled",
                     "clients.update deployment_disabled",
                     "expense_schedules.create deployment_disabled",
@@ -15783,6 +16473,7 @@
                 "capacity_ledger.get": "d8a6997ba130cd5a",
                 "clients.get": "9f7c8b4aaa5ce35d",
                 "clients.list": "a766bca1fb6d495f",
+                "clients.portal_access.list": "629c5ea9b62c442a",
                 "context.get": "dc46b79ea530a869",
                 "expense_schedules.list": "dd1832f42c8c0514",
                 "expenses.list": "444aff51ddc70e0d",
@@ -15829,6 +16520,9 @@
                     "billing_schedules.generate deployment_disabled",
                     "clients.archive deployment_disabled",
                     "clients.create deployment_disabled",
+                    "clients.portal_access.grant deployment_disabled",
+                    "clients.portal_access.revoke deployment_disabled",
+                    "clients.portal_access.update deployment_disabled",
                     "clients.restore deployment_disabled",
                     "clients.update deployment_disabled",
                     "expense_schedules.create deployment_disabled",
@@ -15897,6 +16591,7 @@
                 "capacity_ledger.get": "d8a6997ba130cd5a",
                 "clients.get": "9f7c8b4aaa5ce35d",
                 "clients.list": "a766bca1fb6d495f",
+                "clients.portal_access.list": "629c5ea9b62c442a",
                 "context.get": "dc46b79ea530a869",
                 "expense_schedules.list": "dd1832f42c8c0514",
                 "expenses.list": "444aff51ddc70e0d",
@@ -15958,6 +16653,10 @@
                     "clients.create deployment_disabled",
                     "clients.get role",
                     "clients.list role",
+                    "clients.portal_access.grant deployment_disabled",
+                    "clients.portal_access.list role",
+                    "clients.portal_access.revoke deployment_disabled",
+                    "clients.portal_access.update deployment_disabled",
                     "clients.restore deployment_disabled",
                     "clients.update deployment_disabled",
                     "expense_schedules.create deployment_disabled",
@@ -16070,6 +16769,10 @@
                     "clients.create deployment_disabled",
                     "clients.get role",
                     "clients.list role",
+                    "clients.portal_access.grant deployment_disabled",
+                    "clients.portal_access.list role",
+                    "clients.portal_access.revoke deployment_disabled",
+                    "clients.portal_access.update deployment_disabled",
                     "clients.restore deployment_disabled",
                     "clients.update deployment_disabled",
                     "expense_schedules.create deployment_disabled",
@@ -16182,6 +16885,10 @@
                     "clients.create deployment_disabled",
                     "clients.get role",
                     "clients.list role",
+                    "clients.portal_access.grant deployment_disabled",
+                    "clients.portal_access.list role",
+                    "clients.portal_access.revoke deployment_disabled",
+                    "clients.portal_access.update deployment_disabled",
                     "clients.restore deployment_disabled",
                     "clients.update deployment_disabled",
                     "expense_schedules.create deployment_disabled",
@@ -16294,6 +17001,10 @@
                     "clients.create deployment_disabled",
                     "clients.get role",
                     "clients.list role",
+                    "clients.portal_access.grant deployment_disabled",
+                    "clients.portal_access.list role",
+                    "clients.portal_access.revoke deployment_disabled",
+                    "clients.portal_access.update deployment_disabled",
                     "clients.restore deployment_disabled",
                     "clients.update deployment_disabled",
                     "expense_schedules.create deployment_disabled",
@@ -16436,6 +17147,10 @@
                 "clients.create": "28cad48769744c80",
                 "clients.get": "9f7c8b4aaa5ce35d",
                 "clients.list": "a766bca1fb6d495f",
+                "clients.portal_access.grant": "bcee14d933b506f6",
+                "clients.portal_access.list": "629c5ea9b62c442a",
+                "clients.portal_access.revoke": "4c69c78734f42a65",
+                "clients.portal_access.update": "7c94d6dd53da658d",
                 "clients.restore": "6858f509ca07688f",
                 "clients.update": "193ab868ab1a3a3e",
                 "context.get": "dc46b79ea530a869",
@@ -16550,6 +17265,10 @@
                 "clients.create": "28cad48769744c80",
                 "clients.get": "9f7c8b4aaa5ce35d",
                 "clients.list": "a766bca1fb6d495f",
+                "clients.portal_access.grant": "bcee14d933b506f6",
+                "clients.portal_access.list": "629c5ea9b62c442a",
+                "clients.portal_access.revoke": "4c69c78734f42a65",
+                "clients.portal_access.update": "7c94d6dd53da658d",
                 "clients.restore": "6858f509ca07688f",
                 "clients.update": "193ab868ab1a3a3e",
                 "context.get": "dc46b79ea530a869",
@@ -16636,6 +17355,10 @@
                     "clients.create role",
                     "clients.get role",
                     "clients.list role",
+                    "clients.portal_access.grant role",
+                    "clients.portal_access.list role",
+                    "clients.portal_access.revoke role",
+                    "clients.portal_access.update role",
                     "clients.restore role",
                     "clients.update role",
                     "expense_schedules.create role",
@@ -16748,6 +17471,10 @@
                     "clients.create role",
                     "clients.get role",
                     "clients.list role",
+                    "clients.portal_access.grant role",
+                    "clients.portal_access.list role",
+                    "clients.portal_access.revoke role",
+                    "clients.portal_access.update role",
                     "clients.restore role",
                     "clients.update role",
                     "expense_schedules.create role",
@@ -16860,6 +17587,10 @@
                     "clients.create role",
                     "clients.get role",
                     "clients.list role",
+                    "clients.portal_access.grant role",
+                    "clients.portal_access.list role",
+                    "clients.portal_access.revoke role",
+                    "clients.portal_access.update role",
                     "clients.restore role",
                     "clients.update role",
                     "expense_schedules.create role",
@@ -16972,6 +17703,10 @@
                     "clients.create role",
                     "clients.get role",
                     "clients.list role",
+                    "clients.portal_access.grant role",
+                    "clients.portal_access.list role",
+                    "clients.portal_access.revoke role",
+                    "clients.portal_access.update role",
                     "clients.restore role",
                     "clients.update role",
                     "expense_schedules.create role",
@@ -17139,6 +17874,10 @@
                 "clients.create": "28cad48769744c80",
                 "clients.get": "9f7c8b4aaa5ce35d",
                 "clients.list": "a766bca1fb6d495f",
+                "clients.portal_access.grant": "bcee14d933b506f6",
+                "clients.portal_access.list": "629c5ea9b62c442a",
+                "clients.portal_access.revoke": "4c69c78734f42a65",
+                "clients.portal_access.update": "7c94d6dd53da658d",
                 "clients.restore": "6858f509ca07688f",
                 "clients.update": "193ab868ab1a3a3e",
                 "context.get": "dc46b79ea530a869",
@@ -17251,6 +17990,10 @@
                 "clients.create": "28cad48769744c80",
                 "clients.get": "9f7c8b4aaa5ce35d",
                 "clients.list": "a766bca1fb6d495f",
+                "clients.portal_access.grant": "bcee14d933b506f6",
+                "clients.portal_access.list": "629c5ea9b62c442a",
+                "clients.portal_access.revoke": "4c69c78734f42a65",
+                "clients.portal_access.update": "7c94d6dd53da658d",
                 "clients.restore": "6858f509ca07688f",
                 "clients.update": "193ab868ab1a3a3e",
                 "context.get": "dc46b79ea530a869",
@@ -17310,6 +18053,10 @@
                     "clients.create role",
                     "clients.get role",
                     "clients.list role",
+                    "clients.portal_access.grant role",
+                    "clients.portal_access.list role",
+                    "clients.portal_access.revoke role",
+                    "clients.portal_access.update role",
                     "clients.restore role",
                     "clients.update role",
                     "expense_schedules.create deployment_disabled",
@@ -17420,6 +18167,10 @@
                     "clients.create role",
                     "clients.get role",
                     "clients.list role",
+                    "clients.portal_access.grant role",
+                    "clients.portal_access.list role",
+                    "clients.portal_access.revoke role",
+                    "clients.portal_access.update role",
                     "clients.restore role",
                     "clients.update role",
                     "expense_schedules.create deployment_disabled",
@@ -17530,6 +18281,10 @@
                     "clients.create role",
                     "clients.get role",
                     "clients.list role",
+                    "clients.portal_access.grant role",
+                    "clients.portal_access.list role",
+                    "clients.portal_access.revoke role",
+                    "clients.portal_access.update role",
                     "clients.restore role",
                     "clients.update role",
                     "expense_schedules.create deployment_disabled",
@@ -17640,6 +18395,10 @@
                     "clients.create role",
                     "clients.get role",
                     "clients.list role",
+                    "clients.portal_access.grant role",
+                    "clients.portal_access.list role",
+                    "clients.portal_access.revoke role",
+                    "clients.portal_access.update role",
                     "clients.restore role",
                     "clients.update role",
                     "expense_schedules.create deployment_disabled",
@@ -17768,6 +18527,10 @@
                 "clients.create": "28cad48769744c80",
                 "clients.get": "9f7c8b4aaa5ce35d",
                 "clients.list": "a766bca1fb6d495f",
+                "clients.portal_access.grant": "bcee14d933b506f6",
+                "clients.portal_access.list": "629c5ea9b62c442a",
+                "clients.portal_access.revoke": "4c69c78734f42a65",
+                "clients.portal_access.update": "7c94d6dd53da658d",
                 "clients.restore": "6858f509ca07688f",
                 "clients.update": "193ab868ab1a3a3e",
                 "context.get": "dc46b79ea530a869",
@@ -17881,6 +18644,10 @@
                 "clients.create": "28cad48769744c80",
                 "clients.get": "9f7c8b4aaa5ce35d",
                 "clients.list": "a766bca1fb6d495f",
+                "clients.portal_access.grant": "bcee14d933b506f6",
+                "clients.portal_access.list": "629c5ea9b62c442a",
+                "clients.portal_access.revoke": "4c69c78734f42a65",
+                "clients.portal_access.update": "7c94d6dd53da658d",
                 "clients.restore": "6858f509ca07688f",
                 "clients.update": "193ab868ab1a3a3e",
                 "context.get": "dc46b79ea530a869",
@@ -17978,6 +18745,10 @@
                     "clients.create role",
                     "clients.get role",
                     "clients.list role",
+                    "clients.portal_access.grant role",
+                    "clients.portal_access.list role",
+                    "clients.portal_access.revoke role",
+                    "clients.portal_access.update role",
                     "clients.restore role",
                     "clients.update role",
                     "expense_schedules.create role",
@@ -18091,6 +18862,10 @@
                     "clients.create role",
                     "clients.get role",
                     "clients.list role",
+                    "clients.portal_access.grant role",
+                    "clients.portal_access.list role",
+                    "clients.portal_access.revoke role",
+                    "clients.portal_access.update role",
                     "clients.restore role",
                     "clients.update role",
                     "expense_schedules.create role",
@@ -18204,6 +18979,10 @@
                     "clients.create role",
                     "clients.get role",
                     "clients.list role",
+                    "clients.portal_access.grant role",
+                    "clients.portal_access.list role",
+                    "clients.portal_access.revoke role",
+                    "clients.portal_access.update role",
                     "clients.restore role",
                     "clients.update role",
                     "expense_schedules.create role",
@@ -18317,6 +19096,10 @@
                     "clients.create role",
                     "clients.get role",
                     "clients.list role",
+                    "clients.portal_access.grant role",
+                    "clients.portal_access.list role",
+                    "clients.portal_access.revoke role",
+                    "clients.portal_access.update role",
                     "clients.restore role",
                     "clients.update role",
                     "expense_schedules.create role",
@@ -18451,6 +19234,10 @@
                 "clients.create": "28cad48769744c80",
                 "clients.get": "9f7c8b4aaa5ce35d",
                 "clients.list": "a766bca1fb6d495f",
+                "clients.portal_access.grant": "bcee14d933b506f6",
+                "clients.portal_access.list": "629c5ea9b62c442a",
+                "clients.portal_access.revoke": "4c69c78734f42a65",
+                "clients.portal_access.update": "7c94d6dd53da658d",
                 "clients.restore": "6858f509ca07688f",
                 "clients.update": "193ab868ab1a3a3e",
                 "expense_schedules.create": "834a8f44b0d1627b",
@@ -18563,6 +19350,10 @@
                 "clients.create": "28cad48769744c80",
                 "clients.get": "9f7c8b4aaa5ce35d",
                 "clients.list": "a766bca1fb6d495f",
+                "clients.portal_access.grant": "bcee14d933b506f6",
+                "clients.portal_access.list": "629c5ea9b62c442a",
+                "clients.portal_access.revoke": "4c69c78734f42a65",
+                "clients.portal_access.update": "7c94d6dd53da658d",
                 "clients.restore": "6858f509ca07688f",
                 "clients.update": "193ab868ab1a3a3e",
                 "expense_schedules.create": "834a8f44b0d1627b",
@@ -18656,6 +19447,10 @@
                     "clients.create role",
                     "clients.get role",
                     "clients.list role",
+                    "clients.portal_access.grant role",
+                    "clients.portal_access.list role",
+                    "clients.portal_access.revoke role",
+                    "clients.portal_access.update role",
                     "clients.restore role",
                     "clients.update role",
                     "context.get deployment_disabled",
@@ -18766,6 +19561,10 @@
                     "clients.create role",
                     "clients.get role",
                     "clients.list role",
+                    "clients.portal_access.grant role",
+                    "clients.portal_access.list role",
+                    "clients.portal_access.revoke role",
+                    "clients.portal_access.update role",
                     "clients.restore role",
                     "clients.update role",
                     "context.get deployment_disabled",
@@ -18876,6 +19675,10 @@
                     "clients.create role",
                     "clients.get role",
                     "clients.list role",
+                    "clients.portal_access.grant role",
+                    "clients.portal_access.list role",
+                    "clients.portal_access.revoke role",
+                    "clients.portal_access.update role",
                     "clients.restore role",
                     "clients.update role",
                     "context.get deployment_disabled",
@@ -18986,6 +19789,10 @@
                     "clients.create role",
                     "clients.get role",
                     "clients.list role",
+                    "clients.portal_access.grant role",
+                    "clients.portal_access.list role",
+                    "clients.portal_access.revoke role",
+                    "clients.portal_access.update role",
                     "clients.restore role",
                     "clients.update role",
                     "context.get deployment_disabled",
@@ -19098,6 +19905,10 @@
                     "clients.create deployment_disabled",
                     "clients.get deployment_disabled",
                     "clients.list deployment_disabled",
+                    "clients.portal_access.grant deployment_disabled",
+                    "clients.portal_access.list deployment_disabled",
+                    "clients.portal_access.revoke deployment_disabled",
+                    "clients.portal_access.update deployment_disabled",
                     "clients.restore deployment_disabled",
                     "clients.update deployment_disabled",
                     "context.get deployment_disabled",
@@ -19189,6 +20000,10 @@
                     "clients.create deployment_disabled",
                     "clients.get deployment_disabled",
                     "clients.list deployment_disabled",
+                    "clients.portal_access.grant deployment_disabled",
+                    "clients.portal_access.list deployment_disabled",
+                    "clients.portal_access.revoke deployment_disabled",
+                    "clients.portal_access.update deployment_disabled",
                     "clients.restore deployment_disabled",
                     "clients.update deployment_disabled",
                     "context.get deployment_disabled",
@@ -19280,6 +20095,10 @@
                     "clients.create deployment_disabled",
                     "clients.get deployment_disabled",
                     "clients.list deployment_disabled",
+                    "clients.portal_access.grant deployment_disabled",
+                    "clients.portal_access.list deployment_disabled",
+                    "clients.portal_access.revoke deployment_disabled",
+                    "clients.portal_access.update deployment_disabled",
                     "clients.restore deployment_disabled",
                     "clients.update deployment_disabled",
                     "context.get deployment_disabled",
@@ -19371,6 +20190,10 @@
                     "clients.create deployment_disabled",
                     "clients.get deployment_disabled",
                     "clients.list deployment_disabled",
+                    "clients.portal_access.grant deployment_disabled",
+                    "clients.portal_access.list deployment_disabled",
+                    "clients.portal_access.revoke deployment_disabled",
+                    "clients.portal_access.update deployment_disabled",
                     "clients.restore deployment_disabled",
                     "clients.update deployment_disabled",
                     "context.get deployment_disabled",
@@ -19462,6 +20285,10 @@
                     "clients.create deployment_disabled",
                     "clients.get deployment_disabled",
                     "clients.list deployment_disabled",
+                    "clients.portal_access.grant deployment_disabled",
+                    "clients.portal_access.list deployment_disabled",
+                    "clients.portal_access.revoke deployment_disabled",
+                    "clients.portal_access.update deployment_disabled",
                     "clients.restore deployment_disabled",
                     "clients.update deployment_disabled",
                     "context.get deployment_disabled",
@@ -19553,6 +20380,10 @@
                     "clients.create deployment_disabled",
                     "clients.get deployment_disabled",
                     "clients.list deployment_disabled",
+                    "clients.portal_access.grant deployment_disabled",
+                    "clients.portal_access.list deployment_disabled",
+                    "clients.portal_access.revoke deployment_disabled",
+                    "clients.portal_access.update deployment_disabled",
                     "clients.restore deployment_disabled",
                     "clients.update deployment_disabled",
                     "context.get deployment_disabled",

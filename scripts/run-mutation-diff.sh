@@ -23,7 +23,6 @@ export GIT_CONFIG_VALUE_0=false
 export PAO_DISABLE=1
 
 exec php -d pcov.enabled=1 -d memory_limit=1G vendor/bin/infection \
-    --debug \
     --configuration=infection.diff.json5 \
     --git-diff-lines \
     --git-diff-base="$mutation_base" \

@@ -273,17 +273,6 @@ jobs:
           MUTATION_BASE: ${{ steps.mutation_scope.outputs.merge_base }}
         run: composer test:mutation-diff
 
-      - name: Diagnose refusal mutation execution
-        if: ${{ failure() && steps.mutation_run.outcome == 'failure' }}
-        run: |
-          config=storage/framework/cache/infection-diff/infection/phpunitConfiguration.c46075d1a3e007663f73ca1fb7d26330.infection.xml
-          if [ -f "$config" ]; then
-            sed -n '/<testsuites>/,/<\/testsuites>/p' "$config"
-            status=0
-            PAO_DISABLE=1 timeout 30s php vendor/bin/phpunit --configuration "$config" --order-by=default --filter test_every_refusal_has_its_own_message --debug || status=$?
-            echo "Focused refusal mutant exit: $status"
-          fi
-
       - name: Report mutation result
         if: ${{ always() && steps.mutation_scope.outputs.required == 'true' }}
         env:
