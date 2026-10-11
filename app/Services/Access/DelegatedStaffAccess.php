@@ -309,7 +309,11 @@ final class DelegatedStaffAccess implements ApplicationAccessAdapter
         $this->transaction(function () use ($actor, $target, $reach, $expectedRevision, $desired): void {
             $view = $this->lockedView($actor, $target, $reach);
 
-            if (! hash_equals($view->revision(), $expectedRevision)) {
+            // The workspaces were listed before any lock. One the actor has gained
+            // since is not locked and not in the revision, so this write would
+            // take less than the actor's projection now holds: refuse, and the
+            // provider reads again.
+            if (! hash_equals($view->revision(), $expectedRevision) || array_keys($this->reach($actor)) !== array_keys($reach)) {
                 throw self::refusal(DelegatedRefusal::REVISION_CONFLICT);
             }
 

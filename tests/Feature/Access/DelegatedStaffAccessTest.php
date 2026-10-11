@@ -144,6 +144,20 @@ final class DelegatedStaffAccessTest extends TestCase
         $this->assertRefusedWithNothingChanged('revision_conflict', 'owner-subject', ['operation' => 'remove', 'subject' => 'colleague-subject', 'expected_revision' => $state['revision']]);
     }
 
+    /** Codex review on #422: a workspace the actor gains during the write is part of what it would take. */
+    public function test_a_workspace_the_actor_gains_during_the_write_refuses_it(): void
+    {
+        $other = Workspace::query()->create(['name' => 'Other Workspace', 'slug' => 'other']);
+        $this->addStaff($other, $this->member, 'member');
+        $state = $this->read('owner-subject', 'member-subject');
+        $this->assertCount(1, $state['access']['workspaces']);
+
+        // Committed by someone else after this request listed the actor's workspaces.
+        $this->onceTheWorkspaceIsLocked(fn () => $this->addStaff($other, $this->owner, 'admin'));
+
+        $this->assertRefusedWithNothingChanged('revision_conflict', 'owner-subject', ['operation' => 'remove', 'subject' => 'member-subject', 'expected_revision' => $state['revision']]);
+    }
+
     public function test_an_assignment_role_changed_after_the_read_refuses_the_removal(): void
     {
         $state = $this->read('owner-subject', 'member-subject');
