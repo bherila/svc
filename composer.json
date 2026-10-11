@@ -10,17 +10,17 @@
     "license": "MIT",
     "require": {
         "php": "^8.4",
-        "bherila/auth-laravel": "^0.23",
+        "bherila/auth-laravel": "^0.24",
         "bherila/mcp-laravel-bridge": "^0.4.2",
         "dompdf/dompdf": "^3.1",
         "inertiajs/inertia-laravel": "^3.0",
-        "laravel/framework": "^13.17",
+        "laravel/framework": ">=13.17 <13.35",
         "laravel/passport": "^13.0",
         "laravel/sanctum": "^4.3",
         "laravel/tinker": "^3.0",
         "laravel/wayfinder": "^0.1.14",
         "mcp/sdk": "^0.7.1",
-        "stripe/stripe-php": "^21.0",
+        "stripe/stripe-php": "^22.0",
         "symfony/brevo-mailer": "^8.1",
         "symfony/http-client": "^8.1"
     },
@@ -35,7 +35,7 @@
         "laravel/sail": "^1.53",
         "mockery/mockery": "^1.6",
         "nunomaduro/collision": "^8.9.3",
-        "phpunit/phpunit": "^12.5.23",
+        "phpunit/phpunit": "^12.5.38",
         "spaze/phpstan-disallowed-calls": "^4.14"
     },
     "autoload": {

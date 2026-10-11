@@ -8,6 +8,7 @@ use App\Support\Billing\LinkedTimeSpan;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use stdClass;
 
 /**
  * Every line of a set of invoices with the time each links, in two queries.
@@ -44,14 +45,14 @@ final class InvoiceLinePreview
                 'client_time_entries.worked_on',
                 'client_time_entries.is_deferred',
             ])
-            ->groupBy(static fn (object $row): int => (int) $row->line_id);
+            ->groupBy(static fn (stdClass $row): int => (int) $row->line_id);
 
         $preview = [];
         foreach ($invoices as $invoice) {
             $preview[(int) $invoice->id] = [];
         }
         foreach ($lines as $line) {
-            $rows = $linked->get((int) $line->id, collect())->map(static fn (object $row): array => [
+            $rows = $linked->get((int) $line->id, collect())->map(static fn (stdClass $row): array => [
                 'minutes' => (int) $row->minutes,
                 'worked_on' => Carbon::parse((string) $row->worked_on)->toDateString(),
                 'is_deferred' => (bool) $row->is_deferred,
