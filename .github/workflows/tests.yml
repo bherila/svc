@@ -274,6 +274,7 @@ jobs:
         run: |
           sed -i 's/--configuration=infection.diff.json5/--debug --configuration=infection.diff.json5/' scripts/run-mutation-diff.sh
           sed -i '/summaryJson:/a\        text: "storage/framework/cache/infection-diff/mutations.txt",' infection.diff.json5
+          sed -i '/\$process->checkTimeout();/i\                $process->isRunning();' vendor/infection/infection/src/Process/Runner/ParallelProcessRunner.php
           composer test:mutation-diff
 
       - name: Inspect failed mutation process details
