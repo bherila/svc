@@ -44,6 +44,7 @@ final class ClientPortalAccessScreenTest extends TestCase
     {
         parent::setUp();
 
+        config(['bherila-auth.oauth_client.provider' => 'example']);
         $this->workspace = Workspace::query()->create(['name' => 'Portal', 'slug' => 'portal']);
         $this->owner = $this->staff($this->workspace, 'owner');
         $this->admin = $this->staff($this->workspace, 'admin');
@@ -104,7 +105,9 @@ final class ClientPortalAccessScreenTest extends TestCase
     public function test_adding_someone_who_cannot_sign_in_or_already_has_access_says_so_and_writes_nothing(): void
     {
         User::factory()->create(['email' => 'unbound@client.example.test', 'oauth_subject' => null]);
-        foreach (['nobody@client.example.test', 'unbound@client.example.test'] as $email) {
+        // Codex review on #424: bound, but to a provider sign-in no longer uses.
+        User::factory()->create(['email' => 'elsewhere@client.example.test', 'oauth_provider' => 'retired', 'oauth_subject' => 'elsewhere-subject']);
+        foreach (['nobody@client.example.test', 'unbound@client.example.test', 'elsewhere@client.example.test'] as $email) {
             $this->actingAs($this->owner)->from($this->settings())->post($this->base(), ['email' => $email, 'scope' => 'company'])
                 ->assertRedirect($this->settings())
                 ->assertSessionHasErrors(['email' => 'Nobody signs in with that address yet. Ask them to sign in once, then add them.']);

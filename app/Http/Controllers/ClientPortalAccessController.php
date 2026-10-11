@@ -36,7 +36,7 @@ class ClientPortalAccessController extends Controller
      * Give portal access to a person who already has an account here.
      *
      * Found by the exact address they sign in with, and only among accounts
-     * bound to the identity provider: an account nobody can sign in to would
+     * bound to the configured identity provider: an account nobody can sign in to would
      * hold access nobody can use. Someone without an account signs in once
      * first; inviting them is a separate, later step.
      */
@@ -45,6 +45,8 @@ class ClientPortalAccessController extends Controller
         $actor = $this->authorize($request, $workspace, $clientCompany);
         $person = User::query()
             ->whereRaw('LOWER(email) = ?', [mb_strtolower($request->string('email')->toString())])
+            // Bound the way sign-in resolves people: to this provider, with a subject.
+            ->where('oauth_provider', (string) config('bherila-auth.oauth_client.provider'))
             ->whereNotNull('oauth_subject')
             ->first();
 
