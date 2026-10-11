@@ -34,6 +34,7 @@ const artifacts = path.join(
     path.basename(runtime),
 );
 const widths = [390, 820, 1440, 1920];
+const portalOnly = process.argv.includes('--portal-access');
 const results = [];
 const failures = [];
 const serverLog = [];
@@ -267,21 +268,23 @@ try {
     for (const width of widths) {
         await page.setViewportSize({ width, height: 1000 });
 
-        for (const screen of [
-            'mcp_setup',
-            'invoice',
-            'invoice_review',
-            'settings',
-            'draft_invoice',
-            'draft_time',
-            'proposal',
-            'proposal_acceptance',
-            'operations',
-            'time',
-            'expenses',
-            'receipts',
-            'expense_schedules',
-        ]) {
+        for (const screen of portalOnly
+            ? ['settings']
+            : [
+                  'mcp_setup',
+                  'invoice',
+                  'invoice_review',
+                  'settings',
+                  'draft_invoice',
+                  'draft_time',
+                  'proposal',
+                  'proposal_acceptance',
+                  'operations',
+                  'time',
+                  'expenses',
+                  'receipts',
+                  'expense_schedules',
+              ]) {
             const response = await page.goto(origin + fixture[screen]);
             expect(response.status()).toBe(200);
             await expect(page.locator('main'))
@@ -314,6 +317,34 @@ try {
             }
 
             await capture(screen, 'initial', width, screen === 'operations');
+
+            if (portalOnly) {
+                const card = page.locator('[data-slot="card"]').filter({
+                    has: page.getByText('Portal access', { exact: true }),
+                });
+                await expect(
+                    card.getByRole('button', {
+                        name: 'Save access',
+                        exact: true,
+                    }),
+                ).toHaveCount(2);
+                await page
+                    .getByRole('combobox', {
+                        name: 'Portal access for the new contact',
+                        exact: true,
+                    })
+                    .selectOption('projects');
+                await capture(screen, 'portal-project-selection', width);
+                await card
+                    .getByRole('button', { name: 'Remove', exact: true })
+                    .first()
+                    .click();
+                await expect(page.getByRole('alertdialog')).toBeVisible();
+                await capture(screen, 'portal-removal-confirmation', width);
+                await page
+                    .getByRole('button', { name: 'Cancel', exact: true })
+                    .click();
+            }
 
             if (screen === 'mcp_setup') {
                 await page.emulateMedia({ colorScheme: 'dark' });
@@ -494,120 +525,129 @@ try {
         }
     }
 
-    // Full operator correction path, all writes confined to the seeded records.
-    await page.setViewportSize({ width: 1440, height: 1000 });
-    await page.goto(origin + fixture.draft_invoice);
-    await page.getByRole('link', { name: 'Add time', exact: true }).click();
-    let correction = page
-        .getByRole('row')
-        .filter({ hasText: 'Synthetic draft correction' });
-    await correction
-        .getByRole('button', { name: 'Unapprove', exact: true })
-        .click();
-    await expect(correction).toContainText('Draft');
-    await correction.getByRole('button', { name: 'Edit', exact: true }).click();
-    await page.getByLabel('Duration', { exact: true }).fill('1:30');
-    await page
-        .getByLabel('Work performed', { exact: true })
-        .fill('Synthetic corrected work');
-    await page
-        .getByRole('button', { name: 'Save changes', exact: true })
-        .click();
-    correction = page
-        .getByRole('row')
-        .filter({ hasText: 'Synthetic corrected work' });
-    await correction
-        .getByRole('button', { name: 'Approve', exact: true })
-        .click();
-    await expect(correction).toContainText('Approved');
-    await correction.getByRole('checkbox').check();
-    await page
-        .getByRole('button', { name: 'Review draft invoice', exact: true })
-        .click();
-    await expect(
-        page.getByText('New draft total: $245.00', { exact: true }),
-    ).toBeVisible();
-    await page
-        .getByRole('button', { name: 'Add time to draft', exact: true })
-        .click();
-    await expect(page).toHaveURL(origin + fixture.draft_invoice);
-    await expect(
-        page.getByRole('row').filter({ hasText: 'Synthetic preserved fee' }),
-    ).toContainText('$5.00');
-    await page.getByRole('button', { name: 'Issue', exact: true }).click();
-    await expect(
-        page.getByRole('button', { name: 'Issue', exact: true }),
-    ).toHaveCount(0);
-    await page
-        .getByRole('button', { name: 'Record payment', exact: true })
-        .click();
-    await expect(page.getByLabel('Amount', { exact: true })).toHaveValue(
-        '245.00',
-    );
-    await page.getByRole('button', { name: 'Record', exact: true }).click();
-    await expect(page.getByLabel('Amount', { exact: true })).toHaveCount(0);
-    await capture('draft_invoice', 'paid-after-correction', 1440);
-    run('php', ['scripts/layout/verify-draft-time.php'], env);
+    if (!portalOnly) {
+        // Full operator correction path, all writes confined to the seeded records.
+        await page.setViewportSize({ width: 1440, height: 1000 });
+        await page.goto(origin + fixture.draft_invoice);
+        await page.getByRole('link', { name: 'Add time', exact: true }).click();
+        let correction = page
+            .getByRole('row')
+            .filter({ hasText: 'Synthetic draft correction' });
+        await correction
+            .getByRole('button', { name: 'Unapprove', exact: true })
+            .click();
+        await expect(correction).toContainText('Draft');
+        await correction
+            .getByRole('button', { name: 'Edit', exact: true })
+            .click();
+        await page.getByLabel('Duration', { exact: true }).fill('1:30');
+        await page
+            .getByLabel('Work performed', { exact: true })
+            .fill('Synthetic corrected work');
+        await page
+            .getByRole('button', { name: 'Save changes', exact: true })
+            .click();
+        correction = page
+            .getByRole('row')
+            .filter({ hasText: 'Synthetic corrected work' });
+        await correction
+            .getByRole('button', { name: 'Approve', exact: true })
+            .click();
+        await expect(correction).toContainText('Approved');
+        await correction.getByRole('checkbox').check();
+        await page
+            .getByRole('button', { name: 'Review draft invoice', exact: true })
+            .click();
+        await expect(
+            page.getByText('New draft total: $245.00', { exact: true }),
+        ).toBeVisible();
+        await page
+            .getByRole('button', { name: 'Add time to draft', exact: true })
+            .click();
+        await expect(page).toHaveURL(origin + fixture.draft_invoice);
+        await expect(
+            page
+                .getByRole('row')
+                .filter({ hasText: 'Synthetic preserved fee' }),
+        ).toContainText('$5.00');
+        await page.getByRole('button', { name: 'Issue', exact: true }).click();
+        await expect(
+            page.getByRole('button', { name: 'Issue', exact: true }),
+        ).toHaveCount(0);
+        await page
+            .getByRole('button', { name: 'Record payment', exact: true })
+            .click();
+        await expect(page.getByLabel('Amount', { exact: true })).toHaveValue(
+            '245.00',
+        );
+        await page.getByRole('button', { name: 'Record', exact: true }).click();
+        await expect(page.getByLabel('Amount', { exact: true })).toHaveCount(0);
+        await capture('draft_invoice', 'paid-after-correction', 1440);
+        run('php', ['scripts/layout/verify-draft-time.php'], env);
 
-    // Exercise real saves against the isolated database after layout capture,
-    // so the additional schedule cannot change the fixtures used at each width.
-    await page.goto(origin + fixture.expense_schedules);
-    await page
-        .getByRole('button', { name: 'New schedule', exact: true })
-        .click();
-    await page
-        .getByLabel('Description', { exact: true })
-        .fill('Synthetic precision journey');
-    await page.getByLabel('Amount in minor units').fill('9007199254740993');
-    await page.getByLabel('First occurrence').fill(fixture.date);
-    await page
-        .getByRole('button', { name: 'Save schedule', exact: true })
-        .click();
-    let card = page.locator('section').filter({
-        has: page.getByRole('heading', {
-            name: 'Synthetic precision journey',
-            exact: true,
-        }),
-    });
-    await expect(card).toBeVisible();
-    await card
-        .getByRole('button', { name: 'Edit schedule', exact: true })
-        .click();
-    await expect(page.getByLabel('Amount in minor units')).toHaveValue(
-        '9007199254740993',
-    );
-    await page
-        .getByLabel('Description', { exact: true })
-        .fill('Synthetic precision journey edited');
-    await page
-        .getByRole('button', { name: 'Save schedule', exact: true })
-        .click();
-    card = page.locator('section').filter({
-        has: page.getByRole('heading', {
-            name: 'Synthetic precision journey edited',
-            exact: true,
-        }),
-    });
-    await expect(card).toContainText('90,071,992,547,409.93');
-    await card
-        .getByRole('button', { name: 'Edit schedule', exact: true })
-        .click();
-    await expect(page.getByLabel('Amount in minor units')).toHaveValue(
-        '9007199254740993',
-    );
-    await page.getByRole('button', { name: 'Cancel', exact: true }).click();
-    await card
-        .getByRole('button', { name: 'Generate due drafts', exact: true })
-        .click();
-    await expect(
-        card.getByRole('button', { name: 'Generate due drafts', exact: true }),
-    ).toHaveCount(0);
-    await page.goto(origin + fixture.expenses);
-    const expense = page
-        .getByRole('row')
-        .filter({ hasText: 'Synthetic precision journey edited' });
-    await expect(expense).toHaveCount(1);
-    await expect(expense).toContainText('Draft');
+        // Exercise real saves against the isolated database after layout capture,
+        // so the additional schedule cannot change the fixtures used at each width.
+        await page.goto(origin + fixture.expense_schedules);
+        await page
+            .getByRole('button', { name: 'New schedule', exact: true })
+            .click();
+        await page
+            .getByLabel('Description', { exact: true })
+            .fill('Synthetic precision journey');
+        await page.getByLabel('Amount in minor units').fill('9007199254740993');
+        await page.getByLabel('First occurrence').fill(fixture.date);
+        await page
+            .getByRole('button', { name: 'Save schedule', exact: true })
+            .click();
+        let card = page.locator('section').filter({
+            has: page.getByRole('heading', {
+                name: 'Synthetic precision journey',
+                exact: true,
+            }),
+        });
+        await expect(card).toBeVisible();
+        await card
+            .getByRole('button', { name: 'Edit schedule', exact: true })
+            .click();
+        await expect(page.getByLabel('Amount in minor units')).toHaveValue(
+            '9007199254740993',
+        );
+        await page
+            .getByLabel('Description', { exact: true })
+            .fill('Synthetic precision journey edited');
+        await page
+            .getByRole('button', { name: 'Save schedule', exact: true })
+            .click();
+        card = page.locator('section').filter({
+            has: page.getByRole('heading', {
+                name: 'Synthetic precision journey edited',
+                exact: true,
+            }),
+        });
+        await expect(card).toContainText('90,071,992,547,409.93');
+        await card
+            .getByRole('button', { name: 'Edit schedule', exact: true })
+            .click();
+        await expect(page.getByLabel('Amount in minor units')).toHaveValue(
+            '9007199254740993',
+        );
+        await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+        await card
+            .getByRole('button', { name: 'Generate due drafts', exact: true })
+            .click();
+        await expect(
+            card.getByRole('button', {
+                name: 'Generate due drafts',
+                exact: true,
+            }),
+        ).toHaveCount(0);
+        await page.goto(origin + fixture.expenses);
+        const expense = page
+            .getByRole('row')
+            .filter({ hasText: 'Synthetic precision journey edited' });
+        await expect(expense).toHaveCount(1);
+        await expect(expense).toContainText('Draft');
+    }
 } catch (error) {
     failures.push(error.stack ?? String(error));
 } finally {
@@ -628,7 +668,9 @@ try {
         [
             '# Browser layout evidence',
             '',
-            'Synthetic local fixtures only. Invoice review/settings/proposal/time/expenses are asserted; operations is a bounded measurement of known pre-existing layout problems.',
+            portalOnly
+                ? 'Synthetic portal contacts on client settings; initial, project selection and removal confirmation states at every required width.'
+                : 'Synthetic local fixtures only. Invoice review/settings/proposal/time/expenses are asserted; operations is a bounded measurement of known pre-existing layout problems.',
             '',
             '| Page/state | Viewport | Document width | Navbar height | Gate | Screenshot |',
             '| --- | --- | --- | --- | --- | --- |',
