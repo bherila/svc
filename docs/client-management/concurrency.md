@@ -558,5 +558,18 @@ deadlock: every other transaction that locks a project and then a membership
 does so under the workspace access lock. Project assignment changes read the
 previous role for their audit event from the locked assignment row.
 
+**Delegated staff writes** (`DelegatedStaffAccess`) change several workspaces in
+one transaction and compare the provider's revision first. They lock every
+workspace the actor manages, in id order, then the projects the person is
+assigned to there, then the actor's and the person's staff memberships and the
+person's assignments, all with locking reads; the revision is compared against
+those rows, every change is decided, and only then are the `WorkspaceAccess`
+operations called, re-taking locks this transaction already holds. Because each
+read is a locking read, a caller whose snapshot predates another connection's
+commit still compares against the committed rows:
+`DelegatedStaffAccessRaceTest` (MariaDB) commits an assignment after the
+caller's snapshot and requires the removal to be refused rather than take an
+assignment it never disclosed.
+
 `LockOrderConformanceTest` drives every one of these writers. As elsewhere, the
 assertions run on one connection and prove ordering, not contention.

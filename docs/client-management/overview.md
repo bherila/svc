@@ -134,6 +134,42 @@ owners, admins and the system. Each change is recorded in `access_audit_events`
 (ids, roles and scopes only) with its operation and request ids. The locking is
 described in [concurrency](concurrency.md#workspace-access-mutations).
 
+**Staff managed from the identity provider.** `App\Services\Access\DelegatedStaffAccess`
+answers the provider's delegated access requests (`bherila/auth-laravel`, contract
+version 3) at `POST /application-access`, so a workspace's owners and admins can
+manage its staff from the provider's **Manage users** screen. It is a presentation
+of `WorkspaceAccess`, not a second writer: every change goes through the same
+operations, rules and audit trail, with the provider's operation id and request id
+on each `access_audit_events` row.
+
+- The actor is the account bound to the provider's subject
+  (`oauth_provider`/`oauth_subject`); it sees only the workspaces it owns or
+  administers and the staff memberships in them. Portal access is never shown or
+  changed there.
+- `admin` and `member` are offered; `owner` is reported and never editable, and
+  neither is the actor's own membership. An admin may grant and remove `member`
+  only.
+- Removing a staff membership, by `remove` or by an update that drops it, also
+  removes the person's project assignments in that workspace. Each such
+  membership discloses them as `removal_effects` (`Project assignments: n`), and
+  the state carries `removal_notice` ("Client portal access is unchanged."). A role
+  change keeps every assignment.
+- The revision covers the cascade rules (`DelegatedStaffAccess::CASCADE_RULES`,
+  changed whenever a removal starts or stops taking something), the actor's
+  workspaces and role in each, and the person's memberships and every assignment
+  (project and role), so a confirmation made against anything else is refused.
+- Provisioning creates an account bound to the subject, with a placeholder
+  address sign-in replaces, and never adopts an existing account.
+
+It is off until `DELEGATED_ACCESS_ENABLED=true`, and accepts writes only with
+`DELEGATED_ACCESS_WRITES_ENABLED=true` as well, so reads can be piloted first. It
+also needs `DELEGATED_ACCESS_ISSUER` (the sign-in provider's URL),
+`DELEGATED_ACCESS_ENDPOINT`, `DELEGATED_ACCESS_APPLICATION` (this application's key
+at the provider) and `DELEGATED_ACCESS_PUBLIC_KEYS`, plus the
+`bherila_auth_delegated_nonces` and `bherila_auth_delegated_receipts` tables; the scheduler
+prunes both daily. A provider must show removal effects before this application
+sends them: an older one refuses every state that carries them.
+
 `client_company_memberships.role` defaults to `client`. Nothing in this
 application reads it, and there is no client/subcontractor distinction at the
 membership level — see [Subcontractors](#subcontractors).
