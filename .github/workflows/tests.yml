@@ -9,6 +9,11 @@ on:
       - main
   pull_request:
   workflow_dispatch:
+    inputs:
+      portal_layout:
+        description: Run the portal access browser layout pass
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -18,6 +23,49 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
+  portal-layout:
+    name: Portal access browser layout
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.portal_layout }}
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Setup PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '8.5'
+          tools: composer:v2
+          coverage: none
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@12.11.2 --activate
+      - name: Authorize private MCP bridge dependency
+        uses: webfactory/ssh-agent@e83874834305fe9a4a2997156cb26c5de65a8555 # v0.10.0
+        with:
+          ssh-private-key: ${{ secrets.MCP_BRIDGE_DEPLOY_KEY }}
+      - name: Install dependencies
+        run: |
+          composer install --no-interaction
+          pnpm install --frozen-lockfile
+      - name: Prepare browser on the disposable runner
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Check portal access layout
+        run: node scripts/check-layout.mjs --portal-access
+      - name: Upload synthetic screenshots and measurements
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: portal-access-layout
+          path: test-results/layout/
+          retention-days: 7
+
   ci:
     runs-on: ubuntu-24.04-arm
 
@@ -271,30 +319,7 @@ jobs:
         if: ${{ steps.mutation_scope.outputs.required == 'true' }}
         env:
           MUTATION_BASE: ${{ steps.mutation_scope.outputs.merge_base }}
-        run: |
-          sed -i 's/--configuration=infection.diff.json5/--debug --configuration=infection.diff.json5/' scripts/run-mutation-diff.sh
-          sed -i '/summaryJson:/a\        text: "storage/framework/cache/infection-diff/mutations.txt",' infection.diff.json5
-          sed -i '/\$process->checkTimeout();/i\                $process->isRunning();' vendor/infection/infection/src/Process/Runner/ParallelProcessRunner.php
-          composer test:mutation-diff
-
-      - name: Inspect failed mutation process details
-        if: ${{ failure() && steps.mutation_run.outcome == 'failure' }}
-        run: |
-          python3 - <<'PY'
-          import pathlib, shlex, subprocess
-          path = pathlib.Path('storage/framework/cache/infection-diff/mutations.txt')
-          data = path.read_text() if path.exists() else 'no text log'
-          timed = data.split('Timed Out mutants:')[-1]
-          print(timed[:15000], flush=True)
-          command = next(line[2:] for line in timed.splitlines() if line.startswith('$ '))
-          try:
-              result = subprocess.run(shlex.split(command), capture_output=True, text=True, timeout=30)
-              print('exit:', result.returncode)
-              print(result.stdout[-25000:])
-              print(result.stderr[-10000:])
-          except subprocess.TimeoutExpired as error:
-              print('direct command timed out:', error.stdout, error.stderr)
-          PY
+        run: composer test:mutation-diff
 
       - name: Report mutation result
         if: ${{ always() && steps.mutation_scope.outputs.required == 'true' }}

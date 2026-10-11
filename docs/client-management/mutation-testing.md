@@ -66,6 +66,16 @@ behavioral change.
 
 ## Advisory policy
 
+The Composer post-autoload hook applies a narrow process-polling compatibility
+fix to the development mutation runner. A child can finish while the runner
+generates the next mutations; checking its deadline before refreshing its
+cached status incorrectly reports that completed child as timed out. The fix
+refreshes status first and preserves the deadlines of children still running.
+`MutationProcessPollingTest` reproduces slow generation and checks both cases.
+The hook is idempotent, skips production installs without the runner, and fails
+if the dependency's polling code changes. Remove it when that correction is
+available in the dependency.
+
 The hosted mutation job remains advisory while runtime is calibrated. A red
 hosted result on an already-reviewed pull request creates a focused follow-up;
 it does not by itself reopen unrelated review. That does not waive the local

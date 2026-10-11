@@ -108,7 +108,8 @@
         "post-autoload-dump": [
             "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",
             "@php artisan package:discover --ansi",
-            "@php scripts/neutralise-vendor-agent-hints.php"
+            "@php scripts/neutralise-vendor-agent-hints.php",
+            "@php scripts/fix-mutation-process-polling.php"
         ],
         "post-update-cmd": [
             "@php artisan vendor:publish --tag=laravel-assets --ansi --force"
