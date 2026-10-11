@@ -182,6 +182,14 @@ pnpm exec playwright install chromium   # once per Playwright browser version
 pnpm run test:layout
 ```
 
+For a focused portal-access pass, run `node scripts/check-layout.mjs --portal-access`.
+When the matching browser is unavailable locally, dispatch the `tests` workflow
+with `portal_layout: true` on the feature branch. Its disposable runner prepares
+the browser and uploads the `portal-access-layout` artifact: client settings at
+390, 820, 1440 and 1920 pixels, including project selection and the removal
+confirmation. Download that artifact and read every screenshot before calling
+the card complete.
+
 Run from a checkout without an active Vite dev server. The command refuses an
 existing `public/hot` marker and leaves it untouched. It builds current assets,
 creates a fresh synthetic SQLite database,
