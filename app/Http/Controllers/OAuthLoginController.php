@@ -7,6 +7,7 @@ use App\Services\Navigation\WorkspaceReturnPoint;
 use App\Support\Concurrency\Locks;
 use BWH\Auth\Concerns\SignsOutThroughProvider;
 use BWH\Auth\OAuth\OAuthClient;
+use BWH\Auth\OAuth\PendingAccount;
 use BWH\Auth\OAuth\ProviderApplications;
 use BWH\Auth\OAuth\Session\ProviderSession;
 use BWH\Auth\OAuth\Session\ProviderStatusUnavailable;
@@ -97,7 +98,7 @@ class OAuthLoginController extends Controller
         return $redirect;
     }
 
-    private function resolveUser(string $provider, string $subject, string $name, string $email): User
+    private function resolveUser(string $provider, string $subject, string $name, string $email, bool $retryPending = true): User
     {
         try {
             return DB::transaction(function () use ($provider, $subject, $name, $email): User {
@@ -143,6 +144,12 @@ class OAuthLoginController extends Controller
                 ->where('oauth_provider', $provider)
                 ->where('oauth_subject', $subject)
                 ->first();
+
+            // Delegated provisioning may have committed after our missing-account read.
+            // Resolve its placeholder once through the normal locked email-owner check.
+            if ($retryPending && $user?->email === PendingAccount::email($provider, $subject)) {
+                return $this->resolveUser($provider, $subject, $name, $email, retryPending: false);
+            }
 
             abort_if(
                 $user === null || $user->name !== $name || strcasecmp($user->email, $email) !== 0,
