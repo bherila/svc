@@ -310,6 +310,42 @@ export interface paths {
         patch: operations['clients.update'];
         trace?: never;
     };
+    '/workspaces/{workspace}/clients/{client}/portal-access': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description List portal contacts for a client as a workspace owner/admin, including scope, selected projects and finished mutation URLs. */
+        get: operations['clients.portal_access.list'];
+        put?: never;
+        /** @description Grant portal access to an existing account found by exact email and bound to the configured identity provider. Requires explicit confirmation and an idempotency key. */
+        post: operations['clients.portal_access.grant'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/clients/{client}/portal-access/{user}': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** @description Revoke a contact's portal access and project limits. Requires its current expected_version, explicit confirmation and an idempotency key. */
+        delete: operations['clients.portal_access.revoke'];
+        options?: never;
+        head?: never;
+        /** @description Change a portal contact to the whole client or selected projects. Requires its current expected_version, explicit confirmation and an idempotency key. */
+        patch: operations['clients.portal_access.update'];
+        trace?: never;
+    };
     '/workspaces/{workspace}/clients/{client}/restore': {
         parameters: {
             query?: never;
@@ -1733,6 +1769,46 @@ export interface components {
         PaginationMeta: {
             next_cursor: string | null;
         };
+        PortalAccessRevokedResponse: {
+            data: {
+                /** Format: uuid */
+                client_id: string;
+                /** Format: uuid */
+                user_id: string;
+                /** @constant */
+                revoked: true;
+            };
+        };
+        PortalContact: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /** Format: email */
+            email: string;
+            /** @enum {string} */
+            scope: 'company' | 'projects';
+            projects: {
+                /** Format: uuid */
+                id: string;
+                name: string;
+                /** Format: uri */
+                href: string;
+            }[];
+            /** Format: uri */
+            update_href: string;
+            /** Format: uri */
+            revoke_href: string;
+            version: string;
+        };
+        PortalContactListResponse: {
+            data: components['schemas']['PortalContact'][];
+            meta: {
+                next_cursor: string | null;
+            };
+        };
+        PortalContactResponse: {
+            data: components['schemas']['PortalContact'];
+        };
         Project: {
             id: components['schemas']['Uuid'];
             company_id: components['schemas']['Uuid'];
@@ -2232,6 +2308,28 @@ export interface components {
             /** Format: email */
             billing_email?: string | null;
         };
+        clients_portal_access_grantRequest: {
+            /** @constant */
+            confirm: true;
+            /** @enum {string} */
+            scope: 'company' | 'projects';
+            projects?: string[];
+            /** Format: email */
+            email: string;
+        } & (unknown & unknown);
+        clients_portal_access_revokeRequest: {
+            /** @constant */
+            confirm: true;
+            expected_version: string;
+        };
+        clients_portal_access_updateRequest: {
+            /** @constant */
+            confirm: true;
+            /** @enum {string} */
+            scope: 'company' | 'projects';
+            projects?: string[];
+            expected_version: string;
+        } & (unknown & unknown);
         clients_restoreRequest: {
             expected_version: string;
         };
@@ -2922,6 +3020,125 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['ClientCompanyResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'clients.portal_access.list': {
+        parameters: {
+            query?: {
+                limit?: components['parameters']['Limit'];
+                cursor?: components['parameters']['Cursor'];
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                client: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['PortalContactListResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'clients.portal_access.grant': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                client: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['clients_portal_access_grantRequest'];
+            };
+        };
+        responses: {
+            /** @description Authorized result */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['PortalContactResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'clients.portal_access.revoke': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                client: string;
+                user: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['clients_portal_access_revokeRequest'];
+            };
+        };
+        responses: {
+            /** @description Authorized result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['PortalAccessRevokedResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'clients.portal_access.update': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                client: string;
+                user: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['clients_portal_access_updateRequest'];
+            };
+        };
+        responses: {
+            /** @description Authorized result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['PortalContactResponse'];
                 };
             };
             default: components['responses']['Error'];

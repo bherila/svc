@@ -121,7 +121,14 @@ final class AccessMutationContextTest extends TestCase
 
     public function test_every_refusal_has_its_own_message(): void
     {
-        $messages = array_map(static fn (AccessRefusal $refusal): string => $refusal->message(), AccessRefusal::cases());
+        $messages = [];
+        foreach (AccessRefusal::cases() as $refusal) {
+            try {
+                $messages[] = $refusal->message();
+            } catch (\UnhandledMatchError) {
+                $this->fail('The refusal '.$refusal->value.' must have a caller-facing message.');
+            }
+        }
 
         $this->assertSame($messages, array_values(array_unique($messages)));
         $this->assertNotContains('', $messages);

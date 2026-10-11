@@ -2,10 +2,12 @@
 
 namespace App\Services\AgentApi;
 
+use App\Exceptions\AccessMutationRefused;
 use App\Models\AgentMutationAudit;
 use App\Models\AgentMutationReceipt;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Support\Access\AccessRefusal;
 use App\Support\Concurrency\Locks;
 use App\Support\WorkspaceClock;
 use DomainException;
@@ -26,6 +28,7 @@ final class AgentMutationExecutor
      * @param  array<string, mixed>  $payload
      * @param  callable(): list<string>  $callback
      * @param  (callable(list<string>): void)|null  $replayGuard
+     * @param  (callable(list<string>): array<string, mixed>)|null  $responseSnapshot
      * @return list<string>
      */
     public function run(
@@ -38,11 +41,12 @@ final class AgentMutationExecutor
         callable $callback,
         ?callable $replayGuard = null,
         ?string $additionalAuditOperation = null,
+        ?callable $responseSnapshot = null,
     ): array {
         $digest = hash('sha256', json_encode($this->canonicalize($payload), JSON_THROW_ON_ERROR));
 
         try {
-            return DB::transaction(function () use ($user, $workspace, $clientId, $operation, $key, $digest, $callback, $replayGuard, $additionalAuditOperation): array {
+            return DB::transaction(function () use ($user, $workspace, $clientId, $operation, $key, $digest, $callback, $replayGuard, $additionalAuditOperation, $responseSnapshot): array {
                 app(LegacyAgentReceiptNamespace::class)->reserve($user, $workspace, $clientId, $operation, $key);
                 // Keep the compatibility reservation when replaying an existing receipt.
                 // createOrFirst isolates a duplicate insert in a savepoint, not this transaction.
@@ -75,6 +79,7 @@ final class AgentMutationExecutor
                 $receipt->forceFill([
                     'status' => 'completed',
                     'result_public_ids' => $ids,
+                    'response_snapshot' => $responseSnapshot === null ? null : $responseSnapshot($ids),
                     'completed_at' => $this->clock->now($workspace),
                 ])->save();
                 $this->audit($user, $workspace, $clientId, $operation, $ids, 'success');
@@ -153,6 +158,15 @@ final class AgentMutationExecutor
 
     private function errorCategory(Throwable $exception): string
     {
+        if ($exception instanceof AccessMutationRefused) {
+            return match ($exception->reason) {
+                AccessRefusal::NotAuthorized => 'forbidden',
+                AccessRefusal::PortalRevisionConflict => 'conflict',
+                AccessRefusal::OwnerProtected, AccessRefusal::SelfChange, AccessRefusal::AlreadyStaff,
+                AccessRefusal::NotStaff, AccessRefusal::UnsupportedRole, AccessRefusal::AlreadyPortalMember,
+                AccessRefusal::NotPortalMember, AccessRefusal::ProjectOutsideCompany, AccessRefusal::ProjectsWithCompanyScope => 'domain',
+            };
+        }
         if ($exception instanceof ValidationException) {
             return 'validation';
         }

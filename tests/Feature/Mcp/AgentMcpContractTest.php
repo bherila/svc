@@ -91,6 +91,8 @@ final class AgentMcpContractTest extends TestCase
         $names = [
             'clients.list' => 'clients.index', 'clients.get' => 'clients.show', 'clients.create' => 'clients.store',
             'clients.update' => 'clients.update', 'clients.archive' => 'clients.archive', 'clients.restore' => 'clients.restore',
+            'clients.portal_access.list' => 'clients.portal-access.index', 'clients.portal_access.grant' => 'clients.portal-access.store',
+            'clients.portal_access.update' => 'clients.portal-access.update', 'clients.portal_access.revoke' => 'clients.portal-access.destroy',
             'agreements.list' => 'agreements.index', 'agreements.get' => 'agreements.show', 'agreements.create' => 'agreements.store',
             'agreements.update' => 'agreements.update', 'agreements.activate' => 'agreements.activate', 'agreements.terminate' => 'agreements.terminate',
         ];
@@ -102,7 +104,7 @@ final class AgentMcpContractTest extends TestCase
                 }
                 $route = Route::getRoutes()->getByName('agent-api.v1.'.$names[$operation['operationId']]);
                 $this->assertNotNull($route, $operation['operationId']);
-                $this->assertSame('api/v1'.str_replace(['{workspace_id}', '{client_id}', '{agreement_id}'], ['{workspace}', '{client}', '{agreement}'], $path), $route->uri());
+                $this->assertSame('api/v1'.str_replace(['{workspace_id}', '{client_id}', '{agreement_id}', '{user_id}'], ['{workspace}', '{client}', '{agreement}', '{user}'], $path), $route->uri());
                 $this->assertContains(strtoupper($method), $route->methods());
                 $this->assertContains(GateOperation::class.':'.$operation['operationId'], $route->gatherMiddleware());
                 $this->assertContains(EnsureOperationDeployed::class.':'.$operation['operationId'], $route->gatherMiddleware());
@@ -116,7 +118,7 @@ final class AgentMcpContractTest extends TestCase
     public function test_client_and_agreement_rest_operations_match_the_manager_registry_contract(): void
     {
         config(['agent_api.writes_enabled' => true, 'agent_api.client_writes_enabled' => true]);
-        foreach (['clients.list', 'clients.get', 'clients.create', 'clients.update', 'clients.archive', 'clients.restore', 'agreements.create', 'agreements.update', 'agreements.activate', 'agreements.terminate'] as $id) {
+        foreach (['clients.portal_access.list', 'clients.portal_access.grant', 'clients.portal_access.update', 'clients.portal_access.revoke', 'clients.list', 'clients.get', 'clients.create', 'clients.update', 'clients.archive', 'clients.restore', 'agreements.create', 'agreements.update', 'agreements.activate', 'agreements.terminate'] as $id) {
             $definition = $this->agentOperation($id);
             $this->assertTrue(app(AgentOperationCatalog::class)->isManagerOnly($id), $id);
             $this->assertSame(AgentApiResponseSchemaCatalog::forOperation($id), $this->toolOutputSchema($id));
@@ -193,6 +195,10 @@ final class AgentMcpContractTest extends TestCase
             'clients.create' => ['clients:write'],
             'clients.get' => ['clients:read'],
             'clients.list' => ['clients:read'],
+            'clients.portal_access.grant' => ['clients:write'],
+            'clients.portal_access.list' => ['clients:read'],
+            'clients.portal_access.revoke' => ['clients:write', 'clients:read'],
+            'clients.portal_access.update' => ['clients:write', 'clients:read'],
             'clients.restore' => ['clients:write', 'clients:read'],
             'clients.update' => ['clients:write', 'clients:read'],
             'connections.revoke' => ['mcp:use'],

@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\V1\AgentInvoiceMutationController;
 use App\Http\Controllers\Api\V1\AgentInvoiceOperationsController;
 use App\Http\Controllers\Api\V1\AgentMcpController;
 use App\Http\Controllers\Api\V1\AgentPaymentController;
+use App\Http\Controllers\Api\V1\AgentPortalAccessController;
 use App\Http\Controllers\Api\V1\AgentProjectController;
 use App\Http\Controllers\Api\V1\AgentProposalController;
 use App\Http\Controllers\Api\V1\AgentReadController;
@@ -114,6 +115,10 @@ Route::prefix('v1')
             ->whereUuid('client')
             ->middleware(EnsureAgentWorkspaceVisible::class)
             ->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']));
+        $operation('clients.portal_access.list', [AgentPortalAccessController::class, 'index'])->whereUuid('client')->whereUuid('user')->middleware(EnsureAgentWorkspaceVisible::class)->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']));
+        $operation('clients.portal_access.grant', [AgentPortalAccessController::class, 'store'])->whereUuid('client')->whereUuid('user')->middleware(EnsureAgentWorkspaceVisible::class)->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']));
+        $operation('clients.portal_access.update', [AgentPortalAccessController::class, 'update'])->whereUuid('client')->whereUuid('user')->middleware(EnsureAgentWorkspaceVisible::class)->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']));
+        $operation('clients.portal_access.revoke', [AgentPortalAccessController::class, 'destroy'])->whereUuid('client')->whereUuid('user')->middleware(EnsureAgentWorkspaceVisible::class)->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']));
         $operation('clients.restore', [AgentClientController::class, 'restore'])
             ->whereUuid('client')
             ->middleware(EnsureAgentWorkspaceVisible::class)
