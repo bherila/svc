@@ -338,11 +338,11 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** @description Revoke a contact's portal access and project limits. Requires explicit confirmation and an idempotency key. */
+        /** @description Revoke a contact's portal access and project limits. Requires its current expected_version, explicit confirmation and an idempotency key. */
         delete: operations['clients.portal_access.revoke'];
         options?: never;
         head?: never;
-        /** @description Change a portal contact to the whole client or selected projects. Requires explicit confirmation and an idempotency key. */
+        /** @description Change a portal contact to the whole client or selected projects. Requires its current expected_version, explicit confirmation and an idempotency key. */
         patch: operations['clients.portal_access.update'];
         trace?: never;
     };
