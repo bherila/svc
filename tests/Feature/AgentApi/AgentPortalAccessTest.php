@@ -3,6 +3,7 @@
 namespace Tests\Feature\AgentApi;
 
 use App\Models\AccessAuditEvent;
+use App\Models\AgentMutationAudit;
 use App\Models\AgentMutationReceipt;
 use App\Models\ClientCompany;
 use App\Models\ClientCompanyMembership;
@@ -197,6 +198,7 @@ final class AgentPortalAccessTest extends TestCase
         $body = $this->body($kind, $person, $company);
         $this->onceTheWorkspaceIsLocked(fn () => WorkspaceMembership::query()->where('workspace_id', $workspace->id)->where('user_id', $admin->id)->update(['role' => 'member']));
         $this->refusal($this->portalOperation($transport, $kind, $workspace, $company, $body, $person), 403);
+        $this->assertSame('forbidden', AgentMutationAudit::query()->where('workspace_id', $workspace->id)->where('operation', 'clients.portal_access.'.$kind)->sole()->error_category);
         $this->assertSame(0, AccessAuditEvent::query()->where('workspace_id', $workspace->id)->whereNotNull('operation_id')->count());
         $this->success($this->portalOperation($transport, $kind, $workspace, $company, $body, $person), $kind);
         $this->onceTheWorkspaceIsLocked(fn () => WorkspaceMembership::query()->where('workspace_id', $workspace->id)->where('user_id', $admin->id)->update(['role' => 'member']));
@@ -249,6 +251,7 @@ final class AgentPortalAccessTest extends TestCase
         $body = $this->body('update', $person, $company);
         $this->onceTheWorkspaceIsLocked(fn () => ClientCompanyMembership::query()->where('workspace_id', $workspace->id)->where('client_company_id', $company->id)->where('user_id', $person->id)->update(['role' => 'changed-role']));
         $this->refusal($this->portalOperation($transport, 'update', $workspace, $company, $body, $person), 409);
+        $this->assertSame('conflict', AgentMutationAudit::query()->where('workspace_id', $workspace->id)->where('operation', 'clients.portal_access.update')->sole()->error_category);
         app(WorkspaceAccess::class)->changePortalScope(AccessMutationContext::user($owner), $company, $person, PortalAccessScope::Projects, [$project->public_id]);
         $old = $this->success($this->portalOperation($transport, 'list', $workspace, $company), 'list')['data'][0]['version'];
         $other = $this->project($company, 'Another synthetic project');

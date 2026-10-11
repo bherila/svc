@@ -2,10 +2,12 @@
 
 namespace App\Services\AgentApi;
 
+use App\Exceptions\AccessMutationRefused;
 use App\Models\AgentMutationAudit;
 use App\Models\AgentMutationReceipt;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Support\Access\AccessRefusal;
 use App\Support\Concurrency\Locks;
 use App\Support\WorkspaceClock;
 use DomainException;
@@ -156,6 +158,15 @@ final class AgentMutationExecutor
 
     private function errorCategory(Throwable $exception): string
     {
+        if ($exception instanceof AccessMutationRefused) {
+            return match ($exception->reason) {
+                AccessRefusal::NotAuthorized => 'forbidden',
+                AccessRefusal::PortalRevisionConflict => 'conflict',
+                AccessRefusal::OwnerProtected, AccessRefusal::SelfChange, AccessRefusal::AlreadyStaff,
+                AccessRefusal::NotStaff, AccessRefusal::UnsupportedRole, AccessRefusal::AlreadyPortalMember,
+                AccessRefusal::NotPortalMember, AccessRefusal::ProjectOutsideCompany, AccessRefusal::ProjectsWithCompanyScope => 'domain',
+            };
+        }
         if ($exception instanceof ValidationException) {
             return 'validation';
         }
