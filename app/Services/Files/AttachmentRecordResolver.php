@@ -96,7 +96,6 @@ final class AttachmentRecordResolver
                 && $this->portalCanReachProjectOf($user, $record->clientCompany, $record->client_project_id),
             $record instanceof ClientInvoice => $record->is_visible_to_client
                 && in_array($record->status, ['issued', 'partially_paid', 'paid'], true),
-            default => false,
         };
     }
 
