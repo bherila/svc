@@ -72,6 +72,7 @@ final class TenantReferenceInventory
         return [
             // Companies own everything below them.
             TenantReference::enforcedBy('client_company_memberships', 'client_company_id', 'client_companies', 'ccm_ws_company_fk'),
+            TenantReference::enforcedBy('client_portal_invitations', 'client_company_id', 'client_companies', 'cpi_ws_company_fk'),
             TenantReference::enforcedBy('client_company_activity', 'client_company_id', 'client_companies', 'cca_ws_company_fk'),
             TenantReference::enforcedBy('client_projects', 'client_company_id', 'client_companies', 'cp_ws_company_fk'),
             TenantReference::enforcedBy('client_proposals', 'client_company_id', 'client_companies', 'cpr_ws_company_fk'),

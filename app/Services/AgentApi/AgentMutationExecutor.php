@@ -161,10 +161,11 @@ final class AgentMutationExecutor
         if ($exception instanceof AccessMutationRefused) {
             return match ($exception->reason) {
                 AccessRefusal::NotAuthorized => 'forbidden',
-                AccessRefusal::PortalRevisionConflict => 'conflict',
+                AccessRefusal::PortalRevisionConflict, AccessRefusal::InvitationNotOpen => 'conflict',
                 AccessRefusal::OwnerProtected, AccessRefusal::SelfChange, AccessRefusal::AlreadyStaff,
                 AccessRefusal::NotStaff, AccessRefusal::UnsupportedRole, AccessRefusal::AlreadyPortalMember,
-                AccessRefusal::NotPortalMember, AccessRefusal::ProjectOutsideCompany, AccessRefusal::ProjectsWithCompanyScope => 'domain',
+                AccessRefusal::NotPortalMember, AccessRefusal::ProjectOutsideCompany, AccessRefusal::ProjectsWithCompanyScope,
+                AccessRefusal::AccountExists, AccessRefusal::InviterNotBound => 'domain',
             };
         }
         if ($exception instanceof ValidationException) {

@@ -41,6 +41,15 @@ enum AccessRefusal: string
     /** Company-wide portal access carries no project limits. */
     case ProjectsWithCompanyScope = 'projects_with_company_scope';
 
+    /** The address already signs in here; it gets access directly, not an invitation. */
+    case AccountExists = 'account_exists';
+
+    /** The invitation was already accepted, not applied or withdrawn. */
+    case InvitationNotOpen = 'invitation_not_open';
+
+    /** The actor has no identity provider binding to ask the provider as. */
+    case InviterNotBound = 'inviter_not_bound';
+
     public function message(): string
     {
         return match ($this) {
@@ -55,6 +64,9 @@ enum AccessRefusal: string
             self::PortalRevisionConflict => 'Portal access changed. Read it again before confirming.',
             self::ProjectOutsideCompany => 'One or more projects do not belong to that client.',
             self::ProjectsWithCompanyScope => 'Company-wide portal access cannot also be limited to projects.',
+            self::AccountExists => 'That person already signs in here; add them as a contact instead.',
+            self::InvitationNotOpen => 'That invitation was already accepted or withdrawn.',
+            self::InviterNotBound => 'Your account is not linked to the identity provider, so it cannot send invitations.',
         };
     }
 }

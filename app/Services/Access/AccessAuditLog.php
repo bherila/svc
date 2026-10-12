@@ -20,12 +20,13 @@ final class AccessAuditLog
     /**
      * @param  array<string, mixed>|null  $before  ids, roles and scopes only
      * @param  array<string, mixed>|null  $after  ids, roles and scopes only
+     * @param  User|null  $subject  null only for an invitation to an address with no account yet
      */
     public function record(
         AccessMutationContext $context,
         Workspace $workspace,
         AccessAuditAction $action,
-        User $subject,
+        ?User $subject,
         ?array $before,
         ?array $after,
         ?string $companyPublicId = null,
@@ -34,7 +35,7 @@ final class AccessAuditLog
             'workspace_id' => $workspace->id,
             'actor_type' => $context->isSystem() ? AccessAuditEvent::ACTOR_SYSTEM : AccessAuditEvent::ACTOR_USER,
             'actor_user_id' => $context->actorId(),
-            'subject_user_id' => $subject->id,
+            'subject_user_id' => $subject?->id,
             'action' => $action->value,
             'client_company_public_id' => $companyPublicId,
             'before_state' => $before,

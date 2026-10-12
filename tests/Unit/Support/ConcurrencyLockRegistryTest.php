@@ -79,6 +79,7 @@ final class ConcurrencyLockRegistryTest extends TestCase
             LockResource::ClientProject,
             LockResource::WorkspaceMembership,
             LockResource::ClientProjectMembership,
+            LockResource::ClientPortalInvitation,
             LockResource::ClientCompanyMembership,
             LockResource::ClientPortalProjectAccess,
         ];
@@ -89,6 +90,7 @@ final class ConcurrencyLockRegistryTest extends TestCase
 
         $this->assertSame($sorted, $ranks);
         $this->assertSame(LockResource::ClientPortalProjectAccess, LockResource::forTable('client_portal_project_access'));
+        $this->assertSame(LockResource::ClientPortalInvitation, LockResource::forTable('client_portal_invitations'));
     }
 
     public function test_agent_receipts_are_ranked_before_the_domain_callback_locks(): void

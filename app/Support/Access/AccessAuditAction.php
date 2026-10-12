@@ -15,4 +15,10 @@ enum AccessAuditAction: string
     case PortalGranted = 'portal.granted';
     case PortalScopeChanged = 'portal.scope_changed';
     case PortalRevoked = 'portal.revoked';
+    /** An invitation for an address with no account here; `subject_user_id` is null. */
+    case PortalInvited = 'portal.invited';
+    case PortalInvitationResent = 'portal.invitation_resent';
+    case PortalInvitationRevoked = 'portal.invitation_revoked';
+    /** An invitation met at sign-in whose access could no longer be given. */
+    case PortalInvitationNotApplied = 'portal.invitation_not_applied';
 }
