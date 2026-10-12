@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Rules\NormalizableRepository;
 use App\Services\WorkspaceProjectMutationAction;
+use App\Support\Access\AccessMutationContext;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Validator;
 
@@ -16,9 +17,9 @@ final class AgentProjectMutationAction
     public function __construct(private readonly WorkspaceProjectMutationAction $projects, private readonly AgentMutationExecutor $mutations) {}
 
     /** @param array<string, mixed> $payload */
-    public function run(User $actor, Workspace $workspace, string $clientId, string $key, string $operation, ?string $projectId, array $payload): ClientProject
+    public function run(User $actor, Workspace $workspace, string $clientId, string $key, string $operation, ?string $projectId, array $payload, ?AccessMutationContext $accessContext = null): ClientProject
     {
-        $ids = $this->mutations->run($actor, $workspace, $clientId, $operation, $key, ['project_id' => $projectId, 'body' => $payload], function () use ($actor, $workspace, $operation, $projectId, $payload): array {
+        $ids = $this->mutations->run($actor, $workspace, $clientId, $operation, $key, ['project_id' => $projectId, 'body' => $payload], function () use ($actor, $workspace, $operation, $projectId, $payload, $accessContext): array {
             $this->projects->requireManager($actor, $workspace);
             $rules = [
                 'expected_version' => ['required', 'string', 'size:64'],
@@ -52,7 +53,7 @@ final class AgentProjectMutationAction
             } else {
                 $record = ClientProject::query()->where('workspace_id', $workspace->id)->where('public_id', $projectId)->firstOrFail();
                 $project = $operation === 'projects.members.update'
-                    ? $this->projects->updateAccess($actor, $workspace, $record, $data['user_id'], $data['role'], $data['expected_version'])
+                    ? $this->projects->updateAccess($actor, $workspace, $record, $data['user_id'], $data['role'], $data['expected_version'], context: $accessContext)
                     : $this->projects->update($actor, $workspace, $record, $operation === 'projects.archive' ? ['status' => 'archived'] : $data, $data['expected_version']);
             }
 

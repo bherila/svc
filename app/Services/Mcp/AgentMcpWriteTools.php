@@ -680,6 +680,9 @@ final class AgentMcpWriteTools
     private function send(string $method, string $path, array $body, ?string $idempotencyKey = null): array
     {
         $headers = $idempotencyKey === null ? [] : ['Idempotency-Key' => $idempotencyKey];
+        if ($this->requestContext !== null) {
+            $headers['X-Request-Id'] = $this->requestContext->requestId;
+        }
         $response = $this->api->send($method, $path, json: $body, headers: $headers);
         if ($response->status >= 200 && $response->status < 300 && $response->json !== null) {
             return $response->json;

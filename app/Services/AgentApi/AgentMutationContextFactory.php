@@ -1,11 +1,16 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Services\AgentApi;
 
 use App\Models\AgentPrincipal;
 use App\Models\User;
+use App\Models\Workspace;
+use App\Support\Access\AccessMutationContext;
 use App\Support\AgentApi\AgentMutationContext;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 use Laravel\Passport\AccessToken;
 
 final class AgentMutationContextFactory
@@ -25,6 +30,17 @@ final class AgentMutationContextFactory
             $clientId,
             $key,
         );
+    }
+
+    public function forAccess(Request $request, Workspace $workspace, AgentMutationContext $mutation, string $operation): AccessMutationContext
+    {
+        $requestId = $request->header('X-Request-Id');
+        $requestId = is_string($requestId) && preg_match('/^[A-Za-z0-9_-]{8,128}$/D', $requestId) === 1
+            ? $requestId : (string) Str::uuid();
+
+        return AccessMutationContext::user($mutation->user,
+            hash('sha256', implode('|', [$workspace->public_id, $mutation->user->public_id, $mutation->oauthClientId, $operation, $mutation->idempotencyKey])),
+            $requestId);
     }
 
     /** Retained for callers introduced before the legacy namespace cutover. */
