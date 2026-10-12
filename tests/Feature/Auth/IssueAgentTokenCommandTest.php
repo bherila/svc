@@ -216,6 +216,21 @@ final class IssueAgentTokenCommandTest extends TestCase
         $this->assertSame(1, Artisan::call('svc:auth:revoke-agent-token', ['user_public_id' => (string) Str::uuid(), 'name' => 'Kept']));
     }
 
+    public function test_an_expired_token_of_the_same_name_is_neither_a_duplicate_nor_revoked(): void
+    {
+        [$user, $workspace] = $this->member('reused-name');
+        $this->issue($user, 'Reused', [AgentApiScopes::PROJECTS_READ]);
+        Passport::token()->newQuery()->update(['expires_at' => now()->subMinute()]);
+        $current = $this->decode($this->issue($user, 'Reused', [AgentApiScopes::PROJECTS_READ])[1])['token'];
+
+        $this->assertSame(0, Artisan::call('svc:auth:revoke-agent-token', ['user_public_id' => $user->public_id, 'name' => 'Reused']));
+        $this->assertSame(['revoked' => 1], $this->decode(Artisan::output()));
+        $this->bearer($current)->getJson("/api/v1/workspaces/{$workspace->public_id}/projects")->assertUnauthorized();
+
+        // Only an expired match left: nothing live to revoke.
+        $this->assertSame(1, Artisan::call('svc:auth:revoke-agent-token', ['user_public_id' => $user->public_id, 'name' => 'Reused', '--all' => true]));
+    }
+
     public function test_the_token_is_printed_once_and_never_logged_while_issue_and_revoke_are_audited(): void
     {
         [$user] = $this->member('audit-owner');

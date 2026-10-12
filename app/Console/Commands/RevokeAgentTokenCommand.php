@@ -45,6 +45,9 @@ final class RevokeAgentTokenCommand extends Command
             ->where('user_id', $user->getKey())
             ->where('name', $name)
             ->where('revoked', false)
+            // An expired token authenticates nothing, so it is neither a
+            // duplicate of a live one nor something to report revoking.
+            ->where('expires_at', '>', now())
             ->pluck('id')
             ->map(static fn (mixed $id): string => (string) $id)
             ->all();
