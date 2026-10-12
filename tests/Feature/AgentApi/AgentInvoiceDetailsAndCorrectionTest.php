@@ -24,6 +24,7 @@ use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
+use Inertia\Testing\AssertableInertia as Assert;
 use Tests\Concerns\WritesLegacyCrossTenantRows;
 use Tests\TestCase;
 
@@ -416,6 +417,22 @@ final class AgentInvoiceDetailsAndCorrectionTest extends TestCase
         ], ['Mcp-Protocol-Version' => '2025-06-18', 'Mcp-Session-Id' => $session])
             ->assertOk()->assertJsonPath('error.code', -32602);
         $this->assertDatabaseCount('agent_mutation_audits', 0);
+    }
+
+    /** The operator's invoice screen shows the date and offers the form that changes it. */
+    public function test_the_invoice_screen_carries_the_scheduled_issue_date_and_the_form_to_change_it(): void
+    {
+        $draft = $this->generatedDraft();
+        $draft->forceFill(['scheduled_issue_date' => '2026-10-03'])->save();
+
+        $this->actingAs($this->owner)
+            ->get(route('clients.invoice', [$this->workspace, $this->company, $draft]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('clients/invoice')
+                ->where('invoice.scheduled_issue_date', '2026-10-03')
+                ->where('actions.update_details', route('agent-api.v1.invoices.update_details', [$this->workspace, $draft->public_id], absolute: false))
+            );
     }
 
     /** MCP advertises the same "at least one field" rule REST enforces, so a client can validate before calling. */

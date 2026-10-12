@@ -79,7 +79,12 @@ export function InvoiceTable({
                                 </Badge>
                             </TableCell>
                             <TableCell>
-                                {invoice.issue_date ?? 'Not issued'}
+                                {invoice.issue_date ??
+                                    (invoice.status === 'draft' &&
+                                    (invoice.scheduled_issue_date ?? null) !==
+                                        null
+                                        ? `Scheduled ${invoice.scheduled_issue_date}`
+                                        : 'Not issued')}
                             </TableCell>
                             <TableCell>{invoice.due_date ?? '—'}</TableCell>
                             <TableCell className="tabular-nums">

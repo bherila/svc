@@ -293,4 +293,33 @@ describe('updated draft details', () => {
         ).toBeVisible();
         expect(screen.queryByText('cadence period')).not.toBeInTheDocument();
     });
+
+    it('shows a changed scheduled issue date and leaves an unchanged due date out', () => {
+        render(
+            <ActivityTimeline
+                activities={[
+                    {
+                        id: 'activity-scheduled',
+                        action: 'invoice.details_updated',
+                        actor_name: 'Synthetic Operator',
+                        payload: {
+                            invoice_kind: 'ad_hoc',
+                            due_date: { old: '2026-10-30', new: '2026-10-30' },
+                            scheduled_issue_date: {
+                                old: null,
+                                new: '2026-11-01',
+                            },
+                            notes_changed: false,
+                        },
+                        created_at: '2026-10-08T18:00:00.000Z',
+                    },
+                ]}
+            />,
+        );
+
+        expect(
+            screen.getByText(/^scheduled issue date none → .+$/),
+        ).toBeVisible();
+        expect(screen.queryByText(/due date/)).toBeNull();
+    });
 });

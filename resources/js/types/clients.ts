@@ -96,6 +96,8 @@ export type CompanyInvoice = {
     currency: string | null;
     issue_date: string | null;
     due_date: string | null;
+    /** The day a draft is planned to be issued; a plan, never a trigger. */
+    scheduled_issue_date?: string | null;
     total_amount: number;
     paid_amount: number;
     balance_amount: number;
