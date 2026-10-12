@@ -190,6 +190,12 @@ the browser and uploads the `portal-access-layout` artifact: client settings at
 confirmation. Download that artifact and read every screenshot before calling
 the card complete.
 
+For the Square explore and linked operator/portal invoice pages, dispatch the
+`tests` workflow with `square_layout: true`. Its `square-layout` artifact covers
+390, 820, 1440 and 1920 pixels with oversized synthetic identities and a
+mirrored hosted payment URL. Download and inspect every screenshot. The same
+focused harness is `node scripts/check-layout.mjs --square`.
+
 Run from a checkout without an active Vite dev server. The command refuses an
 existing `public/hot` marker and leaves it untouched. It builds current assets,
 creates a fresh synthetic SQLite database,

@@ -15,10 +15,16 @@ use App\Services\Billing\InvoiceCorrectionService;
 use App\Services\Billing\InvoiceFromTimeService;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Services\Files\AttachmentStorageService;
+use App\Services\Square\Mirror\SquareMirrorRepository;
+use App\Services\Square\Mirror\SquareSnapshotMapper;
+use App\Services\Square\SquareLinkService;
 use App\Support\Access\AccessMutationContext;
 use App\Support\Access\PortalAccessScope;
+use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Billing\BillingCadence;
 use App\Support\Expenses\NewExpense;
+use App\Support\Square\SquareInvoiceReference;
+use App\Support\Square\SquareMatchMethod;
 use App\Support\WorkspaceClock;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\UploadedFile;
@@ -104,6 +110,9 @@ foreach ([PortalAccessScope::Company, PortalAccessScope::Projects] as $index => 
     ]);
     app(WorkspaceAccess::class)->grantPortal(AccessMutationContext::system(), $company, $contact, $scope,
         $scope === PortalAccessScope::Projects ? [$project->public_id] : []);
+    if ($scope === PortalAccessScope::Company) {
+        $squarePortalContact = $contact;
+    }
 }
 // Portal invitations (#430): one pending, with an address and a link that will not break on
 // their own, and one not applied. Written directly: the seed has no identity provider to ask.
@@ -186,7 +195,34 @@ $draft = app(InvoiceFromTimeService::class)->create($workspace, $company,
     ['invoice_number' => 'SYNTHETIC-DRAFT-'.str_repeat('X', 50), 'currency' => 'USD'], [$correction->public_id, $companion->public_id],
     [['type' => 'service', 'description' => 'Synthetic preserved fee', 'quantity' => '1', 'unit_amount' => 500]]);
 
+$squareInvoice = $service->issue($service->createDraft($workspace, $company, [
+    'invoice_number' => 'SQUARE-SYNTHETIC-'.str_repeat('X', 100), 'currency' => 'USD',
+], [[
+    'type' => 'adjustment', 'description' => $description,
+    'quantity' => '1', 'unit_amount' => 12_345, 'tax_amount' => 0, 'sort_order' => 1,
+]]), $workspace);
+$squareInvoice->forceFill(['is_visible_to_client' => true])->save();
+config([
+    'services.square.access_token' => 'synthetic-square-layout-token',
+    'services.square.environment' => 'sandbox',
+    'services.square.workspace' => $workspace->public_id,
+]);
+$squareRow = app(SquareSnapshotMapper::class)->invoice([
+    'id' => 'inv_fixture_layout', 'version' => 1, 'invoice_number' => '000001-R-0001',
+    'location_id' => 'LOCFIXTURE01', 'status' => 'UNPAID', 'title' => str_repeat('SyntheticSquareTitle', 12),
+    'primary_recipient' => ['customer_id' => 'cust_fixture_layout', 'company_name' => str_repeat('SyntheticSquareCustomer', 8)],
+    'payment_requests' => [['due_date' => $date, 'computed_amount_money' => ['amount' => 12_345, 'currency' => 'USD']]],
+    'public_url' => 'https://squareupsandbox.com/pay-invoice/inv_fixture_layout',
+]);
+app(SquareMirrorRepository::class)->storeInvoices($workspace, [$squareRow], CarbonImmutable::now('UTC'));
+app(SquareLinkService::class)->link($workspace, $squareInvoice, $owner, AgentApiVersion::for($squareInvoice),
+    new SquareInvoiceReference('inv_fixture_layout', '000001-R-0001', 'USD', SquareMatchMethod::Manual), false);
+
 file_put_contents($runtime.'/fixture.json', json_encode([
+    'square_explore' => route('square.explore', $workspace, absolute: false),
+    'square_invoice' => route('clients.invoice', [$workspace, $company, $squareInvoice], absolute: false),
+    'square_portal' => route('portal.invoice', [$company, $squareInvoice], absolute: false),
+    'square_portal_user_id' => $squarePortalContact->id,
     'mcp_setup' => route('mcp.setup', $workspace, absolute: false),
     'draft_invoice' => route('clients.invoice', [$workspace, $company, $draft], absolute: false),
     'draft_time' => route('clients.time', [$workspace, $company, 'draft_invoice' => $draft->public_id], absolute: false),

@@ -18,6 +18,10 @@ on:
         description: Run the invoice correction browser layout pass
         type: boolean
         default: false
+      square_layout:
+        description: Run the Square explore and linked invoice browser layout pass
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -28,8 +32,8 @@ concurrency:
 
 jobs:
   portal-layout:
-    name: ${{ inputs.correction_layout && 'Invoice correction browser layout' || 'Portal access browser layout' }}
-    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.portal_layout || inputs.correction_layout) }}
+    name: ${{ inputs.square_layout && 'Square browser layout' || inputs.correction_layout && 'Invoice correction browser layout' || 'Portal access browser layout' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.portal_layout || inputs.correction_layout || inputs.square_layout) }}
     runs-on: ubuntu-24.04-arm
     steps:
       - name: Checkout code
@@ -60,13 +64,13 @@ jobs:
           pnpm install --frozen-lockfile
       - name: Prepare browser on the disposable runner
         run: pnpm exec playwright install --with-deps chromium
-      - name: Check portal access layout
-        run: node scripts/check-layout.mjs ${{ inputs.correction_layout && '--invoice-correction' || '--portal-access' }}
+      - name: Check browser layout
+        run: node scripts/check-layout.mjs ${{ inputs.square_layout && '--square' || inputs.correction_layout && '--invoice-correction' || '--portal-access' }}
       - name: Upload synthetic screenshots and measurements
         if: ${{ always() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: ${{ inputs.correction_layout && 'invoice-correction-layout' || 'portal-access-layout' }}
+          name: ${{ inputs.square_layout && 'square-layout' || inputs.correction_layout && 'invoice-correction-layout' || 'portal-access-layout' }}
           path: test-results/layout/
           retention-days: 7
 
