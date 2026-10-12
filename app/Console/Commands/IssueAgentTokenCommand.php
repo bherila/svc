@@ -21,6 +21,7 @@ use Laravel\Passport\Passport;
 use League\OAuth2\Server\AuthorizationServer;
 use Psr\Log\LoggerInterface;
 use RuntimeException;
+use Symfony\Component\Console\Output\OutputInterface;
 
 /**
  * Issue a short-lived agent (REST or MCP) access token for one exact person,
@@ -175,13 +176,15 @@ final class IssueAgentTokenCommand extends Command
             'credential_fingerprint' => hash('sha256', $issued['id']),
         ]);
 
-        $this->line((string) json_encode([
+        // Raw: the console formatter would otherwise read markup in the name
+        // and strip it or splice escape codes into the JSON.
+        $this->output->writeln((string) json_encode([
             'token' => $issued['token'],
             'expires_at' => $expiresAt->toIso8601String(),
             'name' => $name,
             'scopes' => $scopes,
             'resource' => $resource,
-        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
 
         return self::SUCCESS;
     }

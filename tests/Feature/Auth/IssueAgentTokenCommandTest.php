@@ -220,6 +220,16 @@ final class IssueAgentTokenCommandTest extends TestCase
         $this->assertSame(1, Artisan::call('svc:auth:revoke-agent-token', ['user_public_id' => (string) Str::uuid(), 'name' => 'Kept']));
     }
 
+    public function test_the_json_line_is_written_raw_so_a_name_with_markup_round_trips(): void
+    {
+        [$user] = $this->member('markup');
+
+        [$exit, $output] = $this->issue($user, '<info>Support</info>', [AgentApiScopes::IDENTITY_READ]);
+        $this->assertSame(0, $exit);
+        $this->assertSame('<info>Support</info>', $this->decode($output)['name']);
+        $this->assertSame(0, Artisan::call('svc:auth:revoke-agent-token', ['user_public_id' => $user->public_id, 'name' => '<info>Support</info>']));
+    }
+
     public function test_nothing_is_issued_while_oauth_issuance_is_switched_off(): void
     {
         [$user] = $this->member('switched-off');
