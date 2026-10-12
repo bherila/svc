@@ -21,6 +21,7 @@ use App\Support\AgentApi\Presenters\SquareLinkPresenter;
 use App\Support\Square\SquareIdentifiers;
 use App\Support\Square\SquareInvoiceReference;
 use App\Support\Square\SquareMatchMethod;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -97,6 +98,11 @@ final class AgentSquareLinkController extends Controller
     {
         $actor = $request->user();
         abort_unless($actor instanceof User || $actor instanceof AgentPrincipal, 401);
+        // A read answers a non-manager as the client reads do: not found, so
+        // a member learns nothing about a client record they cannot reach.
+        if (! $this->access->isWorkspaceManager($actor, $workspace)) {
+            throw (new ModelNotFoundException)->setModel(ClientCompany::class);
+        }
 
         return response()->json(['data' => $this->customerState($this->company($workspace, $client, $actor))]);
     }

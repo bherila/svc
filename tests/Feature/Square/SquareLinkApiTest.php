@@ -182,7 +182,7 @@ final class SquareLinkApiTest extends TestCase
 
         $this->actingAsMcp($member, self::SCOPES);
         $this->rest('invoices.square_link', $workspace, ['invoice_id' => $invoice->public_id], $body, 'synthetic-member')->assertForbidden();
-        $this->getJson("/api/v1/workspaces/{$workspace->public_id}/clients/{$company->public_id}/square-customer")->assertForbidden();
+        $this->getJson("/api/v1/workspaces/{$workspace->public_id}/clients/{$company->public_id}/square-customer")->assertNotFound();
 
         [$elsewhere, $stranger] = $this->fixture('synthetic-elsewhere');
         $this->actingAsMcp($stranger, self::SCOPES);
