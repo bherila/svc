@@ -171,7 +171,9 @@ final class SquareCollectionGuardTest extends TestCase
         }
         $armed = true;
         DB::listen(function (QueryExecuted $query) use (&$armed, $reason, $workspace, $invoice, $agreement): void {
-            if (! $armed || ! str_starts_with(strtolower($query->sql), 'update "client_invoice_email_deliveries"') && ! str_starts_with(strtolower($query->sql), 'insert into "client_invoice_email_deliveries"')) {
+            // Unquoted, so it matches SQLite's "..." and MariaDB's `...` alike.
+            $sql = str_replace(['"', '`'], '', strtolower($query->sql));
+            if (! $armed || ! str_starts_with($sql, 'update client_invoice_email_deliveries') && ! str_starts_with($sql, 'insert into client_invoice_email_deliveries')) {
                 return;
             }
             $armed = false;
