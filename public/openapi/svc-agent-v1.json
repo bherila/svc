@@ -3966,6 +3966,62 @@
                 }
             }
         },
+        "/workspaces/{workspace}/invoices/{invoice}/square-candidates": {
+            "get": {
+                "operationId": "invoices.square_candidates",
+                "description": "Rank possible counterparts for this invoice with explainable scores capped at 100. Suggest at 70 or more, never auto-link. Candidates require a confirmed customer or an explicitly marked agreement series. Canceled invoices are excluded unless requested; other currencies and invoices linked elsewhere are excluded. Reports ambiguous top scores and a truncated pool. Reads svc's mirror of the connected Square account, refreshed every 15 minutes and by square.sync; it never reaches Square, and meta.last_synced_at says how fresh it is. Workspace managers only, and only in the workspace Square is connected to; unavailable while Square is not configured. Amounts are in minor units.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "billing:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/InvoiceId"
+                    },
+                    {
+                        "name": "include_canceled",
+                        "in": "query",
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 25,
+                            "default": 10
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SquareCandidateListResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                }
+            }
+        },
         "/workspaces/{workspace}/invoices/{invoice}/square-link": {
             "post": {
                 "operationId": "invoices.square_link",
@@ -5214,6 +5270,124 @@
                     }
                 },
                 "x-mcp-tool": "square.customers.search"
+            }
+        },
+        "/workspaces/{workspace}/square/customers/unlinked": {
+            "get": {
+                "operationId": "square.customers.unlinked",
+                "description": "List mirrored Square customers with invoices and no confirmed client mapping, with open balances and series keys. Optionally select customers with or without open invoices. Returns at most 500 customers and explicitly reports truncation. Reads svc's mirror of the connected Square account, refreshed every 15 minutes and by square.sync; it never reaches Square, and meta.last_synced_at says how fresh it is. Workspace managers only, and only in the workspace Square is connected to; unavailable while Square is not configured. Amounts are in minor units.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "billing:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "with_open_balance",
+                        "in": "query",
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 500,
+                            "default": 100
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SquareUnlinkedCustomerListResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                }
+            }
+        },
+        "/workspaces/{workspace}/square/customers/{customer}/import": {
+            "post": {
+                "operationId": "square.import_customer",
+                "description": "Workspace managers only. Explicitly import one mirrored Square customer as a client and confirm its mapping. Requires confirm: true and an idempotency key. Optionally mirror one of its series as a DRAFT agreement marked billed in Square; the series must have a supported cadence, one currency and an amount. Already mapped customers or assigned series return 409. Reads only the mirror and writes only svc; nothing is created, changed or paid in Square. No bulk or automatic import. A retry returns the same imported records.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "billing:write"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/SquareCustomerImportRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "customer",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 192,
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9:_-]*$"
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Imported client and optional draft agreement",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SquareCustomerImportResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-mcp-tool": "square.import_customer",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_CLIENT_WRITES_ENABLED"
+                ]
             }
         },
         "/workspaces/{workspace}/square/invoices/{invoice}": {
@@ -11242,6 +11416,358 @@
                     }
                 }
             },
+            "SquareCandidate": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "square_invoice_id",
+                    "invoice_number",
+                    "series_key",
+                    "series_occurrence",
+                    "location_id",
+                    "customer_id",
+                    "recipient_name",
+                    "title",
+                    "status",
+                    "currency",
+                    "total_amount",
+                    "paid_amount",
+                    "due_on",
+                    "scheduled_at",
+                    "sale_or_service_date",
+                    "public_url",
+                    "score",
+                    "suggested",
+                    "signals",
+                    "reasons",
+                    "date_distance_days",
+                    "linked_to_this_invoice"
+                ],
+                "properties": {
+                    "square_invoice_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 192
+                    },
+                    "invoice_number": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 191
+                    },
+                    "series_key": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "pattern": "^[0-9]{6}$",
+                        "description": "The six-digit prefix every invoice of a recurring NNNNNN-R-NNNN series shares; null for a one-off."
+                    },
+                    "series_occurrence": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "minimum": 0
+                    },
+                    "location_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 192
+                    },
+                    "customer_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 192
+                    },
+                    "recipient_name": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 255
+                    },
+                    "title": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 255
+                    },
+                    "status": {
+                        "type": "string",
+                        "maxLength": 32,
+                        "description": "Square's invoice status, e.g. DRAFT, UNPAID, SCHEDULED, PARTIALLY_PAID, PAID, PARTIALLY_REFUNDED, REFUNDED, CANCELED, FAILED, PAYMENT_PENDING."
+                    },
+                    "currency": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "pattern": "^[A-Z]{3}$"
+                    },
+                    "total_amount": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "paid_amount": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "due_on": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date"
+                    },
+                    "scheduled_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time"
+                    },
+                    "sale_or_service_date": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date"
+                    },
+                    "public_url": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "uri",
+                        "maxLength": 2048,
+                        "description": "Square's hosted view-and-pay page; only ever HTTPS on a Square host."
+                    },
+                    "score": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 100
+                    },
+                    "suggested": {
+                        "type": "boolean"
+                    },
+                    "signals": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "amount",
+                            "period_slot",
+                            "cadence",
+                            "due_within_7_days",
+                            "customer_mapped"
+                        ],
+                        "properties": {
+                            "amount": {
+                                "type": "string",
+                                "enum": [
+                                    "unknown",
+                                    "exact",
+                                    "within_1_percent",
+                                    "different"
+                                ]
+                            },
+                            "period_slot": {
+                                "type": "boolean"
+                            },
+                            "cadence": {
+                                "type": "boolean"
+                            },
+                            "due_within_7_days": {
+                                "type": "boolean"
+                            },
+                            "customer_mapped": {
+                                "type": "boolean"
+                            }
+                        }
+                    },
+                    "reasons": {
+                        "type": "array",
+                        "maxItems": 5,
+                        "items": {
+                            "type": "string",
+                            "maxLength": 200
+                        }
+                    },
+                    "date_distance_days": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "minimum": 0
+                    },
+                    "linked_to_this_invoice": {
+                        "type": "boolean"
+                    }
+                }
+            },
+            "SquareCandidateListResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data",
+                    "meta"
+                ],
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "maxItems": 25,
+                        "items": {
+                            "$ref": "#/components/schemas/SquareCandidate"
+                        }
+                    },
+                    "meta": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "last_synced_at",
+                            "last_run",
+                            "customer_id",
+                            "series_key",
+                            "linked_square_invoice_id",
+                            "suggest_at",
+                            "ambiguous",
+                            "reason",
+                            "excluded",
+                            "pool_truncated"
+                        ],
+                        "properties": {
+                            "last_synced_at": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "format": "date-time",
+                                "description": "When the last completed sync finished; null before the first."
+                            },
+                            "last_run": {
+                                "oneOf": [
+                                    {
+                                        "$ref": "#/components/schemas/SquareSyncRun"
+                                    },
+                                    {
+                                        "type": "null"
+                                    }
+                                ]
+                            },
+                            "customer_id": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "maxLength": 255
+                            },
+                            "series_key": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "pattern": "^[0-9]{6}$"
+                            },
+                            "linked_square_invoice_id": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "maxLength": 255
+                            },
+                            "suggest_at": {
+                                "type": "integer",
+                                "const": 70
+                            },
+                            "ambiguous": {
+                                "type": "boolean"
+                            },
+                            "reason": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "maxLength": 1000
+                            },
+                            "excluded": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "canceled",
+                                    "other_currency",
+                                    "linked_elsewhere"
+                                ],
+                                "properties": {
+                                    "canceled": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                    },
+                                    "other_currency": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                    },
+                                    "linked_elsewhere": {
+                                        "type": "array",
+                                        "maxItems": 20,
+                                        "items": {
+                                            "type": "object",
+                                            "additionalProperties": false,
+                                            "required": [
+                                                "square_invoice_id",
+                                                "invoice_number",
+                                                "linked_to_invoice_id",
+                                                "linked_to_invoice_number"
+                                            ],
+                                            "properties": {
+                                                "square_invoice_id": {
+                                                    "type": "string",
+                                                    "maxLength": 192,
+                                                    "minLength": 1,
+                                                    "pattern": "^[A-Za-z0-9][A-Za-z0-9:_-]*$"
+                                                },
+                                                "invoice_number": {
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ],
+                                                    "maxLength": 255
+                                                },
+                                                "linked_to_invoice_id": {
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ],
+                                                    "format": "uuid"
+                                                },
+                                                "linked_to_invoice_number": {
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ],
+                                                    "maxLength": 255
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            "pool_truncated": {
+                                "type": "boolean"
+                            }
+                        }
+                    }
+                }
+            },
             "SquareCustomer": {
                 "type": "object",
                 "additionalProperties": false,
@@ -11350,6 +11876,98 @@
                 "maxLength": 191,
                 "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,190}$",
                 "description": "A Square customer id, held as an opaque string. SVC checks its shape only."
+            },
+            "SquareCustomerImportRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "confirm"
+                ],
+                "properties": {
+                    "confirm": {
+                        "type": "boolean",
+                        "const": true
+                    },
+                    "company_name": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "minLength": 1,
+                        "maxLength": 200
+                    },
+                    "billing_email": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "email",
+                        "maxLength": 254
+                    },
+                    "series_key": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "pattern": "^[0-9]{6}$"
+                    },
+                    "agreement_title": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "minLength": 1,
+                        "maxLength": 200
+                    }
+                }
+            },
+            "SquareCustomerImportResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data"
+                ],
+                "properties": {
+                    "data": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "company_id",
+                            "company_name",
+                            "company_href",
+                            "agreement_id",
+                            "agreement_href"
+                        ],
+                        "properties": {
+                            "company_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "company_name": {
+                                "type": "string",
+                                "maxLength": 200
+                            },
+                            "company_href": {
+                                "type": "string",
+                                "maxLength": 2048
+                            },
+                            "agreement_id": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "format": "uuid"
+                            },
+                            "agreement_href": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "maxLength": 2048
+                            }
+                        }
+                    }
+                }
             },
             "SquareCustomerListResponse": {
                 "type": "object",
@@ -13529,6 +14147,156 @@
                 "properties": {
                     "data": {
                         "$ref": "#/components/schemas/SquareSyncRun"
+                    }
+                }
+            },
+            "SquareUnlinkedCustomer": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "customer_id",
+                    "display_name",
+                    "company_name",
+                    "given_name",
+                    "family_name",
+                    "email_address",
+                    "in_customer_directory",
+                    "invoice_count",
+                    "open_invoice_count",
+                    "open_amount",
+                    "currency",
+                    "last_due_on",
+                    "series_keys"
+                ],
+                "properties": {
+                    "customer_id": {
+                        "type": "string",
+                        "maxLength": 192,
+                        "minLength": 1,
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9:_-]*$"
+                    },
+                    "display_name": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 255
+                    },
+                    "company_name": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 255
+                    },
+                    "given_name": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 255
+                    },
+                    "family_name": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 255
+                    },
+                    "email_address": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 255
+                    },
+                    "in_customer_directory": {
+                        "type": "boolean"
+                    },
+                    "invoice_count": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "open_invoice_count": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "open_amount": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "currency": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "pattern": "^[A-Z]{3}$"
+                    },
+                    "last_due_on": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date"
+                    },
+                    "series_keys": {
+                        "type": "array",
+                        "maxItems": 20,
+                        "items": {
+                            "type": "string",
+                            "pattern": "^[0-9]{6}$"
+                        }
+                    }
+                }
+            },
+            "SquareUnlinkedCustomerListResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data",
+                    "meta"
+                ],
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "maxItems": 500,
+                        "items": {
+                            "$ref": "#/components/schemas/SquareUnlinkedCustomer"
+                        }
+                    },
+                    "meta": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "last_synced_at",
+                            "last_run",
+                            "truncated"
+                        ],
+                        "properties": {
+                            "last_synced_at": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "format": "date-time",
+                                "description": "When the last completed sync finished; null before the first."
+                            },
+                            "last_run": {
+                                "oneOf": [
+                                    {
+                                        "$ref": "#/components/schemas/SquareSyncRun"
+                                    },
+                                    {
+                                        "type": "null"
+                                    }
+                                ]
+                            },
+                            "truncated": {
+                                "type": "boolean"
+                            }
+                        }
                     }
                 }
             },

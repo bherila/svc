@@ -1111,7 +1111,7 @@ Configuration (server environment only; nothing is stored in the database):
 ### Square mirror (#438)
 
 SVC keeps a read-only mirror of the connected Square account, so the explore
-screen, series and (later) link suggestions never wait on Square. Square stays
+screen, series and link suggestions never wait on Square. Square stays
 the source of truth; the mirror is a cache that a sync refreshes.
 
 | Operation | REST (`/api/v1/workspaces/{workspace}/square/…`) | Notes |
@@ -1120,6 +1120,32 @@ the source of truth; the mirror is a cache that a sync refreshes.
 | `square.mirror.invoices.list` | `GET mirror/invoices` | `location_id`, `status`, `customer_id`, `series_key`, `due_from`/`due_to`; up to 100 per page, opaque cursor |
 | `square.series.list` | `GET series` | Recurring series by `series_key`, optionally for one `location_id` or `customer_id`; up to 50 per page |
 | `square.series.get` | `GET series/{series}` | One series with every mirrored member by occurrence |
+| `square.customers.unlinked` | `GET customers/unlinked` | Customers with invoices and no confirmed mapping; balances, series keys, optional `with_open_balance`; up to 500, with explicit truncation |
+| `square.import_customer` | `POST customers/{customer}/import` | `billing:write`, `Idempotency-Key`, `confirm: true`; create one client and optionally a draft agreement for `series_key` |
+
+`invoices.square_candidates` is `GET /api/v1/workspaces/{workspace}/invoices/{invoice}/square-candidates`
+with `billing:read`. It ranks the confirmed customer's invoices and an agreement's
+explicit Square series, suggests at 70 points, and caps scores at 100. The amount,
+period, cadence, due date and customer signals explain the ranking. Suggestions
+never link anything; tied top suggestions are marked ambiguous. Canceled invoices
+are omitted unless `include_canceled=true`; other currencies and invoices linked
+elsewhere are excluded. `limit` is at most 25 and a bounded pool reports truncation.
+
+Import is explicit per customer and uses only the mirror. It creates a client,
+confirms the customer mapping and records provenance together. `series_key` may
+also create a draft agreement with the mirrored cadence, currency and amount,
+marked billed in Square. The agreement awaits human review and activation.
+Already mapped customers or assigned series return 409; retries with the same
+idempotency key return the same records. Optional `company_name`, `billing_email`
+and `agreement_title` override the defaults. No existing record is edited, so
+there is no `expected_version` to supply. Import requires both
+`AGENT_API_WRITES_ENABLED` and `AGENT_API_CLIENT_WRITES_ENABLED`.
+
+Operator and client invoice pages offer **View or pay in Square** only for an
+active link whose mirrored `public_url` is an absolute HTTPS address on an
+allowed Square host. SVC never constructs that address from an identifier.
+The client portal resolves the invoice through its existing company and
+workspace visibility checks before looking up the hosted page.
 
 The reads are `billing:read`, for workspace managers of the connected
 workspace, and never reach Square: each list's `meta` carries

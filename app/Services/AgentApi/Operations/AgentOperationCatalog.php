@@ -127,6 +127,7 @@ final class AgentOperationCatalog
         'invoices.preview_period' => ['invoices.preview_period', '/workspaces/{workspace}/agreements/{agreement}/invoices/preview', [200]],
         'invoices.release_delivery' => ['invoices.release_delivery', '/workspaces/{workspace}/invoices/{invoice}/automatic-delivery/release', [200]],
         'invoices.send' => ['invoices.send', '/workspaces/{workspace}/invoices/{invoice}/send', [200]],
+        'invoices.square_candidates' => ['invoices.square-candidates.index', '/workspaces/{workspace}/invoices/{invoice}/square-candidates', [200]],
         'invoices.square_link' => ['invoices.square-link.store', '/workspaces/{workspace}/invoices/{invoice}/square-link', [200]],
         'invoices.square_unlink' => ['invoices.square-link.destroy', '/workspaces/{workspace}/invoices/{invoice}/square-link', [200]],
         'invoices.update_details' => ['invoices.update_details', '/workspaces/{workspace}/invoices/{invoice}/details', [200]],
@@ -151,6 +152,8 @@ final class AgentOperationCatalog
         'search' => ['search', '/workspaces/{workspace}/search', [200]],
         'square.customers.get' => ['square.customers.show', '/workspaces/{workspace}/square/customers/{customer}', [200]],
         'square.customers.list' => ['square.customers.index', '/workspaces/{workspace}/square/customers', [200]],
+        'square.customers.unlinked' => ['square.customers.unlinked', '/workspaces/{workspace}/square/customers/unlinked', [200]],
+        'square.import_customer' => ['square.customers.import', '/workspaces/{workspace}/square/customers/{customer}/import', [200]],
         'square.customers.search' => ['square.customers.search', '/workspaces/{workspace}/square/customers/search', [200]],
         'square.invoices.get' => ['square.invoices.show', '/workspaces/{workspace}/square/invoices/{invoice}', [200]],
         'square.invoices.list' => ['square.invoices.index', '/workspaces/{workspace}/square/invoices', [200]],
@@ -1367,6 +1370,8 @@ final class AgentOperationCatalog
             'square.mirror.invoices.list' => ['List mirrored Square invoices', 'invoices'],
             'square.series.list' => ['List Square series', 'series'],
             'square.series.get' => ['Get Square series', 'seriesDetail'],
+            'invoices.square_candidates' => ['Find Square invoice candidates', 'candidates'],
+            'square.customers.unlinked' => ['List unlinked Square customers', 'unlinkedCustomers'],
         ] as $id => [$title, $method]) {
             $reads[] = $this->tool(
                 $id,
@@ -1383,6 +1388,17 @@ final class AgentOperationCatalog
 
         return [
             ...$reads,
+            $this->tool(
+                'square.import_customer',
+                'Import one Square customer',
+                self::documented('square.import_customer'),
+                [AgentMcpSquareMirrorTools::class, 'importCustomer'],
+                Effect::LocalWrite,
+                true,
+                'mcp.write',
+                cutovers: [AgentDeploymentFlags::WRITES, AgentDeploymentFlags::CLIENTS, AgentDeploymentFlags::SQUARE],
+                manager: true,
+            ),
             $this->tool(
                 'square.sync',
                 'Sync Square mirror',

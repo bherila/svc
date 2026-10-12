@@ -45,6 +45,8 @@ final class SquareOperationContractTest extends TestCase
         'square.mirror.invoices.list' => ['invoices', 'GET', 'mirror.invoices.index', '/mirror/invoices', 'billing:read', Effect::Read, 'SquareMirrorInvoiceListResponse', null],
         'square.series.list' => ['series', 'GET', 'series.index', '/series', 'billing:read', Effect::Read, 'SquareSeriesListResponse', null],
         'square.series.get' => ['seriesDetail', 'GET', 'series.show', '/series/{series}', 'billing:read', Effect::Read, 'SquareSeriesResponse', null],
+        'square.customers.unlinked' => ['unlinkedCustomers', 'GET', 'customers.unlinked', '/customers/unlinked', 'billing:read', Effect::Read, 'SquareUnlinkedCustomerListResponse', null],
+        'square.import_customer' => ['importCustomer', 'POST', 'customers.import', '/customers/{customer}/import', 'billing:write', Effect::LocalWrite, 'SquareCustomerImportResponse', 'SquareCustomerImportRequest'],
     ];
 
     public function test_square_operations_are_manager_only_open_world_reads_behind_the_square_switch(): void
@@ -117,8 +119,8 @@ final class SquareOperationContractTest extends TestCase
                 } else {
                     // The sync reads Square, writes only svc's mirror, and the
                     // outer agent write switch withholds it.
-                    $this->assertTrue($catalog->readsExternalSystem($id), $id);
-                    $this->assertSame([AgentDeploymentFlags::WRITES, AgentDeploymentFlags::SQUARE, 'mcp', 'mcp.switch:mcp.write', 'mcp.switch:'.$id], $operation->requirement->flags, $id);
+                    $this->assertSame($id === 'square.sync', $catalog->readsExternalSystem($id), $id);
+                    $this->assertSame([AgentDeploymentFlags::WRITES, ...($id === 'square.import_customer' ? [AgentDeploymentFlags::CLIENTS] : []), AgentDeploymentFlags::SQUARE, 'mcp', 'mcp.switch:mcp.write', 'mcp.switch:'.$id], $operation->requirement->flags, $id);
                     $this->assertSame(IdempotencyKey::HeaderAndArgument, $operation->safety->idempotencyKey, $id);
                     $this->assertStringContainsString('nothing is created, changed or paid in Square', $operation->description, $id);
                 }

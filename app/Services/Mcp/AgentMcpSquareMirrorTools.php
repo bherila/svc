@@ -79,4 +79,47 @@ final class AgentMcpSquareMirrorTools
         }
         throw new ToolCallException(AgentMcpApiFailure::message($response->status, $response->json));
     }
+
+    /** @return array<string, mixed> */
+    public function candidates(
+        #[Schema(format: 'uuid')] string $workspace_id,
+        #[Schema(format: 'uuid')] string $invoice_id,
+        bool $include_canceled = false,
+        #[Schema(minimum: 1, maximum: 25)] int $limit = 10,
+    ): array {
+        return $this->send('GET', "workspaces/{$workspace_id}/invoices/{$invoice_id}/square-candidates", null, query: [
+            'include_canceled' => $include_canceled ? 'true' : 'false', 'limit' => $limit,
+        ]);
+    }
+
+    /** @return array<string, mixed> */
+    public function unlinkedCustomers(
+        #[Schema(format: 'uuid')] string $workspace_id,
+        ?bool $with_open_balance = null,
+        #[Schema(minimum: 1, maximum: 500)] int $limit = 100,
+    ): array {
+        $query = ['limit' => $limit];
+        if ($with_open_balance !== null) {
+            $query['with_open_balance'] = $with_open_balance ? 'true' : 'false';
+        }
+
+        return $this->send('GET', "workspaces/{$workspace_id}/square/customers/unlinked", null, query: $query);
+    }
+
+    /** @return array<string, mixed> */
+    public function importCustomer(
+        #[Schema(format: 'uuid')] string $workspace_id,
+        #[Schema(minLength: 1, maxLength: 192, pattern: self::ID)] string $customer_id,
+        #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key,
+        bool $confirm,
+        ?string $company_name = null,
+        ?string $billing_email = null,
+        ?string $series_key = null,
+        ?string $agreement_title = null,
+    ): array {
+        return $this->send('POST', "workspaces/{$workspace_id}/square/customers/".rawurlencode($customer_id).'/import', array_filter(
+            compact('confirm', 'company_name', 'billing_email', 'series_key', 'agreement_title'),
+            static fn (mixed $value): bool => $value !== null,
+        ), $idempotency_key);
+    }
 }

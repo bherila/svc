@@ -7,6 +7,8 @@ use App\Models\AgentPrincipal;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\AgentApi\AgentMutationContextFactory;
+use App\Services\Square\Mirror\SquareCandidateService;
+use App\Services\Square\Mirror\SquareCustomerImporter;
 use App\Services\Square\Mirror\SquareMirrorPresenter;
 use App\Services\Square\Mirror\SquareMirrorReadService;
 use App\Services\Square\Mirror\SquareMirrorService;
@@ -59,6 +61,45 @@ final class AgentSquareMirrorController extends Controller
     public function seriesDetail(Request $request, Workspace $workspace, string $series): JsonResponse
     {
         return response()->json($this->reads->seriesDetail($this->actor($request), $workspace, $series));
+    }
+
+    public function candidates(Request $request, Workspace $workspace, string $invoice, SquareCandidateService $candidates): JsonResponse
+    {
+        return response()->json($candidates->candidates(
+            $this->actor($request), $workspace, $invoice,
+            $this->boolean($request, 'include_canceled') ?? false,
+            $request->query('limit') === null ? SquareCandidateService::DEFAULT_LIMIT : $this->limit($request),
+        ));
+    }
+
+    public function unlinkedCustomers(Request $request, Workspace $workspace): JsonResponse
+    {
+        return response()->json($this->reads->unlinkedCustomers(
+            $this->actor($request), $workspace, $this->boolean($request, 'with_open_balance'),
+            $request->query('limit') === null ? SquareMirrorReadService::DEFAULT_UNLINKED_LIMIT : $this->limit($request),
+        ));
+    }
+
+    public function importCustomer(Request $request, Workspace $workspace, string $customer, AgentMutationContextFactory $contexts, SquareCustomerImporter $importer): JsonResponse
+    {
+        $context = $contexts->from($request);
+        [$company, $agreement] = $importer->import($context->user, $workspace, $context->oauthClientId, $context->idempotencyKey, $customer, $request->all());
+
+        return response()->json(['data' => [
+            'company_id' => $company->public_id,
+            'company_name' => $company->name,
+            'company_href' => route('clients.show', [$workspace, $company], absolute: false),
+            'agreement_id' => $agreement?->public_id,
+            'agreement_href' => $agreement === null ? null : route('clients.agreement', [$workspace, $company, $agreement], absolute: false),
+        ]]);
+    }
+
+    private function boolean(Request $request, string $key): ?bool
+    {
+        $value = $this->text($request, $key);
+        abort_unless($value === null || in_array($value, ['true', 'false', '1', '0'], true), 422, "The {$key} must be a boolean.");
+
+        return $value === null ? null : in_array($value, ['true', '1'], true);
     }
 
     private function actor(Request $request): User|AgentPrincipal
