@@ -198,6 +198,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** @description Workspace managers only. A stale draft is a draft whose due date or scheduled issue date is before today in the workspace's calendar; a missing period is the started current period of an active recurring agreement with no non-void invoice. This read only flags them: nothing issues, sends or generates an invoice. */
         get: operations['billing_audit.stale_and_missing'];
         put?: never;
         post?: never;
@@ -812,7 +813,7 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        /** @description Change the due date and/or notes of any draft invoice, generated or ad hoc, using its current version. Lines, linked time and the hours statement are unchanged, and a generated draft keeps the change when it is regenerated. A due date may not precede the draft's issue date. Issued invoices are corrected with invoices.correct instead. */
+        /** @description Change the due date, scheduled issue date and/or notes of any draft invoice, generated or ad hoc, using its current version. Lines, linked time and the hours statement are unchanged, and a generated draft keeps the change when it is regenerated. A due date may not precede the draft's issue date. The scheduled issue date is a plan that billing_audit.stale_and_missing reads; nothing issues or sends on it. Issued invoices are corrected with invoices.correct instead. */
         patch: operations['invoices.update_details'];
         trace?: never;
     };
@@ -1567,6 +1568,11 @@ export interface components {
             issue_date: string | null;
             /** Format: date */
             due_date: string | null;
+            /**
+             * Format: date
+             * @description The day an operator plans to issue this draft, or null. A plan only: nothing issues or sends on it. billing_audit.stale_and_missing flags a draft once this day has passed.
+             */
+            scheduled_issue_date: string | null;
             version: components['schemas']['Version'];
             /** Format: uri */
             web_url: string;
@@ -1642,6 +1648,11 @@ export interface components {
             currency?: string | null;
             /** Format: date */
             due_date?: string | null;
+            /**
+             * Format: date
+             * @description The day you plan to issue this draft; null clears it. Nothing issues or sends on it: billing_audit.stale_and_missing flags the draft once the day has passed.
+             */
+            scheduled_issue_date?: string | null;
             notes?: string | null;
             time_entry_ids?: components['schemas']['Uuid'][];
             manual_lines?: components['schemas']['InvoiceManualLine'][];
@@ -1671,6 +1682,11 @@ export interface components {
             issue_date: string | null;
             /** Format: date */
             due_date: string | null;
+            /**
+             * Format: date
+             * @description The day an operator plans to issue this draft, or null. A plan only: nothing issues or sends on it. billing_audit.stale_and_missing flags a draft once this day has passed.
+             */
+            scheduled_issue_date: string | null;
             version: components['schemas']['Version'];
             /** Format: uri */
             web_url: string;
@@ -1706,8 +1722,13 @@ export interface components {
             expected_version: components['schemas']['Version'];
             /** Format: date */
             due_date?: string | null;
+            /**
+             * Format: date
+             * @description The day you plan to issue this draft; null clears it. Nothing issues or sends on it: billing_audit.stale_and_missing flags the draft once the day has passed.
+             */
+            scheduled_issue_date?: string | null;
             notes?: string | null;
-        } & (unknown | unknown);
+        } & (unknown | unknown | unknown);
         InvoiceDiscardRequest: {
             expected_version: components['schemas']['Version'];
             /** @constant */
@@ -1818,6 +1839,11 @@ export interface components {
             currency?: string | null;
             /** Format: date */
             due_date?: string | null;
+            /**
+             * Format: date
+             * @description The day you plan to issue this draft; null clears it. Nothing issues or sends on it: billing_audit.stale_and_missing flags the draft once the day has passed.
+             */
+            scheduled_issue_date?: string | null;
             notes?: string | null;
             time_entry_ids: components['schemas']['Uuid'][];
             manual_lines: components['schemas']['InvoiceManualLine'][];
@@ -2114,6 +2140,7 @@ export interface components {
         StaleAndMissingInvoiceAudit: {
             /** Format: date */
             as_of: string;
+            /** @description Drafts whose due date or scheduled issue date is before as_of, the workspace's today. */
             stale_draft_count: number;
             stale_draft_balances: components['schemas']['StaleInvoiceBalance'][];
             stale_draft_ids: components['schemas']['Uuid'][];

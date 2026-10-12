@@ -88,6 +88,7 @@ final class InvoiceLifecycleService
                         : InvoiceKind::CadencePeriod->value),
                 'issue_date' => $attributes['issue_date'] ?? null,
                 'due_date' => $attributes['due_date'] ?? null,
+                'scheduled_issue_date' => $attributes['scheduled_issue_date'] ?? null,
                 'service_period_start' => $attributes['service_period_start'] ?? null,
                 'service_period_end' => $attributes['service_period_end'] ?? null,
                 // Zero, not null. Nothing on this path bills overage hours, and
@@ -151,7 +152,7 @@ final class InvoiceLifecycleService
                 // (#349); a generated one is regenerated, not edited.
                 'hours_statement' => null,
             ];
-            foreach (['due_date', 'notes'] as $attribute) {
+            foreach (['due_date', 'scheduled_issue_date', 'notes'] as $attribute) {
                 if (array_key_exists($attribute, $attributes)) {
                     $updates[$attribute] = $attributes[$attribute];
                 }
@@ -182,18 +183,22 @@ final class InvoiceLifecycleService
     }
 
     /**
-     * Change a draft's due date or notes and nothing else.
+     * Change a draft's due date, scheduled issue date or notes and nothing else.
      *
      * Any draft, generated or ad hoc: lines, time allocations and the hours
      * statement are untouched, which is what makes this safe on a generated
      * draft where {@see self::updateDraft()} is not. Regeneration rewrites a
-     * generated draft's period facts and lines but never these two columns, so
-     * the change survives it.
+     * generated draft's period facts and lines but never these columns, so the
+     * change survives it.
+     *
+     * The scheduled issue date is a plan the stale-draft audit reads (#381).
+     * It is not the issue date and nothing issues or sends on it, so it is not
+     * held to the due date: a draft can be late on either one alone.
      *
      * The version is compared on the locked row, so a write that landed after
      * the caller's read is refused rather than overwritten.
      *
-     * @param  array{due_date?: string|null, notes?: string|null}  $attributes
+     * @param  array{due_date?: string|null, scheduled_issue_date?: string|null, notes?: string|null}  $attributes
      */
     public function updateDraftDetails(ClientInvoice $invoice, Workspace $workspace, string $expectedVersion, array $attributes): ClientInvoice
     {
@@ -205,12 +210,18 @@ final class InvoiceLifecycleService
             }
             abort_unless(AgentApiVersion::matches($locked, $expectedVersion), 409, 'The invoice has changed; read it and retry.');
 
-            $before = ['due_date' => $locked->due_date?->toDateString(), 'notes' => $locked->notes];
+            $before = [
+                'due_date' => $locked->due_date?->toDateString(),
+                'scheduled_issue_date' => $locked->scheduled_issue_date?->toDateString(),
+                'notes' => $locked->notes,
+            ];
             $updates = [];
-            if (array_key_exists('due_date', $attributes)) {
-                $updates['due_date'] = $attributes['due_date'] === null
-                    ? null
-                    : CarbonImmutable::parse($attributes['due_date'])->toDateString();
+            foreach (['due_date', 'scheduled_issue_date'] as $day) {
+                if (array_key_exists($day, $attributes)) {
+                    $updates[$day] = $attributes[$day] === null
+                        ? null
+                        : CarbonImmutable::parse($attributes[$day])->toDateString();
+                }
             }
             if (array_key_exists('notes', $attributes)) {
                 $updates['notes'] = $attributes['notes'];
@@ -232,6 +243,7 @@ final class InvoiceLifecycleService
                 [
                     'invoice_kind' => $locked->invoiceKindValue(),
                     'due_date' => ['old' => $before['due_date'], 'new' => $after['due_date']],
+                    'scheduled_issue_date' => ['old' => $before['scheduled_issue_date'], 'new' => $after['scheduled_issue_date']],
                     'notes_changed' => $before['notes'] !== $after['notes'],
                 ],
                 occurrence: (string) Str::uuid(),

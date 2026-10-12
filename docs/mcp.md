@@ -507,7 +507,7 @@ An option left out is left alone; one given empty (`--reference=`) clears it.
 The output carries the payment's version for a following `--expected-version`.
 
 
-### Changing a due date
+### Changing a due date or scheduled issue date
 
 A draft and an issued invoice take different doors, because changing one is
 editing a working document and changing the other is altering something the
@@ -522,6 +522,14 @@ columns, so the change survives it. A due date may not precede the draft's
 issue date. A draft without one is issued today, so a draft whose due date has
 already passed cannot be issued until its due date is moved; this tool is how.
 The change is recorded as `invoice.details_updated` in the client history.
+
+The same tool sets or clears (`null`) a draft's `scheduled_issue_date`: the day
+an operator plans to issue it, which used to live only in free-text notes.
+`invoices.create_draft` and `invoices.update_draft` accept it too, the website
+edits it beside the due date, and invoice reads return it. It is a plan, not a
+trigger: nothing issues, sends or generates on it, and it is held to neither
+the due date nor the issue date. `billing_audit.stale_and_missing` flags the
+draft once the day has passed.
 
 `invoices.correct` (`POST .../invoices/{id}/correct`, `billing:deliver`,
 `confirm: true`, a `reason`) is the website's audited correction of an unpaid
@@ -757,8 +765,10 @@ a positive balance; overdue additionally means due before today in the
 workspace timezone. List and detail include `company_name` and nullable service
 period dates. Cursors are bound to the chosen filters.
 
-The manager-only stale/missing audit counts drafts due before today and sums
-minor-unit balances separately by currency. It also counts started, active
+The manager-only stale/missing audit counts drafts whose due date or scheduled
+issue date is before today in the workspace timezone, and sums minor-unit
+balances separately by currency. A null date is no plan and never makes a draft
+stale by itself; a draft late on both dates is counted once. It also counts started, active
 recurring agreements without a non-void cadence invoice for the current
 retainer period. Each identifier list contains at most 100 entries; counts and
 balances remain complete, and truncation flags say when more rows exist.

@@ -23,6 +23,7 @@ use RuntimeException;
  * @property int $id
  * @property CarbonImmutable|null $issue_date
  * @property CarbonImmutable|null $due_date
+ * @property CarbonImmutable|null $scheduled_issue_date
  * @property CarbonImmutable|null $service_period_start
  * @property CarbonImmutable|null $service_period_end
  * @property string|null $invoice_kind
@@ -65,6 +66,9 @@ use RuntimeException;
     'automatic_delivery_note',
     // What a generated monthly invoice was sized against; see CatchUpBasis.
     'catch_up_basis',
+    // The day an operator plans to issue a draft (#381). A plan the
+    // stale-draft audit reads, never a trigger: nothing issues on it.
+    'scheduled_issue_date',
 ])]
 #[Hidden(['id', 'workspace_id', 'client_company_id', 'client_agreement_id', 'client_billing_schedule_id', 'notes', 'void_reason', 'hours_statement', 'catch_up_basis'])]
 class ClientInvoice extends Model implements WorkspaceOwned
@@ -76,6 +80,7 @@ class ClientInvoice extends Model implements WorkspaceOwned
         return [
             'issue_date' => DateOnly::class,
             'due_date' => DateOnly::class,
+            'scheduled_issue_date' => DateOnly::class,
             'service_period_start' => DateOnly::class,
             'service_period_end' => DateOnly::class,
             'cycle_start' => DateOnly::class,

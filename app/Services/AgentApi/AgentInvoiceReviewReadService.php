@@ -24,7 +24,11 @@ final class AgentInvoiceReviewReadService
     {
         abort_unless($this->access->isWorkspaceManager($actor, $workspace), 404);
         $today = $this->clock->today($workspace);
-        $stale = ClientInvoice::query()->where('workspace_id', $workspace->id)->whereHas('clientCompany', fn ($companies) => $companies->where('workspace_id', $workspace->id))->where('status', 'draft')->whereDate('due_date', '<', $today->toDateString());
+        // Late on either date the operator set (#381): the day it falls due,
+        // or the day it was meant to be issued. A null date is no plan, and
+        // never makes a draft stale on its own.
+        $stale = ClientInvoice::query()->where('workspace_id', $workspace->id)->whereHas('clientCompany', fn ($companies) => $companies->where('workspace_id', $workspace->id))->where('status', 'draft')
+            ->where(fn ($late) => $late->whereDate('due_date', '<', $today->toDateString())->orWhereDate('scheduled_issue_date', '<', $today->toDateString()));
         $count = (clone $stale)->count();
         $balances = [];
         foreach ((clone $stale)->selectRaw('currency, SUM(balance_amount) as aggregate_balance')->groupBy('currency')->get() as $row) {

@@ -313,7 +313,7 @@ final class AgentOperationCatalog
             $this->tool(
                 'billing_audit.stale_and_missing',
                 'Audit stale drafts and missing periods',
-                'Workspace managers only. Count past-due drafts and active recurring agreements lacking a non-void invoice for their current retainer period, with balances per currency and up to 100 identifiers per category.',
+                'Workspace managers only. Count drafts whose due date or scheduled issue date has passed and active recurring agreements lacking a non-void invoice for their current retainer period, with balances per currency and up to 100 identifiers per category. Flags only: nothing is issued, sent or generated.',
                 [AgentMcpReadTools::class, 'billingAuditStaleAndMissing'],
                 Effect::Read,
                 true,
@@ -772,7 +772,7 @@ final class AgentOperationCatalog
             $this->tool(
                 'invoices.update_details',
                 'Update draft invoice details',
-                'Change the due date and/or notes of any draft invoice, including a generated draft that invoices.update_draft refuses, using its current version. Lines and linked time are unchanged. Use this before issuing a draft whose due date has passed: a due date may not precede the issue date, and a draft without one is issued today.',
+                'Change the due date, scheduled issue date and/or notes of any draft invoice, including a generated draft that invoices.update_draft refuses, using its current version. Lines and linked time are unchanged. Use this before issuing a draft whose due date has passed: a due date may not precede the issue date, and a draft without one is issued today. The scheduled issue date is only a plan the stale-draft audit reads; nothing issues or sends on it.',
                 [AgentMcpWriteTools::class, 'invoicesUpdateDetails'],
                 Effect::LocalWrite,
                 true,

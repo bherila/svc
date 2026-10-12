@@ -7,6 +7,7 @@ use App\Services\Billing\ClientInvoicingService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Schema;
 use ReflectionClass;
+use Tests\Feature\AgentApi\AgentInvoiceOperationsParityTest;
 use Tests\Feature\AgentApi\AgentReadApiTest;
 use Tests\Feature\AgentApi\AgentTimeBillingWorkflowTest;
 use Tests\Feature\Billing\AllocationServiceTest;
@@ -215,6 +216,7 @@ final class NullSemanticsRegistryTest extends TestCase
         'client_invoices.invoice_kind => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_a_migrated_invoice_with_no_kind_still_counts_as_having_sold_the_cycle',
         'client_invoices.invoice_kind => covered_by:Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest::test_a_draft_with_no_kind_regenerates_down_the_cadence_path',
         'client_invoices.issue_date => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_issuing_an_undated_invoice_uses_the_workspace_calendar_date',
+        'client_invoices.scheduled_issue_date => covered_by:Tests\Feature\AgentApi\AgentInvoiceOperationsParityTest::test_audit_flags_a_draft_whose_scheduled_issue_date_has_passed',
         'client_invoices.service_period_end => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_an_invoice_of_this_schedule_with_no_period_end_is_refused',
         'client_invoices.service_period_end => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_a_charged_invoice_with_no_service_period_is_still_counted_as_billed',
         'client_invoices.service_period_end => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_an_interim_draft_with_no_period_end_is_invisible_to_the_next_generation',
@@ -511,6 +513,13 @@ final class NullSemanticsRegistryTest extends TestCase
             // also drops the invoice out of the overdue query, which compares
             // with `whereDate`, so an imported invoice with a balance and no due
             // date is collectible but never overdue. Nothing pins that (#149).
+            // Null is no plan (#381): the stale-draft audit flags a draft on a
+            // passed due date or a passed scheduled issue date, and a null on
+            // either never makes a draft stale by itself.
+            'scheduled_issue_date' => [
+                'covered_by' => AgentInvoiceOperationsParityTest::class,
+                'method' => 'test_audit_flags_a_draft_whose_scheduled_issue_date_has_passed',
+            ],
             'due_date' => [
                 [
                     'covered_by' => BillingWorkflowTest::class,

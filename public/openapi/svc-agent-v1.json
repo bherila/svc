@@ -792,6 +792,7 @@
         "/workspaces/{workspace}/billing-audits/stale-and-missing": {
             "get": {
                 "operationId": "billing_audit.stale_and_missing",
+                "description": "Workspace managers only. A stale draft is a draft whose due date or scheduled issue date is before today in the workspace's calendar; a missing period is the started current period of an active recurring agreement with no non-void invoice. This read only flags them: nothing issues, sends or generates an invoice.",
                 "security": [
                     {
                         "oauth2": [
@@ -3352,7 +3353,7 @@
         "/workspaces/{workspace}/invoices/{invoice}/details": {
             "patch": {
                 "operationId": "invoices.update_details",
-                "description": "Change the due date and/or notes of any draft invoice, generated or ad hoc, using its current version. Lines, linked time and the hours statement are unchanged, and a generated draft keeps the change when it is regenerated. A due date may not precede the draft's issue date. Issued invoices are corrected with invoices.correct instead.",
+                "description": "Change the due date, scheduled issue date and/or notes of any draft invoice, generated or ad hoc, using its current version. Lines, linked time and the hours statement are unchanged, and a generated draft keeps the change when it is regenerated. A due date may not precede the draft's issue date. The scheduled issue date is a plan that billing_audit.stale_and_missing reads; nothing issues or sends on it. Issued invoices are corrected with invoices.correct instead.",
                 "security": [
                     {
                         "oauth2": [
@@ -6632,6 +6633,7 @@
                     "balance_amount",
                     "issue_date",
                     "due_date",
+                    "scheduled_issue_date",
                     "version",
                     "web_url",
                     "pdf_url",
@@ -6689,6 +6691,14 @@
                             "null"
                         ],
                         "format": "date"
+                    },
+                    "scheduled_issue_date": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date",
+                        "description": "The day an operator plans to issue this draft, or null. A plan only: nothing issues or sends on it. billing_audit.stale_and_missing flags a draft once this day has passed."
                     },
                     "version": {
                         "$ref": "#/components/schemas/Version"
@@ -7001,6 +7011,14 @@
                         ],
                         "format": "date"
                     },
+                    "scheduled_issue_date": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date",
+                        "description": "The day you plan to issue this draft; null clears it. Nothing issues or sends on it: billing_audit.stale_and_missing flags the draft once the day has passed."
+                    },
                     "notes": {
                         "type": [
                             "string",
@@ -7071,6 +7089,7 @@
                     "balance_amount",
                     "issue_date",
                     "due_date",
+                    "scheduled_issue_date",
                     "version",
                     "web_url",
                     "pdf_url",
@@ -7129,6 +7148,14 @@
                             "null"
                         ],
                         "format": "date"
+                    },
+                    "scheduled_issue_date": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date",
+                        "description": "The day an operator plans to issue this draft, or null. A plan only: nothing issues or sends on it. billing_audit.stale_and_missing flags a draft once this day has passed."
                     },
                     "version": {
                         "$ref": "#/components/schemas/Version"
@@ -7247,6 +7274,11 @@
                             },
                             {
                                 "required": [
+                                    "scheduled_issue_date"
+                                ]
+                            },
+                            {
+                                "required": [
                                     "notes"
                                 ]
                             }
@@ -7263,6 +7295,14 @@
                             "null"
                         ],
                         "format": "date"
+                    },
+                    "scheduled_issue_date": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date",
+                        "description": "The day you plan to issue this draft; null clears it. Nothing issues or sends on it: billing_audit.stale_and_missing flags the draft once the day has passed."
                     },
                     "notes": {
                         "type": [
@@ -7705,6 +7745,14 @@
                             "null"
                         ],
                         "format": "date"
+                    },
+                    "scheduled_issue_date": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date",
+                        "description": "The day you plan to issue this draft; null clears it. Nothing issues or sends on it: billing_audit.stale_and_missing flags the draft once the day has passed."
                     },
                     "notes": {
                         "type": [
@@ -8956,7 +9004,8 @@
                     },
                     "stale_draft_count": {
                         "type": "integer",
-                        "minimum": 0
+                        "minimum": 0,
+                        "description": "Drafts whose due date or scheduled issue date is before as_of, the workspace's today."
                     },
                     "stale_draft_balances": {
                         "type": "array",

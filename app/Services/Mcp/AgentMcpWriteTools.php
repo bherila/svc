@@ -495,9 +495,9 @@ final class AgentMcpWriteTools
     /** @param list<string> $time_entry_ids
      * @param list<array<string, mixed>> $manual_lines
      * @return array<string, mixed> */
-    public function invoicesCreateDraft(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $company_id, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key, #[Schema(maxItems: 100)] array $time_entry_ids = [], #[Schema(maxItems: 100)] array $manual_lines = [], ?string $currency = null, ?string $due_date = null, ?string $notes = null): array
+    public function invoicesCreateDraft(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $company_id, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key, #[Schema(maxItems: 100)] array $time_entry_ids = [], #[Schema(maxItems: 100)] array $manual_lines = [], ?string $currency = null, ?string $due_date = null, ?string $notes = null, ?string $scheduled_issue_date = null): array
     {
-        return $this->send('POST', "workspaces/{$workspace_id}/invoices", array_filter(compact('company_id', 'time_entry_ids', 'manual_lines', 'currency', 'due_date', 'notes'), static fn (mixed $value): bool => $value !== null), $idempotency_key);
+        return $this->send('POST', "workspaces/{$workspace_id}/invoices", array_filter(compact('company_id', 'time_entry_ids', 'manual_lines', 'currency', 'due_date', 'scheduled_issue_date', 'notes'), static fn (mixed $value): bool => $value !== null), $idempotency_key);
     }
 
     /** @param list<string> $time_entry_ids
@@ -514,9 +514,10 @@ final class AgentMcpWriteTools
         ?string $currency = null,
         ?string $due_date = null,
         ?string $notes = null,
+        ?string $scheduled_issue_date = null,
     ): array {
         $body = compact('expected_version', 'time_entry_ids', 'manual_lines');
-        foreach (compact('currency', 'due_date', 'notes') as $name => $value) {
+        foreach (compact('currency', 'due_date', 'scheduled_issue_date', 'notes') as $name => $value) {
             if ($this->requestArguments->has($context, $name)) {
                 $body[$name] = $value;
             }
@@ -534,9 +535,10 @@ final class AgentMcpWriteTools
         RequestContext $context,
         ?string $due_date = null,
         ?string $notes = null,
+        ?string $scheduled_issue_date = null,
     ): array {
         $body = compact('expected_version');
-        foreach (compact('due_date', 'notes') as $name => $value) {
+        foreach (compact('due_date', 'scheduled_issue_date', 'notes') as $name => $value) {
             if ($this->requestArguments->has($context, $name)) {
                 $body[$name] = $value;
             }

@@ -56,7 +56,7 @@ final class AgentInvoiceMutationController extends Controller
                 $invoice = $fromTime->create(
                     $workspace,
                     $company,
-                    Arr::only($data, ['currency', 'due_date', 'notes']),
+                    Arr::only($data, ['currency', 'due_date', 'scheduled_issue_date', 'notes']),
                     $data['time_entry_ids'] ?? [],
                     $data['manual_lines'] ?? [],
                 );
@@ -80,7 +80,7 @@ final class AgentInvoiceMutationController extends Controller
                 $record,
                 $workspace,
                 $data['expected_version'],
-                Arr::only($data, ['currency', 'due_date', 'notes']),
+                Arr::only($data, ['currency', 'due_date', 'scheduled_issue_date', 'notes']),
                 $data['time_entry_ids'],
                 $data['manual_lines'],
             );
@@ -100,11 +100,12 @@ final class AgentInvoiceMutationController extends Controller
             $data = $request->validate([
                 'expected_version' => ['required', 'string', 'size:64'],
                 'due_date' => ['sometimes', 'nullable', 'date_format:Y-m-d'],
+                'scheduled_issue_date' => ['sometimes', 'nullable', 'date_format:Y-m-d'],
                 'notes' => ['sometimes', 'nullable', 'string', 'max:10000'],
             ]);
-            $attributes = Arr::only($data, ['due_date', 'notes']);
+            $attributes = Arr::only($data, ['due_date', 'scheduled_issue_date', 'notes']);
             if ($attributes === []) {
-                throw ValidationException::withMessages(['due_date' => 'Supply due_date, notes, or both.']);
+                throw ValidationException::withMessages(['due_date' => 'Supply at least one of due_date, scheduled_issue_date or notes.']);
             }
             $record = $lifecycle->updateDraftDetails($record, $workspace, $data['expected_version'], $attributes);
 
@@ -253,6 +254,7 @@ final class AgentInvoiceMutationController extends Controller
         $rules = [
             'currency' => ['nullable', 'string', 'size:3'],
             'due_date' => ['nullable', 'date'],
+            'scheduled_issue_date' => ['nullable', 'date_format:Y-m-d'],
             'notes' => ['nullable', 'string', 'max:10000'],
             'time_entry_ids' => [$updating ? 'present' : 'sometimes', 'array', 'max:100'],
             'time_entry_ids.*' => ['uuid', 'distinct'],

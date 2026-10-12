@@ -31,6 +31,7 @@ final class AgentInvoicePresenter
             'balance_amount' => $invoice->balance_amount,
             'issue_date' => $invoice->issue_date?->toDateString(),
             'due_date' => $invoice->due_date?->toDateString(),
+            'scheduled_issue_date' => $invoice->scheduled_issue_date?->toDateString(),
             'automatic_delivery_status' => $includeNotes ? $invoice->automatic_delivery_status : null,
             'automatic_delivery_due_at' => $includeNotes ? $invoice->automatic_delivery_due_at?->toISOString() : null,
             'version' => AgentApiVersion::for($invoice),

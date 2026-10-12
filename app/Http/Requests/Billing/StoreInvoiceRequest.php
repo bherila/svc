@@ -20,6 +20,7 @@ class StoreInvoiceRequest extends FormRequest
             'invoice_number' => ['required', 'string', 'max:80'],
             'issue_date' => ['nullable', 'date'],
             'due_date' => ['nullable', 'date'],
+            'scheduled_issue_date' => ['nullable', 'date_format:Y-m-d'],
             'service_period_start' => ['nullable', 'date'],
             'service_period_end' => ['nullable', 'date', 'after_or_equal:service_period_start'],
             'currency' => ['required', 'regex:/^[A-Z]{3}$/'],
