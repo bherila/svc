@@ -22,11 +22,27 @@ export GIT_CONFIG_VALUE_0=false
 # only; every agent the detector knows is covered by the one switch.
 export PAO_DISABLE=1
 
-exec php -d pcov.enabled=1 -d memory_limit=1G vendor/bin/infection \
+summary=storage/framework/cache/infection-diff/summary.json
+# A leftover summary from an earlier run must not be mistaken for this one.
+rm -f "$summary"
+
+# Infection's exit code judges the score; the gate judges whether anything was
+# measured (#443). Run both and fail on either, so a run in which every mutant
+# timed out cannot pass. CI runs the same gate script.
+infection_status=0
+php -d pcov.enabled=1 -d memory_limit=1G vendor/bin/infection \
     --configuration=infection.diff.json5 \
     --git-diff-lines \
     --git-diff-base="$mutation_base" \
     --only-covering-test-cases \
     --min-covered-msi=82 \
     --threads=max \
-    --initial-tests-php-options='-d pcov.enabled=1 -d memory_limit=1G'
+    --initial-tests-php-options='-d pcov.enabled=1 -d memory_limit=1G' || infection_status=$?
+
+gate_status=0
+php scripts/mutation-gate.php "$summary" || gate_status=$?
+
+if [ "$gate_status" -ne 0 ]; then
+    exit "$gate_status"
+fi
+exit "$infection_status"
