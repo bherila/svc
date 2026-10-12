@@ -44,6 +44,9 @@ enum AccessRefusal: string
     /** The address already signs in here; it gets access directly, not an invitation. */
     case AccountExists = 'account_exists';
 
+    /** A local account holds the address but cannot sign in with it, so an invitation could never apply. */
+    case AddressInUse = 'address_in_use';
+
     /** The invitation was already accepted, not applied or withdrawn. */
     case InvitationNotOpen = 'invitation_not_open';
 
@@ -65,6 +68,7 @@ enum AccessRefusal: string
             self::ProjectOutsideCompany => 'One or more projects do not belong to that client.',
             self::ProjectsWithCompanyScope => 'Company-wide portal access cannot also be limited to projects.',
             self::AccountExists => 'That person already signs in here; add them as a contact instead.',
+            self::AddressInUse => 'An account here already uses that address but is not linked to the identity provider, so an invitation could not be applied. Ask an administrator to link that account first.',
             self::InvitationNotOpen => 'That invitation was already accepted or withdrawn.',
             self::InviterNotBound => 'Your account is not linked to the identity provider, so it cannot send invitations.',
         };

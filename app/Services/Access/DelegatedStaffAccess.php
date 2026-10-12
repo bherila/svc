@@ -578,7 +578,7 @@ final class DelegatedStaffAccess implements ApplicationAccessAdapter
                 AccessRefusal::OwnerProtected, AccessRefusal::SelfChange, AccessRefusal::UnsupportedRole => DelegatedRefusal::PROTECTED_MEMBERSHIP,
                 AccessRefusal::AlreadyStaff, AccessRefusal::NotStaff, AccessRefusal::PortalRevisionConflict => DelegatedRefusal::REVISION_CONFLICT,
                 AccessRefusal::AlreadyPortalMember, AccessRefusal::NotPortalMember, AccessRefusal::ProjectOutsideCompany, AccessRefusal::ProjectsWithCompanyScope,
-                AccessRefusal::AccountExists, AccessRefusal::InvitationNotOpen, AccessRefusal::InviterNotBound => DelegatedRefusal::INVALID_REQUEST,
+                AccessRefusal::AccountExists, AccessRefusal::AddressInUse, AccessRefusal::InvitationNotOpen, AccessRefusal::InviterNotBound => DelegatedRefusal::INVALID_REQUEST,
             });
         }
     }

@@ -166,7 +166,7 @@ final class AgentMutationExecutor
                 AccessRefusal::OwnerProtected, AccessRefusal::SelfChange, AccessRefusal::AlreadyStaff,
                 AccessRefusal::NotStaff, AccessRefusal::UnsupportedRole, AccessRefusal::AlreadyPortalMember,
                 AccessRefusal::NotPortalMember, AccessRefusal::ProjectOutsideCompany, AccessRefusal::ProjectsWithCompanyScope,
-                AccessRefusal::AccountExists, AccessRefusal::InviterNotBound => 'domain',
+                AccessRefusal::AccountExists, AccessRefusal::AddressInUse, AccessRefusal::InviterNotBound => 'domain',
             };
         }
         if ($exception instanceof PortalInvitationFailed) {

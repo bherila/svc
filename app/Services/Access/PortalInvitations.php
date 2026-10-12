@@ -90,7 +90,7 @@ final class PortalInvitations
 
         $this->refuseIf($this->authority->manage($context, $this->coordinator->actorRole($context, $this->coordinator->staff($workspace, [$context->actorId()], lock: false))));
         $subject = $this->subject($context);
-        $this->refuseIf($this->accountExists($email) ? AccessRefusal::AccountExists : null);
+        $this->refuseIf($this->addressRefusal($email));
         $this->projects($workspace, $company, $scope, $projectPublicIds, lock: false);
 
         $issued = $this->ask(fn (ApplicationInvitations $provider): IssuedInvitation => $provider->create($subject, $email));
@@ -99,7 +99,7 @@ final class PortalInvitations
             $stored = ClientCompany::query()->where('workspace_id', $locked->id)->whereKey($company->id)->firstOrFail();
             $projects = $this->projects($locked, $stored, $scope, $projectPublicIds, lock: true);
             $this->authorizeLocked($context, $locked);
-            $this->refuseIf($this->accountExists($email) ? AccessRefusal::AccountExists : null);
+            $this->refuseIf($this->addressRefusal($email));
             $this->refuseIf($scope === PortalAccessScope::Projects && $projects->count() !== count($projectPublicIds) ? AccessRefusal::ProjectOutsideCompany : null);
 
             $invitation = new ClientPortalInvitation;
@@ -264,17 +264,25 @@ final class PortalInvitations
         return $subject;
     }
 
-    /** Whether someone already signs in with this address, found the way portal grants find them. */
-    private function accountExists(string $email): bool
+    /**
+     * Why this address cannot be invited, if a local account already holds it.
+     *
+     * Bound to the configured provider: that person already signs in, and is
+     * added directly. Bound to nothing, or to another provider: sign-in
+     * refuses an address owned by a different local account, so an invitation
+     * could never be applied.
+     */
+    private function addressRefusal(string $email): ?AccessRefusal
     {
+        $owner = User::query()->whereRaw('LOWER(email) = ?', [$email])->first(['id', 'oauth_provider', 'oauth_subject']);
+        if (! $owner instanceof User) {
+            return null;
+        }
         $provider = (string) config('bherila-auth.oauth_client.provider');
 
-        return $provider !== '' && User::query()
-            ->whereRaw('LOWER(email) = ?', [$email])
-            ->where('oauth_provider', $provider)
-            ->whereNotNull('oauth_subject')
-            ->where('oauth_subject', '<>', '')
-            ->exists();
+        return $provider !== '' && $owner->oauth_provider === $provider && (string) $owner->oauth_subject !== ''
+            ? AccessRefusal::AccountExists
+            : AccessRefusal::AddressInUse;
     }
 
     /**

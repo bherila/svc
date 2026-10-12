@@ -290,6 +290,26 @@ final class PortalInvitationsTest extends TestCase
         $this->assertSame(0, ClientPortalInvitation::query()->count());
     }
 
+    /**
+     * Codex review on #444: an address a local account already holds, bound
+     * to no current provider identity, could never be signed in to - sign-in
+     * refuses an address owned by a different local account - so the
+     * invitation could never be applied. It is refused before the provider is
+     * asked.
+     */
+    public function test_an_address_an_unbound_local_account_holds_is_refused_without_asking_the_provider(): void
+    {
+        User::factory()->create(['email' => 'local@client.example.test', 'oauth_provider' => null, 'oauth_subject' => null]);
+        User::factory()->create(['email' => 'retired@client.example.test', 'oauth_provider' => 'retired', 'oauth_subject' => '3002']);
+
+        foreach (['Local@client.example.test', 'retired@client.example.test'] as $email) {
+            $this->assertRefused(AccessRefusal::AddressInUse, fn () => $this->invite($this->admin, $email, PortalAccessScope::Company));
+        }
+
+        $this->provider->assertNothingRequested();
+        $this->assertSame(0, ClientPortalInvitation::query()->count());
+    }
+
     public function test_members_strangers_and_unbound_managers_cannot_invite(): void
     {
         $member = $this->boundStaff('member', '1009');
