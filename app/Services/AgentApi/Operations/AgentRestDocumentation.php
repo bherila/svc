@@ -1277,7 +1277,42 @@ final class AgentRestDocumentation
      */
     private static function squareMirror(): array
     {
+        $common = ' Reads svc\'s mirror of the connected Square account, refreshed every 15 minutes and by square.sync; it never reaches Square, and meta.last_synced_at says how fresh it is. Workspace managers only, and only in the workspace Square is connected to; unavailable while Square is not configured. Amounts are in minor units.';
+        $id = ['type' => 'string', 'minLength' => 1, 'maxLength' => 192, 'pattern' => '^[A-Za-z0-9][A-Za-z0-9:_-]*$'];
+        $seriesKey = ['type' => 'string', 'pattern' => '^[0-9]{6}$'];
+
         return [
+            'square.mirror.invoices.list' => self::mirrorRead($common,
+                'List mirrored Square invoices, filtered by location, status, Square customer, series_key and due-date range, up to 100 per page with cursor pagination. Each carries its series_key and occurrence, status, total, paid and next amounts, due date, Square\'s own reminder schedule, public_url (Square\'s view-and-pay page) and, once paid, its Square payment ids.',
+                [
+                    'WorkspaceId',
+                    self::query('location_id', $id),
+                    self::query('status', ['type' => 'string', 'enum' => ['DRAFT', 'UNPAID', 'SCHEDULED', 'PARTIALLY_PAID', 'PAID', 'PARTIALLY_REFUNDED', 'REFUNDED', 'CANCELED', 'FAILED', 'PAYMENT_PENDING']]),
+                    self::query('customer_id', $id),
+                    self::query('series_key', $seriesKey),
+                    self::query('due_from', ['type' => 'string', 'format' => 'date']),
+                    self::query('due_to', ['type' => 'string', 'format' => 'date']),
+                    ['name' => 'limit', 'in' => 'query', 'schema' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 100, 'default' => 25]],
+                    'Cursor',
+                ],
+                'SquareMirrorInvoiceListResponse',
+            ),
+            'square.series.get' => self::mirrorRead($common,
+                'Get one recurring Square series by its six-digit series_key, with every mirrored member by occurrence.',
+                ['WorkspaceId', ['name' => 'series', 'in' => 'path', 'required' => true, 'schema' => $seriesKey]],
+                'SquareSeriesResponse',
+            ),
+            'square.series.list' => self::mirrorRead($common,
+                'List recurring Square series (invoices numbered NNNNNN-R-NNNN share the six-digit series_key), optionally for one location or Square customer, up to 50 per page with cursor pagination. Each series reports its customer, cadence read from the spacing of its due dates (weekly, monthly, quarterly, semi_annual, annual, irregular or unknown), latest amount and whether amounts vary, missing occurrence numbers, next due date, open amount and status counts.',
+                [
+                    'WorkspaceId',
+                    self::query('location_id', $id),
+                    self::query('customer_id', $id),
+                    ['name' => 'limit', 'in' => 'query', 'schema' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 50, 'default' => 25]],
+                    'Cursor',
+                ],
+                'SquareSeriesListResponse',
+            ),
             'square.sync' => [
                 'method' => 'POST',
                 'scopes' => ['billing:write'],
@@ -1287,6 +1322,22 @@ final class AgentRestDocumentation
                 'response' => 'SquareSyncRunResponse',
                 'response_description' => 'The sync run, completed or failed',
             ],
+        ];
+    }
+
+    /**
+     * @param  list<string|array<string, mixed>>  $parameters
+     * @return array{method: string, scopes: list<string>, description: string, parameters: list<string|array<string, mixed>>, response: string, response_description: string}
+     */
+    private static function mirrorRead(string $common, string $description, array $parameters, string $response): array
+    {
+        return [
+            'method' => 'GET',
+            'scopes' => ['billing:read'],
+            'description' => $description.$common,
+            'parameters' => $parameters,
+            'response' => $response,
+            'response_description' => 'Result',
         ];
     }
 

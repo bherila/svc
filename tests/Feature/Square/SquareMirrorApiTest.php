@@ -10,11 +10,14 @@ use App\Models\SquareSyncRun;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Models\WorkspaceMembership;
+use App\Services\Square\Mirror\SquareMirrorSync;
+use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Sleep;
+use Mcp\Capability\Discovery\SchemaValidator;
 use Tests\Concerns\CallsMcp;
 use Tests\Concerns\FakesSquare;
 use Tests\Concerns\ServesSyntheticSquareAccount;
@@ -135,6 +138,113 @@ final class SquareMirrorApiTest extends TestCase
 
         $this->assertSame(0, SquareSyncRun::query()->count());
         Http::assertNothingSent();
+    }
+
+    public function test_mirror_reads_filter_page_and_answer_alike_over_rest_and_mcp_without_reaching_square(): void
+    {
+        $this->syncOnce();
+        $calls = count(Http::recorded());
+        $this->actingAsMcp($this->owner, ['mcp:use', 'identity:read', 'billing:read']);
+        $session = $this->initialize();
+
+        $reads = [
+            'square.mirror.invoices.list' => ['mirror/invoices', []],
+            'square.series.list' => ['series', []],
+            'square.series.get' => ['series/000001', ['series_key' => '000001']],
+        ];
+        $answers = [];
+        foreach ($reads as $tool => [$path, $arguments]) {
+            $rest = $this->getJson($this->url($path))->assertOk()->json();
+            $mcp = $this->callTool($session, $tool, ['workspace_id' => $this->workspace->public_id, ...$arguments]);
+            $this->assertFalse($mcp['result']['isError'] ?? false, $tool.': '.json_encode($mcp));
+            $this->assertSame($rest, $mcp['result']['structuredContent'], $tool);
+            $this->assertSame([], (new SchemaValidator)->validateAgainstJsonSchema($rest, AgentApiResponseSchemaCatalog::forOperation($tool)), $tool);
+            $answers[$tool] = $rest;
+        }
+        $this->assertCount($calls, Http::recorded(), 'Mirror reads never reach Square.');
+
+        $invoices = $answers['square.mirror.invoices.list'];
+        $this->assertSame(['inv:0-fixture1', 'inv:0-fixture2', 'inv:0-fixture3'], array_column($invoices['data'], 'square_invoice_id'));
+        $this->assertSame('2026-10-12T18:00:00Z', $invoices['meta']['last_synced_at']);
+        $this->assertSame('completed', $invoices['meta']['last_run']['status']);
+        $first = $invoices['data'][0];
+        $this->assertSame(['000001', 1, 'UNPAID', 12_345, 0, '2026-10-15', true, null], [$first['series_key'], $first['series_occurrence'], $first['status'], $first['total_amount'], $first['paid_amount'], $first['due_on'], $first['autopay'], $first['payment_ids']]);
+        $this->assertSame('https://squareupsandbox.com/pay-invoice/inv:0-fixture1', $first['public_url']);
+        $this->assertSame([['relative_scheduled_days' => -1, 'status' => 'PENDING', 'sent_at' => null]], $first['reminders']);
+        $this->assertSame(['pay_fixture_1'], $invoices['data'][1]['payment_ids']);
+
+        $series = $answers['square.series.list']['data'];
+        $this->assertSame(['000001'], array_column($series, 'series_key'));
+        $this->assertSame(['cust_fixture_a', 2, 'USD', 12_345, ['PAID' => 1, 'UNPAID' => 1]], [$series[0]['customer_id'], $series[0]['invoice_count'], $series[0]['currency'], $series[0]['amount'], $series[0]['statuses']]);
+        $this->assertSame(['inv:0-fixture1', 'inv:0-fixture2'], array_column($answers['square.series.get']['data']['members'], 'square_invoice_id'));
+        $this->assertFalse($answers['square.series.get']['data']['members_truncated']);
+
+        foreach ([
+            [['status' => 'PAID'], ['inv:0-fixture2']],
+            [['series_key' => '000001'], ['inv:0-fixture1', 'inv:0-fixture2']],
+            [['customer_id' => 'cust_fixture_a', 'location_id' => 'LOCFIXTURE01'], ['inv:0-fixture1', 'inv:0-fixture2', 'inv:0-fixture3']],
+            [['customer_id' => 'cust_fixture_b'], []],
+            [['due_from' => '2026-10-15', 'due_to' => '2026-10-15'], ['inv:0-fixture1', 'inv:0-fixture2', 'inv:0-fixture3']],
+            [['due_to' => '2026-10-14'], []],
+        ] as [$query, $expected]) {
+            $page = $this->getJson($this->url('mirror/invoices?'.http_build_query($query)))->assertOk();
+            $this->assertSame($expected, array_column($page->json('data'), 'square_invoice_id'), json_encode($query));
+        }
+
+        $page = $this->getJson($this->url('mirror/invoices?limit=2'))->assertOk();
+        $this->assertSame(['inv:0-fixture1', 'inv:0-fixture2'], array_column($page->json('data'), 'square_invoice_id'));
+        $rest = $this->getJson($this->url('mirror/invoices?limit=2&cursor='.urlencode((string) $page->json('meta.next_cursor'))))->assertOk();
+        $this->assertSame(['inv:0-fixture3'], array_column($rest->json('data'), 'square_invoice_id'));
+        $this->assertNull($rest->json('meta.next_cursor'));
+        // A cursor belongs to its query.
+        $this->getJson($this->url('mirror/invoices?limit=2&status=PAID&cursor='.urlencode((string) $page->json('meta.next_cursor'))))->assertStatus(422);
+
+        foreach (['status=paid', 'series_key=12345', 'series_key=000001-R', 'location_id=..%2Fx', 'due_from=2026-10-15&due_to=2026-10-01', 'due_from=yesterday', 'limit=101', 'status[]=PAID'] as $invalid) {
+            $this->getJson($this->url('mirror/invoices?'.$invalid))->assertStatus(422);
+        }
+        $this->getJson($this->url('series?limit=51'))->assertStatus(422);
+        $this->getJson($this->url('series/999999'))->assertNotFound();
+        $this->getJson($this->url('series/abc'))->assertNotFound();
+        $this->assertCount($calls, Http::recorded());
+    }
+
+    public function test_series_pages_by_key_and_reads_are_for_managers_of_the_bound_workspace_only(): void
+    {
+        $invoices = [];
+        foreach (['000001', '000002', '000003'] as $index => $key) {
+            $invoices[] = self::squareInvoice("inv:0-series{$index}", "{$key}-R-0001");
+        }
+        $this->serveSquareAccount(invoices: $invoices);
+        $this->syncOnce();
+        $this->actingAsMcp($this->owner, ['billing:read']);
+
+        $first = $this->getJson($this->url('series?limit=2'))->assertOk();
+        $this->assertSame(['000001', '000002'], array_column($first->json('data'), 'series_key'));
+        $second = $this->getJson($this->url('series?limit=2&cursor='.urlencode((string) $first->json('meta.next_cursor'))))->assertOk();
+        $this->assertSame(['000003'], array_column($second->json('data'), 'series_key'));
+        $this->assertNull($second->json('meta.next_cursor'));
+
+        $member = User::factory()->create();
+        WorkspaceMembership::query()->create(['workspace_id' => $this->workspace->id, 'user_id' => $member->id, 'role' => 'member']);
+        $this->actingAsMcp($member, ['billing:read']);
+        $this->getJson($this->url('mirror/invoices'))->assertForbidden();
+        $this->getJson($this->url('series'))->assertForbidden();
+
+        $other = Workspace::query()->create(['name' => 'Synthetic unbound reads', 'slug' => 'synthetic-unbound-reads']);
+        WorkspaceMembership::query()->create(['workspace_id' => $other->id, 'user_id' => $this->owner->id, 'role' => 'owner']);
+        $this->actingAsMcp($this->owner, ['billing:read']);
+        $this->getJson($this->url('mirror/invoices', $other))->assertNotFound();
+        $this->actingAsMcp($this->owner, ['identity:read']);
+        $this->getJson($this->url('mirror/invoices'))->assertForbidden();
+        config(['services.square.access_token' => null]);
+        $this->actingAsMcp($this->owner, ['billing:read']);
+        $this->getJson($this->url('mirror/invoices'))->assertNotFound();
+    }
+
+    private function syncOnce(): void
+    {
+        $sync = app(SquareMirrorSync::class);
+        $sync->perform($this->workspace, $sync->request($this->workspace, SquareSyncRun::TRIGGER_SCHEDULE));
     }
 
     private function url(string $path, ?Workspace $workspace = null): string

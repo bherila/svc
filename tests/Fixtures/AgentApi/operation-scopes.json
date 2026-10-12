@@ -1200,6 +1200,17 @@
             "mcp.switch:square.locations.list"
         ]
     },
+    "square.mirror.invoices.list": {
+        "scopes": [
+            "billing:read"
+        ],
+        "flags": [
+            "square.connected",
+            "mcp",
+            "mcp.switch:mcp.read.square",
+            "mcp.switch:square.mirror.invoices.list"
+        ]
+    },
     "square.orders.get": {
         "scopes": [
             "billing:read"
@@ -1231,6 +1242,28 @@
             "mcp",
             "mcp.switch:mcp.read.square",
             "mcp.switch:square.payments.list"
+        ]
+    },
+    "square.series.get": {
+        "scopes": [
+            "billing:read"
+        ],
+        "flags": [
+            "square.connected",
+            "mcp",
+            "mcp.switch:mcp.read.square",
+            "mcp.switch:square.series.get"
+        ]
+    },
+    "square.series.list": {
+        "scopes": [
+            "billing:read"
+        ],
+        "flags": [
+            "square.connected",
+            "mcp",
+            "mcp.switch:mcp.read.square",
+            "mcp.switch:square.series.list"
         ]
     },
     "square.sync": {

@@ -1277,6 +1277,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    '/workspaces/{workspace}/square/mirror/invoices': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description List mirrored Square invoices, filtered by location, status, Square customer, series_key and due-date range, up to 100 per page with cursor pagination. Each carries its series_key and occurrence, status, total, paid and next amounts, due date, Square's own reminder schedule, public_url (Square's view-and-pay page) and, once paid, its Square payment ids. Reads svc's mirror of the connected Square account, refreshed every 15 minutes and by square.sync; it never reaches Square, and meta.last_synced_at says how fresh it is. Workspace managers only, and only in the workspace Square is connected to; unavailable while Square is not configured. Amounts are in minor units. */
+        get: operations['square.mirror.invoices.list'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     '/workspaces/{workspace}/square/orders/{order}': {
         parameters: {
             query?: never;
@@ -1320,6 +1337,40 @@ export interface paths {
         };
         /** @description List Square payments created within an RFC 3339 time range (Square defaults to the past year), optionally at one location (Square defaults to the main location), up to 50 per page, with cursor pagination. Card details are limited to brand, type and last four digits. Live, read-only Square data fetched on each call for finding Square records to link to svc records; svc never creates, changes or pays anything in Square, and linking is a separate svc operation. Workspace managers only, and only in the workspace Square is connected to; unavailable while Square is not configured. Square ids and cursors are opaque. */
         get: operations['square.payments.list'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/square/series/{series}': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Get one recurring Square series by its six-digit series_key, with every mirrored member by occurrence. Reads svc's mirror of the connected Square account, refreshed every 15 minutes and by square.sync; it never reaches Square, and meta.last_synced_at says how fresh it is. Workspace managers only, and only in the workspace Square is connected to; unavailable while Square is not configured. Amounts are in minor units. */
+        get: operations['square.series.get'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/square/series': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description List recurring Square series (invoices numbered NNNNNN-R-NNNN share the six-digit series_key), optionally for one location or Square customer, up to 50 per page with cursor pagination. Each series reports its customer, cadence read from the spacing of its due dates (weekly, monthly, quarterly, semi_annual, annual, irregular or unknown), latest amount and whether amounts vary, missing occurrence numbers, next due date, open amount and status counts. Reads svc's mirror of the connected Square account, refreshed every 15 minutes and by square.sync; it never reaches Square, and meta.last_synced_at says how fresh it is. Workspace managers only, and only in the workspace Square is connected to; unavailable while Square is not configured. Amounts are in minor units. */
+        get: operations['square.series.list'];
         put?: never;
         post?: never;
         delete?: never;
@@ -2771,6 +2822,65 @@ export interface components {
         SquareLocationListResponse: {
             data: components['schemas']['SquareLocation'][];
         };
+        /** @description A Square invoice as svc's mirror last saw it. */
+        SquareMirrorInvoice: {
+            square_invoice_id: string;
+            invoice_number: string | null;
+            /** @description The six-digit prefix every invoice of a recurring NNNNNN-R-NNNN series shares; null for a one-off. */
+            series_key: string | null;
+            series_occurrence: number | null;
+            subscription_id: string | null;
+            location_id: string | null;
+            order_id: string | null;
+            customer_id: string | null;
+            recipient_name: string | null;
+            title: string | null;
+            /** @description Square's invoice status, e.g. DRAFT, UNPAID, SCHEDULED, PARTIALLY_PAID, PAID, PARTIALLY_REFUNDED, REFUNDED, CANCELED, FAILED, PAYMENT_PENDING. */
+            status: string;
+            currency: string | null;
+            total_amount: number | null;
+            paid_amount: number | null;
+            next_payment_amount: number | null;
+            /** Format: date */
+            due_on: string | null;
+            /** Format: date-time */
+            scheduled_at: string | null;
+            /** Format: date */
+            sale_or_service_date: string | null;
+            /** Format: date-time */
+            created_at: string | null;
+            /** Format: date-time */
+            updated_at: string | null;
+            /**
+             * Format: uri
+             * @description Square's hosted view-and-pay page; only ever HTTPS on a Square host.
+             */
+            public_url: string | null;
+            /** @description A payment request charges a card on file automatically. */
+            autopay: boolean;
+            /** @description Square's own reminder schedule for the invoice. */
+            reminders: {
+                relative_scheduled_days: number | null;
+                status: string | null;
+                sent_at: string | null;
+            }[];
+            /** @description Square payment ids from the invoice's order; null until a sync has read them. */
+            payment_ids: string[] | null;
+            /** Format: date-time */
+            last_seen_at: string | null;
+        };
+        SquareMirrorInvoiceListResponse: {
+            data: components['schemas']['SquareMirrorInvoice'][];
+            meta: {
+                next_cursor: string | null;
+                /**
+                 * Format: date-time
+                 * @description When the last completed sync finished; null before the first.
+                 */
+                last_synced_at: string | null;
+                last_run: components['schemas']['SquareSyncRun'] | null;
+            };
+        };
         /** @description An amount in minor units of an ISO 4217 currency. */
         SquareMoney: {
             amount: number;
@@ -2862,8 +2972,115 @@ export interface components {
         SquarePaymentResponse: {
             data: components['schemas']['SquarePayment'];
         };
+        /** @description A recurring Square series, summarised from its mirrored invoices. */
+        SquareSeries: {
+            series_key: string;
+            customer_id: string | null;
+            customer_count: number;
+            recipient_name: string | null;
+            location_id: string | null;
+            currency: string | null;
+            invoice_count: number;
+            first_occurrence: number | null;
+            last_occurrence: number | null;
+            /** @description Occurrence numbers between the first and last that no mirrored invoice carries. */
+            missing_occurrences: number[];
+            missing_occurrences_truncated: boolean;
+            /** @enum {string} */
+            cadence:
+                | 'weekly'
+                | 'monthly'
+                | 'quarterly'
+                | 'semi_annual'
+                | 'annual'
+                | 'irregular'
+                | 'unknown';
+            cadence_days: number | null;
+            /** @description The latest billed member's total. */
+            amount: number | null;
+            amount_varies: boolean;
+            /** Format: date */
+            first_due_on: string | null;
+            /** Format: date */
+            last_due_on: string | null;
+            /** Format: date */
+            next_due_on: string | null;
+            /** @description Owed on unpaid and partially paid members; scheduled members are not issued yet. */
+            open_amount: number | null;
+            autopay: boolean;
+            /** @description Members per Square status. */
+            statuses: {
+                [key: string]: number;
+            };
+        };
+        /** @description A recurring Square series with every mirrored member, by occurrence. */
+        SquareSeriesDetail: {
+            series_key: string;
+            customer_id: string | null;
+            customer_count: number;
+            recipient_name: string | null;
+            location_id: string | null;
+            currency: string | null;
+            invoice_count: number;
+            first_occurrence: number | null;
+            last_occurrence: number | null;
+            /** @description Occurrence numbers between the first and last that no mirrored invoice carries. */
+            missing_occurrences: number[];
+            missing_occurrences_truncated: boolean;
+            /** @enum {string} */
+            cadence:
+                | 'weekly'
+                | 'monthly'
+                | 'quarterly'
+                | 'semi_annual'
+                | 'annual'
+                | 'irregular'
+                | 'unknown';
+            cadence_days: number | null;
+            /** @description The latest billed member's total. */
+            amount: number | null;
+            amount_varies: boolean;
+            /** Format: date */
+            first_due_on: string | null;
+            /** Format: date */
+            last_due_on: string | null;
+            /** Format: date */
+            next_due_on: string | null;
+            /** @description Owed on unpaid and partially paid members; scheduled members are not issued yet. */
+            open_amount: number | null;
+            autopay: boolean;
+            /** @description Members per Square status. */
+            statuses: {
+                [key: string]: number;
+            };
+            members: components['schemas']['SquareMirrorInvoice'][];
+            members_truncated: boolean;
+        };
         /** @description A Square recurring series: the six-digit prefix of its invoices' NNNNNN-R-NNNN numbers. */
         SquareSeriesKey: string;
+        SquareSeriesListResponse: {
+            data: components['schemas']['SquareSeries'][];
+            meta: {
+                next_cursor: string | null;
+                /**
+                 * Format: date-time
+                 * @description When the last completed sync finished; null before the first.
+                 */
+                last_synced_at: string | null;
+                last_run: components['schemas']['SquareSyncRun'] | null;
+            };
+        };
+        SquareSeriesResponse: {
+            data: components['schemas']['SquareSeriesDetail'];
+            meta: {
+                /**
+                 * Format: date-time
+                 * @description When the last completed sync finished; null before the first.
+                 */
+                last_synced_at: string | null;
+                last_run: components['schemas']['SquareSyncRun'] | null;
+            };
+        };
         /** @description No fields: a sync always refreshes the whole mirror. */
         SquareSyncRequest: Record<string, never>;
         /** @description One pass of the Square mirror sync. */
@@ -6015,6 +6232,48 @@ export interface operations {
             default: components['responses']['Error'];
         };
     };
+    'square.mirror.invoices.list': {
+        parameters: {
+            query?: {
+                location_id?: string;
+                status?:
+                    | 'DRAFT'
+                    | 'UNPAID'
+                    | 'SCHEDULED'
+                    | 'PARTIALLY_PAID'
+                    | 'PAID'
+                    | 'PARTIALLY_REFUNDED'
+                    | 'REFUNDED'
+                    | 'CANCELED'
+                    | 'FAILED'
+                    | 'PAYMENT_PENDING';
+                customer_id?: string;
+                series_key?: string;
+                due_from?: string;
+                due_to?: string;
+                limit?: number;
+                cursor?: components['parameters']['Cursor'];
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['SquareMirrorInvoiceListResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
     'square.orders.get': {
         parameters: {
             query?: never;
@@ -6088,6 +6347,58 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['SquarePaymentListResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'square.series.get': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                series: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['SquareSeriesResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'square.series.list': {
+        parameters: {
+            query?: {
+                location_id?: string;
+                customer_id?: string;
+                limit?: number;
+                cursor?: components['parameters']['Cursor'];
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['SquareSeriesListResponse'];
                 };
             };
             default: components['responses']['Error'];

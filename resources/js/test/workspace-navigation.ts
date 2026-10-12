@@ -50,6 +50,7 @@ export function workspaceNavigation(
         },
         workspace_settings_href: null,
         mcp_setup_href: '/workspaces/workspace-1/mcp',
+        square_href: null,
         ...overrides,
     };
 }

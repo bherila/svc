@@ -158,7 +158,10 @@ final class AgentOperationCatalog
         'square.locations.list' => ['square.locations.index', '/workspaces/{workspace}/square/locations', [200]],
         'square.orders.get' => ['square.orders.show', '/workspaces/{workspace}/square/orders/{order}', [200]],
         'square.payments.get' => ['square.payments.show', '/workspaces/{workspace}/square/payments/{payment}', [200]],
+        'square.mirror.invoices.list' => ['square.mirror.invoices.index', '/workspaces/{workspace}/square/mirror/invoices', [200]],
         'square.payments.list' => ['square.payments.index', '/workspaces/{workspace}/square/payments', [200]],
+        'square.series.get' => ['square.series.show', '/workspaces/{workspace}/square/series/{series}', [200]],
+        'square.series.list' => ['square.series.index', '/workspaces/{workspace}/square/series', [200]],
         'square.sync' => ['square.sync', '/workspaces/{workspace}/square/sync', [200]],
         'tasks.create' => ['tasks.store', '/workspaces/{workspace}/projects/{project}/tasks', [201]],
         'tasks.get' => ['tasks.show', '/workspaces/{workspace}/tasks/{task}', [200]],
@@ -1359,8 +1362,27 @@ final class AgentOperationCatalog
     private function squareMirror(): array
     {
         $this->external['square.sync'] = true;
+        $reads = [];
+        foreach ([
+            'square.mirror.invoices.list' => ['List mirrored Square invoices', 'invoices'],
+            'square.series.list' => ['List Square series', 'series'],
+            'square.series.get' => ['Get Square series', 'seriesDetail'],
+        ] as $id => [$title, $method]) {
+            $reads[] = $this->tool(
+                $id,
+                $title,
+                self::documented($id),
+                [AgentMcpSquareMirrorTools::class, $method],
+                Effect::Read,
+                true,
+                'mcp.read.square',
+                cutovers: [AgentDeploymentFlags::SQUARE],
+                manager: true,
+            );
+        }
 
         return [
+            ...$reads,
             $this->tool(
                 'square.sync',
                 'Sync Square mirror',

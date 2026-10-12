@@ -1117,6 +1117,17 @@ the source of truth; the mirror is a cache that a sync refreshes.
 | Operation | REST (`/api/v1/workspaces/{workspace}/square/…`) | Notes |
 | --- | --- | --- |
 | `square.sync` | `POST sync` | `billing:write`, `Idempotency-Key`; refresh the mirror now and return the run |
+| `square.mirror.invoices.list` | `GET mirror/invoices` | `location_id`, `status`, `customer_id`, `series_key`, `due_from`/`due_to`; up to 100 per page, opaque cursor |
+| `square.series.list` | `GET series` | Recurring series by `series_key`, optionally for one `location_id` or `customer_id`; up to 50 per page |
+| `square.series.get` | `GET series/{series}` | One series with every mirrored member by occurrence |
+
+The reads are `billing:read`, for workspace managers of the connected
+workspace, and never reach Square: each list's `meta` carries
+`last_synced_at` (the last completed run) and `last_run` (the latest run,
+however it ended), so a reader can tell how fresh the answer is. Workspace
+managers also get a **Square invoices** screen (account menu) with the same
+filters, the series, the sync status and a **Sync now** control that calls
+`square.sync`; it links each invoice to its Square `public_url`.
 
 - **What is mirrored.** Locations; customers (the allow-listed fields of
   `square.customers.get`); and every location's invoices with their number,
@@ -1138,6 +1149,14 @@ the source of truth; the mirror is a cache that a sync refreshes.
   unique per Square id and an older Square version never replaces a newer
   one, so two syncs at once leave one row per Square object. The
   `Square-Version` sent is recorded on the run and logged with every page.
+- **Series.** A series is the invoices sharing a `series_key`. Its cadence
+  (`weekly`, `monthly`, `quarterly`, `semi_annual`, `annual`, `irregular` or
+  `unknown`) is the median spacing of due dates per occurrence, so a skipped
+  month does not change it; occurrence numbers no mirrored invoice carries are
+  listed as `missing_occurrences`; `amount` is the latest billed member's and
+  `amount_varies` flags a price change; `open_amount` sums unpaid and
+  partially paid members (scheduled ones are not issued yet). Canceled, draft
+  and failed members set neither amount nor cadence.
 - **Runs.** A run ends `completed`, or `failed` with an `error_code` and a
   readable `error` (Square unavailable, rate limited, an unreadable response,
   a refused credential, or a run a dead process abandoned). A failed run is a

@@ -7,6 +7,7 @@ use App\Models\ClientCompanyMembership;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\ProjectAccess;
+use App\Services\Square\SquareConfiguration;
 use App\Support\Navigation\ClientModuleDestinations;
 use App\Support\Navigation\ClientNavigationOption;
 use App\Support\Navigation\WorkspaceNavigation;
@@ -106,6 +107,9 @@ final class WorkspaceNavigationFactory
             // growing a second navigation hierarchy when it lands.
             workspaceSettingsHref: null,
             mcpSetupHref: $isMember ? route('mcp.setup', $workspace) : ($options === [] ? null : route('portal.mcp.setup', $options[0]->id)),
+            // The Square mirror's explore screen (#438): managers of the one
+            // workspace Square is connected to.
+            squareHref: $manages && SquareConfiguration::fromConfig()->servesWorkspace($workspace) ? route('square.explore', $workspace, absolute: false) : null,
         );
     }
 

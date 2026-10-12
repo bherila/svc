@@ -73,7 +73,9 @@ final class SquarePassThroughTest extends TestCase
     {
         $this->fakeSquare();
         $session = $this->initialize();
-        $this->assertSame(self::TOOLS, array_values(array_filter($this->sortedToolNames($session), static fn (string $name): bool => str_starts_with($name, 'square.'))));
+        // The mirror's own tools (square.mirror.*, square.series.*, square.sync) are not pass-through reads.
+        $this->assertSame(self::TOOLS, array_values(array_filter($this->sortedToolNames($session), static fn (string $name): bool => str_starts_with($name, 'square.')
+            && ! in_array($name, ['square.mirror.invoices.list', 'square.series.get', 'square.series.list', 'square.sync'], true))));
 
         $answers = [];
         foreach ($this->reads() as $tool => [$path, $query]) {

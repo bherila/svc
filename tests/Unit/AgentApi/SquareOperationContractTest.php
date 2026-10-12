@@ -42,6 +42,9 @@ final class SquareOperationContractTest extends TestCase
      */
     private const array MIRROR = [
         'square.sync' => ['sync', 'POST', 'sync', '/sync', 'billing:write', Effect::LocalWrite, 'SquareSyncRunResponse', 'SquareSyncRequest'],
+        'square.mirror.invoices.list' => ['invoices', 'GET', 'mirror.invoices.index', '/mirror/invoices', 'billing:read', Effect::Read, 'SquareMirrorInvoiceListResponse', null],
+        'square.series.list' => ['series', 'GET', 'series.index', '/series', 'billing:read', Effect::Read, 'SquareSeriesListResponse', null],
+        'square.series.get' => ['seriesDetail', 'GET', 'series.show', '/series/{series}', 'billing:read', Effect::Read, 'SquareSeriesResponse', null],
     ];
 
     public function test_square_operations_are_manager_only_open_world_reads_behind_the_square_switch(): void
@@ -104,9 +107,10 @@ final class SquareOperationContractTest extends TestCase
                 $this->assertSame('/workspaces/{workspace}/square'.$path, $operation->rest->path, $id);
                 $this->assertSame([200], $operation->rest->successStatuses, $id);
                 $this->assertSame($operation->rest->description, $operation->description, $id);
-                $this->assertStringContainsString('Workspace managers only.', $operation->description, $id);
+                $this->assertStringContainsString('Workspace managers only', $operation->description, $id);
                 if ($effect === Effect::Read) {
                     // Reads of the mirror never reach Square.
+                    $this->assertStringContainsString('it never reaches Square', $operation->description, $id);
                     $this->assertFalse($catalog->readsExternalSystem($id), $id);
                     $this->assertSame([AgentDeploymentFlags::SQUARE, 'mcp', 'mcp.switch:mcp.read.square', 'mcp.switch:'.$id], $operation->requirement->flags, $id);
                     $this->assertSame(IdempotencyKey::None, $operation->safety->idempotencyKey, $id);

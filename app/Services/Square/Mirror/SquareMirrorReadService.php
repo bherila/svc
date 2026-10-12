@@ -1,0 +1,339 @@
+<?php
+
+namespace App\Services\Square\Mirror;
+
+use App\Models\AgentPrincipal;
+use App\Models\SquareInvoiceSnapshot;
+use App\Models\SquareLocationSnapshot;
+use App\Models\SquareSyncRun;
+use App\Models\User;
+use App\Models\Workspace;
+use App\Services\Authorization\AgentAccess;
+use App\Services\Square\SquareClient;
+use App\Services\Square\SquareConfiguration;
+use App\Services\Square\SquareRequestFailed;
+use App\Support\AgentApi\AgentApiCursor;
+use App\Support\WorkspaceClock;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Validator;
+
+/**
+ * Reads of svc's Square mirror for workspace managers (#438), shared by REST,
+ * MCP and the operator's explore screen. Nothing here reaches Square: the
+ * answers are as fresh as the last sync, and say when that was.
+ */
+final class SquareMirrorReadService
+{
+    public const int DEFAULT_LIMIT = 25;
+
+    public const int MAX_INVOICE_LIMIT = 100;
+
+    public const int MAX_SERIES_LIMIT = 50;
+
+    /** Members returned with one series; a series this long is decades of monthly invoices. */
+    public const int MAX_SERIES_MEMBERS = 600;
+
+    /** Every status Square's Invoice enum defines. */
+    public const array STATUSES = ['DRAFT', 'UNPAID', 'SCHEDULED', 'PARTIALLY_PAID', 'PAID', 'PARTIALLY_REFUNDED', 'REFUNDED', 'CANCELED', 'FAILED', 'PAYMENT_PENDING'];
+
+    public const string SERIES_KEY = '/^\d{6}$/D';
+
+    public function __construct(
+        private readonly AgentAccess $access,
+        private readonly SquareMirrorPresenter $presenter,
+        private readonly WorkspaceClock $clock,
+    ) {}
+
+    /**
+     * The mirrored invoices matching the filters, in mirror order.
+     *
+     * @param  array<string, mixed>  $filters  location_id, status, customer_id, series_key, due_from, due_to
+     * @return array{data: list<array<string, mixed>>, meta: array<string, mixed>}
+     */
+    public function invoices(User|AgentPrincipal $actor, Workspace $workspace, array $filters, int $limit = self::DEFAULT_LIMIT, ?string $cursor = null): array
+    {
+        $filters = $this->filters($filters, ['limit' => $limit, 'cursor' => $cursor], self::MAX_INVOICE_LIMIT);
+        $this->admit($actor, $workspace);
+        $queryKey = 'square-mirror-invoices|'.json_encode($filters, JSON_THROW_ON_ERROR);
+        $query = $this->invoiceQuery($workspace, $filters)->orderBy('id');
+        $after = AgentApiCursor::decode($cursor, (string) $workspace->public_id, $queryKey);
+        if ($after !== null) {
+            $query->where('id', '>', $after);
+        }
+        $rows = $query->limit($limit + 1)->get();
+        $next = null;
+        if ($rows->count() > $limit) {
+            $rows->pop();
+            $last = $rows->last();
+            $next = $last === null ? null : AgentApiCursor::encode((int) $last->getKey(), (string) $workspace->public_id, $queryKey);
+        }
+
+        return [
+            'data' => array_values($rows->map($this->presenter->invoice(...))->all()),
+            'meta' => ['next_cursor' => $next, ...$this->freshness($workspace)],
+        ];
+    }
+
+    /**
+     * One page of an explore screen: newest due first, numbered pages.
+     *
+     * @param  array<string, mixed>  $filters
+     * @return array{data: list<array<string, mixed>>, page: int, last_page: int, total: int}
+     */
+    public function explorePage(User $actor, Workspace $workspace, array $filters, int $page, int $perPage = 50): array
+    {
+        $this->admit($actor, $workspace);
+        $paginator = $this->invoiceQuery($workspace, $filters)
+            ->orderByRaw('case when due_on is null then 1 else 0 end')
+            ->orderByDesc('due_on')
+            ->orderByDesc('id')
+            ->paginate($perPage, ['*'], 'page', max(1, $page));
+
+        return [
+            'data' => array_values(array_map($this->presenter->invoice(...), $paginator->items())),
+            'page' => $paginator->currentPage(),
+            'last_page' => $paginator->lastPage(),
+            'total' => $paginator->total(),
+        ];
+    }
+
+    /**
+     * Recurring series, by series key.
+     *
+     * @param  array<string, mixed>  $filters  location_id, customer_id
+     * @return array{data: list<array<string, mixed>>, meta: array<string, mixed>}
+     */
+    public function series(User|AgentPrincipal $actor, Workspace $workspace, array $filters, int $limit = self::DEFAULT_LIMIT, ?string $cursor = null): array
+    {
+        $filters = $this->filters(array_intersect_key($filters, array_flip(['location_id', 'customer_id'])), ['limit' => $limit, 'cursor' => $cursor], self::MAX_SERIES_LIMIT);
+        $this->admit($actor, $workspace);
+        $queryKey = 'square-mirror-series|'.json_encode($filters, JSON_THROW_ON_ERROR);
+        // A series key is six digits, so key + 1 is a positive cursor id.
+        $after = AgentApiCursor::decode($cursor, (string) $workspace->public_id, $queryKey);
+        $keys = self::keys($this->invoiceQuery($workspace, $filters)
+            ->when($after !== null, static fn (Builder $query) => $query->where('series_key', '>', sprintf('%06d', $after - 1))), $limit + 1);
+        $next = null;
+        if (count($keys) > $limit) {
+            array_pop($keys);
+            $next = AgentApiCursor::encode((int) end($keys) + 1, (string) $workspace->public_id, $queryKey);
+        }
+
+        return [
+            'data' => $this->summaries($workspace, $keys),
+            'meta' => ['next_cursor' => $next, ...$this->freshness($workspace)],
+        ];
+    }
+
+    /**
+     * One series with every mirrored member, by occurrence.
+     *
+     * @return array{data: array<string, mixed>, meta: array<string, mixed>}
+     */
+    public function seriesDetail(User|AgentPrincipal $actor, Workspace $workspace, string $seriesKey): array
+    {
+        $this->validate(['series_key' => $seriesKey], ['series_key' => ['required', 'string', 'regex:'.self::SERIES_KEY]]);
+        $this->admit($actor, $workspace);
+        $members = $this->members($workspace, [$seriesKey], self::MAX_SERIES_MEMBERS + 1)[$seriesKey] ?? [];
+        abort_if($members === [], 404, 'The Square mirror has no series with that key.');
+        $truncated = count($members) > self::MAX_SERIES_MEMBERS;
+        $members = array_slice($members, 0, self::MAX_SERIES_MEMBERS);
+
+        return [
+            'data' => [
+                ...$this->summary($workspace, $seriesKey, $members),
+                'members' => array_map($this->presenter->invoice(...), $members),
+                'members_truncated' => $truncated,
+            ],
+            'meta' => $this->freshness($workspace),
+        ];
+    }
+
+    /**
+     * When the mirror was last refreshed, and the latest run however it ended.
+     *
+     * @return array{last_synced_at: string|null, last_run: array<string, mixed>|null}
+     */
+    public function freshness(Workspace $workspace): array
+    {
+        $completed = SquareSyncRun::query()->where('workspace_id', $workspace->id)->where('status', SquareSyncRun::COMPLETED)
+            ->orderByDesc('finished_at')->orderByDesc('id')->first();
+        $latest = SquareSyncRun::query()->where('workspace_id', $workspace->id)->orderByDesc('id')->first();
+
+        return [
+            'last_synced_at' => SquareMirrorPresenter::instant($completed?->finished_at),
+            'last_run' => $latest === null ? null : $this->presenter->run($latest),
+        ];
+    }
+
+    /**
+     * Validated filters, as the explore screen and the API take them.
+     *
+     * @param  array<string, mixed>  $filters
+     * @param  array<string, mixed>  $paging
+     * @return array<string, string>
+     */
+    public function filters(array $filters, array $paging = [], int $maxLimit = self::MAX_INVOICE_LIMIT): array
+    {
+        $values = array_filter($filters, static fn (mixed $value): bool => $value !== null && $value !== '');
+        $this->validate([...$values, ...$paging], [
+            'location_id' => ['sometimes', 'string', 'regex:'.SquareClient::ID_PATTERN],
+            'customer_id' => ['sometimes', 'string', 'regex:'.SquareClient::ID_PATTERN],
+            'status' => ['sometimes', 'string', 'in:'.implode(',', self::STATUSES)],
+            'series_key' => ['sometimes', 'string', 'regex:'.self::SERIES_KEY],
+            'due_from' => ['sometimes', 'string', 'date_format:Y-m-d'],
+            'due_to' => ['sometimes', 'string', 'date_format:Y-m-d', ...(isset($values['due_from']) ? ['after_or_equal:due_from'] : [])],
+            'limit' => ['sometimes', 'integer', 'min:1', 'max:'.$maxLimit],
+            'cursor' => ['nullable', 'string', 'max:2048'],
+        ]);
+        $known = array_intersect_key($values, array_flip(['location_id', 'customer_id', 'status', 'series_key', 'due_from', 'due_to']));
+        ksort($known);
+
+        return array_map(strval(...), $known);
+    }
+
+    /**
+     * The explore screen's filter choices: what the mirror holds.
+     *
+     * @return array{locations: list<array{value: string, label: string}>, customers: list<array{value: string, label: string}>}
+     */
+    public function options(Workspace $workspace): array
+    {
+        $locations = [];
+        foreach (SquareLocationSnapshot::query()->where('workspace_id', $workspace->id)->orderBy('name')->orderBy('id')->get() as $location) {
+            $locations[] = ['value' => $location->square_location_id, 'label' => $location->name ?? $location->square_location_id];
+        }
+        $customers = [];
+        foreach (SquareInvoiceSnapshot::query()->where('workspace_id', $workspace->id)->whereNotNull('square_customer_id')
+            ->groupBy('square_customer_id')->selectRaw('square_customer_id, max(recipient_name) as recipient_name')->orderByRaw('max(recipient_name)')->get() as $customer) {
+            $id = (string) $customer->getAttribute('square_customer_id');
+            $name = $customer->getAttribute('recipient_name');
+            $customers[] = ['value' => $id, 'label' => is_string($name) && $name !== '' ? $name : $id];
+        }
+
+        return ['locations' => $locations, 'customers' => $customers];
+    }
+
+    /**
+     * Series summaries for the given keys, in that order.
+     *
+     * @param  list<string>  $keys
+     * @return list<array<string, mixed>>
+     */
+    public function summaries(Workspace $workspace, array $keys): array
+    {
+        $members = $this->members($workspace, $keys, null);
+        $summaries = [];
+        foreach ($keys as $key) {
+            $summaries[] = $this->summary($workspace, $key, $members[$key] ?? []);
+        }
+
+        return $summaries;
+    }
+
+    /**
+     * Series keys in the mirror, at most $limit, in key order.
+     *
+     * @return list<string>
+     */
+    public function seriesKeys(Workspace $workspace, int $limit): array
+    {
+        return self::keys(SquareInvoiceSnapshot::query()->where('workspace_id', $workspace->id), $limit);
+    }
+
+    /**
+     * @param  Builder<SquareInvoiceSnapshot>  $query
+     * @return list<string>
+     */
+    private static function keys(Builder $query, int $limit): array
+    {
+        $keys = [];
+        foreach ($query->whereNotNull('series_key')->distinct()->orderBy('series_key')->limit($limit)->pluck('series_key') as $key) {
+            $keys[] = (string) $key;
+        }
+
+        return $keys;
+    }
+
+    /**
+     * @param  list<SquareInvoiceSnapshot>  $members
+     * @return array<string, mixed>
+     */
+    private function summary(Workspace $workspace, string $key, array $members): array
+    {
+        return SquareSeriesSummary::of($key, array_map(static fn (SquareInvoiceSnapshot $member): array => [
+            'series_occurrence' => $member->series_occurrence,
+            'due_on' => $member->due_on?->toDateString(),
+            'scheduled_on' => $member->scheduled_at?->toDateString(),
+            'status' => $member->status,
+            'currency' => $member->currency,
+            'total_amount' => $member->total_amount,
+            'paid_amount' => $member->paid_amount,
+            'autopay' => $member->autopay,
+            'square_customer_id' => $member->square_customer_id,
+            'recipient_name' => $member->recipient_name,
+            'square_location_id' => $member->square_location_id,
+        ], $members), $this->clock->today($workspace));
+    }
+
+    /**
+     * Members of each series, by occurrence.
+     *
+     * @param  list<string>  $keys
+     * @return array<string, list<SquareInvoiceSnapshot>>
+     */
+    private function members(Workspace $workspace, array $keys, ?int $limit): array
+    {
+        if ($keys === []) {
+            return [];
+        }
+        $rows = SquareInvoiceSnapshot::query()->where('workspace_id', $workspace->id)->whereIn('series_key', $keys)
+            ->orderBy('series_key')->orderBy('series_occurrence')->orderBy('id')
+            ->when($limit !== null, static fn (Builder $query) => $query->limit((int) $limit))
+            ->get();
+        $members = [];
+        foreach ($rows as $row) {
+            $members[(string) $row->series_key][] = $row;
+        }
+
+        return $members;
+    }
+
+    /**
+     * @param  array<string, string>  $filters
+     * @return Builder<SquareInvoiceSnapshot>
+     */
+    private function invoiceQuery(Workspace $workspace, array $filters): Builder
+    {
+        $query = SquareInvoiceSnapshot::query()->where('workspace_id', $workspace->id);
+        foreach (['location_id' => 'square_location_id', 'customer_id' => 'square_customer_id', 'status' => 'status', 'series_key' => 'series_key'] as $filter => $column) {
+            if (isset($filters[$filter])) {
+                $query->where($column, $filters[$filter]);
+            }
+        }
+        if (isset($filters['due_from'])) {
+            $query->where('due_on', '>=', $filters['due_from']);
+        }
+        if (isset($filters['due_to'])) {
+            $query->where('due_on', '<=', $filters['due_to']);
+        }
+
+        return $query;
+    }
+
+    private function admit(User|AgentPrincipal $actor, Workspace $workspace): void
+    {
+        abort_unless($this->access->isWorkspaceManager($actor, $workspace), 403, 'The Square mirror is available to workspace managers only.');
+        if (! SquareConfiguration::fromConfig()->servesWorkspace($workspace)) {
+            throw SquareRequestFailed::notConnected();
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @param  array<string, mixed>  $rules
+     */
+    private function validate(array $data, array $rules): void
+    {
+        Validator::make($data, $rules)->validate();
+    }
+}

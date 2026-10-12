@@ -311,9 +311,17 @@ Route::prefix('v1')
         }
         // svc's read-only mirror of Square (#438), refreshed by the scheduled
         // sync or on request; reads of it never reach Square.
-        $operation('square.sync', [AgentSquareMirrorController::class, 'sync'])
-            ->middleware(EnsureAgentWorkspaceVisible::class)
-            ->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']));
+        foreach ([
+            'square.sync' => 'sync',
+            'square.mirror.invoices.list' => 'invoices',
+            'square.series.list' => 'series',
+            'square.series.get' => 'seriesDetail',
+        ] as $operationId => $action) {
+            $operation($operationId, [AgentSquareMirrorController::class, $action])
+                ->where('series', '[0-9]{6}')
+                ->middleware(EnsureAgentWorkspaceVisible::class)
+                ->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']));
+        }
         $operation('billing_schedules.list', [AgentBillingScheduleController::class, 'index'])
             ->middleware(EnsureAgentWorkspaceVisible::class)
             ->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']));
