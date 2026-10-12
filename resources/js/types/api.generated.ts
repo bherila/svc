@@ -1051,6 +1051,176 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    '/workspaces/{workspace}/square/customers/{customer}': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Get one Square customer by its Square id. Live, read-only Square data fetched on each call for finding Square records to link to svc records; svc never creates, changes or pays anything in Square, and linking is a separate svc operation. Workspace managers only, and only in the workspace Square is connected to; unavailable while Square is not configured. Square ids and cursors are opaque. */
+        get: operations['square.customers.get'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/square/customers': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description List Square customers in Square's default order, up to 100 per page, with cursor pagination. Live, read-only Square data fetched on each call for finding Square records to link to svc records; svc never creates, changes or pays anything in Square, and linking is a separate svc operation. Workspace managers only, and only in the workspace Square is connected to; unavailable while Square is not configured. Square ids and cursors are opaque. */
+        get: operations['square.customers.list'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/square/customers/search': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Search Square customers by email address or phone number (at least one), matched fuzzily by default or exactly with match=exact. Square has no name search: to find a customer by name, page through square.customers.list or read the recipient on their Square invoices. Live, read-only Square data fetched on each call for finding Square records to link to svc records; svc never creates, changes or pays anything in Square, and linking is a separate svc operation. Workspace managers only, and only in the workspace Square is connected to; unavailable while Square is not configured. Square ids and cursors are opaque. */
+        get: operations['square.customers.search'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/square/invoices/{invoice}': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Get one Square invoice by its Square id, with series_key and series_occurrence derived from its number. Live, read-only Square data fetched on each call for finding Square records to link to svc records; svc never creates, changes or pays anything in Square, and linking is a separate svc operation. Workspace managers only, and only in the workspace Square is connected to; unavailable while Square is not configured. Square ids and cursors are opaque. */
+        get: operations['square.invoices.get'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/square/invoices': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description List one Square location's invoices, up to 50 per page, with cursor pagination. series_key is the six-digit prefix every invoice of a recurring NNNNNN-R-NNNN series shares, and series_occurrence its suffix; both are null for a one-off invoice. Amounts are in minor units. Live, read-only Square data fetched on each call for finding Square records to link to svc records; svc never creates, changes or pays anything in Square, and linking is a separate svc operation. Workspace managers only, and only in the workspace Square is connected to; unavailable while Square is not configured. Square ids and cursors are opaque. */
+        get: operations['square.invoices.list'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/square/invoices/search': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Search one Square location's invoices, optionally for one Square customer, by invoice date (newest first by default), up to 50 per page, with cursor pagination. Each invoice carries series_key and series_occurrence as in square.invoices.list. Live, read-only Square data fetched on each call for finding Square records to link to svc records; svc never creates, changes or pays anything in Square, and linking is a separate svc operation. Workspace managers only, and only in the workspace Square is connected to; unavailable while Square is not configured. Square ids and cursors are opaque. */
+        get: operations['square.invoices.search'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/square/locations': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description List the connected Square account's locations; Square invoice reads take a location_id from here. Live, read-only Square data fetched on each call for finding Square records to link to svc records; svc never creates, changes or pays anything in Square, and linking is a separate svc operation. Workspace managers only, and only in the workspace Square is connected to; unavailable while Square is not configured. Square ids and cursors are opaque. */
+        get: operations['square.locations.list'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/square/orders/{order}': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Get one Square order - the order_id on a Square invoice - with its line items, totals and tenders. Live, read-only Square data fetched on each call for finding Square records to link to svc records; svc never creates, changes or pays anything in Square, and linking is a separate svc operation. Workspace managers only, and only in the workspace Square is connected to; unavailable while Square is not configured. Square ids and cursors are opaque. */
+        get: operations['square.orders.get'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/square/payments/{payment}': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Get one Square payment by its Square id. Card details are limited to brand, type and last four digits. Live, read-only Square data fetched on each call for finding Square records to link to svc records; svc never creates, changes or pays anything in Square, and linking is a separate svc operation. Workspace managers only, and only in the workspace Square is connected to; unavailable while Square is not configured. Square ids and cursors are opaque. */
+        get: operations['square.payments.get'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/square/payments': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description List Square payments created within an RFC 3339 time range (Square defaults to the past year), optionally at one location (Square defaults to the main location), up to 50 per page, with cursor pagination. Card details are limited to brand, type and last four digits. Live, read-only Square data fetched on each call for finding Square records to link to svc records; svc never creates, changes or pays anything in Square, and linking is a separate svc operation. Workspace managers only, and only in the workspace Square is connected to; unavailable while Square is not configured. Square ids and cursors are opaque. */
+        get: operations['square.payments.list'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     '/workspaces/{workspace}/projects/{project}/tasks': {
         parameters: {
             query?: never;
@@ -2212,6 +2382,199 @@ export interface components {
             subtitle: string | null;
             href: string;
             workspace: string;
+        };
+        SquareCustomer: {
+            id: string | null;
+            version: number | null;
+            given_name: string | null;
+            family_name: string | null;
+            nickname: string | null;
+            company_name: string | null;
+            email_address: string | null;
+            phone_number: string | null;
+            reference_id: string | null;
+            creation_source: string | null;
+            created_at: string | null;
+            updated_at: string | null;
+        };
+        SquareCustomerListResponse: {
+            data: components['schemas']['SquareCustomer'][];
+            meta: {
+                next_cursor: string | null;
+            };
+        };
+        SquareCustomerResponse: {
+            data: components['schemas']['SquareCustomer'];
+        };
+        SquareInvoice: {
+            id: string | null;
+            version: number | null;
+            location_id: string | null;
+            order_id: string | null;
+            invoice_number: string | null;
+            /** @description The six-digit prefix shared by every invoice of a recurring NNNNNN-R-NNNN series; null for a one-off invoice. */
+            series_key: string | null;
+            /** @description The NNNN suffix of a recurring series invoice number; null for a one-off invoice. */
+            series_occurrence: number | null;
+            title: string | null;
+            description: string | null;
+            status: string | null;
+            delivery_method: string | null;
+            /**
+             * Format: uri
+             * @description Square's hosted page for the invoice; null unless it is HTTPS on a Square host.
+             */
+            public_url: string | null;
+            scheduled_at: string | null;
+            sale_or_service_date: string | null;
+            timezone: string | null;
+            created_at: string | null;
+            updated_at: string | null;
+            next_payment_amount_money:
+                components['schemas']['SquareMoney'] | null;
+            store_payment_method_enabled: boolean | null;
+            accepted_payment_methods: {
+                card: boolean | null;
+                bank_account: boolean | null;
+                square_gift_card: boolean | null;
+                buy_now_pay_later: boolean | null;
+                cash_app_pay: boolean | null;
+            };
+            primary_recipient: {
+                customer_id: string | null;
+                given_name: string | null;
+                family_name: string | null;
+                company_name: string | null;
+                email_address: string | null;
+                phone_number: string | null;
+            } | null;
+            payment_requests: {
+                uid: string | null;
+                request_type: string | null;
+                due_date: string | null;
+                computed_amount_money:
+                    components['schemas']['SquareMoney'] | null;
+                total_completed_amount_money:
+                    components['schemas']['SquareMoney'] | null;
+                automatic_payment_source: string | null;
+                /** @description Square will charge a stored card; the card itself is never returned. */
+                card_on_file: boolean;
+                tipping_enabled: boolean | null;
+                reminders: {
+                    uid: string | null;
+                    relative_scheduled_days: number | null;
+                    status: string | null;
+                    sent_at: string | null;
+                }[];
+            }[];
+            attachment_count: number;
+        };
+        SquareInvoiceListResponse: {
+            data: components['schemas']['SquareInvoice'][];
+            meta: {
+                next_cursor: string | null;
+            };
+        };
+        SquareInvoiceResponse: {
+            data: components['schemas']['SquareInvoice'];
+        };
+        SquareLocation: {
+            id: string | null;
+            name: string | null;
+            business_name: string | null;
+            status: string | null;
+            type: string | null;
+            currency: string | null;
+            country: string | null;
+            timezone: string | null;
+            created_at: string | null;
+        };
+        SquareLocationListResponse: {
+            data: components['schemas']['SquareLocation'][];
+        };
+        /** @description An amount in minor units of an ISO 4217 currency. */
+        SquareMoney: {
+            amount: number;
+            currency: string;
+        };
+        SquareOrder: {
+            id: string | null;
+            version: number | null;
+            location_id: string | null;
+            customer_id: string | null;
+            reference_id: string | null;
+            state: string | null;
+            created_at: string | null;
+            updated_at: string | null;
+            closed_at: string | null;
+            line_items: {
+                uid: string | null;
+                name: string | null;
+                variation_name: string | null;
+                quantity: string | null;
+                base_price_money: components['schemas']['SquareMoney'] | null;
+                gross_sales_money: components['schemas']['SquareMoney'] | null;
+                total_discount_money:
+                    components['schemas']['SquareMoney'] | null;
+                total_tax_money: components['schemas']['SquareMoney'] | null;
+                total_money: components['schemas']['SquareMoney'] | null;
+            }[];
+            line_items_truncated: boolean;
+            total_money: components['schemas']['SquareMoney'] | null;
+            total_tax_money: components['schemas']['SquareMoney'] | null;
+            total_discount_money: components['schemas']['SquareMoney'] | null;
+            total_tip_money: components['schemas']['SquareMoney'] | null;
+            total_service_charge_money:
+                components['schemas']['SquareMoney'] | null;
+            net_amount_due_money: components['schemas']['SquareMoney'] | null;
+            tenders: {
+                id: string | null;
+                type: string | null;
+                amount_money: components['schemas']['SquareMoney'] | null;
+                payment_id: string | null;
+            }[];
+        };
+        SquareOrderResponse: {
+            data: components['schemas']['SquareOrder'];
+        };
+        SquarePayment: {
+            id: string | null;
+            status: string | null;
+            source_type: string | null;
+            location_id: string | null;
+            order_id: string | null;
+            customer_id: string | null;
+            reference_id: string | null;
+            receipt_number: string | null;
+            created_at: string | null;
+            updated_at: string | null;
+            amount_money: components['schemas']['SquareMoney'] | null;
+            tip_money: components['schemas']['SquareMoney'] | null;
+            total_money: components['schemas']['SquareMoney'] | null;
+            approved_money: components['schemas']['SquareMoney'] | null;
+            refunded_money: components['schemas']['SquareMoney'] | null;
+            processing_fee: {
+                type: string | null;
+                effective_at: string | null;
+                amount_money: components['schemas']['SquareMoney'] | null;
+            }[];
+            refund_ids: string[];
+            card: {
+                status: string | null;
+                entry_method: string | null;
+                card_brand: string | null;
+                card_type: string | null;
+                last_4: string | null;
+            } | null;
+        };
+        SquarePaymentListResponse: {
+            data: components['schemas']['SquarePayment'][];
+            meta: {
+                next_cursor: string | null;
+            };
+        };
+        SquarePaymentResponse: {
+            data: components['schemas']['SquarePayment'];
         };
         StaleAndMissingInvoiceAudit: {
             /** Format: date */
@@ -4800,6 +5163,266 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['SearchResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'square.customers.get': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                customer: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['SquareCustomerResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'square.customers.list': {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: components['parameters']['Cursor'];
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['SquareCustomerListResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'square.customers.search': {
+        parameters: {
+            query?: {
+                email?: string;
+                phone?: string;
+                match?: 'exact' | 'fuzzy';
+                limit?: number;
+                cursor?: components['parameters']['Cursor'];
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['SquareCustomerListResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'square.invoices.get': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                invoice: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['SquareInvoiceResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'square.invoices.list': {
+        parameters: {
+            query: {
+                location_id: string;
+                limit?: number;
+                cursor?: components['parameters']['Cursor'];
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['SquareInvoiceListResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'square.invoices.search': {
+        parameters: {
+            query: {
+                location_id: string;
+                customer_id?: string;
+                sort_order?: 'asc' | 'desc';
+                limit?: number;
+                cursor?: components['parameters']['Cursor'];
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['SquareInvoiceListResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'square.locations.list': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['SquareLocationListResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'square.orders.get': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                order: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['SquareOrderResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'square.payments.get': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                payment: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['SquarePaymentResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'square.payments.list': {
+        parameters: {
+            query?: {
+                begin_time?: string;
+                end_time?: string;
+                location_id?: string;
+                sort_order?: 'asc' | 'desc';
+                limit?: number;
+                cursor?: components['parameters']['Cursor'];
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['SquarePaymentListResponse'];
                 };
             };
             default: components['responses']['Error'];

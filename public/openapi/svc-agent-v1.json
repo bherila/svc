@@ -4364,6 +4364,598 @@
                 }
             }
         },
+        "/workspaces/{workspace}/square/customers/{customer}": {
+            "get": {
+                "operationId": "square.customers.get",
+                "description": "Get one Square customer by its Square id. Live, read-only Square data fetched on each call for finding Square records to link to svc records; svc never creates, changes or pays anything in Square, and linking is a separate svc operation. Workspace managers only, and only in the workspace Square is connected to; unavailable while Square is not configured. Square ids and cursors are opaque.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "billing:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "customer",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 192,
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9:_-]*$"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SquareCustomerResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-mcp-tool": "square.customers.get"
+            }
+        },
+        "/workspaces/{workspace}/square/customers": {
+            "get": {
+                "operationId": "square.customers.list",
+                "description": "List Square customers in Square's default order, up to 100 per page, with cursor pagination. Live, read-only Square data fetched on each call for finding Square records to link to svc records; svc never creates, changes or pays anything in Square, and linking is a separate svc operation. Workspace managers only, and only in the workspace Square is connected to; unavailable while Square is not configured. Square ids and cursors are opaque.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "billing:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 25
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/Cursor"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SquareCustomerListResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-mcp-tool": "square.customers.list"
+            }
+        },
+        "/workspaces/{workspace}/square/customers/search": {
+            "get": {
+                "operationId": "square.customers.search",
+                "description": "Search Square customers by email address or phone number (at least one), matched fuzzily by default or exactly with match=exact. Square has no name search: to find a customer by name, page through square.customers.list or read the recipient on their Square invoices. Live, read-only Square data fetched on each call for finding Square records to link to svc records; svc never creates, changes or pays anything in Square, and linking is a separate svc operation. Workspace managers only, and only in the workspace Square is connected to; unavailable while Square is not configured. Square ids and cursors are opaque.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "billing:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "email",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 254
+                        }
+                    },
+                    {
+                        "name": "phone",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 32
+                        }
+                    },
+                    {
+                        "name": "match",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "exact",
+                                "fuzzy"
+                            ],
+                            "default": "fuzzy"
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 25
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/Cursor"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SquareCustomerListResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-mcp-tool": "square.customers.search"
+            }
+        },
+        "/workspaces/{workspace}/square/invoices/{invoice}": {
+            "get": {
+                "operationId": "square.invoices.get",
+                "description": "Get one Square invoice by its Square id, with series_key and series_occurrence derived from its number. Live, read-only Square data fetched on each call for finding Square records to link to svc records; svc never creates, changes or pays anything in Square, and linking is a separate svc operation. Workspace managers only, and only in the workspace Square is connected to; unavailable while Square is not configured. Square ids and cursors are opaque.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "billing:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "invoice",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 192,
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9:_-]*$"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SquareInvoiceResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-mcp-tool": "square.invoices.get"
+            }
+        },
+        "/workspaces/{workspace}/square/invoices": {
+            "get": {
+                "operationId": "square.invoices.list",
+                "description": "List one Square location's invoices, up to 50 per page, with cursor pagination. series_key is the six-digit prefix every invoice of a recurring NNNNNN-R-NNNN series shares, and series_occurrence its suffix; both are null for a one-off invoice. Amounts are in minor units. Live, read-only Square data fetched on each call for finding Square records to link to svc records; svc never creates, changes or pays anything in Square, and linking is a separate svc operation. Workspace managers only, and only in the workspace Square is connected to; unavailable while Square is not configured. Square ids and cursors are opaque.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "billing:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "location_id",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 192,
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9:_-]*$"
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 50,
+                            "default": 25
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/Cursor"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SquareInvoiceListResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-mcp-tool": "square.invoices.list"
+            }
+        },
+        "/workspaces/{workspace}/square/invoices/search": {
+            "get": {
+                "operationId": "square.invoices.search",
+                "description": "Search one Square location's invoices, optionally for one Square customer, by invoice date (newest first by default), up to 50 per page, with cursor pagination. Each invoice carries series_key and series_occurrence as in square.invoices.list. Live, read-only Square data fetched on each call for finding Square records to link to svc records; svc never creates, changes or pays anything in Square, and linking is a separate svc operation. Workspace managers only, and only in the workspace Square is connected to; unavailable while Square is not configured. Square ids and cursors are opaque.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "billing:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "location_id",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 192,
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9:_-]*$"
+                        }
+                    },
+                    {
+                        "name": "customer_id",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 192,
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9:_-]*$"
+                        }
+                    },
+                    {
+                        "name": "sort_order",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "asc",
+                                "desc"
+                            ],
+                            "default": "desc"
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 50,
+                            "default": 25
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/Cursor"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SquareInvoiceListResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-mcp-tool": "square.invoices.search"
+            }
+        },
+        "/workspaces/{workspace}/square/locations": {
+            "get": {
+                "operationId": "square.locations.list",
+                "description": "List the connected Square account's locations; Square invoice reads take a location_id from here. Live, read-only Square data fetched on each call for finding Square records to link to svc records; svc never creates, changes or pays anything in Square, and linking is a separate svc operation. Workspace managers only, and only in the workspace Square is connected to; unavailable while Square is not configured. Square ids and cursors are opaque.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "billing:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SquareLocationListResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-mcp-tool": "square.locations.list"
+            }
+        },
+        "/workspaces/{workspace}/square/orders/{order}": {
+            "get": {
+                "operationId": "square.orders.get",
+                "description": "Get one Square order - the order_id on a Square invoice - with its line items, totals and tenders. Live, read-only Square data fetched on each call for finding Square records to link to svc records; svc never creates, changes or pays anything in Square, and linking is a separate svc operation. Workspace managers only, and only in the workspace Square is connected to; unavailable while Square is not configured. Square ids and cursors are opaque.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "billing:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "order",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 192,
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9:_-]*$"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SquareOrderResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-mcp-tool": "square.orders.get"
+            }
+        },
+        "/workspaces/{workspace}/square/payments/{payment}": {
+            "get": {
+                "operationId": "square.payments.get",
+                "description": "Get one Square payment by its Square id. Card details are limited to brand, type and last four digits. Live, read-only Square data fetched on each call for finding Square records to link to svc records; svc never creates, changes or pays anything in Square, and linking is a separate svc operation. Workspace managers only, and only in the workspace Square is connected to; unavailable while Square is not configured. Square ids and cursors are opaque.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "billing:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "payment",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 192,
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9:_-]*$"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SquarePaymentResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-mcp-tool": "square.payments.get"
+            }
+        },
+        "/workspaces/{workspace}/square/payments": {
+            "get": {
+                "operationId": "square.payments.list",
+                "description": "List Square payments created within an RFC 3339 time range (Square defaults to the past year), optionally at one location (Square defaults to the main location), up to 50 per page, with cursor pagination. Card details are limited to brand, type and last four digits. Live, read-only Square data fetched on each call for finding Square records to link to svc records; svc never creates, changes or pays anything in Square, and linking is a separate svc operation. Workspace managers only, and only in the workspace Square is connected to; unavailable while Square is not configured. Square ids and cursors are opaque.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "billing:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "begin_time",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "format": "date-time"
+                        }
+                    },
+                    {
+                        "name": "end_time",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "format": "date-time"
+                        }
+                    },
+                    {
+                        "name": "location_id",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 192,
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9:_-]*$"
+                        }
+                    },
+                    {
+                        "name": "sort_order",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "asc",
+                                "desc"
+                            ],
+                            "default": "desc"
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 50,
+                            "default": 25
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/Cursor"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SquarePaymentListResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-mcp-tool": "square.payments.list"
+            }
+        },
         "/workspaces/{workspace}/projects/{project}/tasks": {
             "post": {
                 "operationId": "tasks.create",
@@ -9238,6 +9830,1308 @@
                     },
                     "workspace": {
                         "type": "string"
+                    }
+                }
+            },
+            "SquareCustomer": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "id",
+                    "version",
+                    "given_name",
+                    "family_name",
+                    "nickname",
+                    "company_name",
+                    "email_address",
+                    "phone_number",
+                    "reference_id",
+                    "creation_source",
+                    "created_at",
+                    "updated_at"
+                ],
+                "properties": {
+                    "id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 255
+                    },
+                    "version": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "given_name": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 255
+                    },
+                    "family_name": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 255
+                    },
+                    "nickname": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 255
+                    },
+                    "company_name": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 255
+                    },
+                    "email_address": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 255
+                    },
+                    "phone_number": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 64
+                    },
+                    "reference_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 255
+                    },
+                    "creation_source": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 64
+                    },
+                    "created_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 64
+                    },
+                    "updated_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 64
+                    }
+                }
+            },
+            "SquareCustomerListResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data",
+                    "meta"
+                ],
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "maxItems": 100,
+                        "items": {
+                            "$ref": "#/components/schemas/SquareCustomer"
+                        }
+                    },
+                    "meta": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "next_cursor"
+                        ],
+                        "properties": {
+                            "next_cursor": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "maxLength": 2048
+                            }
+                        }
+                    }
+                }
+            },
+            "SquareCustomerResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data"
+                ],
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/SquareCustomer"
+                    }
+                }
+            },
+            "SquareInvoice": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "id",
+                    "version",
+                    "location_id",
+                    "order_id",
+                    "invoice_number",
+                    "series_key",
+                    "series_occurrence",
+                    "title",
+                    "description",
+                    "status",
+                    "delivery_method",
+                    "public_url",
+                    "scheduled_at",
+                    "sale_or_service_date",
+                    "timezone",
+                    "created_at",
+                    "updated_at",
+                    "next_payment_amount_money",
+                    "store_payment_method_enabled",
+                    "accepted_payment_methods",
+                    "primary_recipient",
+                    "payment_requests",
+                    "attachment_count"
+                ],
+                "properties": {
+                    "id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 255
+                    },
+                    "version": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "location_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 255
+                    },
+                    "order_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 255
+                    },
+                    "invoice_number": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 191
+                    },
+                    "series_key": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "pattern": "^[0-9]{6}$",
+                        "description": "The six-digit prefix shared by every invoice of a recurring NNNNNN-R-NNNN series; null for a one-off invoice."
+                    },
+                    "series_occurrence": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "minimum": 0,
+                        "description": "The NNNN suffix of a recurring series invoice number; null for a one-off invoice."
+                    },
+                    "title": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 255
+                    },
+                    "description": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 2000
+                    },
+                    "status": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 32
+                    },
+                    "delivery_method": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 32
+                    },
+                    "public_url": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "uri",
+                        "maxLength": 2048,
+                        "description": "Square's hosted page for the invoice; null unless it is HTTPS on a Square host."
+                    },
+                    "scheduled_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 64
+                    },
+                    "sale_or_service_date": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 32
+                    },
+                    "timezone": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 64
+                    },
+                    "created_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 64
+                    },
+                    "updated_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 64
+                    },
+                    "next_payment_amount_money": {
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/SquareMoney"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "store_payment_method_enabled": {
+                        "type": [
+                            "boolean",
+                            "null"
+                        ]
+                    },
+                    "accepted_payment_methods": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "card",
+                            "bank_account",
+                            "square_gift_card",
+                            "buy_now_pay_later",
+                            "cash_app_pay"
+                        ],
+                        "properties": {
+                            "card": {
+                                "type": [
+                                    "boolean",
+                                    "null"
+                                ]
+                            },
+                            "bank_account": {
+                                "type": [
+                                    "boolean",
+                                    "null"
+                                ]
+                            },
+                            "square_gift_card": {
+                                "type": [
+                                    "boolean",
+                                    "null"
+                                ]
+                            },
+                            "buy_now_pay_later": {
+                                "type": [
+                                    "boolean",
+                                    "null"
+                                ]
+                            },
+                            "cash_app_pay": {
+                                "type": [
+                                    "boolean",
+                                    "null"
+                                ]
+                            }
+                        }
+                    },
+                    "primary_recipient": {
+                        "type": [
+                            "object",
+                            "null"
+                        ],
+                        "additionalProperties": false,
+                        "required": [
+                            "customer_id",
+                            "given_name",
+                            "family_name",
+                            "company_name",
+                            "email_address",
+                            "phone_number"
+                        ],
+                        "properties": {
+                            "customer_id": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "maxLength": 255
+                            },
+                            "given_name": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "maxLength": 255
+                            },
+                            "family_name": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "maxLength": 255
+                            },
+                            "company_name": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "maxLength": 255
+                            },
+                            "email_address": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "maxLength": 255
+                            },
+                            "phone_number": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "maxLength": 64
+                            }
+                        }
+                    },
+                    "payment_requests": {
+                        "type": "array",
+                        "maxItems": 20,
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                                "uid",
+                                "request_type",
+                                "due_date",
+                                "computed_amount_money",
+                                "total_completed_amount_money",
+                                "automatic_payment_source",
+                                "card_on_file",
+                                "tipping_enabled",
+                                "reminders"
+                            ],
+                            "properties": {
+                                "uid": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
+                                    "maxLength": 255
+                                },
+                                "request_type": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
+                                    "maxLength": 32
+                                },
+                                "due_date": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
+                                    "maxLength": 32
+                                },
+                                "computed_amount_money": {
+                                    "oneOf": [
+                                        {
+                                            "$ref": "#/components/schemas/SquareMoney"
+                                        },
+                                        {
+                                            "type": "null"
+                                        }
+                                    ]
+                                },
+                                "total_completed_amount_money": {
+                                    "oneOf": [
+                                        {
+                                            "$ref": "#/components/schemas/SquareMoney"
+                                        },
+                                        {
+                                            "type": "null"
+                                        }
+                                    ]
+                                },
+                                "automatic_payment_source": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
+                                    "maxLength": 32
+                                },
+                                "card_on_file": {
+                                    "type": "boolean",
+                                    "description": "Square will charge a stored card; the card itself is never returned."
+                                },
+                                "tipping_enabled": {
+                                    "type": [
+                                        "boolean",
+                                        "null"
+                                    ]
+                                },
+                                "reminders": {
+                                    "type": "array",
+                                    "maxItems": 10,
+                                    "items": {
+                                        "type": "object",
+                                        "additionalProperties": false,
+                                        "required": [
+                                            "uid",
+                                            "relative_scheduled_days",
+                                            "status",
+                                            "sent_at"
+                                        ],
+                                        "properties": {
+                                            "uid": {
+                                                "type": [
+                                                    "string",
+                                                    "null"
+                                                ],
+                                                "maxLength": 255
+                                            },
+                                            "relative_scheduled_days": {
+                                                "type": [
+                                                    "integer",
+                                                    "null"
+                                                ]
+                                            },
+                                            "status": {
+                                                "type": [
+                                                    "string",
+                                                    "null"
+                                                ],
+                                                "maxLength": 32
+                                            },
+                                            "sent_at": {
+                                                "type": [
+                                                    "string",
+                                                    "null"
+                                                ],
+                                                "maxLength": 64
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "attachment_count": {
+                        "type": "integer",
+                        "minimum": 0
+                    }
+                }
+            },
+            "SquareInvoiceListResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data",
+                    "meta"
+                ],
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "maxItems": 50,
+                        "items": {
+                            "$ref": "#/components/schemas/SquareInvoice"
+                        }
+                    },
+                    "meta": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "next_cursor"
+                        ],
+                        "properties": {
+                            "next_cursor": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "maxLength": 2048
+                            }
+                        }
+                    }
+                }
+            },
+            "SquareInvoiceResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data"
+                ],
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/SquareInvoice"
+                    }
+                }
+            },
+            "SquareLocation": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "id",
+                    "name",
+                    "business_name",
+                    "status",
+                    "type",
+                    "currency",
+                    "country",
+                    "timezone",
+                    "created_at"
+                ],
+                "properties": {
+                    "id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 255
+                    },
+                    "name": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 255
+                    },
+                    "business_name": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 255
+                    },
+                    "status": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 32
+                    },
+                    "type": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 32
+                    },
+                    "currency": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 3
+                    },
+                    "country": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 2
+                    },
+                    "timezone": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 64
+                    },
+                    "created_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 64
+                    }
+                }
+            },
+            "SquareLocationListResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data"
+                ],
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "maxItems": 100,
+                        "items": {
+                            "$ref": "#/components/schemas/SquareLocation"
+                        }
+                    }
+                }
+            },
+            "SquareMoney": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "amount",
+                    "currency"
+                ],
+                "description": "An amount in minor units of an ISO 4217 currency.",
+                "properties": {
+                    "amount": {
+                        "type": "integer"
+                    },
+                    "currency": {
+                        "type": "string",
+                        "pattern": "^[A-Z]{3}$"
+                    }
+                }
+            },
+            "SquareOrder": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "id",
+                    "version",
+                    "location_id",
+                    "customer_id",
+                    "reference_id",
+                    "state",
+                    "created_at",
+                    "updated_at",
+                    "closed_at",
+                    "line_items",
+                    "line_items_truncated",
+                    "total_money",
+                    "total_tax_money",
+                    "total_discount_money",
+                    "total_tip_money",
+                    "total_service_charge_money",
+                    "net_amount_due_money",
+                    "tenders"
+                ],
+                "properties": {
+                    "id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 255
+                    },
+                    "version": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "location_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 255
+                    },
+                    "customer_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 255
+                    },
+                    "reference_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 255
+                    },
+                    "state": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 32
+                    },
+                    "created_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 64
+                    },
+                    "updated_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 64
+                    },
+                    "closed_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 64
+                    },
+                    "line_items": {
+                        "type": "array",
+                        "maxItems": 100,
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                                "uid",
+                                "name",
+                                "variation_name",
+                                "quantity",
+                                "base_price_money",
+                                "gross_sales_money",
+                                "total_discount_money",
+                                "total_tax_money",
+                                "total_money"
+                            ],
+                            "properties": {
+                                "uid": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
+                                    "maxLength": 255
+                                },
+                                "name": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
+                                    "maxLength": 255
+                                },
+                                "variation_name": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
+                                    "maxLength": 255
+                                },
+                                "quantity": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
+                                    "maxLength": 32
+                                },
+                                "base_price_money": {
+                                    "oneOf": [
+                                        {
+                                            "$ref": "#/components/schemas/SquareMoney"
+                                        },
+                                        {
+                                            "type": "null"
+                                        }
+                                    ]
+                                },
+                                "gross_sales_money": {
+                                    "oneOf": [
+                                        {
+                                            "$ref": "#/components/schemas/SquareMoney"
+                                        },
+                                        {
+                                            "type": "null"
+                                        }
+                                    ]
+                                },
+                                "total_discount_money": {
+                                    "oneOf": [
+                                        {
+                                            "$ref": "#/components/schemas/SquareMoney"
+                                        },
+                                        {
+                                            "type": "null"
+                                        }
+                                    ]
+                                },
+                                "total_tax_money": {
+                                    "oneOf": [
+                                        {
+                                            "$ref": "#/components/schemas/SquareMoney"
+                                        },
+                                        {
+                                            "type": "null"
+                                        }
+                                    ]
+                                },
+                                "total_money": {
+                                    "oneOf": [
+                                        {
+                                            "$ref": "#/components/schemas/SquareMoney"
+                                        },
+                                        {
+                                            "type": "null"
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "line_items_truncated": {
+                        "type": "boolean"
+                    },
+                    "total_money": {
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/SquareMoney"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "total_tax_money": {
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/SquareMoney"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "total_discount_money": {
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/SquareMoney"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "total_tip_money": {
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/SquareMoney"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "total_service_charge_money": {
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/SquareMoney"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "net_amount_due_money": {
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/SquareMoney"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "tenders": {
+                        "type": "array",
+                        "maxItems": 20,
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                                "id",
+                                "type",
+                                "amount_money",
+                                "payment_id"
+                            ],
+                            "properties": {
+                                "id": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
+                                    "maxLength": 255
+                                },
+                                "type": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
+                                    "maxLength": 32
+                                },
+                                "amount_money": {
+                                    "oneOf": [
+                                        {
+                                            "$ref": "#/components/schemas/SquareMoney"
+                                        },
+                                        {
+                                            "type": "null"
+                                        }
+                                    ]
+                                },
+                                "payment_id": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
+                                    "maxLength": 255
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "SquareOrderResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data"
+                ],
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/SquareOrder"
+                    }
+                }
+            },
+            "SquarePayment": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "id",
+                    "status",
+                    "source_type",
+                    "location_id",
+                    "order_id",
+                    "customer_id",
+                    "reference_id",
+                    "receipt_number",
+                    "created_at",
+                    "updated_at",
+                    "amount_money",
+                    "tip_money",
+                    "total_money",
+                    "approved_money",
+                    "refunded_money",
+                    "processing_fee",
+                    "refund_ids",
+                    "card"
+                ],
+                "properties": {
+                    "id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 255
+                    },
+                    "status": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 32
+                    },
+                    "source_type": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 32
+                    },
+                    "location_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 255
+                    },
+                    "order_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 255
+                    },
+                    "customer_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 255
+                    },
+                    "reference_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 255
+                    },
+                    "receipt_number": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 64
+                    },
+                    "created_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 64
+                    },
+                    "updated_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 64
+                    },
+                    "amount_money": {
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/SquareMoney"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "tip_money": {
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/SquareMoney"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "total_money": {
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/SquareMoney"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "approved_money": {
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/SquareMoney"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "refunded_money": {
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/SquareMoney"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "processing_fee": {
+                        "type": "array",
+                        "maxItems": 10,
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                                "type",
+                                "effective_at",
+                                "amount_money"
+                            ],
+                            "properties": {
+                                "type": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
+                                    "maxLength": 32
+                                },
+                                "effective_at": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
+                                    "maxLength": 64
+                                },
+                                "amount_money": {
+                                    "oneOf": [
+                                        {
+                                            "$ref": "#/components/schemas/SquareMoney"
+                                        },
+                                        {
+                                            "type": "null"
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "refund_ids": {
+                        "type": "array",
+                        "maxItems": 50,
+                        "items": {
+                            "type": "string",
+                            "maxLength": 255
+                        }
+                    },
+                    "card": {
+                        "type": [
+                            "object",
+                            "null"
+                        ],
+                        "additionalProperties": false,
+                        "required": [
+                            "status",
+                            "entry_method",
+                            "card_brand",
+                            "card_type",
+                            "last_4"
+                        ],
+                        "properties": {
+                            "status": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "maxLength": 32
+                            },
+                            "entry_method": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "maxLength": 32
+                            },
+                            "card_brand": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "maxLength": 32
+                            },
+                            "card_type": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "maxLength": 32
+                            },
+                            "last_4": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "pattern": "^[0-9]{4}$"
+                            }
+                        }
+                    }
+                }
+            },
+            "SquarePaymentListResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data",
+                    "meta"
+                ],
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "maxItems": 50,
+                        "items": {
+                            "$ref": "#/components/schemas/SquarePayment"
+                        }
+                    },
+                    "meta": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "next_cursor"
+                        ],
+                        "properties": {
+                            "next_cursor": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "maxLength": 2048
+                            }
+                        }
+                    }
+                }
+            },
+            "SquarePaymentResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data"
+                ],
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/SquarePayment"
                     }
                 }
             },

@@ -3,6 +3,7 @@
 namespace App\Services\AgentApi\Operations;
 
 use App\Services\Mcp\McpFeatureFlags;
+use App\Services\Square\SquareConfiguration;
 use App\Support\AgentApi\FirstPartySession;
 use Bherila\McpLaravelBridge\Capabilities\ConfigDeploymentFlags;
 use Bherila\McpLaravelBridge\Capabilities\DeploymentFlags;
@@ -19,6 +20,9 @@ use Bherila\McpLaravelBridge\Capabilities\DeploymentFlags;
  *   takes that bypass, even when context.get is read on a browser session.
  * - **MCP switches** (`agent_api.mcp_enabled` and `mcp_feature_flags`, by
  *   group or tool name) belong to the MCP transport and never withhold REST.
+ * - **Square** is on only while a Square connection is configured and bound
+ *   to a workspace (#438). It is not a cutover: nothing bypasses it, because
+ *   without a credential there is nothing to call.
  */
 final class AgentDeploymentFlags implements DeploymentFlags
 {
@@ -41,6 +45,9 @@ final class AgentDeploymentFlags implements DeploymentFlags
     public const string WORKSPACES = 'agent.writes.workspaces';
 
     public const string FILES = 'agent.writes.files';
+
+    /** The read-only Square pass-through: on only while Square is configured. */
+    public const string SQUARE = 'square.connected';
 
     /** The MCP transport as a whole. */
     public const string MCP = 'mcp';
@@ -91,6 +98,9 @@ final class AgentDeploymentFlags implements DeploymentFlags
 
     public function enabled(string $flag): bool
     {
+        if ($flag === self::SQUARE) {
+            return SquareConfiguration::fromConfig()->isConfigured();
+        }
         if (self::isMcpSwitch($flag)) {
             if ($this->mcp === null) {
                 return true;

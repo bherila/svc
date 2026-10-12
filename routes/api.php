@@ -14,6 +14,7 @@ use App\Http\Controllers\Api\V1\AgentPortalAccessController;
 use App\Http\Controllers\Api\V1\AgentProjectController;
 use App\Http\Controllers\Api\V1\AgentProposalController;
 use App\Http\Controllers\Api\V1\AgentReadController;
+use App\Http\Controllers\Api\V1\AgentSquareController;
 use App\Http\Controllers\Api\V1\AgentTaskMutationController;
 use App\Http\Controllers\Api\V1\AgentTimeEntryMutationController;
 use App\Http\Controllers\Api\V1\AgentWorkspaceMiscController;
@@ -280,6 +281,27 @@ Route::prefix('v1')
         $operation('billing_audit.stale_and_missing', [AgentInvoiceOperationsController::class, 'audit'])
             ->middleware(EnsureAgentWorkspaceVisible::class)
             ->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']));
+        // Read-only Square pass-through (#438). Square ids are opaque; the
+        // static `/search` paths are matched before the id routes beside them.
+        foreach ([
+            'square.locations.list' => ['locations', null],
+            'square.customers.list' => ['customers', null],
+            'square.customers.search' => ['searchCustomers', null],
+            'square.customers.get' => ['customer', 'customer'],
+            'square.invoices.list' => ['invoices', null],
+            'square.invoices.search' => ['searchInvoices', null],
+            'square.invoices.get' => ['invoice', 'invoice'],
+            'square.orders.get' => ['order', 'order'],
+            'square.payments.list' => ['payments', null],
+            'square.payments.get' => ['payment', 'payment'],
+        ] as $operationId => [$action, $id]) {
+            $route = $operation($operationId, [AgentSquareController::class, $action])
+                ->middleware(EnsureAgentWorkspaceVisible::class)
+                ->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']));
+            if ($id !== null) {
+                $route->where($id, '[A-Za-z0-9][A-Za-z0-9:_\-]{0,191}');
+            }
+        }
         $operation('billing_schedules.list', [AgentBillingScheduleController::class, 'index'])
             ->middleware(EnsureAgentWorkspaceVisible::class)
             ->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']));
