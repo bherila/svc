@@ -60,6 +60,11 @@ final class AgentInvoiceOperationsController extends Controller
         return response()->json(['data' => $this->presenter->mutation($workspace, $record)], 201);
     }
 
+    public function preview(Request $request, Workspace $workspace, string $agreement): JsonResponse
+    {
+        return response()->json(['data' => $this->operations->preview($this->principal($request), $workspace, $agreement, $request->query())]);
+    }
+
     public function audit(Request $request, Workspace $workspace, AgentInvoiceReviewReadService $reviews): JsonResponse
     {
         return response()->json(['data' => $reviews->staleAndMissing($this->principal($request), $workspace)->toArray()]);

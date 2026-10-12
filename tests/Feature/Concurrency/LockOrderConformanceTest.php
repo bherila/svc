@@ -16,6 +16,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Queries\Expenses\WorkspaceExpenses;
 use App\Services\Access\WorkspaceAccess;
+use App\Services\AgentApi\AgentInvoiceOperations;
 use App\Services\AgentApi\TimeEntryMutationService;
 use App\Services\Billing\AllocationService;
 use App\Services\Billing\BillingScheduleService;
@@ -290,6 +291,7 @@ final class LockOrderConformanceTest extends TestCase
         $this->driveEngagementAndInvoicing();
         $this->driveInterimOverageWithFragments();
         $this->driveOneLongGenerationTransaction();
+        $this->drivePeriodPreview();
         $this->driveMaintenanceWriterSites();
 
         // Fragment recombination on its own, which locks a lineage group.
@@ -544,6 +546,34 @@ final class LockOrderConformanceTest extends TestCase
         } finally {
             Carbon::setTestNow($clock);
         }
+    }
+
+    /**
+     * invoices.preview_period: its own transaction, opened for the rollback
+     * and taking the period guard's locks before the cadence engine's. The
+     * engine's milestone composition locks a task, so this sequence is held
+     * to the share-first rule as well as to the order.
+     */
+    private function drivePeriodPreview(): void
+    {
+        [$company, $project] = $this->secondaryCompany('preview');
+        $agreement = $this->agreement('monthly', $company);
+        app(AgreementWorkflow::class)->activate($agreement);
+        $this->approvedEntry('2026-09-14', 600, $company, $project);
+
+        $clock = Carbon::getTestNow();
+        Carbon::setTestNow('2026-10-08');
+        $before = count(LockOrderRecorder::sequences());
+        try {
+            $preview = app(AgentInvoiceOperations::class)->preview($this->user, $this->workspace, $agreement->public_id, ['period_start' => '2026-10-01']);
+            $this->assertNotSame([], $preview['lines']);
+        } finally {
+            Carbon::setTestNow($clock);
+        }
+        $sequences = array_slice(LockOrderRecorder::sequences(), $before);
+        $this->assertCount(1, $sequences, 'The preview is one transaction.');
+        $this->assertSame([LockResource::BillingMaintenance, LockResource::ClientAgreement], array_slice(array_values(array_unique($sequences[0], SORT_REGULAR)), 0, 2));
+        $this->assertContains(LockResource::ClientTask, $sequences[0], 'The engine must reach a billing writer lock inside the preview.');
     }
 
     /** @return array{ClientCompany, ClientProject} */

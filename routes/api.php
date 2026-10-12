@@ -265,6 +265,10 @@ Route::prefix('v1')
             ->whereUuid('agreement')
             ->middleware(EnsureAgentWorkspaceVisible::class)
             ->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']));
+        $operation('invoices.preview_period', [AgentInvoiceOperationsController::class, 'preview'])
+            ->whereUuid('agreement')
+            ->middleware(EnsureAgentWorkspaceVisible::class)
+            ->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']));
         $operation('invoices.pdf', [AgentInvoiceOperationsController::class, 'pdfLink'])
             ->whereUuid('invoice')
             ->middleware(EnsureAgentWorkspaceVisible::class)

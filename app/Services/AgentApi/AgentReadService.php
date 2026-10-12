@@ -360,16 +360,7 @@ final class AgentReadService
         return $this->invoicePresenter->present($workspace, $record, $this->access->isWorkspaceManager($user, $workspace)) + [
             'corrections' => $this->access->isWorkspaceManager($user, $workspace)
                 ? app(InvoiceCorrectionReadService::class)->agentHistory($workspace, $record) : [],
-            'lines' => $record->lines->map(fn ($line): array => [
-                'id' => $line->public_id,
-                'project_id' => $line->project?->public_id,
-                'type' => $line->type,
-                'description' => $line->description,
-                'quantity' => (string) $line->quantity,
-                'unit_amount' => $line->unit_amount,
-                'tax_amount' => $line->tax_amount,
-                'total_amount' => $line->total_amount,
-            ])->values()->all(),
+            'lines' => $record->lines->map(fn ($line): array => ['id' => $line->public_id] + $this->invoicePresenter->line($line))->values()->all(),
         ];
     }
 

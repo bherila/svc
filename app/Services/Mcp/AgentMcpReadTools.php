@@ -247,6 +247,18 @@ final class AgentMcpReadTools
     }
 
     /** @return array<string, mixed> */
+    public function invoicesPreviewPeriod(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $agreement_id, #[Schema(format: 'date')] string $period_start): array
+    {
+        $this->workspace($workspace_id, 'billing:read');
+        $response = app(InternalAgentApiTransport::class)->send('GET', "workspaces/{$workspace_id}/agreements/{$agreement_id}/invoices/preview", ['period_start' => $period_start]);
+        if ($response->status !== 200 || $response->json === null) {
+            throw new ToolCallException(AgentMcpApiFailure::message($response->status, $response->json));
+        }
+
+        return $response->json;
+    }
+
+    /** @return array<string, mixed> */
     public function billingAuditStaleAndMissing(#[Schema(format: 'uuid')] string $workspace_id): array
     {
         $context = $this->workspace($workspace_id, 'billing:read');

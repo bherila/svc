@@ -2926,7 +2926,7 @@
         "/workspaces/{workspace}/agreements/{agreement}/invoices": {
             "post": {
                 "operationId": "invoices.generate_period",
-                "description": "Manager only. period_start is a started retainer cadence cycle; service dates reconcile the preceding work cycle. Calls the existing cadence engine. A non-void invoice for this period is refused, while identical idempotent retries return the created draft. No automated cadence draft job is deployed. Requires confirmation and the agreement version.",
+                "description": "Manager only. period_start is a started retainer cadence cycle; service dates reconcile the preceding work cycle. Calls the existing cadence engine, the same path invoices.preview_period rolls back. A non-void invoice for this period is refused, while identical idempotent retries return the created draft. Nothing generates cadence period drafts automatically: a started period without one is waiting for this call, and billing_audit.stale_and_missing lists those periods. Requires confirmation and the agreement version.",
                 "security": [
                     {
                         "oauth2": [
@@ -3234,6 +3234,62 @@
                 },
                 "x-svc-flags": [],
                 "x-mcp-tool": "invoices.pdf"
+            }
+        },
+        "/workspaces/{workspace}/agreements/{agreement}/invoices/preview": {
+            "get": {
+                "operationId": "invoices.preview_period",
+                "description": "Workspace managers only. Runs the checks and cadence engine of invoices.generate_period for one started retainer cycle inside a transaction that is always rolled back, and returns the draft it would write and any other invoice of the client the same generation would create, rewrite or remove. Writes nothing and takes no idempotency key. Refuses what generation refuses, with the same status, including 409 for a period that already has a non-void invoice. agreement_version is the expected_version a following invoices.generate_period call must present. Nothing generates cadence period drafts automatically; billing_audit.stale_and_missing lists started periods with no non-void invoice.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "billing:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "agreement",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "period_start",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "date"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The draft generation would write; nothing is written",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/InvoicePeriodPreviewResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-svc-flags": [],
+                "x-mcp-tool": "invoices.preview_period"
             }
         },
         "/workspaces/{workspace}/invoices/{invoice}/automatic-delivery/release": {
@@ -7682,6 +7738,207 @@
                         "$ref": "#/components/schemas/InvoicePdfLink"
                     }
                 }
+            },
+            "InvoicePeriodPreview": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "agreement_id",
+                    "agreement_version",
+                    "company_id",
+                    "company_name",
+                    "period_start",
+                    "invoice_kind",
+                    "service_period_start",
+                    "service_period_end",
+                    "currency",
+                    "total_amount",
+                    "issue_date",
+                    "due_date",
+                    "lines",
+                    "other_invoices"
+                ],
+                "properties": {
+                    "agreement_id": {
+                        "$ref": "#/components/schemas/Uuid"
+                    },
+                    "agreement_version": {
+                        "$ref": "#/components/schemas/Version",
+                        "description": "The agreement version this preview was computed from; pass it to invoices.generate_period as expected_version."
+                    },
+                    "company_id": {
+                        "$ref": "#/components/schemas/Uuid"
+                    },
+                    "company_name": {
+                        "type": "string"
+                    },
+                    "period_start": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date",
+                        "description": "The retainer cycle the draft sells."
+                    },
+                    "invoice_kind": {
+                        "$ref": "#/components/schemas/InvoiceKind"
+                    },
+                    "service_period_start": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date"
+                    },
+                    "service_period_end": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date"
+                    },
+                    "currency": {
+                        "$ref": "#/components/schemas/Currency"
+                    },
+                    "total_amount": {
+                        "type": "integer"
+                    },
+                    "issue_date": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date"
+                    },
+                    "due_date": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date"
+                    },
+                    "lines": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/InvoicePreviewLine"
+                        }
+                    },
+                    "other_invoices": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/InvoicePeriodPreviewOtherInvoice"
+                        },
+                        "description": "The company's other invoices the same generation would create, rewrite or remove, such as interim overage drafts it creates or strips of their claims first."
+                    }
+                }
+            },
+            "InvoicePeriodPreviewOtherInvoice": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "id",
+                    "change",
+                    "invoice_kind",
+                    "service_period_start",
+                    "service_period_end",
+                    "currency",
+                    "total_amount"
+                ],
+                "properties": {
+                    "id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "uuid",
+                        "description": "The existing invoice's id, or null for one the generation would create."
+                    },
+                    "change": {
+                        "type": "string",
+                        "enum": [
+                            "created",
+                            "updated",
+                            "deleted"
+                        ],
+                        "description": "created: a new invoice; updated: an existing draft whose facts, lines or linked time would be rewritten; deleted: an existing draft the generation would remove. Amounts are as they would stand afterwards, or before removal."
+                    },
+                    "invoice_kind": {
+                        "$ref": "#/components/schemas/InvoiceKind"
+                    },
+                    "service_period_start": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date"
+                    },
+                    "service_period_end": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date"
+                    },
+                    "currency": {
+                        "$ref": "#/components/schemas/Currency"
+                    },
+                    "total_amount": {
+                        "type": "integer"
+                    }
+                }
+            },
+            "InvoicePeriodPreviewResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data"
+                ],
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/InvoicePeriodPreview"
+                    }
+                }
+            },
+            "InvoicePreviewLine": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "project_id",
+                    "type",
+                    "description",
+                    "quantity",
+                    "unit_amount",
+                    "tax_amount",
+                    "total_amount"
+                ],
+                "properties": {
+                    "project_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "uuid"
+                    },
+                    "type": {
+                        "type": "string"
+                    },
+                    "description": {
+                        "type": "string"
+                    },
+                    "quantity": {
+                        "type": "string"
+                    },
+                    "unit_amount": {
+                        "type": "integer"
+                    },
+                    "tax_amount": {
+                        "type": "integer"
+                    },
+                    "total_amount": {
+                        "type": "integer"
+                    }
+                },
+                "description": "A line exactly as invoices.get returns it, without an id: nothing was written, so there is none."
             },
             "InvoiceSendRequest": {
                 "type": "object",

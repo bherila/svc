@@ -111,6 +111,7 @@ final class AgentOperationCatalog
         'invoices.issue' => ['invoices.issue', '/workspaces/{workspace}/invoices/{invoice}/issue', [200]],
         'invoices.list' => ['invoices.index', '/workspaces/{workspace}/invoices', [200]],
         'invoices.pdf' => ['invoices.pdf', '/workspaces/{workspace}/invoices/{invoice}/pdf-link', [200]],
+        'invoices.preview_period' => ['invoices.preview_period', '/workspaces/{workspace}/agreements/{agreement}/invoices/preview', [200]],
         'invoices.release_delivery' => ['invoices.release_delivery', '/workspaces/{workspace}/invoices/{invoice}/automatic-delivery/release', [200]],
         'invoices.send' => ['invoices.send', '/workspaces/{workspace}/invoices/{invoice}/send', [200]],
         'invoices.update_details' => ['invoices.update_details', '/workspaces/{workspace}/invoices/{invoice}/details', [200]],
@@ -309,6 +310,16 @@ final class AgentOperationCatalog
                 Effect::Read,
                 true,
                 'mcp.read',
+            ),
+            $this->tool(
+                'invoices.preview_period',
+                'Preview cadence period draft',
+                'Workspace managers only. Return the lines, totals and service dates invoices.generate_period would write for an explicit started retainer cycle, and any other invoice of the client that generation would also create, rewrite or remove, without writing anything: the same checks and cadence engine run and are rolled back. Refuses what generation refuses, including a period that already has a non-void invoice. Returns agreement_version to pass to invoices.generate_period as expected_version. Nothing generates cadence period drafts automatically; billing_audit.stale_and_missing lists started periods with no non-void invoice.',
+                [AgentMcpReadTools::class, 'invoicesPreviewPeriod'],
+                Effect::Read,
+                true,
+                'mcp.read',
+                manager: true,
             ),
             $this->tool(
                 'billing_audit.stale_and_missing',
@@ -719,7 +730,7 @@ final class AgentOperationCatalog
             $this->tool(
                 'invoices.generate_period',
                 'Generate cadence period draft',
-                'Create a draft selling an explicit started retainer cycle on an active recurring agreement. period_start is the retainer cycle start; service dates cover the preceding work cycle. No automatic cadence generation job is deployed. A different key for an existing non-void invoice is refused. Explicit confirmation and current agreement version required.',
+                'Create the draft for an explicit started retainer cycle on an active recurring agreement, through the same cadence engine as invoices.preview_period. Nothing generates cadence period drafts automatically: a started period with no draft is waiting for this call, not for a scheduled job, and billing_audit.stale_and_missing lists started periods that have no non-void invoice. period_start is the retainer cycle start; service dates cover the preceding work cycle. Repeating the same idempotency key returns the same draft; a period that already has a non-void invoice is refused. Explicit confirmation and current agreement version required.',
                 [AgentMcpWriteTools::class, 'invoicesGeneratePeriod'],
                 Effect::LocalWrite,
                 true,
