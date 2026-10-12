@@ -88,6 +88,7 @@ final class AgentClientReadService
     private function withSquareCustomers(Workspace $workspace, Collection $companies): Collection
     {
         $mappings = $this->squareLinks->activeCustomers($workspace->id, array_values(array_map('intval', $companies->modelKeys())));
+        $this->square->primeNames($mappings->map(static fn ($mapping): ?int => $mapping->confirmed_by_user_id));
         foreach ($companies as $company) {
             $company->setRelation(self::SQUARE_CUSTOMER, $mappings->get($company->id));
         }

@@ -19,6 +19,9 @@ use App\Support\AgentApi\AgentApiVersion;
  */
 final class SquareLinkPresenter
 {
+    /** @var array<int, string|null> */
+    private array $names = [];
+
     public function __construct(
         private readonly SquareLinkRepository $links,
         private readonly SquareCollectionGuard $guard,
@@ -67,13 +70,37 @@ final class SquareLinkPresenter
         ];
     }
 
+    /**
+     * Resolve the names a page of mappings or links will show in one query,
+     * so presenting them reads none.
+     *
+     * @param  iterable<int|null>  $userIds
+     */
+    public function primeNames(iterable $userIds): void
+    {
+        $missing = [];
+        foreach ($userIds as $id) {
+            if ($id !== null && ! array_key_exists($id, $this->names)) {
+                $missing[$id] = $id;
+            }
+        }
+        if ($missing === []) {
+            return;
+        }
+        $found = User::query()->whereKey(array_values($missing))->pluck('name', 'id');
+        foreach ($missing as $id) {
+            $name = $found->get($id);
+            $this->names[$id] = is_string($name) ? $name : null;
+        }
+    }
+
     private function name(?int $userId): ?string
     {
         if ($userId === null) {
             return null;
         }
-        $name = User::query()->whereKey($userId)->value('name');
+        $this->primeNames([$userId]);
 
-        return is_string($name) ? $name : null;
+        return $this->names[$userId];
     }
 }

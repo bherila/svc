@@ -11,9 +11,11 @@ use App\Models\CompanySquareCustomer;
 use App\Models\InvoiceSquareLink;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Square\SquareLinkService;
 use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
 use App\Support\AgentApi\AgentApiVersion;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
 use Mcp\Capability\Discovery\SchemaValidator;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -257,6 +259,35 @@ final class SquareLinkApiTest extends TestCase
         $this->rest('agreements.square_series.clear', $workspace, ['agreement_id' => $agreement->public_id], ['expected_version' => $cleared['data']['version'], 'confirm' => true], 'synthetic-clear-again')->assertConflict();
         $this->assertSame(['agreement.square_series_set', 'agreement.square_series_cleared'], $this->activity($workspace));
         $this->assertNull($second->refresh()->square_series_key);
+    }
+
+    /** A page of clients reads its Square customers and their confirmers in bounded queries, not one per row. */
+    public function test_listing_clients_reads_square_customers_in_bounded_queries(): void
+    {
+        [$workspace, $owner, $company] = $this->fixture();
+        $links = app(SquareLinkService::class);
+        $count = function () use ($workspace): int {
+            DB::flushQueryLog();
+            DB::enableQueryLog();
+            $this->getJson("/api/v1/workspaces/{$workspace->public_id}/clients")->assertOk();
+            $queries = count(DB::getQueryLog());
+            DB::disableQueryLog();
+
+            return $queries;
+        };
+        $links->setCustomer($workspace, $company, $owner, AgentApiVersion::for($company), 'CUSTFIXTURE0');
+        $this->actingAsMcp($owner, self::SCOPES);
+        $one = $count();
+
+        foreach (range(1, 3) as $index) {
+            $confirmer = User::factory()->create();
+            $workspace->memberships()->create(['user_id' => $confirmer->id, 'role' => 'admin']);
+            $other = ClientCompany::query()->create(['workspace_id' => $workspace->id, 'name' => "Synthetic Client {$index}", 'slug' => "synthetic-client-{$index}"]);
+            $links->setCustomer($workspace, $other, $confirmer, AgentApiVersion::for($other), "CUSTFIXTURE{$index}");
+        }
+        $this->actingAsMcp($owner, self::SCOPES);
+
+        $this->assertSame($one, $count());
     }
 
     /** The marker is an operator fact: no other agreement write touches it, and the model never serializes it. */
