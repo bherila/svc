@@ -138,6 +138,7 @@ class InvoiceLineComposer
         Carbon $periodEnd,
         int &$sortOrder
     ): void {
+        BillingMaintenance::share($company->workspace_id);
         $tasks = ClientTask::query()
             ->where('workspace_id', $company->workspace_id)
             ->whereHas('project', fn ($q) => $q->where('client_company_id', $company->id))

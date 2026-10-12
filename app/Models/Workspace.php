@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\DB;
 
 /**
  * @property int $id
@@ -19,6 +20,13 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Workspace extends Model
 {
     use HasPublicId;
+
+    protected static function booted(): void
+    {
+        static::created(static function (self $workspace): void {
+            DB::table('billing_maintenance_locks')->insert(['workspace_id' => $workspace->id]);
+        });
+    }
 
     /** @return HasMany<WorkspaceMembership, $this> */
     public function memberships(): HasMany

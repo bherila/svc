@@ -34,6 +34,7 @@ final class InvoiceFromTimeService
     public function create(Workspace $workspace, ClientCompany $company, array $attributes, array $timeEntryIds, array $manualLines = []): ClientInvoice
     {
         return DB::transaction(function () use ($workspace, $company, $attributes, $timeEntryIds, $manualLines): ClientInvoice {
+            BillingMaintenance::share($workspace->id);
             $attributes['currency'] = MoneyService::currency(strtoupper((string) ($attributes['currency'] ?? $workspace->default_currency)));
             $attributes['invoice_number'] ??= $this->numbers->next($workspace);
             [$lines, $subtotalOverrides] = $this->prepareLines($workspace, $company, $attributes['currency'], $timeEntryIds, $manualLines);
@@ -52,6 +53,7 @@ final class InvoiceFromTimeService
     public function updateDraft(ClientInvoice $invoice, Workspace $workspace, string $expectedVersion, array $attributes, array $timeEntryIds, array $manualLines): ClientInvoice
     {
         return DB::transaction(function () use ($invoice, $workspace, $expectedVersion, $attributes, $timeEntryIds, $manualLines): ClientInvoice {
+            BillingMaintenance::share($workspace->id);
             $locked = ClientInvoice::query()->whereKey($invoice->id)->where('workspace_id', $workspace->id)->tap(Locks::forUpdate())->with('clientCompany')->firstOrFail();
             if ($locked->status !== 'draft') {
                 throw new DomainException('Only draft invoices can be updated.');
@@ -78,6 +80,7 @@ final class InvoiceFromTimeService
     public function addTime(ClientInvoice $invoice, Workspace $workspace, string $expectedVersion, array $timeEntryIds): ClientInvoice
     {
         return DB::transaction(function () use ($invoice, $workspace, $expectedVersion, $timeEntryIds): ClientInvoice {
+            BillingMaintenance::share($workspace->id);
             // Cadence generation serializes agreement -> invoice. Match that
             // order before taking the draft lock, then verify the relationship
             // again on the current invoice row.
@@ -176,6 +179,7 @@ final class InvoiceFromTimeService
         int $mutatedEntryId,
     ): ClientInvoice {
         return DB::transaction(function () use ($invoice, $workspace, $mutatedEntryId): ClientInvoice {
+            BillingMaintenance::share($workspace->id);
             $locked = ClientInvoice::query()
                 ->whereKey($invoice->id)
                 ->where('workspace_id', $workspace->id)

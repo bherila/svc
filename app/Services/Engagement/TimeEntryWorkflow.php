@@ -8,7 +8,9 @@ use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Billing\BillingMaintenance;
 use App\Services\WorkspaceAuthorization;
+use Illuminate\Support\Facades\DB;
 
 class TimeEntryWorkflow
 {
@@ -50,31 +52,35 @@ class TimeEntryWorkflow
             throw new EngagementException('Client-visible time requires an explicit client-facing description.');
         }
 
-        return ClientTimeEntry::query()->create([
-            'workspace_id' => $workspace->id,
-            'client_company_id' => $company->id,
-            'client_project_id' => $project->id,
-            'client_task_id' => $task?->id,
-            'user_id' => $worker->id,
-            'worked_on' => $attributes['worked_on'],
-            'minutes' => $attributes['minutes'],
-            'description' => $attributes['description'],
-            'client_visible_description' => $clientDescription,
-            'is_visible_to_client' => $visibleToClient,
-            'is_billable' => $attributes['is_billable'] ?? true,
-            'is_deferred' => $attributes['is_deferred'] ?? false,
-            'billing_rate_amount' => $attributes['billing_rate_amount'] ?? null,
-            // A rate supplied at creation is recorded, not inferred.
-            'billing_rate_source' => isset($attributes['billing_rate_amount']) ? 'explicit' : null,
-            // Never null. `InvoiceFromTimeService` bills only entries whose
-            // currency matches the invoice's, so a rate-bearing entry with no
-            // currency is approved, billable, and then silently skipped by
-            // every invoice - the agent API's create path has always defaulted
-            // this, and only the web path left the hole.
-            'currency' => isset($attributes['currency'])
-                ? strtoupper($attributes['currency'])
-                : $workspace->default_currency,
-            'status' => 'draft',
-        ]);
+        return DB::transaction(function () use ($workspace, $project, $company, $task, $worker, $attributes, $clientDescription, $visibleToClient): ClientTimeEntry {
+            BillingMaintenance::share($workspace->id);
+
+            return ClientTimeEntry::query()->create([
+                'workspace_id' => $workspace->id,
+                'client_company_id' => $company->id,
+                'client_project_id' => $project->id,
+                'client_task_id' => $task?->id,
+                'user_id' => $worker->id,
+                'worked_on' => $attributes['worked_on'],
+                'minutes' => $attributes['minutes'],
+                'description' => $attributes['description'],
+                'client_visible_description' => $clientDescription,
+                'is_visible_to_client' => $visibleToClient,
+                'is_billable' => $attributes['is_billable'] ?? true,
+                'is_deferred' => $attributes['is_deferred'] ?? false,
+                'billing_rate_amount' => $attributes['billing_rate_amount'] ?? null,
+                // A rate supplied at creation is recorded, not inferred.
+                'billing_rate_source' => isset($attributes['billing_rate_amount']) ? 'explicit' : null,
+                // Never null. `InvoiceFromTimeService` bills only entries whose
+                // currency matches the invoice's, so a rate-bearing entry with no
+                // currency is approved, billable, and then silently skipped by
+                // every invoice - the agent API's create path has always defaulted
+                // this, and only the web path left the hole.
+                'currency' => isset($attributes['currency'])
+                    ? strtoupper($attributes['currency'])
+                    : $workspace->default_currency,
+                'status' => 'draft',
+            ]);
+        });
     }
 }

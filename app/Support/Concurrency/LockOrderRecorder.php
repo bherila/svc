@@ -45,16 +45,21 @@ final class LockOrderRecorder
     /**
      * The transaction currently being recorded, oldest acquisition first.
      *
-     * @var list<LockResource>|null
+     * @var list<LockAcquisition>|null
      */
     private static ?array $frame = null;
 
     /**
      * Every completed transaction's sequence, in the order they finished.
      *
-     * @var list<list<LockResource>>
+     * @var list<list<LockAcquisition>>
      */
     private static array $sequences = [];
+
+    private static ?string $exclusiveCommand = null;
+
+    /** @var list<string|null> */
+    private static array $exclusiveCommands = [];
 
     /** Begin recording, treating the current transaction depth as the floor. */
     public static function start(): void
@@ -63,6 +68,8 @@ final class LockOrderRecorder
         self::$baseline = DB::transactionLevel();
         self::$frame = null;
         self::$sequences = [];
+        self::$exclusiveCommand = null;
+        self::$exclusiveCommands = [];
         self::$recording = true;
     }
 
@@ -72,6 +79,8 @@ final class LockOrderRecorder
         self::$recording = false;
         self::$frame = null;
         self::$sequences = [];
+        self::$exclusiveCommand = null;
+        self::$exclusiveCommands = [];
     }
 
     /**
@@ -79,19 +88,28 @@ final class LockOrderRecorder
      *
      * The early return is the production path in its entirety.
      */
-    public static function record(LockResource $resource): void
+    public static function record(LockResource $resource, LockMode $mode = LockMode::Exclusive, string $file = '', int $line = 0): void
     {
         if (! self::$recording) {
             return;
         }
 
+        $acquisition = new LockAcquisition($resource, $mode, $file, $line);
         if (self::$frame === null) {
-            self::$sequences[] = [$resource];
+            self::$sequences[] = [$acquisition];
+            self::$exclusiveCommands[] = null;
 
             return;
         }
 
-        self::$frame[] = $resource;
+        self::$frame[] = $acquisition;
+    }
+
+    public static function maintenanceExclusive(string $command): void
+    {
+        if (self::$recording && self::$frame !== null) {
+            self::$exclusiveCommand = $command;
+        }
     }
 
     /**
@@ -105,6 +123,15 @@ final class LockOrderRecorder
      */
     public static function sequences(): array
     {
+        return array_map(static fn (array $sequence): array => array_map(
+            static fn (LockAcquisition $lock): LockResource => $lock->resource,
+            $sequence,
+        ), self::acquisitions());
+    }
+
+    /** @return list<list<LockAcquisition>> */
+    public static function acquisitions(): array
+    {
         $sequences = self::$sequences;
 
         if (self::$frame !== null && self::$frame !== []) {
@@ -112,6 +139,17 @@ final class LockOrderRecorder
         }
 
         return $sequences;
+    }
+
+    /** @return list<string|null> */
+    public static function maintenanceExemptions(): array
+    {
+        $commands = self::$exclusiveCommands;
+        if (self::$frame !== null && self::$frame !== []) {
+            $commands[] = self::$exclusiveCommand;
+        }
+
+        return $commands;
     }
 
     /**
@@ -141,6 +179,7 @@ final class LockOrderRecorder
             // transaction opened at the recording floor starts a sequence.
             if (self::$recording && $event->connection->transactionLevel() === self::$baseline + 1) {
                 self::$frame = [];
+                self::$exclusiveCommand = null;
             }
         });
 
@@ -154,9 +193,11 @@ final class LockOrderRecorder
 
             if (self::$frame !== null && self::$frame !== []) {
                 self::$sequences[] = self::$frame;
+                self::$exclusiveCommands[] = self::$exclusiveCommand;
             }
 
             self::$frame = null;
+            self::$exclusiveCommand = null;
         });
     }
 }

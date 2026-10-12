@@ -55,10 +55,23 @@ final class Locks
      */
     public static function forUpdate(): Closure
     {
-        return static function (EloquentBuilder|QueryBuilder $query): void {
-            LockOrderRecorder::record(LockResource::forQuery($query));
+        $caller = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 1)[0];
+
+        return static function (EloquentBuilder|QueryBuilder $query) use ($caller): void {
+            LockOrderRecorder::record(LockResource::forQuery($query), LockMode::Exclusive, $caller['file'] ?? '', $caller['line'] ?? 0);
 
             $query->lockForUpdate();
+        };
+    }
+
+    /** @return Closure(EloquentBuilder<covariant Model>|QueryBuilder): void */
+    public static function forShare(): Closure
+    {
+        $caller = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 1)[0];
+
+        return static function (EloquentBuilder|QueryBuilder $query) use ($caller): void {
+            LockOrderRecorder::record(LockResource::forQuery($query), LockMode::Share, $caller['file'] ?? '', $caller['line'] ?? 0);
+            $query->sharedLock();
         };
     }
 }

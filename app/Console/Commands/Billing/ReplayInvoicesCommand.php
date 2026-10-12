@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands\Billing;
 
+use App\Exceptions\BillingMaintenanceBusy;
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientExpense;
@@ -11,6 +12,7 @@ use App\Models\ClientProject;
 use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
 use App\Models\Workspace;
+use App\Services\Billing\BillingMaintenance;
 use App\Services\Billing\ClientInvoicingService;
 use App\Services\Billing\ReplayCadenceAgreementRepository;
 use App\Services\Billing\ReplayContractCorrectionClassifier;
@@ -206,6 +208,7 @@ final class ReplayInvoicesCommand extends Command
         DB::beginTransaction();
 
         try {
+            BillingMaintenance::exclusive($workspace->id, self::class);
             $historySeeds = $this->prepareReplayOnlyHistoryBasis($workspace, $companies);
             $expected = $this->snapshot($workspace, $companies);
             $this->openingCapacityContexts = $this->openingCapacityContexts($expected);
@@ -308,6 +311,10 @@ final class ReplayInvoicesCommand extends Command
                     sprintf('%d time(s), %d distinct reason(s) - see the report', array_sum($this->skipReasons), count($this->skipReasons)),
                 );
             }
+        } catch (BillingMaintenanceBusy $exception) {
+            $this->components->error($exception->getMessage());
+
+            return self::FAILURE;
         } finally {
             // Unconditional. This is the whole safety model.
             $historyBasis->reset();

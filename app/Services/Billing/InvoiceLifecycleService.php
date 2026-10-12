@@ -64,6 +64,7 @@ final class InvoiceLifecycleService
         $totals = MoneyService::invoiceTotals($lines, $subtotalOverrides);
 
         return DB::transaction(function () use ($workspace, $company, $attributes, $lines, $subtotalOverrides, $currency, $totals, $beforeGenerationRecorded): ClientInvoice {
+            BillingMaintenance::share($workspace->id);
             $invoice = ClientInvoice::query()->create([
                 'workspace_id' => $workspace->id,
                 'client_company_id' => $company->id,
@@ -131,6 +132,7 @@ final class InvoiceLifecycleService
     public function updateDraft(ClientInvoice $invoice, Workspace $workspace, array $attributes, array $lines, array $subtotalOverrides = []): ClientInvoice
     {
         return DB::transaction(function () use ($invoice, $workspace, $attributes, $lines, $subtotalOverrides): ClientInvoice {
+            BillingMaintenance::share($workspace->id);
             $locked = $this->lockInvoice($invoice, $workspace);
             if ($locked->status !== 'draft') {
                 throw new DomainException('Only draft invoices can be updated.');
@@ -196,6 +198,7 @@ final class InvoiceLifecycleService
     public function updateDraftDetails(ClientInvoice $invoice, Workspace $workspace, string $expectedVersion, array $attributes): ClientInvoice
     {
         return DB::transaction(function () use ($invoice, $workspace, $expectedVersion, $attributes): ClientInvoice {
+            BillingMaintenance::share($workspace->id);
             $locked = $this->lockInvoice($invoice, $workspace);
             if ($locked->status !== InvoiceStatus::Draft->value) {
                 throw new DomainException('Only a draft invoice\'s details can be changed here. Correct an issued invoice instead.');
@@ -247,6 +250,7 @@ final class InvoiceLifecycleService
     public function discardDraft(ClientInvoice $invoice, Workspace $workspace, string $reason): ClientInvoice
     {
         return DB::transaction(function () use ($invoice, $workspace, $reason): ClientInvoice {
+            BillingMaintenance::share($workspace->id);
             $this->lockCadenceAgreement($invoice);
             $locked = $this->lockInvoice($invoice, $workspace);
             if ($locked->status !== 'draft') {
@@ -278,6 +282,7 @@ final class InvoiceLifecycleService
     public function issue(ClientInvoice $invoice, ?Workspace $workspace = null, ?callable $assertLocked = null): ClientInvoice
     {
         return DB::transaction(function () use ($invoice, $workspace, $assertLocked): ClientInvoice {
+            BillingMaintenance::share($workspace->id ?? $invoice->workspace_id);
             // An interim overage invoice's claim is checked against the other
             // claims of its agreement's cycle, and two interim invoices of one
             // agreement must not be checked at the same time - each would pass
@@ -822,6 +827,7 @@ final class InvoiceLifecycleService
     public function void(ClientInvoice $invoice, ?Workspace $workspace = null, ?string $reason = null): ClientInvoice
     {
         return DB::transaction(function () use ($invoice, $workspace, $reason): ClientInvoice {
+            BillingMaintenance::share($workspace->id ?? $invoice->workspace_id);
             $this->lockAgreementOf($invoice);
             $locked = $this->lockInvoice($invoice, $workspace);
 
@@ -907,6 +913,7 @@ final class InvoiceLifecycleService
     public function applyPayment(ClientInvoice $invoice, array $data, ?Workspace $workspace = null): ClientInvoicePayment
     {
         return DB::transaction(function () use ($invoice, $data, $workspace): ClientInvoicePayment {
+            BillingMaintenance::share($workspace->id ?? $invoice->workspace_id);
             $locked = $this->lockInvoice($invoice, $workspace);
             if ($locked->status === 'void') {
                 throw new DomainException('A payment cannot be applied to a void invoice.');
@@ -1151,6 +1158,7 @@ final class InvoiceLifecycleService
         $next = $this->paymentStatus($status);
 
         return DB::transaction(function () use ($payment, $next, $workspace): ClientInvoicePayment {
+            BillingMaintenance::share($workspace->id ?? $payment->workspace_id);
             $query = ClientInvoicePayment::query()->where('workspace_id', $payment->workspace_id)->whereKey($payment->id)->tap(Locks::forUpdate());
             if ($workspace !== null) {
                 $query->where('workspace_id', $workspace->id);
@@ -1344,6 +1352,7 @@ final class InvoiceLifecycleService
         ?Workspace $workspace,
     ): PaymentCorrectionOutcome {
         return DB::transaction(function () use ($payment, $correction, $expectedVersion, $workspace): PaymentCorrectionOutcome {
+            BillingMaintenance::share($workspace->id ?? $payment->workspace_id);
             $query = ClientInvoicePayment::query()->where('workspace_id', $payment->workspace_id)->whereKey($payment->id)->tap(Locks::forUpdate());
             if ($workspace !== null) {
                 $query->where('workspace_id', $workspace->id);
@@ -1435,6 +1444,7 @@ final class InvoiceLifecycleService
     public function setRefundedAmount(ClientInvoicePayment $payment, int $amount, ?Workspace $workspace = null): ClientInvoicePayment
     {
         return DB::transaction(function () use ($payment, $amount, $workspace): ClientInvoicePayment {
+            BillingMaintenance::share($workspace->id ?? $payment->workspace_id);
             $query = ClientInvoicePayment::query()->where('workspace_id', $payment->workspace_id)->whereKey($payment->id)->tap(Locks::forUpdate());
             if ($workspace !== null) {
                 $query->where('workspace_id', $workspace->id);

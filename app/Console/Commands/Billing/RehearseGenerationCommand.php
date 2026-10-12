@@ -2,12 +2,14 @@
 
 namespace App\Console\Commands\Billing;
 
+use App\Exceptions\BillingMaintenanceBusy;
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceLine;
 use App\Models\ClientTimeEntry;
 use App\Models\Workspace;
+use App\Services\Billing\BillingMaintenance;
 use App\Services\Billing\ClientInvoicingService;
 use App\Services\Billing\InvoiceLedgerBuilder;
 use App\Services\Billing\InvoiceLinePreview;
@@ -115,6 +117,7 @@ final class RehearseGenerationCommand extends Command
         DB::beginTransaction();
 
         try {
+            BillingMaintenance::exclusive($workspace->id, self::class);
             $settledBefore = $this->settledFingerprints($workspace);
             $this->components->twoColumnDetail('settled invoices being watched', (string) count($settledBefore));
 
@@ -161,6 +164,10 @@ final class RehearseGenerationCommand extends Command
 
             $created = DB::table('client_invoices')->where('workspace_id', $workspace->id)->count() - $before;
             $settledAfter = $this->settledFingerprints($workspace);
+        } catch (BillingMaintenanceBusy $exception) {
+            $this->components->error($exception->getMessage());
+
+            return self::FAILURE;
         } finally {
             // Unconditional, exactly as in the replay.
             DB::rollBack();

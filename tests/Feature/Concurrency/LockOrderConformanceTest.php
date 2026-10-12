@@ -2,6 +2,8 @@
 
 namespace Tests\Feature\Concurrency;
 
+use App\Console\Commands\Billing\RehearseGenerationCommand;
+use App\Console\Commands\Billing\ReplayInvoicesCommand;
 use App\Models\ClientAgreement;
 use App\Models\ClientBillingSchedule;
 use App\Models\ClientCompany;
@@ -14,26 +16,36 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Queries\Expenses\WorkspaceExpenses;
 use App\Services\Access\WorkspaceAccess;
+use App\Services\AgentApi\TimeEntryMutationService;
 use App\Services\Billing\AllocationService;
 use App\Services\Billing\BillingScheduleService;
 use App\Services\Billing\ClientInvoicingService;
 use App\Services\Billing\InterimOverageGenerator;
+use App\Services\Billing\InvoiceFromTimeService;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Services\Billing\TimeEntrySplitter;
 use App\Services\Engagement\AgreementWorkflow;
 use App\Services\Engagement\ProposalWorkflow;
+use App\Services\Files\AttachmentAction;
 use App\Services\Finance\PaymentReconciliationService;
 use App\Services\WorkspaceProjectMutationAction;
+use App\Services\WorkspaceTaskMutationAction;
 use App\Support\Access\AccessMutationContext;
 use App\Support\Access\PortalAccessScope;
 use App\Support\Access\StaffRole;
+use App\Support\AgentApi\AgentApiVersion;
+use App\Support\Concurrency\LockMode;
 use App\Support\Concurrency\LockOrderRecorder;
 use App\Support\Concurrency\LockResource;
 use App\Support\Expenses\NewExpense;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+use Tests\Support\BillingWriterLockSites;
 use Tests\TestCase;
 
 /**
@@ -79,29 +91,29 @@ final class LockOrderConformanceTest extends TestCase
     use RefreshDatabase;
 
     /**
-     * The one place today's code still takes a pair in the minority order.
-     *
-     * Pinned as an exact set so it cannot multiply, and so that fixing it fails
-     * this test rather than silently loosening it.
-     *
-     * - `ClientTask` before `ClientTimeEntry`: not a call site anywhere, which
-     *   is the point of it. Each generation claims milestones after it has
-     *   drawn time, and the only time-entry lock a generation takes is inside
-     *   fragment recombination, which locks a lineage group only when one
-     *   exists. A period with no fragments to merge therefore locks a task and
-     *   no entry, so several periods run inside one transaction - the shape
-     *   `svc:billing:replay` produces - hold the first period's tasks when the
-     *   second asks for its entries. #223 carries the decision on it.
-     *
-     * `ClientTimeEntry` before `Workspace`/`WorkspaceInvoiceCounter` was the
-     * other one, and it is fixed rather than listed: the interim overage
-     * generator now takes the numbering rows before the recombination that
-     * locks time, so it walks the registry forwards like every cadence path.
+     * Ordinary inversions are an exact set, currently empty. Cross-period
+     * maintenance is exempt only through a successful exclusive first lock;
+     * its two command sites and the share-first writer sites are pinned below.
      *
      * @var list<string>
      */
-    private const KNOWN_INVERSIONS = [
-        'ClientTask before ClientTimeEntry',
+    private const KNOWN_INVERSIONS = [];
+
+    /** Exclusive maintenance is the only transaction-order exemption. */
+    private const MAINTENANCE_EXEMPTIONS = [RehearseGenerationCommand::class, ReplayInvoicesCommand::class];
+
+    /** Writers that lock time entries or tasks take the maintenance share lock first. */
+    private const BILLING_WRITER_SITES = [
+        'App\\Services\\AgentApi\\TimeEntryMutationService::approve',
+        'App\\Services\\AgentApi\\TimeEntryMutationService::serialized',
+        'App\\Services\\Billing\\AllocationService::group',
+        'App\\Services\\Billing\\InterimOverageGenerator::timeFingerprint',
+        'App\\Services\\Billing\\InvoiceFromTimeService::prepareLines',
+        'App\\Services\\Billing\\InvoiceFromTimeService::regenerateDraftSelection',
+        'App\\Services\\Billing\\InvoiceLifecycleService::releaseAllocations',
+        'App\\Services\\Billing\\InvoiceLineComposer::addBillableMilestoneTasks',
+        'App\\Services\\Files\\AttachmentAction::lockedRecord',
+        'App\\Services\\WorkspaceTaskMutationAction::update',
     ];
 
     private Workspace $workspace;
@@ -149,6 +161,22 @@ final class LockOrderConformanceTest extends TestCase
 
         $sequences = LockOrderRecorder::sequences();
 
+        $inventory = BillingWriterLockSites::all();
+        $methods = array_values(array_unique(array_values($inventory)));
+        sort($methods);
+        $this->assertSame(self::BILLING_WRITER_SITES, $methods, 'A time-entry or task lock site changed: update its share-first proof.');
+        $reached = [];
+        foreach (LockOrderRecorder::acquisitions() as $locks) {
+            foreach ($locks as $lock) {
+                if (in_array($lock->resource, [LockResource::ClientTimeEntry, LockResource::ClientTask], true)) {
+                    $key = $lock->file.':'.$lock->line;
+                    $this->assertArrayHasKey($key, $inventory, 'A recorded writer site is missing from the source inventory.');
+                    $reached[$key] = true;
+                }
+            }
+        }
+        $this->assertSame([], array_diff_key($inventory, $reached), 'Every writer site must be reached, not merely named.');
+
         $this->assertGreaterThanOrEqual(
             10,
             count($sequences),
@@ -165,12 +193,28 @@ final class LockOrderConformanceTest extends TestCase
 
         $found = [];
 
-        foreach ($sequences as $sequence) {
+        $exemptions = LockOrderRecorder::maintenanceExemptions();
+        $acquisitions = LockOrderRecorder::acquisitions();
+        $exemptedCommands = [];
+        foreach ($sequences as $index => $sequence) {
+            if ($exemptions[$index] !== null) {
+                $this->assertContains($exemptions[$index], self::MAINTENANCE_EXEMPTIONS);
+                $this->assertSame(LockResource::BillingMaintenance, $sequence[0]);
+                $this->assertSame(LockMode::Exclusive, $acquisitions[$index][0]->mode);
+                $exemptedCommands[] = $exemptions[$index];
+
+                continue;
+            }
+            if (in_array(LockResource::ClientTimeEntry, $sequence, true) || in_array(LockResource::ClientTask, $sequence, true)) {
+                $this->assertSame(LockResource::BillingMaintenance, $sequence[0], 'Writers that lock time entries or tasks take the maintenance share lock first.');
+                $this->assertSame(LockMode::Share, $acquisitions[$index][0]->mode);
+            }
             foreach ($this->inversionsIn($sequence) as $inversion) {
                 $found[$inversion] = true;
             }
         }
 
+        $this->assertSame(self::MAINTENANCE_EXEMPTIONS, $exemptedCommands);
         $found = array_keys($found);
         sort($found);
         $known = self::KNOWN_INVERSIONS;
@@ -246,6 +290,7 @@ final class LockOrderConformanceTest extends TestCase
         $this->driveEngagementAndInvoicing();
         $this->driveInterimOverageWithFragments();
         $this->driveOneLongGenerationTransaction();
+        $this->driveMaintenanceWriterSites();
 
         // Fragment recombination on its own, which locks a lineage group.
         $split = $this->approvedEntry('2026-10-05', 180);
@@ -428,11 +473,39 @@ final class LockOrderConformanceTest extends TestCase
         $split = $this->approvedEntry('2026-01-10', 900, $company, $project);
         app(TimeEntrySplitter::class)->splitEntry($split, 600);
 
-        app(InterimOverageGenerator::class)->generateInterimOverageInvoice(
+        $draft = app(InterimOverageGenerator::class)->generateInterimOverageInvoice(
             $company,
             Carbon::parse('2026-01-01'),
             $agreement->refresh(),
         );
+        $this->assertNotNull($draft);
+        $this->assertSame('interim_overage', $draft->invoice_kind);
+        $this->assertSame('draft', $draft->status);
+        app(InvoiceLifecycleService::class)->issue($draft, $this->workspace);
+        DB::transaction(function () use ($draft, $agreement): void {
+            $claims = app(InterimOverageGenerator::class)->lockCycleClaims($draft->fresh(), $agreement->fresh());
+            $this->assertMatchesRegularExpression('/^[a-f0-9]{64}$/', $claims[2]);
+        });
+    }
+
+    private function driveMaintenanceWriterSites(): void
+    {
+        $time = app(TimeEntryMutationService::class);
+        $entry = $this->approvedEntry('2026-10-05', 60);
+        $entry->forceFill(['status' => 'draft'])->save();
+        $time->update($this->workspace, $entry, $this->user, ['description' => 'Synthetic updated work', 'expected_version' => AgentApiVersion::for($entry)]);
+        $entry->refresh()->forceFill(['status' => 'draft'])->save();
+        $time->approve($this->workspace, $this->user, [['id' => $entry->public_id, 'expected_version' => AgentApiVersion::for($entry)]]);
+
+        $selected = app(InvoiceFromTimeService::class);
+        $draft = $selected->create($this->workspace, $this->company, ['invoice_number' => 'SYNTHETIC-MAINTENANCE', 'currency' => 'USD'], [$entry->public_id]);
+        $selected->regenerateDraftSelection($draft, $this->workspace, $entry->id);
+        app(InvoiceLifecycleService::class)->void($draft->fresh(), $this->workspace, 'Synthetic maintenance proof');
+
+        $task = $this->milestone($this->project, '2026-10-06');
+        app(WorkspaceTaskMutationAction::class)->update($this->user, $this->workspace, $task->public_id, ['title' => 'Synthetic updated milestone']);
+        Storage::fake('svc-blobs');
+        app(AttachmentAction::class)->store($this->workspace, 'task', $task->public_id, UploadedFile::fake()->createWithContent('synthetic.txt', 'Synthetic maintenance proof'), $this->user, AgentApiVersion::for($task->fresh()));
     }
 
     /**
@@ -451,6 +524,7 @@ final class LockOrderConformanceTest extends TestCase
     {
         [$company, $project] = $this->secondaryCompany('replay');
         $agreement = $this->agreement('monthly', $company);
+        $agreement->forceFill(['starts_on' => '2026-07-01'])->save();
         app(AgreementWorkflow::class)->activate($agreement);
 
         // No fragments to start with. The first period's own allocation makes
@@ -461,16 +535,15 @@ final class LockOrderConformanceTest extends TestCase
         $this->milestone($project, '2026-07-20');
         $this->approvedEntry('2026-08-14', 600, $company, $project);
 
-        DB::transaction(function () use ($company, $agreement): void {
-            foreach ([['2026-07-01', '2026-07-31'], ['2026-08-01', '2026-08-31']] as [$start, $end]) {
-                app(ClientInvoicingService::class)->generateInvoice(
-                    $company,
-                    Carbon::parse($start),
-                    Carbon::parse($end),
-                    $agreement->fresh(),
-                );
-            }
-        });
+        $clock = Carbon::getTestNow();
+        Carbon::setTestNow('2026-09-01');
+        try {
+            $this->assertSame(0, Artisan::call('svc:billing:rehearse-generation', ['--workspace' => $this->workspace->public_id, '--company' => $company->public_id]), Artisan::output());
+            app(ClientInvoicingService::class)->generateAllInvoices($company);
+            $this->assertSame(0, Artisan::call('svc:billing:replay', ['--workspace' => $this->workspace->public_id, '--company' => $company->public_id]), Artisan::output());
+        } finally {
+            Carbon::setTestNow($clock);
+        }
     }
 
     /** @return array{ClientCompany, ClientProject} */
