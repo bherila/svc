@@ -2,6 +2,8 @@
 
 namespace App\Services\Square;
 
+use App\Support\Square\SquareHostedPage;
+
 /**
  * The fields of a Square record svc hands to an operator or agent (#438).
  *
@@ -17,8 +19,6 @@ namespace App\Services\Square;
  */
 final class SquarePresenter
 {
-    private const array SQUARE_HOSTS = ['squareup.com', 'squareupsandbox.com'];
-
     /**
      * @param  array<mixed>  $location
      * @return array<string, mixed>
@@ -84,7 +84,7 @@ final class SquarePresenter
             'description' => self::text($invoice, 'description', 2000),
             'status' => self::text($invoice, 'status', 32),
             'delivery_method' => self::text($invoice, 'delivery_method', 32),
-            'public_url' => self::squareUrl($invoice['public_url'] ?? null),
+            'public_url' => SquareHostedPage::url($invoice['public_url'] ?? null),
             'scheduled_at' => self::text($invoice, 'scheduled_at', 64),
             'sale_or_service_date' => self::text($invoice, 'sale_or_service_date', 32),
             'timezone' => self::text($invoice, 'timezone', 64),
@@ -208,28 +208,6 @@ final class SquarePresenter
                 'last_4' => self::lastFour($card['last_4'] ?? null),
             ],
         ];
-    }
-
-    /**
-     * Square's hosted invoice page, only when it is HTTPS on a Square host.
-     */
-    private static function squareUrl(mixed $url): ?string
-    {
-        if (! is_string($url) || strlen($url) > 2048 || filter_var($url, FILTER_VALIDATE_URL) === false) {
-            return null;
-        }
-        $parts = parse_url($url);
-        if (! is_array($parts) || ($parts['scheme'] ?? null) !== 'https' || isset($parts['user']) || isset($parts['pass']) || isset($parts['port'])) {
-            return null;
-        }
-        $host = strtolower($parts['host'] ?? '');
-        foreach (self::SQUARE_HOSTS as $allowed) {
-            if ($host === $allowed || str_ends_with($host, '.'.$allowed)) {
-                return $url;
-            }
-        }
-
-        return null;
     }
 
     /** @return Money */

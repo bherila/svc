@@ -3,6 +3,8 @@
 namespace App\Services\Square\Mirror;
 
 use App\Models\AgentPrincipal;
+use App\Models\CompanySquareCustomer;
+use App\Models\SquareCustomerSnapshot;
 use App\Models\SquareInvoiceSnapshot;
 use App\Models\SquareLocationSnapshot;
 use App\Models\SquareSyncRun;
@@ -37,6 +39,10 @@ final class SquareMirrorReadService
     public const array STATUSES = ['DRAFT', 'UNPAID', 'SCHEDULED', 'PARTIALLY_PAID', 'PAID', 'PARTIALLY_REFUNDED', 'REFUNDED', 'CANCELED', 'FAILED', 'PAYMENT_PENDING'];
 
     public const string SERIES_KEY = '/^\d{6}$/D';
+
+    public const int DEFAULT_UNLINKED_LIMIT = 100;
+
+    public const int MAX_UNLINKED_LIMIT = 500;
 
     public function __construct(
         private readonly AgentAccess $access,
@@ -145,6 +151,75 @@ final class SquareMirrorReadService
                 'members_truncated' => $truncated,
             ],
             'meta' => $this->freshness($workspace),
+        ];
+    }
+
+    /**
+     * Square customers with mirrored invoices and no client company mapped to
+     * them, most owed first: receivables svc does not otherwise see.
+     *
+     * @return array{data: list<array<string, mixed>>, meta: array<string, mixed>}
+     */
+    public function unlinkedCustomers(User|AgentPrincipal $actor, Workspace $workspace, ?bool $withOpenBalance = null, int $limit = self::DEFAULT_UNLINKED_LIMIT): array
+    {
+        $this->validate(['limit' => $limit], ['limit' => ['integer', 'min:1', 'max:'.self::MAX_UNLINKED_LIMIT]]);
+        $this->admit($actor, $workspace);
+        $mapped = CompanySquareCustomer::query()->where('workspace_id', $workspace->id)->whereNotNull('active_customer_slot')->select('active_customer_slot');
+        $open = implode(',', array_map(static fn (string $status): string => "'{$status}'", SquareSeriesSummary::OPEN_STATUSES));
+        $rows = SquareInvoiceSnapshot::query()->where('workspace_id', $workspace->id)
+            ->whereNotNull('square_customer_id')
+            ->whereNotIn('square_customer_id', $mapped)
+            ->groupBy('square_customer_id')
+            ->selectRaw("square_customer_id, count(*) as invoice_count, sum(case when status in ({$open}) then 1 else 0 end) as open_invoice_count, sum(case when status in ({$open}) then coalesce(total_amount, 0) - coalesce(paid_amount, 0) else 0 end) as open_amount, count(distinct currency) as currencies, max(currency) as currency, max(due_on) as last_due_on, max(recipient_name) as recipient_name")
+            ->get();
+        $customers = [];
+        foreach ($rows as $row) {
+            $openCount = (int) $row->getAttribute('open_invoice_count');
+            if ($withOpenBalance !== null && ($openCount > 0) !== $withOpenBalance) {
+                continue;
+            }
+            $multiCurrency = (int) $row->getAttribute('currencies') > 1;
+            $customers[(string) $row->getAttribute('square_customer_id')] = [
+                'invoice_count' => (int) $row->getAttribute('invoice_count'),
+                'open_invoice_count' => $openCount,
+                'open_amount' => $multiCurrency ? null : (int) $row->getAttribute('open_amount'),
+                'currency' => $multiCurrency ? null : $row->getAttribute('currency'),
+                'last_due_on' => self::day($row->getAttribute('last_due_on')),
+                'recipient_name' => $row->getAttribute('recipient_name'),
+            ];
+        }
+        $directory = SquareCustomerSnapshot::query()->where('workspace_id', $workspace->id)->whereIn('square_customer_id', array_map(strval(...), array_keys($customers)))->get()->keyBy('square_customer_id');
+        $series = [];
+        foreach (SquareInvoiceSnapshot::query()->where('workspace_id', $workspace->id)->whereIn('square_customer_id', array_map(strval(...), array_keys($customers)))
+            ->whereNotNull('series_key')->distinct()->orderBy('series_key')->get(['square_customer_id', 'series_key']) as $member) {
+            $series[(string) $member->square_customer_id][] = (string) $member->series_key;
+        }
+        $data = [];
+        foreach ($customers as $id => $facts) {
+            $id = (string) $id;
+            $snapshot = $directory->get($id);
+            $recipient = is_string($facts['recipient_name']) ? $facts['recipient_name'] : null;
+            $data[] = [
+                'customer_id' => $id,
+                'display_name' => $snapshot instanceof SquareCustomerSnapshot ? ($snapshot->displayName() ?? $recipient) : $recipient,
+                'company_name' => $snapshot?->company_name,
+                'given_name' => $snapshot?->given_name,
+                'family_name' => $snapshot?->family_name,
+                'email_address' => $snapshot?->email_address,
+                'in_customer_directory' => $snapshot !== null,
+                'invoice_count' => $facts['invoice_count'],
+                'open_invoice_count' => $facts['open_invoice_count'],
+                'open_amount' => $facts['open_amount'],
+                'currency' => is_string($facts['currency']) ? $facts['currency'] : null,
+                'last_due_on' => $facts['last_due_on'],
+                'series_keys' => array_slice($series[$id] ?? [], 0, 20),
+            ];
+        }
+        usort($data, static fn (array $a, array $b): int => [$b['open_amount'] ?? -1, (string) $a['display_name'], $a['customer_id']] <=> [$a['open_amount'] ?? -1, (string) $b['display_name'], $b['customer_id']]);
+
+        return [
+            'data' => array_slice($data, 0, $limit),
+            'meta' => ['truncated' => count($data) > $limit, ...$this->freshness($workspace)],
         ];
     }
 
@@ -318,6 +393,11 @@ final class SquareMirrorReadService
         }
 
         return $query;
+    }
+
+    private static function day(mixed $value): ?string
+    {
+        return is_string($value) && strlen($value) >= 10 ? substr($value, 0, 10) : null;
     }
 
     private function admit(User|AgentPrincipal $actor, Workspace $workspace): void

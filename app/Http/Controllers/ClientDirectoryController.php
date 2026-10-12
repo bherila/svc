@@ -27,6 +27,7 @@ use App\Services\Authorization\ProjectAccess;
 use App\Services\Billing\InvoiceCorrectionReadService;
 use App\Services\Billing\InvoiceCorrectionService;
 use App\Services\Billing\InvoiceEmailService;
+use App\Services\Square\Mirror\SquareInvoicePage;
 use App\Services\Square\SquareLinkRepository;
 use App\Services\WorkspaceAuthorization;
 use App\Support\Access\PortalAccessScope;
@@ -365,6 +366,8 @@ class ClientDirectoryController extends Controller
             'invoice' => $this->invoicePayload($clientInvoice),
             // The link itself, through the API the website shares with agents.
             'square' => $square === null ? null : $square + [
+                // "View or pay in Square", from the mirror's copy of Square's own page address.
+                'hosted_page' => app(SquareInvoicePage::class)->forInvoice($workspace, $clientInvoice),
                 'link_href' => $status === InvoiceStatus::Void->value
                     ? null
                     : route('agent-api.v1.invoices.square-link.store', [$workspace, $clientInvoice->public_id], absolute: false),
