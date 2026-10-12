@@ -103,6 +103,32 @@ final class AgentPortalInvitationTest extends TestCase
         $this->assertSame(3, AccessAuditEvent::query()->whereNotNull('operation_id')->count());
     }
 
+    /** Codex review on #444: a page loads its invitations' projects in one query, however long it is. */
+    public function test_a_listing_page_costs_the_same_queries_for_one_invitation_or_many(): void
+    {
+        [$workspace, $owner, $company, $project] = $this->fixture();
+        $this->actingAsMcp($owner, self::SCOPES);
+        $path = '/api/v1/workspaces/'.$workspace->public_id.'/clients/'.$company->public_id.'/portal-invitations';
+        $invite = fn (int $index) => app(PortalInvitations::class)->invite(AccessMutationContext::user($owner), $company, "listed-{$index}@client.example.test", PortalAccessScope::Projects, [$project->public_id]);
+        $count = function () use ($path): int {
+            DB::flushQueryLog();
+            DB::enableQueryLog();
+            $this->getJson($path)->assertOk();
+            DB::disableQueryLog();
+
+            return count(DB::getQueryLog());
+        };
+
+        $invite(0);
+        $one = $count();
+        foreach (range(1, 5) as $index) {
+            $invite($index);
+        }
+
+        $this->assertSame($one, $count());
+        $this->assertCount(6, $this->getJson($path)->json('data'));
+    }
+
     /** Codex review on #444: each access audit carries the request that caused it. */
     public function test_access_audits_carry_the_request_id(): void
     {

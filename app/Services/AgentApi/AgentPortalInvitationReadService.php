@@ -42,17 +42,28 @@ final class AgentPortalInvitationReadService
             ->whereIn('status', [PortalInvitationStatus::Pending->value, PortalInvitationStatus::Expired->value, PortalInvitationStatus::NotApplied->value])
             ->orderBy('id');
 
+        // The page's projects are loaded once, when the page is, not per row.
+        $projects = new Collection;
+
         return CursorPage::run($workspace, 'portal-invitations|client='.$company->public_id, $limit, $cursor,
-            fn (int $take, ?int $after): Collection => (clone $query)->when($after !== null, fn (Builder $rows): Builder => $rows->where('id', '>', $after))->limit($take)->get(),
-            fn (ClientPortalInvitation $invitation): array => $this->present($workspace, $company, $invitation));
+            function (int $take, ?int $after) use ($query, $workspace, $company, &$projects): Collection {
+                $page = (clone $query)->when($after !== null, fn (Builder $rows): Builder => $rows->where('id', '>', $after))->limit($take)->get();
+                $projects = $this->projects($workspace, $company, $page);
+
+                return $page;
+            },
+            function (ClientPortalInvitation $invitation) use ($workspace, $company, &$projects): array {
+                return $this->present($workspace, $company, $invitation, $projects);
+            });
     }
 
     /** @return array<string, mixed> */
     public function get(User $actor, Workspace $workspace, string $clientId, string $invitationId): array
     {
         $company = $this->company($actor, $workspace, $clientId);
+        $invitation = $this->find($workspace, $company, $invitationId);
 
-        return $this->present($workspace, $company, $this->find($workspace, $company, $invitationId));
+        return $this->present($workspace, $company, $invitation, $this->projects($workspace, $company, new Collection([$invitation])));
     }
 
     /** One of this client's invitations, by public id; anything else is not found. */
@@ -67,16 +78,40 @@ final class AgentPortalInvitationReadService
         return ClientPortalInvitation::query()->where('workspace_id', $workspace->id)->where('client_company_id', $company->id);
     }
 
-    /** @return array<string, mixed> */
-    private function present(Workspace $workspace, ClientCompany $company, ClientPortalInvitation $invitation): array
+    /**
+     * Every project these invitations name that still belongs to the client,
+     * in one query, keyed by id.
+     *
+     * @param  Collection<int, ClientPortalInvitation>  $invitations
+     * @return Collection<int, ClientProject>
+     */
+    private function projects(Workspace $workspace, ClientCompany $company, Collection $invitations): Collection
     {
-        $status = $invitation->currentStatus();
-        $projects = $invitation->scope() === PortalAccessScope::Company ? new Collection : ClientProject::query()
+        $ids = array_values(array_unique(array_merge([], ...array_values($invitations
+            ->filter(static fn (ClientPortalInvitation $invitation): bool => $invitation->scope() === PortalAccessScope::Projects)
+            ->map(static fn (ClientPortalInvitation $invitation): array => $invitation->projectIds())
+            ->all()))));
+
+        return $ids === [] ? new Collection : ClientProject::query()
             ->where('workspace_id', $workspace->id)
             ->where('client_company_id', $company->id)
-            ->whereIn('id', $invitation->projectIds())
+            ->whereIn('id', $ids)
             ->orderBy('id')
-            ->get();
+            ->get()
+            ->keyBy('id');
+    }
+
+    /**
+     * @param  Collection<int, ClientProject>  $loaded  from {@see projects()}, keyed by id
+     * @return array<string, mixed>
+     */
+    private function present(Workspace $workspace, ClientCompany $company, ClientPortalInvitation $invitation, Collection $loaded): array
+    {
+        $status = $invitation->currentStatus();
+        $projects = $invitation->scope() === PortalAccessScope::Company ? new Collection : $loaded
+            ->filter(static fn (ClientProject $project, int $id): bool => in_array($id, $invitation->projectIds(), true))
+            ->sortKeys()
+            ->values();
         $base = rtrim((string) config('app.url'), '/');
         $parameters = ['workspace' => $workspace->public_id, 'client' => $company->public_id, 'invitation' => $invitation->public_id];
 
