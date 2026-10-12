@@ -3,6 +3,7 @@
 namespace App\Services\AgentApi;
 
 use App\Exceptions\AccessMutationRefused;
+use App\Exceptions\PortalInvitationFailed;
 use App\Models\AgentMutationAudit;
 use App\Models\AgentMutationReceipt;
 use App\Models\User;
@@ -166,6 +167,14 @@ final class AgentMutationExecutor
                 AccessRefusal::NotStaff, AccessRefusal::UnsupportedRole, AccessRefusal::AlreadyPortalMember,
                 AccessRefusal::NotPortalMember, AccessRefusal::ProjectOutsideCompany, AccessRefusal::ProjectsWithCompanyScope,
                 AccessRefusal::AccountExists, AccessRefusal::InviterNotBound => 'domain',
+            };
+        }
+        if ($exception instanceof PortalInvitationFailed) {
+            return match ($exception->status) {
+                403 => 'forbidden',
+                409 => 'conflict',
+                422 => 'validation',
+                default => 'http_error',
             };
         }
         if ($exception instanceof ValidationException) {

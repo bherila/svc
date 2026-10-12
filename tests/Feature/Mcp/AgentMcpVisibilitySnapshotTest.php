@@ -82,9 +82,10 @@ final class AgentMcpVisibilitySnapshotTest extends TestCase
     private function states(): array
     {
         // Square connected (#438) everywhere but the install defaults, where
-        // it is unconfigured and its read-only tools are withheld.
+        // it is unconfigured and its read-only tools are withheld. Portal
+        // invitations (#430) are a product switch, likewise off on install.
         $on = ['agent_api.mcp_enabled' => true, 'agent_api.mcp_feature_flags' => [],
-            'services.square.access_token' => 'synthetic-square-token', 'services.square.workspace' => 'synthetic-square-workspace'];
+            'services.square.access_token' => 'synthetic-square-token', 'services.square.workspace' => 'synthetic-square-workspace', 'svc.portal_invitations.enabled' => true];
         foreach (self::WRITE_FLAGS as $flag) {
             $on['agent_api.'.$flag] = true;
         }
@@ -97,6 +98,7 @@ final class AgentMcpVisibilitySnapshotTest extends TestCase
             $installDefaults['agent_api.'.$flag] = $flag === 'time_entry_writes_enabled';
         }
         $installDefaults['services.square.access_token'] = null;
+        $installDefaults['svc.portal_invitations.enabled'] = false;
 
         return [
             'all_enabled' => $on,
@@ -108,6 +110,7 @@ final class AgentMcpVisibilitySnapshotTest extends TestCase
             'mcp_agreements_group_off' => ['agent_api.mcp_feature_flags' => ['mcp.read.agreements' => false]] + $on,
             'single_tools_off' => ['agent_api.mcp_feature_flags' => ['invoices.get' => false, 'time_entries.list' => false, 'context.get' => false]] + $on,
             'mcp_disabled' => ['agent_api.mcp_enabled' => false] + $on,
+            'portal_invitations_off' => ['svc.portal_invitations.enabled' => false] + $on,
         ];
     }
 

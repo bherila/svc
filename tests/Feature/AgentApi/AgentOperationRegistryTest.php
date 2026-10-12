@@ -127,12 +127,20 @@ final class AgentOperationRegistryTest extends TestCase
                 // The document lists the outer cutover too; the declaration names
                 // the innermost one, which nests inside it.
                 $flags = $documented['x-svc-flags'];
-                $expected = $flags === [] ? [] : [$names[$flags[array_key_last($flags)]]];
+                $innermost = $flags === [] ? null : $flags[array_key_last($flags)];
+                // Portal invitations' switch is a product flag: alone it gates
+                // the listing, and nested inside the client-write cutovers it
+                // gates the writes (#430).
+                $expected = match (true) {
+                    $innermost === null => [],
+                    $innermost === 'SVC_PORTAL_INVITATIONS_ENABLED' => [count($flags) === 1 ? AgentDeploymentFlags::PORTAL_INVITATIONS : AgentDeploymentFlags::PORTAL_INVITATION_WRITES],
+                    default => [$names[$innermost]],
+                };
                 $this->assertSame($expected, $declared, $documented['operationId']);
                 $checked++;
             }
         }
-        $this->assertSame(34, $checked);
+        $this->assertSame(38, $checked);
     }
 
     public function test_an_under_scoped_rest_call_is_refused_by_the_gate_with_its_reason(): void

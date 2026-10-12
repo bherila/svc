@@ -361,6 +361,50 @@
             "mcp.switch:clients.portal_access.update"
         ]
     },
+    "clients.portal_invitations.create": {
+        "scopes": [
+            "clients:write"
+        ],
+        "flags": [
+            "agent.writes.portal_invitations",
+            "mcp",
+            "mcp.switch:mcp.write.clients",
+            "mcp.switch:clients.portal_invitations.create"
+        ]
+    },
+    "clients.portal_invitations.list": {
+        "scopes": [
+            "clients:read"
+        ],
+        "flags": [
+            "svc.portal_invitations",
+            "mcp",
+            "mcp.switch:mcp.read.clients",
+            "mcp.switch:clients.portal_invitations.list"
+        ]
+    },
+    "clients.portal_invitations.resend": {
+        "scopes": [
+            "clients:write"
+        ],
+        "flags": [
+            "agent.writes.portal_invitations",
+            "mcp",
+            "mcp.switch:mcp.write.clients",
+            "mcp.switch:clients.portal_invitations.resend"
+        ]
+    },
+    "clients.portal_invitations.revoke": {
+        "scopes": [
+            "clients:write"
+        ],
+        "flags": [
+            "agent.writes.portal_invitations",
+            "mcp",
+            "mcp.switch:mcp.write.clients",
+            "mcp.switch:clients.portal_invitations.revoke"
+        ]
+    },
     "clients.restore": {
         "scopes": [
             "clients:write",

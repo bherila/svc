@@ -1705,6 +1705,269 @@
                 ]
             }
         },
+        "/workspaces/{workspace}/clients/{client}/portal-invitations": {
+            "post": {
+                "operationId": "clients.portal_invitations.create",
+                "description": "Invite an address nobody signs in with yet to a client's portal. The identity provider emails an admission link to this application only; the access is given when that person first signs in with the address, if the inviter is still an owner or admin and the projects still belong to the client. Refused for an address that already signs in. Never returns the link. Requires explicit confirmation and an idempotency key.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "clients:write"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/clients_portal_invitations_createRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "client",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Authorized result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PortalInvitationResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-mcp-tool": "clients.portal_invitations.create",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_CLIENT_WRITES_ENABLED",
+                    "SVC_PORTAL_INVITATIONS_ENABLED"
+                ]
+            },
+            "get": {
+                "operationId": "clients.portal_invitations.list",
+                "description": "List a client's open and not-applied portal invitations as a workspace owner/admin: address, scope, projects, status and expiry. Never includes the acceptance link. Requires SVC_PORTAL_INVITATIONS_ENABLED.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "clients:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "client",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/Limit"
+                    },
+                    {
+                        "$ref": "#/components/parameters/Cursor"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Authorized result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PortalInvitationListResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-mcp-tool": "clients.portal_invitations.list",
+                "x-svc-flags": [
+                    "SVC_PORTAL_INVITATIONS_ENABLED"
+                ]
+            }
+        },
+        "/workspaces/{workspace}/clients/{client}/portal-invitations/{invitation}/resend": {
+            "post": {
+                "operationId": "clients.portal_invitations.resend",
+                "description": "Send a pending or expired portal invitation again with a new link and expiry; the previous link stops working. Never returns the link. Requires explicit confirmation and an idempotency key.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "clients:write"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/clients_portal_invitations_resendRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "client",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "invitation",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Authorized result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PortalInvitationResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-mcp-tool": "clients.portal_invitations.resend",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_CLIENT_WRITES_ENABLED",
+                    "SVC_PORTAL_INVITATIONS_ENABLED"
+                ]
+            }
+        },
+        "/workspaces/{workspace}/clients/{client}/portal-invitations/{invitation}": {
+            "delete": {
+                "operationId": "clients.portal_invitations.revoke",
+                "description": "Withdraw a portal invitation, or dismiss one that was not applied. The link stops working at the identity provider and signing in gives nothing. Requires explicit confirmation and an idempotency key.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "clients:write"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/clients_portal_invitations_revokeRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "client",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "invitation",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Authorized result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PortalInvitationResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-mcp-tool": "clients.portal_invitations.revoke",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_CLIENT_WRITES_ENABLED",
+                    "SVC_PORTAL_INVITATIONS_ENABLED"
+                ]
+            }
+        },
         "/workspaces/{workspace}/clients/{client}/restore": {
             "post": {
                 "operationId": "clients.restore",
@@ -9539,6 +9802,158 @@
                     "data"
                 ]
             },
+            "PortalInvitation": {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "A portal invitation to an address nobody signs in with yet. Never carries the acceptance link.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "email": {
+                        "type": "string",
+                        "format": "email"
+                    },
+                    "scope": {
+                        "type": "string",
+                        "enum": [
+                            "company",
+                            "projects"
+                        ]
+                    },
+                    "projects": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                                "id": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                },
+                                "name": {
+                                    "type": "string"
+                                },
+                                "href": {
+                                    "type": "string",
+                                    "format": "uri"
+                                }
+                            },
+                            "required": [
+                                "id",
+                                "name",
+                                "href"
+                            ]
+                        }
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "pending",
+                            "expired",
+                            "accepted",
+                            "not_applied",
+                            "revoked"
+                        ]
+                    },
+                    "not_applied_reason": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "enum": [
+                            "inviter_lost_authority",
+                            "projects_moved",
+                            null
+                        ]
+                    },
+                    "expires_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time"
+                    },
+                    "email_sent": {
+                        "type": "boolean"
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "resend_href": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "uri"
+                    },
+                    "revoke_href": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "uri"
+                    }
+                },
+                "required": [
+                    "id",
+                    "email",
+                    "scope",
+                    "projects",
+                    "status",
+                    "not_applied_reason",
+                    "expires_at",
+                    "email_sent",
+                    "created_at",
+                    "resend_href",
+                    "revoke_href"
+                ]
+            },
+            "PortalInvitationListResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/PortalInvitation"
+                        }
+                    },
+                    "meta": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "next_cursor": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "next_cursor"
+                        ]
+                    }
+                },
+                "required": [
+                    "data",
+                    "meta"
+                ]
+            },
+            "PortalInvitationResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/PortalInvitation"
+                    }
+                },
+                "required": [
+                    "data"
+                ]
+            },
             "Project": {
                 "type": "object",
                 "additionalProperties": false,
@@ -13306,6 +13721,105 @@
                             }
                         }
                     }
+                ]
+            },
+            "clients_portal_invitations_createRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "confirm": {
+                        "type": "boolean",
+                        "const": true
+                    },
+                    "scope": {
+                        "type": "string",
+                        "enum": [
+                            "company",
+                            "projects"
+                        ]
+                    },
+                    "projects": {
+                        "type": "array",
+                        "maxItems": 500,
+                        "uniqueItems": true,
+                        "items": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    "email": {
+                        "type": "string",
+                        "format": "email",
+                        "maxLength": 255
+                    }
+                },
+                "required": [
+                    "confirm",
+                    "scope",
+                    "email"
+                ],
+                "allOf": [
+                    {
+                        "if": {
+                            "properties": {
+                                "scope": {
+                                    "const": "projects"
+                                }
+                            }
+                        },
+                        "then": {
+                            "required": [
+                                "projects"
+                            ],
+                            "properties": {
+                                "projects": {
+                                    "minItems": 1
+                                }
+                            }
+                        }
+                    },
+                    {
+                        "if": {
+                            "properties": {
+                                "scope": {
+                                    "const": "company"
+                                }
+                            }
+                        },
+                        "then": {
+                            "properties": {
+                                "projects": {
+                                    "maxItems": 0
+                                }
+                            }
+                        }
+                    }
+                ]
+            },
+            "clients_portal_invitations_resendRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "confirm": {
+                        "type": "boolean",
+                        "const": true
+                    }
+                },
+                "required": [
+                    "confirm"
+                ]
+            },
+            "clients_portal_invitations_revokeRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "confirm": {
+                        "type": "boolean",
+                        "const": true
+                    }
+                },
+                "required": [
+                    "confirm"
                 ]
             },
             "clients_restoreRequest": {

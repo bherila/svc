@@ -49,6 +49,16 @@ final class AgentDeploymentFlags implements DeploymentFlags
     /** The read-only Square pass-through: on only while Square is configured. */
     public const string SQUARE = 'square.connected';
 
+    /**
+     * Portal invitations (#430), a product switch rather than an agent
+     * cutover: `svc.portal_invitations.enabled` also governs the settings
+     * page and sign-in. Listing needs only it; writes nest it inside the
+     * client-write cutovers as well.
+     */
+    public const string PORTAL_INVITATIONS = 'svc.portal_invitations';
+
+    public const string PORTAL_INVITATION_WRITES = 'agent.writes.portal_invitations';
+
     /** The MCP transport as a whole. */
     public const string MCP = 'mcp';
 
@@ -66,6 +76,8 @@ final class AgentDeploymentFlags implements DeploymentFlags
         self::PROPOSALS => ['key' => 'agent_api.proposal_writes_enabled', 'parents' => [self::WRITES]],
         self::WORKSPACES => ['key' => 'agent_api.workspace_writes_enabled', 'parents' => [self::WRITES]],
         self::FILES => ['key' => 'agent_api.file_writes_enabled', 'parents' => [self::WRITES]],
+        self::PORTAL_INVITATIONS => ['key' => 'svc.portal_invitations.enabled'],
+        self::PORTAL_INVITATION_WRITES => ['key' => 'svc.portal_invitations.enabled', 'parents' => [self::CLIENTS]],
     ];
 
     private function __construct(

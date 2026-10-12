@@ -365,6 +365,58 @@ export interface paths {
         patch: operations['clients.portal_access.update'];
         trace?: never;
     };
+    '/workspaces/{workspace}/clients/{client}/portal-invitations': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description List a client's open and not-applied portal invitations as a workspace owner/admin: address, scope, projects, status and expiry. Never includes the acceptance link. Requires SVC_PORTAL_INVITATIONS_ENABLED. */
+        get: operations['clients.portal_invitations.list'];
+        put?: never;
+        /** @description Invite an address nobody signs in with yet to a client's portal. The identity provider emails an admission link to this application only; the access is given when that person first signs in with the address, if the inviter is still an owner or admin and the projects still belong to the client. Refused for an address that already signs in. Never returns the link. Requires explicit confirmation and an idempotency key. */
+        post: operations['clients.portal_invitations.create'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/clients/{client}/portal-invitations/{invitation}/resend': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Send a pending or expired portal invitation again with a new link and expiry; the previous link stops working. Never returns the link. Requires explicit confirmation and an idempotency key. */
+        post: operations['clients.portal_invitations.resend'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/clients/{client}/portal-invitations/{invitation}': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** @description Withdraw a portal invitation, or dismiss one that was not applied. The link stops working at the identity provider and signing in gives nothing. Requires explicit confirmation and an idempotency key. */
+        delete: operations['clients.portal_invitations.revoke'];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     '/workspaces/{workspace}/clients/{client}/restore': {
         parameters: {
             query?: never;
@@ -2285,6 +2337,46 @@ export interface components {
         PortalContactResponse: {
             data: components['schemas']['PortalContact'];
         };
+        /** @description A portal invitation to an address nobody signs in with yet. Never carries the acceptance link. */
+        PortalInvitation: {
+            /** Format: uuid */
+            id: string;
+            /** Format: email */
+            email: string;
+            /** @enum {string} */
+            scope: 'company' | 'projects';
+            projects: {
+                /** Format: uuid */
+                id: string;
+                name: string;
+                /** Format: uri */
+                href: string;
+            }[];
+            /** @enum {string} */
+            status:
+                'pending' | 'expired' | 'accepted' | 'not_applied' | 'revoked';
+            /** @enum {string|null} */
+            not_applied_reason:
+                'inviter_lost_authority' | 'projects_moved' | null;
+            /** Format: date-time */
+            expires_at: string | null;
+            email_sent: boolean;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: uri */
+            resend_href: string | null;
+            /** Format: uri */
+            revoke_href: string | null;
+        };
+        PortalInvitationListResponse: {
+            data: components['schemas']['PortalInvitation'][];
+            meta: {
+                next_cursor: string | null;
+            };
+        };
+        PortalInvitationResponse: {
+            data: components['schemas']['PortalInvitation'];
+        };
         Project: {
             id: components['schemas']['Uuid'];
             company_id: components['schemas']['Uuid'];
@@ -3039,6 +3131,23 @@ export interface components {
             projects?: string[];
             expected_version: string;
         } & (unknown & unknown);
+        clients_portal_invitations_createRequest: {
+            /** @constant */
+            confirm: true;
+            /** @enum {string} */
+            scope: 'company' | 'projects';
+            projects?: string[];
+            /** Format: email */
+            email: string;
+        } & (unknown & unknown);
+        clients_portal_invitations_resendRequest: {
+            /** @constant */
+            confirm: true;
+        };
+        clients_portal_invitations_revokeRequest: {
+            /** @constant */
+            confirm: true;
+        };
         clients_restoreRequest: {
             expected_version: string;
         };
@@ -3908,6 +4017,125 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['PortalContactResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'clients.portal_invitations.list': {
+        parameters: {
+            query?: {
+                limit?: components['parameters']['Limit'];
+                cursor?: components['parameters']['Cursor'];
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                client: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['PortalInvitationListResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'clients.portal_invitations.create': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                client: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['clients_portal_invitations_createRequest'];
+            };
+        };
+        responses: {
+            /** @description Authorized result */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['PortalInvitationResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'clients.portal_invitations.resend': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                client: string;
+                invitation: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['clients_portal_invitations_resendRequest'];
+            };
+        };
+        responses: {
+            /** @description Authorized result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['PortalInvitationResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'clients.portal_invitations.revoke': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                client: string;
+                invitation: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['clients_portal_invitations_revokeRequest'];
+            };
+        };
+        responses: {
+            /** @description Authorized result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['PortalInvitationResponse'];
                 };
             };
             default: components['responses']['Error'];
