@@ -103,6 +103,21 @@ final class AgentPortalInvitationTest extends TestCase
         $this->assertSame(3, AccessAuditEvent::query()->whereNotNull('operation_id')->count());
     }
 
+    /** Codex review on #444: each access audit carries the request that caused it. */
+    public function test_access_audits_carry_the_request_id(): void
+    {
+        [$workspace, $owner, $company] = $this->fixture();
+        $this->actingAsMcp($owner, self::SCOPES);
+        $path = '/api/v1/workspaces/'.$workspace->public_id.'/clients/'.$company->public_id.'/portal-invitations';
+
+        $created = $this->postJson($path, $this->body('create'), ['Idempotency-Key' => 'request-id-create', 'X-Request-Id' => 'synthetic-request-0001'])->assertCreated();
+        $this->postJson($path.'/'.$created->json('data.id').'/resend', $this->body('resend'), ['Idempotency-Key' => 'request-id-resend'])->assertOk();
+
+        $requestIds = AccessAuditEvent::query()->orderBy('id')->pluck('request_id')->all();
+        $this->assertSame('synthetic-request-0001', $requestIds[0]);
+        $this->assertMatchesRegularExpression('/^[0-9a-f-]{36}$/', (string) $requestIds[1], 'Without a header a generated id is recorded.');
+    }
+
     #[DataProvider('writeCases')]
     public function test_rest_and_mcp_share_receipts_and_a_replay_never_asks_the_provider_again(string $transport, string $kind): void
     {

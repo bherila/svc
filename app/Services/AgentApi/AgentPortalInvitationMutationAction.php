@@ -35,12 +35,12 @@ final class AgentPortalInvitationMutationAction
     ) {}
 
     /**
+     * @param  AccessMutationContext  $context  the operation and request ids every access audit carries
      * @param  array<string, mixed>  $payload
      * @return array<string, mixed>
      */
-    public function run(User $actor, Workspace $workspace, string $clientId, string $key, string $operation, string $companyId, ?string $invitationId, array $payload): array
+    public function run(AccessMutationContext $context, User $actor, Workspace $workspace, string $clientId, string $key, string $operation, string $companyId, ?string $invitationId, array $payload): array
     {
-        $context = AccessMutationContext::user($actor, hash('sha256', implode('|', [$workspace->public_id, $actor->public_id, $clientId, $operation, $key])));
 
         $this->mutations->run($actor, $workspace, $clientId, $operation, $key, ['client_id' => $companyId, 'invitation_id' => $invitationId, 'body' => $payload], function () use ($actor, $workspace, $companyId, $invitationId, $operation, $payload, $context): array {
             $company = $this->reads->company($actor, $workspace, $companyId);
