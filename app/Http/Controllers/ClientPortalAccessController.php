@@ -3,11 +3,14 @@
 namespace App\Http\Controllers;
 
 use App\Exceptions\AccessMutationRefused;
+use App\Exceptions\PortalInvitationFailed;
 use App\Http\Requests\PortalAccessRequest;
 use App\Models\ClientCompany;
 use App\Models\ClientCompanyMembership;
+use App\Models\ClientPortalInvitation;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Access\PortalInvitations;
 use App\Services\Access\WorkspaceAccess;
 use App\Services\WorkspaceAuthorization;
 use App\Support\Access\AccessMutationContext;
@@ -30,6 +33,7 @@ class ClientPortalAccessController extends Controller
     public function __construct(
         private readonly WorkspaceAccess $access,
         private readonly WorkspaceAuthorization $authorization,
+        private readonly PortalInvitations $invitations,
     ) {}
 
     /**
@@ -38,7 +42,9 @@ class ClientPortalAccessController extends Controller
      * Found by the exact address they sign in with, and only among accounts
      * bound to the configured identity provider: an account nobody can sign in to would
      * hold access nobody can use. Someone without an account signs in once
-     * first; inviting them is a separate, later step.
+     * first, or - with portal invitations on - is offered an invitation
+     * instead: the refusal then comes back under `invite`, which the form
+     * answers with a "Send invitation" button.
      */
     public function store(PortalAccessRequest $request, Workspace $workspace, ClientCompany $clientCompany): RedirectResponse
     {
@@ -51,7 +57,9 @@ class ClientPortalAccessController extends Controller
             ->first();
 
         if (! $person instanceof User) {
-            throw ValidationException::withMessages(['email' => 'Nobody signs in with that address yet. Ask them to sign in once, then add them.']);
+            throw ValidationException::withMessages(PortalInvitations::enabled()
+                ? ['invite' => 'Nobody signs in with that address yet. Send them an invitation, and they get this access when they first sign in.']
+                : ['email' => 'Nobody signs in with that address yet. Ask them to sign in once, then add them.']);
         }
 
         return $this->refusable('email', fn () => $this->access->grantPortal(
@@ -75,6 +83,56 @@ class ClientPortalAccessController extends Controller
         return $this->refusable('portal.'.$user, fn () => $this->access->revokePortal(
             AccessMutationContext::user($actor), $clientCompany, $this->portalMember($workspace, $clientCompany, $user),
         ), 'Portal access removed.');
+    }
+
+    /**
+     * Invite an address nobody signs in with yet (#430). The identity
+     * provider admits them to this application, and the access is given
+     * when they first sign in with that address.
+     */
+    public function invite(PortalAccessRequest $request, Workspace $workspace, ClientCompany $clientCompany): RedirectResponse
+    {
+        $actor = $this->authorizeInvitations($request, $workspace, $clientCompany);
+
+        return $this->refusable('invite', fn (): ClientPortalInvitation => $this->invitations->invite(
+            AccessMutationContext::user($actor), $clientCompany, $request->string('email')->toString(), $request->scope(), $request->projectPublicIds(),
+        ), 'Invitation sent.');
+    }
+
+    public function resendInvitation(Request $request, Workspace $workspace, ClientCompany $clientCompany, string $invitation): RedirectResponse
+    {
+        $actor = $this->authorizeInvitations($request, $workspace, $clientCompany);
+
+        return $this->refusable('invitation.'.$invitation, fn (): ClientPortalInvitation => $this->invitations->resend(
+            AccessMutationContext::user($actor), $clientCompany, $this->invitation($workspace, $clientCompany, $invitation),
+        ), 'Invitation sent again.');
+    }
+
+    public function revokeInvitation(Request $request, Workspace $workspace, ClientCompany $clientCompany, string $invitation): RedirectResponse
+    {
+        $actor = $this->authorizeInvitations($request, $workspace, $clientCompany);
+
+        return $this->refusable('invitation.'.$invitation, fn (): ClientPortalInvitation => $this->invitations->revoke(
+            AccessMutationContext::user($actor), $clientCompany, $this->invitation($workspace, $clientCompany, $invitation),
+        ), 'Invitation withdrawn.');
+    }
+
+    /** Settings' gate, and not found at all while invitations are off. */
+    private function authorizeInvitations(Request $request, Workspace $workspace, ClientCompany $clientCompany): User
+    {
+        $actor = $this->authorize($request, $workspace, $clientCompany);
+        abort_unless(PortalInvitations::enabled(), 404);
+
+        return $actor;
+    }
+
+    private function invitation(Workspace $workspace, ClientCompany $clientCompany, string $publicId): ClientPortalInvitation
+    {
+        return ClientPortalInvitation::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('client_company_id', $clientCompany->id)
+            ->where('public_id', $publicId)
+            ->firstOrFail();
     }
 
     /** The same gate as the rest of client settings; the boundary re-checks under its lock. */
@@ -107,6 +165,9 @@ class ClientPortalAccessController extends Controller
             abort_if($refused->reason === AccessRefusal::NotAuthorized, 403);
 
             throw ValidationException::withMessages([$field => $refused->reason->message()]);
+        } catch (PortalInvitationFailed $failed) {
+            // The provider's field messages never repeat the address.
+            throw ValidationException::withMessages([$field => array_merge([$failed->getMessage()], ...array_values($failed->errors))]);
         }
 
         return redirect()->back()->with('status', $status);

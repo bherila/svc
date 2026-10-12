@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\ClientCompany;
+use App\Models\ClientPortalInvitation;
 use App\Models\ClientProject;
 use App\Models\ClientProposal;
 use App\Models\ClientTimeEntry;
@@ -103,6 +104,19 @@ foreach ([PortalAccessScope::Company, PortalAccessScope::Projects] as $index => 
     ]);
     app(WorkspaceAccess::class)->grantPortal(AccessMutationContext::system(), $company, $contact, $scope,
         $scope === PortalAccessScope::Projects ? [$project->public_id] : []);
+}
+// Portal invitations (#430): one pending, with an address and a link that will not break on
+// their own, and one not applied. Written directly: the seed has no identity provider to ask.
+foreach (['pending', 'not_applied'] as $index => $status) {
+    $email = str_repeat('syntheticinvitee', 8).$index.'@client.example.test';
+    (new ClientPortalInvitation)->forceFill([
+        'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'email' => $email,
+        'pending_email' => $status === 'pending' ? $email : null, 'access_scope' => PortalAccessScope::Projects->value,
+        'project_ids' => [$project->id], 'provider_invitation_id' => $index + 1, 'email_sent' => $status === 'pending',
+        'link' => $status === 'pending' ? 'https://identity.example.test/invitations/'.str_repeat('synthetictoken', 8) : null,
+        'expires_at' => now()->addDays(7), 'status' => $status,
+        'not_applied_reason' => $status === 'not_applied' ? 'projects_moved' : null,
+    ])->save();
 }
 foreach ([
     ['description' => str_repeat('SyntheticUnbrokenWork', 12), 'status' => 'approved', 'minutes' => 100],

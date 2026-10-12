@@ -11,6 +11,7 @@ use App\Models\ClientInvoiceAdministratorNotification;
 use App\Models\ClientInvoiceEmailDelivery;
 use App\Models\ClientInvoiceLine;
 use App\Models\ClientInvoicePayment;
+use App\Models\ClientPortalInvitation;
 use App\Models\ClientProject;
 use App\Models\ClientProjectMembership;
 use App\Models\ClientProposal;
@@ -20,6 +21,7 @@ use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Queries\ClientHome\OperatorClientHomeQuery;
+use App\Services\Access\PortalInvitations;
 use App\Services\Authorization\BillingRecordAccess;
 use App\Services\Authorization\ProjectAccess;
 use App\Services\Billing\InvoiceCorrectionReadService;
@@ -28,6 +30,7 @@ use App\Services\Billing\InvoiceEmailService;
 use App\Services\Square\SquareLinkRepository;
 use App\Services\WorkspaceAuthorization;
 use App\Support\Access\PortalAccessScope;
+use App\Support\Access\PortalInvitationStatus;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\AgentApi\Presenters\AgreementReadPresenter;
 use App\Support\AgentApi\Presenters\SquareLinkPresenter;
@@ -813,9 +816,10 @@ class ClientDirectoryController extends Controller
     /**
      * Who can use this client's portal, and what each of them reaches, with
      * the finished URLs the settings page posts to. Three queries: the
-     * memberships, their people, and every project limit at once.
+     * memberships, their people, and every project limit at once - and, with
+     * portal invitations on, one more for the open and not-applied ones.
      *
-     * @return array{add_url: string, members: list<array<string, mixed>>}
+     * @return array{add_url: string, members: list<array<string, mixed>>, invite_url: string|null, invitations: list<array<string, mixed>>}
      */
     private function portalAccess(Workspace $workspace, ClientCompany $clientCompany): array
     {
@@ -852,7 +856,52 @@ class ClientDirectoryController extends Controller
                     'projects' => $limits->get($membership->id, collect())->pluck('public_id')->map(strval(...))->values()->all(),
                     'url' => $base.'/'.$membership->user->public_id,
                 ])->all()),
+            'invite_url' => PortalInvitations::enabled() ? '/workspaces/'.$workspace->public_id.'/clients/'.$clientCompany->public_id.'/portal-invitations' : null,
+            'invitations' => PortalInvitations::enabled() ? $this->portalInvitations($workspace, $clientCompany) : [],
         ];
+    }
+
+    /**
+     * The client's open and not-applied portal invitations, newest first.
+     *
+     * The acceptance link is a bearer credential: it is sent only here, to
+     * the managers this page is for, and only while the invitation can still
+     * be accepted. Agents never receive it.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function portalInvitations(Workspace $workspace, ClientCompany $clientCompany): array
+    {
+        $base = '/workspaces/'.$workspace->public_id.'/clients/'.$clientCompany->public_id.'/portal-invitations/';
+        $invitations = ClientPortalInvitation::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('client_company_id', $clientCompany->id)
+            ->whereIn('status', [PortalInvitationStatus::Pending->value, PortalInvitationStatus::Expired->value, PortalInvitationStatus::NotApplied->value])
+            ->orderByDesc('id')
+            ->limit(100)
+            ->get();
+        $projects = ClientProject::query()
+            ->where('workspace_id', $workspace->id)
+            ->whereIn('id', $invitations->flatMap(static fn (ClientPortalInvitation $invitation): array => $invitation->projectIds())->unique()->values()->all())
+            ->pluck('public_id', 'id');
+
+        return array_values($invitations->map(static function (ClientPortalInvitation $invitation) use ($base, $projects): array {
+            $status = $invitation->currentStatus();
+
+            return [
+                'id' => $invitation->public_id,
+                'email' => $invitation->email,
+                'scope' => $invitation->scope()->value,
+                'projects' => array_values(array_filter(array_map(static fn (int $id): ?string => $projects->get($id), $invitation->projectIds()))),
+                'status' => $status->value,
+                'reason' => $invitation->notAppliedReason()?->message(),
+                'expires_at' => $invitation->expires_at?->toIso8601String(),
+                'email_sent' => $invitation->email_sent,
+                'link' => $status === PortalInvitationStatus::Pending ? $invitation->link : null,
+                'resend_url' => $status->isOpen() ? $base.$invitation->public_id.'/resend' : null,
+                'revoke_url' => $base.$invitation->public_id,
+            ];
+        })->all());
     }
 
     /**

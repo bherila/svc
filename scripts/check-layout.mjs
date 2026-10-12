@@ -122,6 +122,8 @@ try {
         MAIL_MAILER: 'array',
         QUEUE_CONNECTION: 'sync',
         SVC_LAYOUT_RUNTIME: runtime,
+        // Shows the seeded portal invitations on client settings; nothing here asks a provider.
+        SVC_PORTAL_INVITATIONS_ENABLED: 'true',
     };
     run('php', ['scripts/layout/seed.php'], env);
     const fixture = JSON.parse(
@@ -344,6 +346,17 @@ try {
                     .click();
                 await expect(page.getByRole('alertdialog')).toBeVisible();
                 await capture(screen, 'portal-removal-confirmation', width);
+                await page
+                    .getByRole('button', { name: 'Cancel', exact: true })
+                    .click();
+                await expect(
+                    card.getByLabel('Invitation link', { exact: true }),
+                ).toHaveCount(1);
+                await card
+                    .getByRole('button', { name: 'Withdraw', exact: true })
+                    .click();
+                await expect(page.getByRole('alertdialog')).toBeVisible();
+                await capture(screen, 'portal-invitation-withdrawal', width);
                 await page
                     .getByRole('button', { name: 'Cancel', exact: true })
                     .click();
@@ -683,7 +696,7 @@ try {
             '# Browser layout evidence',
             '',
             portalOnly
-                ? 'Synthetic portal contacts on client settings; initial, project selection and removal confirmation states at every required width.'
+                ? 'Synthetic portal contacts and invitations on client settings; initial, project selection, removal and invitation withdrawal confirmation states at every required width.'
                 : 'Synthetic local fixtures only. Invoice review/settings/proposal/time/expenses are asserted; operations is a bounded measurement of known pre-existing layout problems.',
             '',
             '| Page/state | Viewport | Document width | Navbar height | Gate | Screenshot |',

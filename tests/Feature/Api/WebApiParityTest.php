@@ -39,6 +39,10 @@ final class WebApiParityTest extends TestCase
         'clients.portal-access.destroy' => 'operation:clients.portal_access.revoke',
         'clients.portal-access.store' => 'operation:clients.portal_access.grant',
         'clients.portal-access.update' => 'operation:clients.portal_access.update',
+        // Portal invitations (#430); the agent operations follow in the same PR.
+        'clients.portal-invitations.destroy' => 'missing',
+        'clients.portal-invitations.resend' => 'missing',
+        'clients.portal-invitations.store' => 'missing',
         'clients.store' => 'operation:clients.create',
         'clients.update' => 'operation:clients.update',
         'logout' => 'web-only:sign-out',
