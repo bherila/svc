@@ -23,6 +23,7 @@ class WorkspaceOperationsController extends Controller
     public function __invoke(Workspace $workspace): Response
     {
         Gate::authorize('view', $workspace);
+        $canManage = Gate::allows('manage', $workspace);
 
         $companies = $workspace->clientCompanies()
             ->with(['projects' => fn ($query) => $query->orderBy('name')])
@@ -226,6 +227,8 @@ class WorkspaceOperationsController extends Controller
                         'subject_type' => $activity->subject_type,
                         'subject_id' => $activity->subject_public_id,
                         'payload' => $activity->payload ?? [],
+                        'correction_url' => $canManage && $activity->action === 'invoice.corrected'
+                            ? ($activity->payload['correction_url'] ?? null) : null,
                         'created_at' => $activity->created_at?->toISOString(),
                     ])
                     ->all(),

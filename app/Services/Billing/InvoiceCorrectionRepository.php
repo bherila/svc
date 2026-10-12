@@ -6,6 +6,7 @@ use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceCorrection;
 use App\Models\Workspace;
 use DomainException;
+use Illuminate\Database\Eloquent\Collection;
 
 /** Persistence for correction evidence, always bounded by workspace and invoice. */
 final class InvoiceCorrectionRepository
@@ -27,6 +28,23 @@ final class InvoiceCorrectionRepository
             'due_date' => $invoice->due_date?->toDateString(),
             'line_diffs' => $lineDiffs,
         ]);
+    }
+
+    /** @return Collection<int, ClientInvoiceCorrection> */
+    public function recent(Workspace $workspace, ClientInvoice $invoice): Collection
+    {
+        return ClientInvoiceCorrection::query()
+            ->where('workspace_id', $workspace->id)->where('client_invoice_id', $invoice->id)
+            ->select(['public_id', 'from_revision', 'to_revision', 'reason'])
+            ->orderByDesc('to_revision')->limit(100)->get();
+    }
+
+    public function atRevision(Workspace $workspace, ClientInvoice $invoice): ?ClientInvoiceCorrection
+    {
+        return ClientInvoiceCorrection::query()
+            ->where('workspace_id', $workspace->id)->where('client_invoice_id', $invoice->id)
+            ->where('to_revision', $invoice->document_revision)
+            ->select(['public_id', 'from_revision', 'to_revision', 'reason'])->first();
     }
 
     public function find(Workspace $workspace, ClientInvoice $invoice, string $publicId): ClientInvoiceCorrection

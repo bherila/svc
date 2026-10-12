@@ -3,12 +3,15 @@
 namespace App\Services\Mcp;
 
 use App\Exceptions\InvalidAgentApiCursor;
+use App\Models\ClientInvoice;
 use App\Services\AgentApi\AgentExpenseReadService;
 use App\Services\AgentApi\AgentInvoiceReviewReadService;
 use App\Services\AgentApi\AgentPaymentReadService;
 use App\Services\AgentApi\AgentProjectMemberReadService;
 use App\Services\AgentApi\AgentProposalReadService;
 use App\Services\AgentApi\AgentReadService;
+use App\Services\Authorization\AgentAccess;
+use App\Services\Billing\InvoiceCorrectionReadService;
 use App\Services\Mcp\Context\McpAccountContextResolver;
 use App\Services\Mcp\Context\McpRequestContext;
 use App\Support\AgentApi\InvoiceListFilters;
@@ -193,6 +196,16 @@ final class AgentMcpReadTools
         } catch (InvalidAgentApiCursor) {
             throw new ToolCallException('The pagination cursor is not valid for this request.');
         }
+    }
+
+    /** @return array<string, mixed> */
+    public function invoiceCorrection(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $invoice_id, #[Schema(format: 'uuid')] string $correction_id): array
+    {
+        $context = $this->workspace($workspace_id, 'billing:read');
+        abort_unless(app(AgentAccess::class)->isWorkspaceManager($context->principal->subject, $context->workspace), 403);
+        $invoice = ClientInvoice::query()->where('workspace_id', $context->workspace->id)->where('public_id', $invoice_id)->firstOrFail();
+
+        return ['data' => app(InvoiceCorrectionReadService::class)->get($context->workspace, $invoice, $correction_id)];
     }
 
     /** @return array<string, mixed> */

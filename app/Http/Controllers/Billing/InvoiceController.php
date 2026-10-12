@@ -17,7 +17,7 @@ use App\Models\Workspace;
 use App\Services\Authorization\AgentAccess;
 use App\Services\Authorization\BillingRecordAccess;
 use App\Services\Authorization\PortalInvoiceQuery;
-use App\Services\Billing\InvoiceCorrectionRepository;
+use App\Services\Billing\InvoiceCorrectionReadService;
 use App\Services\Billing\InvoiceCorrectionService;
 use App\Services\Billing\InvoiceDocumentService;
 use App\Services\Billing\InvoiceEmailService;
@@ -206,12 +206,12 @@ class InvoiceController extends Controller
         return $this->mutationResponse($request, $invoice, 'Invoice corrected and automatic delivery held for review.');
     }
 
-    public function correction(Request $request, Workspace $workspace, ClientInvoice $clientInvoice, string $correction, InvoiceCorrectionRepository $evidence): JsonResponse
+    public function correction(Request $request, Workspace $workspace, ClientInvoice $clientInvoice, string $correction, InvoiceCorrectionReadService $evidence): JsonResponse
     {
         Gate::authorize('manage', $workspace);
         $this->workspaceAuthorization->assertOwnedBy($workspace, $clientInvoice);
 
-        return response()->json(['data' => $evidence->find($workspace, $clientInvoice, $correction)]);
+        return response()->json(['data' => $evidence->get($workspace, $clientInvoice, $correction)]);
     }
 
     public function holdAutomatic(Request $request, Workspace $workspace, ClientInvoice $clientInvoice, InvoiceCorrectionService $service): JsonResponse|RedirectResponse

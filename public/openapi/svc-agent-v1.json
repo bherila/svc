@@ -2596,6 +2596,54 @@
                 }
             }
         },
+        "/workspaces/{workspace}/invoices/{invoice}/corrections/{correction}": {
+            "get": {
+                "operationId": "invoices.corrections.get",
+                "description": "Workspace managers only. Read complete before/after evidence for one correction, scoped to its workspace and invoice.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "billing:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/InvoiceId"
+                    },
+                    {
+                        "name": "correction",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Correction evidence",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/InvoiceCorrectionResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                }
+            }
+        },
         "/workspaces/{workspace}/invoices": {
             "post": {
                 "operationId": "invoices.create_draft",
@@ -6792,6 +6840,132 @@
                     }
                 }
             },
+            "InvoiceCorrectionResponse": {
+                "type": "object",
+                "required": [
+                    "data"
+                ],
+                "properties": {
+                    "data": {
+                        "type": "object",
+                        "required": [
+                            "id",
+                            "from_revision",
+                            "to_revision",
+                            "reason",
+                            "previous_due_date",
+                            "due_date",
+                            "line_diffs",
+                            "created_at"
+                        ],
+                        "properties": {
+                            "id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "from_revision": {
+                                "type": "integer"
+                            },
+                            "to_revision": {
+                                "type": "integer"
+                            },
+                            "reason": {
+                                "type": "string"
+                            },
+                            "previous_due_date": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "format": "date"
+                            },
+                            "due_date": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "format": "date"
+                            },
+                            "line_diffs": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "required": [
+                                        "line",
+                                        "description_changed",
+                                        "before",
+                                        "after"
+                                    ],
+                                    "properties": {
+                                        "line": {
+                                            "type": "string",
+                                            "format": "uuid"
+                                        },
+                                        "description_changed": {
+                                            "type": "boolean"
+                                        },
+                                        "before": {
+                                            "type": "object",
+                                            "additionalProperties": false,
+                                            "required": [
+                                                "description",
+                                                "quantity",
+                                                "unit_amount",
+                                                "tax_amount"
+                                            ],
+                                            "properties": {
+                                                "description": {
+                                                    "type": "string"
+                                                },
+                                                "quantity": {
+                                                    "type": "string"
+                                                },
+                                                "unit_amount": {
+                                                    "type": "integer"
+                                                },
+                                                "tax_amount": {
+                                                    "type": "integer"
+                                                }
+                                            }
+                                        },
+                                        "after": {
+                                            "type": "object",
+                                            "additionalProperties": false,
+                                            "required": [
+                                                "description",
+                                                "quantity",
+                                                "unit_amount",
+                                                "tax_amount"
+                                            ],
+                                            "properties": {
+                                                "description": {
+                                                    "type": "string"
+                                                },
+                                                "quantity": {
+                                                    "type": "string"
+                                                },
+                                                "unit_amount": {
+                                                    "type": "integer"
+                                                },
+                                                "tax_amount": {
+                                                    "type": "integer"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            "created_at": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            }
+                        }
+                    }
+                }
+            },
             "InvoiceCreateRequest": {
                 "type": "object",
                 "additionalProperties": false,
@@ -6999,6 +7173,37 @@
                         ],
                         "description": "Workspace managers only; null for other viewers.",
                         "format": "date-time"
+                    },
+                    "corrections": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "required": [
+                                "id",
+                                "from_revision",
+                                "to_revision",
+                                "reason",
+                                "href"
+                            ],
+                            "properties": {
+                                "id": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                },
+                                "from_revision": {
+                                    "type": "integer"
+                                },
+                                "to_revision": {
+                                    "type": "integer"
+                                },
+                                "reason": {
+                                    "type": "string"
+                                },
+                                "href": {
+                                    "type": "string"
+                                }
+                            }
+                        }
                     }
                 }
             },
@@ -7349,6 +7554,37 @@
                     "web_url": {
                         "type": "string",
                         "format": "uri"
+                    },
+                    "correction": {
+                        "type": [
+                            "object",
+                            "null"
+                        ],
+                        "required": [
+                            "id",
+                            "from_revision",
+                            "to_revision",
+                            "reason",
+                            "href"
+                        ],
+                        "properties": {
+                            "id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "from_revision": {
+                                "type": "integer"
+                            },
+                            "to_revision": {
+                                "type": "integer"
+                            },
+                            "reason": {
+                                "type": "string"
+                            },
+                            "href": {
+                                "type": "string"
+                            }
+                        }
                     }
                 }
             },

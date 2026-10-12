@@ -86,6 +86,11 @@ count, correction public id, and authenticated recovery URL instead of the
 line diff. This keeps a 100-line correction well below the activity payload
 limit. The recovery endpoint returns the evidence as JSON and requires
 workspace management access; it is scoped to both the workspace and invoice.
+The invoice page lists recovery links for its latest 100 corrections, and the
+activity timeline links its correction summaries. Agent corrections return a
+recovery capability; `invoices.get` includes the latest 100 summary links for
+workspace managers, and `invoices.corrections.get` retrieves the complete record
+with `billing:read` on REST and MCP. Every evidence endpoint authorizes again.
 Earlier corrections remain recoverable after a later revision.
 
 Paid, partially paid, void, already sent, and in-flight invoices cannot use

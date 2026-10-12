@@ -295,6 +295,9 @@ Route::prefix('v1')
             ->whereUuid('invoice');
         $operation('invoices.update_details', [AgentInvoiceMutationController::class, 'updateDetails'])
             ->whereUuid('invoice');
+        $operation('invoices.corrections.get', [AgentInvoiceMutationController::class, 'correction'])
+            ->whereUuid('invoice')->whereUuid('correction')->middleware(EnsureAgentWorkspaceVisible::class)
+            ->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']));
         $operation('invoices.correct', [AgentInvoiceMutationController::class, 'correct'])
             ->whereUuid('invoice');
         $operation('invoices.discard_draft', [AgentInvoiceMutationController::class, 'discardDraft'])

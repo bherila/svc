@@ -566,6 +566,16 @@
             "mcp.switch:invoices.correct"
         ]
     },
+    "invoices.corrections.get": {
+        "scopes": [
+            "billing:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:invoices.corrections.get"
+        ]
+    },
     "invoices.create_draft": {
         "scopes": [
             "billing:write"

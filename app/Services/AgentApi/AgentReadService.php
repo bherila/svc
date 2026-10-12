@@ -15,6 +15,7 @@ use App\Services\Authorization\AgentTimeEntryQuery;
 use App\Services\Authorization\PortalAccess;
 use App\Services\Authorization\PortalInvoiceQuery;
 use App\Services\Authorization\ProjectAccess;
+use App\Services\Billing\InvoiceCorrectionReadService;
 use App\Services\Mcp\AgentWithheldTools;
 use App\Support\AgentApi\AgentApiCursor;
 use App\Support\AgentApi\AgentApiScopes;
@@ -356,6 +357,8 @@ final class AgentReadService
         $record = $this->invoiceQuery($user, $workspace)->where('public_id', $invoiceId)->with(['clientCompany' => fn ($companies) => $companies->where('workspace_id', $workspace->id), 'lines' => fn ($lines) => $lines->where('workspace_id', $workspace->id), 'lines.project' => fn ($projects) => $projects->where('workspace_id', $workspace->id)])->firstOrFail();
 
         return $this->invoicePresenter->present($workspace, $record, $this->access->isWorkspaceManager($user, $workspace)) + [
+            'corrections' => $this->access->isWorkspaceManager($user, $workspace)
+                ? app(InvoiceCorrectionReadService::class)->agentHistory($workspace, $record) : [],
             'lines' => $record->lines->map(fn ($line): array => [
                 'id' => $line->public_id,
                 'project_id' => $line->project?->public_id,

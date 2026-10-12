@@ -105,6 +105,7 @@ final class AgentOperationCatalog
         'invoices.discard_draft' => ['invoices.discard', '/workspaces/{workspace}/invoices/{invoice}/discard', [200]],
         'invoices.download_pdf' => ['invoices.download_pdf', '/workspaces/{workspace}/invoices/{invoice}/pdf', [200]],
         'invoices.generate_period' => ['invoices.generate_period', '/workspaces/{workspace}/agreements/{agreement}/invoices', [201]],
+        'invoices.corrections.get' => ['invoices.corrections.show', '/workspaces/{workspace}/invoices/{invoice}/corrections/{correction}', [200]],
         'invoices.get' => ['invoices.show', '/workspaces/{workspace}/invoices/{invoice}', [200]],
         'invoices.hold_delivery' => ['invoices.hold_delivery', '/workspaces/{workspace}/invoices/{invoice}/automatic-delivery/hold', [200]],
         'invoices.issue' => ['invoices.issue', '/workspaces/{workspace}/invoices/{invoice}/issue', [200]],
@@ -318,6 +319,13 @@ final class AgentOperationCatalog
                 true,
                 'mcp.read',
                 manager: true,
+            ),
+            $this->tool(
+                'invoices.corrections.get',
+                'Get invoice correction evidence',
+                'Workspace managers only. Read the complete before/after evidence for one invoice correction.',
+                [AgentMcpReadTools::class, 'invoiceCorrection'],
+                Effect::Read, true, 'mcp.read', manager: true,
             ),
             $this->tool(
                 'invoices.get',

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Models\AgentPrincipal;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use App\Models\User;
@@ -12,6 +13,7 @@ use App\Services\AgentApi\AgentMutationExecutor;
 use App\Services\AgentApi\IssueInvoiceAction;
 use App\Services\Authorization\AgentAccess;
 use App\Services\Authorization\AgentTokenScopes;
+use App\Services\Billing\InvoiceCorrectionReadService;
 use App\Services\Billing\InvoiceCorrectionService;
 use App\Services\Billing\InvoiceEmailService;
 use App\Services\Billing\InvoiceFromTimeService;
@@ -148,7 +150,16 @@ final class AgentInvoiceMutationController extends Controller
         }, fn (array $ids) => abort_unless($access->isWorkspaceManager($context->user, $workspace), 403));
         $record = $this->findInvoice($workspace, $ids[0] ?? null);
 
-        return response()->json(['data' => $presenter->mutation($workspace, $record)]);
+        return response()->json(['data' => $presenter->mutation($workspace, $record) + ['correction' => app(InvoiceCorrectionReadService::class)->currentAgentSummary($workspace, $record)]]);
+    }
+
+    public function correction(Request $request, Workspace $workspace, string $invoice, string $correction, AgentAccess $access, InvoiceCorrectionReadService $evidence): JsonResponse
+    {
+        $user = $request->user();
+        abort_unless($user instanceof User || $user instanceof AgentPrincipal, 401);
+        abort_unless($access->isWorkspaceManager($user, $workspace), 403);
+
+        return response()->json(['data' => $evidence->get($workspace, $this->findInvoice($workspace, $invoice), $correction)]);
     }
 
     public function discardDraft(Request $request, Workspace $workspace, string $invoice, AgentAccess $access, InvoiceLifecycleService $lifecycle, AgentInvoicePresenter $presenter, AgentMutationContextFactory $contexts, AgentMutationExecutor $mutations): JsonResponse
