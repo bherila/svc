@@ -775,7 +775,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Workspace managers only. Runs the checks and cadence engine of invoices.generate_period for one started retainer cycle inside a transaction that is always rolled back, and returns the draft it would write and any other invoice the same generation would create. Writes nothing and takes no idempotency key. Refuses what generation refuses, with the same status, including 409 for a period that already has a non-void invoice. agreement_version is the expected_version a following invoices.generate_period call must present. Nothing generates cadence period drafts automatically; billing_audit.stale_and_missing lists started periods with no non-void invoice. */
+        /** @description Workspace managers only. Runs the checks and cadence engine of invoices.generate_period for one started retainer cycle inside a transaction that is always rolled back, and returns the draft it would write and any other invoice of the client the same generation would create, rewrite or remove. Writes nothing and takes no idempotency key. Refuses what generation refuses, with the same status, including 409 for a period that already has a non-void invoice. agreement_version is the expected_version a following invoices.generate_period call must present. Nothing generates cadence period drafts automatically; billing_audit.stale_and_missing lists started periods with no non-void invoice. */
         get: operations['invoices.preview_period'];
         put?: never;
         post?: never;
@@ -1866,10 +1866,20 @@ export interface components {
             /** Format: date */
             due_date: string | null;
             lines: components['schemas']['InvoicePreviewLine'][];
-            /** @description Other invoices the same generation would create, such as interim overage drafts it reconciles first. */
+            /** @description The company's other invoices the same generation would create, rewrite or remove, such as interim overage drafts it creates or strips of their claims first. */
             other_invoices: components['schemas']['InvoicePeriodPreviewOtherInvoice'][];
         };
         InvoicePeriodPreviewOtherInvoice: {
+            /**
+             * Format: uuid
+             * @description The existing invoice's id, or null for one the generation would create.
+             */
+            id: string | null;
+            /**
+             * @description created: a new invoice; updated: an existing draft whose facts, lines or linked time would be rewritten; deleted: an existing draft the generation would remove. Amounts are as they would stand afterwards, or before removal.
+             * @enum {string}
+             */
+            change: 'created' | 'updated' | 'deleted';
             invoice_kind: components['schemas']['InvoiceKind'];
             /** Format: date */
             service_period_start: string | null;

@@ -41,6 +41,7 @@ final class AgentInvoiceOperations
         private readonly BillingCycleResolver $cycles,
         private readonly WorkspaceClock $clock,
         private readonly AgentInvoicePresenter $presenter,
+        private readonly CadencePreviewInvoiceChanges $previewChanges,
     ) {}
 
     /** @param array<string, mixed> $body */
@@ -111,10 +112,9 @@ final class AgentInvoiceOperations
                 // Read before generation, which is what a generate call
                 // following this preview must present as expected_version.
                 $version = AgentApiVersion::for($record);
-                $before = (int) ClientInvoice::query()->where('workspace_id', $workspace->id)->max('id');
+                $before = $this->previewChanges->before($workspace, $company);
                 $draft = $this->cadence->generateCadencePeriod($company, $record, $start);
-                $others = ClientInvoice::query()->where('workspace_id', $workspace->id)->where('client_company_id', $company->id)
-                    ->where('id', '>', $before)->whereKeyNot($draft->id)->orderBy('id')->get();
+                $others = $this->previewChanges->after($workspace, $company, $before, (int) $draft->id);
 
                 // Reloaded through the workspace, never by bare primary key.
                 $draft = ClientInvoice::query()->where('workspace_id', $workspace->id)->whereKey($draft->id)->firstOrFail();

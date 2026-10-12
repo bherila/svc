@@ -9,7 +9,6 @@ use App\Models\ClientInvoiceLine;
 use App\Models\Workspace;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Billing\InvoiceKind;
-use Illuminate\Support\Collection;
 
 final class AgentInvoicePresenter
 {
@@ -87,10 +86,10 @@ final class AgentInvoicePresenter
      * The draft invoices.generate_period would write, read inside the
      * preview's transaction before it is rolled back.
      *
-     * @param  Collection<int, ClientInvoice>  $others  other invoices the same generation created
+     * @param  list<array{change: 'created'|'updated'|'deleted', invoice: ClientInvoice}>  $others  the company's other invoices the same generation changed
      * @return array<string, mixed>
      */
-    public function periodPreview(Workspace $workspace, ClientCompany $company, ClientAgreement $agreement, string $agreementVersion, ClientInvoice $draft, Collection $others): array
+    public function periodPreview(Workspace $workspace, ClientCompany $company, ClientAgreement $agreement, string $agreementVersion, ClientInvoice $draft, array $others): array
     {
         $lines = $draft->lines()->where('workspace_id', $workspace->id)
             ->with(['project' => fn ($projects) => $projects->where('workspace_id', $workspace->id)])->get();
@@ -109,13 +108,16 @@ final class AgentInvoicePresenter
             'issue_date' => $draft->issue_date?->toDateString(),
             'due_date' => $draft->due_date?->toDateString(),
             'lines' => $lines->map(fn (ClientInvoiceLine $line): array => $this->line($line))->values()->all(),
-            'other_invoices' => $others->map(static fn (ClientInvoice $other): array => [
-                'invoice_kind' => $other->invoiceKindValue(),
-                'service_period_start' => $other->service_period_start?->toDateString(),
-                'service_period_end' => $other->service_period_end?->toDateString(),
-                'currency' => $other->currency,
-                'total_amount' => $other->total_amount,
-            ])->values()->all(),
+            'other_invoices' => array_map(static fn (array $other): array => [
+                // A created invoice is rolled back, so its id names nothing.
+                'id' => $other['change'] === 'created' ? null : $other['invoice']->public_id,
+                'change' => $other['change'],
+                'invoice_kind' => $other['invoice']->invoiceKindValue(),
+                'service_period_start' => $other['invoice']->service_period_start?->toDateString(),
+                'service_period_end' => $other['invoice']->service_period_end?->toDateString(),
+                'currency' => $other['invoice']->currency,
+                'total_amount' => $other['invoice']->total_amount,
+            ], $others),
         ];
     }
 

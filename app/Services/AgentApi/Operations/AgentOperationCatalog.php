@@ -314,7 +314,7 @@ final class AgentOperationCatalog
             $this->tool(
                 'invoices.preview_period',
                 'Preview cadence period draft',
-                'Workspace managers only. Return the lines, totals and service dates invoices.generate_period would write for an explicit started retainer cycle, and any other invoice that generation would also create, without writing anything: the same checks and cadence engine run and are rolled back. Refuses what generation refuses, including a period that already has a non-void invoice. Returns agreement_version to pass to invoices.generate_period as expected_version. Nothing generates cadence period drafts automatically; billing_audit.stale_and_missing lists started periods with no non-void invoice.',
+                'Workspace managers only. Return the lines, totals and service dates invoices.generate_period would write for an explicit started retainer cycle, and any other invoice of the client that generation would also create, rewrite or remove, without writing anything: the same checks and cadence engine run and are rolled back. Refuses what generation refuses, including a period that already has a non-void invoice. Returns agreement_version to pass to invoices.generate_period as expected_version. Nothing generates cadence period drafts automatically; billing_audit.stale_and_missing lists started periods with no non-void invoice.',
                 [AgentMcpReadTools::class, 'invoicesPreviewPeriod'],
                 Effect::Read,
                 true,

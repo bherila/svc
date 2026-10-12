@@ -15,6 +15,7 @@ use App\Services\Billing\ClientInvoicingService;
 use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\AgentApi\Presenters\AgentInvoicePresenter;
+use Carbon\Carbon;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -108,8 +109,11 @@ final class AgentInvoicePeriodPreviewTest extends TestCase
         }
         $draft = ClientInvoice::query()->where('workspace_id', $workspace->id)->where('public_id', $id)->firstOrFail();
         $this->assertSame($period, $draft->cycle_start->toDateString());
+        // Every other invoice here is new: nothing existed before the preview.
         $others = ClientInvoice::query()->where('workspace_id', $workspace->id)->whereKeyNot($draft->id)->orderBy('id')->get()
             ->map(static fn (ClientInvoice $other): array => [
+                'id' => null,
+                'change' => 'created',
                 'invoice_kind' => $other->invoiceKindValue(),
                 'service_period_start' => $other->service_period_start?->toDateString(),
                 'service_period_end' => $other->service_period_end?->toDateString(),
@@ -118,6 +122,44 @@ final class AgentInvoicePeriodPreviewTest extends TestCase
             ])->all();
         $this->assertSame($others, $data['other_invoices']);
         $this->assertSame(0, AgentMutationAudit::query()->where('operation', 'invoices.preview_period')->count());
+    }
+
+    /**
+     * Generation also rewrites drafts that already exist: on a quarterly
+     * agreement billing overage in the interim, it strips an unissued interim
+     * draft of its claims before building the cadence draft. The preview
+     * names that draft, and the figures it shows are the ones it then has.
+     */
+    public function test_preview_reports_an_existing_draft_that_generation_would_rewrite(): void
+    {
+        [$workspace, $owner, $company, $agreement, $project] = $this->fixture(['billing_cadence' => 'quarterly', 'starts_on' => '2026-01-15', 'period_retainer_minutes' => 600, 'period_retainer_amount' => 300000, 'bill_overage_interim' => true]);
+        $this->entry($workspace, $company, $project, '2026-05-10', 400);
+        $this->entry($workspace, $company, $project, '2026-06-10', 400);
+        $interim = app(ClientInvoicingService::class)->generateInterimOverageInvoice($company, Carbon::parse('2026-06-01'), $agreement->fresh());
+        $this->assertInstanceOf(ClientInvoice::class, $interim);
+        $this->assertSame('draft', $interim->status);
+        $this->assertGreaterThan(0, $interim->total_amount, 'The fixture must start with an interim draft that bills something.');
+        $this->actingAsMcp($owner, self::SCOPES);
+        $before = $this->databaseFingerprint();
+
+        $preview = $this->getJson($this->previewUrl($workspace, $agreement, '2026-07-15'))->assertOk()->json('data');
+        $this->assertSame($before, $this->databaseFingerprint());
+        $reported = collect($preview['other_invoices'])->firstWhere('id', $interim->public_id);
+        $this->assertNotNull($reported, json_encode($preview['other_invoices']));
+        $this->assertSame('updated', $reported['change']);
+
+        $this->postJson($this->base($workspace).'agreements/'.$agreement->public_id.'/invoices', ['expected_version' => $preview['agreement_version'], 'period_start' => '2026-07-15', 'confirm' => true], ['Idempotency-Key' => 'after-interim-preview'])->assertCreated();
+        $rewritten = ClientInvoice::query()->where('workspace_id', $workspace->id)->whereKey($interim->id)->firstOrFail();
+        $this->assertNotSame($interim->total_amount, $rewritten->total_amount, 'Generation must actually rewrite the interim draft for this to prove anything.');
+        $this->assertSame([
+            'id' => $interim->public_id,
+            'change' => 'updated',
+            'invoice_kind' => $rewritten->invoiceKindValue(),
+            'service_period_start' => $rewritten->service_period_start?->toDateString(),
+            'service_period_end' => $rewritten->service_period_end?->toDateString(),
+            'currency' => $rewritten->currency,
+            'total_amount' => $rewritten->total_amount,
+        ], $reported);
     }
 
     public function test_preview_refuses_a_period_that_already_has_a_non_void_invoice_and_reopens_after_void(): void

@@ -762,9 +762,10 @@ under the same locks, then the same `ClientInvoicingService` call, inside a
 transaction it always rolls back - the rehearsal command's method narrowed to
 one period - so it refuses exactly what generation refuses, with the same
 status, and its lines are the lines generation writes: `invoices.get` returns
-the generated draft's lines identically, less their ids. It also lists any
-other invoice the same generation would create, such as an interim overage
-draft it reconciles first, and returns `agreement_version`, the
+the generated draft's lines identically, less their ids. It also lists the
+client's other invoices the same generation would create, rewrite or remove,
+such as interim overage drafts it creates or strips of their claims first
+(only drafts can change), and returns `agreement_version`, the
 `expected_version` a following `invoices.generate_period` must present. It
 takes no idempotency key and leaves no receipt or audit row. It is a read, so
 it stays available when the invoice write cutover is off.
