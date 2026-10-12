@@ -116,7 +116,10 @@ final class AgentInvoiceOperations
                 $others = ClientInvoice::query()->where('workspace_id', $workspace->id)->where('client_company_id', $company->id)
                     ->where('id', '>', $before)->whereKeyNot($draft->id)->orderBy('id')->get();
 
-                return $this->presenter->periodPreview($workspace, $company, $record, $version, $draft->refresh(), $others);
+                // Reloaded through the workspace, never by bare primary key.
+                $draft = ClientInvoice::query()->where('workspace_id', $workspace->id)->whereKey($draft->id)->firstOrFail();
+
+                return $this->presenter->periodPreview($workspace, $company, $record, $version, $draft, $others);
             });
         } finally {
             // Unconditional, exactly as in the rehearsal: a preview that

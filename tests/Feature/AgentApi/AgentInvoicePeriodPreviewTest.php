@@ -10,8 +10,12 @@ use App\Models\ClientProject;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\AgentApi\AgentInvoiceOperations;
+use App\Services\Billing\ClientInvoicingService;
 use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
 use App\Support\AgentApi\AgentApiVersion;
+use App\Support\AgentApi\Presenters\AgentInvoicePresenter;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -189,6 +193,35 @@ final class AgentInvoicePeriodPreviewTest extends TestCase
         $this->getJson($this->previewUrl($workspace, $agreement, '2026-10-01'))->assertUnprocessable()->assertJsonValidationErrors('billing');
         $this->assertSame($before, $this->databaseFingerprint());
         $this->assertSame(0, DB::transactionLevel() - 1, 'The preview must close the transaction it opened.');
+    }
+
+    /**
+     * The preview's own reads - its guard, its before-and-after comparison and
+     * its presentation, as opposed to the cadence engine it calls - each name
+     * the workspace. Enumerated from the queries actually issued, so a read
+     * added later by primary key alone fails here.
+     */
+    public function test_every_read_the_preview_issues_itself_is_workspace_scoped(): void
+    {
+        [$workspace, $owner, $company, $agreement, $project] = $this->fixture();
+        $this->entry($workspace, $company, $project, '2026-09-10', 1500);
+        $this->actingAsMcp($owner, self::SCOPES);
+        $own = [];
+        DB::listen(function (QueryExecuted $query) use (&$own): void {
+            $frames = array_column(debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS), 'class');
+            if (in_array(ClientInvoicingService::class, $frames, true)) {
+                return;
+            }
+            if (array_intersect([AgentInvoiceOperations::class, AgentInvoicePresenter::class], $frames) !== [] && preg_match('/^\s*select/i', $query->sql) === 1
+                && preg_match('/from\s+["`]?(client_\w+)/i', $query->sql) === 1) {
+                $own[] = $query->sql;
+            }
+        });
+        $this->getJson($this->previewUrl($workspace, $agreement, '2026-10-01'))->assertOk();
+        $this->assertGreaterThanOrEqual(5, count($own), 'The preview stopped reading through its own queries, so this checks nothing.');
+        foreach ($own as $sql) {
+            $this->assertMatchesRegularExpression('/workspace_id/', $sql, $sql);
+        }
     }
 
     public function test_preview_is_for_workspace_managers_with_billing_read_in_their_own_workspace(): void
