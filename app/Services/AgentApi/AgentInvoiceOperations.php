@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\AgentAccess;
 use App\Services\Billing\BillingCycleResolver;
+use App\Services\Billing\BillingMaintenance;
 use App\Services\Billing\ClientInvoicingService;
 use App\Services\Billing\InvoiceCorrectionService;
 use App\Services\Billing\InvoiceFromTimeService;
@@ -71,6 +72,7 @@ final class AgentInvoiceOperations
     {
         $ids = $this->run('invoices.generate_period', $actor, $workspace, $client, $key, ['agreement_id' => $agreement, 'body' => $body], function () use ($workspace, $agreement, $body): string {
             $data = $this->validate($body, ['expected_version' => ['required', 'string', 'size:64'], 'period_start' => ['required', 'date_format:Y-m-d'], 'confirm' => ['required', new ExplicitConfirmation]]);
+            BillingMaintenance::share($workspace->id);
             $record = ClientAgreement::query()->where('workspace_id', $workspace->id)->where('public_id', $agreement)->tap(Locks::forUpdate())->firstOrFail();
             abort_unless(AgentApiVersion::matches($record, $data['expected_version']), 409, 'The agreement has changed; read it and retry.');
             if ($record->status !== 'active' || ! $record->billsOnARecurringCadence()) {

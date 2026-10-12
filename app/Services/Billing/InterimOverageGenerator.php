@@ -148,6 +148,7 @@ final class InterimOverageGenerator
         }
 
         return DB::transaction(function () use ($company, $agreement, $cycle, $periodStart, $periodEnd, $immediateLedger, $refreshInvoice): ?ClientInvoice {
+            BillingMaintenance::share($company->workspace_id);
             // Serialize generation for this agreement; the invoice rows this
             // guards against may not exist yet, so the agreement is the lock.
             ClientAgreement::query()->whereKey($agreement->getKey())->tap(Locks::forUpdate())->first();
@@ -373,6 +374,7 @@ final class InterimOverageGenerator
      */
     public function lockCycleClaims(ClientInvoice $draft, ClientAgreement $agreement): array
     {
+        BillingMaintenance::share($draft->workspace_id);
         $cycle = $this->billingCycleResolver->cycleContaining($agreement, Carbon::parse((string) $draft->service_period_start)->startOfDay());
         $claims = ClientInvoice::query()
             ->where('workspace_id', $draft->workspace_id)

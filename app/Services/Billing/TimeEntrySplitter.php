@@ -135,6 +135,7 @@ class TimeEntrySplitter
         }
 
         return DB::transaction(function () use ($entry, $splitAtMinutes) {
+            BillingMaintenance::share($entry->workspace_id);
             $overflowMinutes = $entry->minutes_worked - $splitAtMinutes;
 
             // Create overflow entry.

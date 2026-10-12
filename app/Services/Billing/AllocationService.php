@@ -43,6 +43,7 @@ final class AllocationService
     public function recombineUnlinkedFragments(Workspace $workspace, ClientCompany $company): int
     {
         return DB::transaction(function () use ($workspace, $company): int {
+            BillingMaintenance::share($workspace->id);
             // Discovering lineage roots through the current workspace would
             // hide a root moved elsewhere while leaving its siblings here.
             // Refuse the complete company chain before a destructive merge

@@ -23,8 +23,8 @@ use RuntimeException;
  * has been quietly reshaped to fit whatever the code does cannot answer the
  * next ordering question, which is the only thing it is for. So
  * `LockOrderConformanceTest` refuses any sequence that walks backwards through
- * this list except the one it names, and it fails just as loudly if a named
- * inversion stops happening.
+ * this list, with only the pinned, exclusively protected maintenance command
+ * transactions exempted. Ordinary inversions remain an exact set.
  *
  * What none of this does is prove race freedom. It proves ordering discipline.
  * The conformance fixture runs on one connection; separate receipt probes
@@ -40,6 +40,9 @@ enum LockResource: string
 
     // Agent receipt reservations precede domain callbacks and every business lock.
     case AgentMutationReceipt = 'agent_mutation_receipts';
+
+    // Shared by billing writers, exclusive only for whole-run rollback maintenance.
+    case BillingMaintenance = 'billing_maintenance_locks';
 
     // Engagement, which is upstream of everything it produces.
     case ClientProposal = 'client_proposals';
@@ -71,7 +74,7 @@ enum LockResource: string
     // Recurrence locks its schedule before inserting draft expense rows.
     // Invoice allocation locks expenses after invoice/time/task composition;
     // regeneration retains claims until that phase, before company credits.
-    // Replay's cross-period ordering caveat remains documented in #223.
+    // Replay's exclusive maintenance exemption is documented in #223.
     case ClientExpenseSchedule = 'client_expense_schedules';
     case ClientExpense = 'client_expenses';
 

@@ -7,6 +7,7 @@ use App\Models\ClientTask;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\ProjectAccess;
+use App\Services\Billing\BillingMaintenance;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Concurrency\Locks;
 use App\Support\WorkspaceClock;
@@ -22,6 +23,7 @@ final class WorkspaceTaskMutationAction
     public function create(User $actor, Workspace $workspace, string $projectId, array $facts, bool $visibleDefault = false): ClientTask
     {
         return DB::transaction(function () use ($actor, $workspace, $projectId, $facts, $visibleDefault): ClientTask {
+            BillingMaintenance::share($workspace->id);
             $project = ClientProject::query()->where('workspace_id', $workspace->id)->where('public_id', $projectId)
                 ->whereHas('clientCompany', fn (Builder $company): Builder => $company->where('workspace_id', $workspace->id))->firstOrFail();
             $project->setRelation('workspace', $workspace);
@@ -39,6 +41,7 @@ final class WorkspaceTaskMutationAction
     public function update(User $actor, Workspace $workspace, string $taskId, array $facts, ?string $expectedVersion = null): ClientTask
     {
         return DB::transaction(function () use ($actor, $workspace, $taskId, $facts, $expectedVersion): ClientTask {
+            BillingMaintenance::share($workspace->id);
             $task = $this->query($workspace)->where('public_id', $taskId)->tap(Locks::forUpdate())->firstOrFail();
             $task->project->setRelation('workspace', $workspace);
             abort_unless($this->access->canManageTasks($actor, $task->project), 403);

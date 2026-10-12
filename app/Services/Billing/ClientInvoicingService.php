@@ -745,6 +745,7 @@ final class ClientInvoicingService
         $retainerMonthStart = $periodEnd->copy()->addDay()->startOfMonth();
 
         return DB::transaction(function () use ($company, $agreement, $periodStart, $periodEnd, $retainerMonthStart): ClientInvoice {
+            BillingMaintenance::share($company->workspace_id);
             ClientAgreement::query()->whereKey($agreement->getKey())->tap(Locks::forUpdate())->first();
 
             // Looked up under the lock, not before it. Two workers generating
@@ -1187,6 +1188,7 @@ final class ClientInvoicingService
             $ledger,
             $immediateLedger,
         ): ClientInvoice {
+            BillingMaintenance::share($company->workspace_id);
             // The invoice rows this guards against may not exist yet, so the
             // agreement row is what serializes concurrent generation.
             ClientAgreement::query()->whereKey($agreement->getKey())->tap(Locks::forUpdate())->first();

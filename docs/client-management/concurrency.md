@@ -135,11 +135,11 @@ Workspace, ClientProject, WorkspaceMembership,
 ## The known inversions
 
 Two were recorded when the registry was written. Both were real and both were
-reachable; the first is fixed and kept here rather than deleted, because the
+reachable; their decisions are kept here rather than deleted, because the
 next reader's question is "was this ever the other way round, and why", and a
-deleted entry answers it with silence. What remains is pinned as an exact set in
-`LockOrderConformanceTest::KNOWN_INVERSIONS`, so it cannot multiply and fixing it
-fails the test rather than silently loosening it.
+deleted entry answers it with silence. Ordinary inversions remain pinned as an exact set in
+`LockOrderConformanceTest::KNOWN_INVERSIONS`; the exclusive maintenance exemption
+is pinned separately and cannot multiply.
 
 **1. `client_time_entries` before `workspaces` / `workspace_invoice_counters` —
 fixed in #222.** `InterimOverageGenerator::generateInterimOverageInvoice()`
@@ -170,43 +170,57 @@ alternative and it was rejected twice: once when the registry was written and
 again here. It would have made the exception invisible and left the cadence
 paths — the majority, and the request paths — walking backwards instead.
 
-**2. `client_tasks` before `client_time_entries` — open, see #223.** Only inside
-one long transaction covering several periods, which is the shape
-`svc:billing:replay` and `svc:billing:rehearse-generation` produce: each wraps its whole run in a transaction it will
-roll back, so every period's locks are held together to the end. The first
-period claims a milestone and finds no fragments to recombine — its own
-allocation is what creates them — and the second recombines what the first left.
-Each generation is correctly ordered on its own; the pair is not. This is the
-inversion a per-call review cannot see, and the reason conformance is checked per
-transaction rather than per call site.
+**2. `client_tasks` before `client_time_entries` — resolved by the owner’s
+bounded maintenance exclusion decision in #223.** The ordering inside a period
+already was correct. A first period creates the fragments a later period
+recombines, and the first period’s task locks survive because replay and rehearsal
+retain one outer transaction. Moving calls within a period cannot release those
+locks. Committing per period would persist a rehearsal; rolling back per period
+would discard rows required for the final comparison. Neither preserves the
+commands’ whole-run, unconditional rollback.
 
-The decision on it is recorded on #223 and neither of the two obvious fixes is
-it. Narrowing the replay transaction so each period releases its locks means
-ending the transaction each period, and both ways of ending it are closed:
-committing writes the deletions and regenerated invoices that command exists to
-never write, and rolling back per period discards the invoices the comparison is
-about. Claiming the milestone after the first period's time-entry work is
-already what the code does — the first period locks no entry because the only
-time-entry lock a generation takes is inside fragment recombination, which locks
-a lineage group only when one exists, and the first period's own allocation is
-what creates them. Making that lock unconditional would widen the locking
-footprint of a request path to buy monotonicity against a race the agreement row
-lock already serialises, and would report a lock that was recorded rather than a
-row that was held. The pair is left listed, and the operational rule is that
-neither `svc:billing:replay` nor `svc:billing:rehearse-generation` is run against
-a workspace that is generating invoices. Rehearsal does not clear history first,
-but it still calls `generateAllInvoices()` across periods inside one outer
-rollback-only transaction. Its successful output proves its stated comparison,
-not safety against a concurrent writer.
+The commands therefore acquire their workspace’s `billing_maintenance_locks`
+row exclusively before any history preparation, clearing or generation, and hold
+it until rollback. The row is provisioned with the workspace, including a
+migration backfill for existing workspaces: normal writers never insert or
+upsert it while acquiring a share lock, which would accidentally serialize
+otherwise compatible share holders.
 
-The real replay also acquires implicit UPDATE/DELETE locks while clearing billing
-rows before regeneration. The conformance fixture drives generation without that
-clearing phase, so fixing its recorded inversion alone would not prove replay
-safe. Keep #223 deferred until an explicit maintenance design provides either an
-isolated database or bounded exclusion honored by competing writers, with
-command-level MariaDB tests covering concurrency and rollback. Existing receipt
-probes already provide multi-process test infrastructure; the missing work is the
-maintenance protocol and its specific proof, not a new testing platform.
+The named property is **writers that lock time entries or tasks take the
+maintenance share lock first**. It covers cadence generation, schedule runs,
+time approval/edit/unapproval/deletion, task/milestone edits and claims,
+allocation/recombination, selected-time invoices and their regeneration, invoice
+allocation release, and revision-checked task attachment publication. Time
+creation and splitting also join the protocol. Nested writers retain the same
+outer transaction’s share or exclusive protection. Each acquisition is
+workspace-scoped; maintenance of one workspace leaves others available.
+
+Recorded sequences place maintenance after agent receipt reservations and before
+all billing rows, including agreements, invoices, numbering, time and tasks.
+Ordinary writers still obey the original registry order. `KNOWN_INVERSIONS` is
+empty. The conformance test exempts only transactions whose first acquisition is
+an exclusive maintenance lock successfully acquired by `svc:billing:replay` or
+`svc:billing:rehearse-generation`. The two exclusive call sites are pinned, and
+the writer fixture enumerates source lock sites and requires each to be reached
+under share-first protection. Adding a writer site requires adding its proof;
+it cannot silently inherit an exemption.
+
+Both sides use a two-second acquisition wait bound, restoring the prior session
+setting afterwards. A command that times out reports that writers are in
+progress and nothing changed. A waiting writer that times out receives a
+retryable conflict saying billing maintenance is in progress. Missing maintenance
+rows fail closed; they never mean the workspace is unprotected. The commands
+still have no commit path, and their rollback runs on refusals as well as success.
+
+The database CI lane runs the actual commands and generation on independent
+connections. It observes real lock waits in both acquisition orders, proves a
+waiting generator succeeds after maintenance rolls back, proves a busy writer
+makes maintenance fail within its bound without changing data, checks every
+workspace-owned table after successful maintenance, and exercises writer timeout
+and cross-workspace isolation. These proofs include replay’s implicit clearing
+writes, rather than only generation’s explicit locks. The prior operational rule
+against overlapping maintenance and billing writers is now enforced by the
+shared protocol instead of being advisory.
 
 ### Time-mutation snapshot validation
 
