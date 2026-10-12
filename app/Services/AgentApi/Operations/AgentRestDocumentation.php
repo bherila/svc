@@ -223,7 +223,7 @@ final class AgentRestDocumentation
             'billing_audit.stale_and_missing' => [
                 'method' => 'GET',
                 'scopes' => ['billing:read'],
-                'description' => false,
+                'description' => 'Workspace managers only. A stale draft is a draft whose due date or scheduled issue date is before today in the workspace\'s calendar; a missing period is the started current period of an active recurring agreement with no non-void invoice. This read only flags them: nothing issues, sends or generates an invoice.',
                 'parameters' => ['WorkspaceId'],
                 'response' => 'StaleAndMissingInvoiceAuditResponse',
                 'response_description' => 'Authorized result',
@@ -732,7 +732,7 @@ final class AgentRestDocumentation
             'invoices.update_details' => [
                 'method' => 'PATCH',
                 'scopes' => ['billing:write'],
-                'description' => 'Change the due date and/or notes of any draft invoice, generated or ad hoc, using its current version. Lines, linked time and the hours statement are unchanged, and a generated draft keeps the change when it is regenerated. A due date may not precede the draft\'s issue date. Issued invoices are corrected with invoices.correct instead.',
+                'description' => 'Change the due date, scheduled issue date and/or notes of any draft invoice, generated or ad hoc, using its current version. Lines, linked time and the hours statement are unchanged, and a generated draft keeps the change when it is regenerated. A due date may not precede the draft\'s issue date. The scheduled issue date is a plan that billing_audit.stale_and_missing reads; nothing issues or sends on it. Issued invoices are corrected with invoices.correct instead.',
                 'parameters' => ['WorkspaceId', 'InvoiceId', 'IdempotencyKey'],
                 'request' => 'InvoiceDetailsUpdateRequest',
                 'response' => 'InvoiceMutationResponse',

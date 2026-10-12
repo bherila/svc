@@ -568,13 +568,11 @@ describe('changing a draft due date through the API', () => {
         vi.stubGlobal('fetch', fetchMock);
         render(<ClientInvoiceDetail {...props(draft())} />);
 
-        fireEvent.click(
-            screen.getByRole('button', { name: 'Change due date' }),
-        );
+        fireEvent.click(screen.getByRole('button', { name: 'Change dates' }));
         const input = screen.getByLabelText('Due date');
         expect(input).toHaveValue('2026-09-30');
         fireEvent.change(input, { target: { value: '2026-10-15' } });
-        fireEvent.click(screen.getByRole('button', { name: 'Save due date' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Save dates' }));
 
         await vi.waitFor(() => expect(inertia.reload).toHaveBeenCalled());
         const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
@@ -588,6 +586,51 @@ describe('changing a draft due date through the API', () => {
             expected_version: '0'.repeat(64),
             due_date: '2026-10-15',
         });
+    });
+
+    it('sends only a changed scheduled issue date and shows it on the draft', async () => {
+        const fetchMock = vi.fn().mockResolvedValue(
+            new Response(JSON.stringify({ data: { id: 'invoice-1' } }), {
+                status: 200,
+            }),
+        );
+        vi.stubGlobal('fetch', fetchMock);
+        const scheduled = props(draft());
+        render(
+            <ClientInvoiceDetail
+                {...scheduled}
+                invoice={{
+                    ...scheduled.invoice,
+                    scheduled_issue_date: '2026-10-01',
+                }}
+            />,
+        );
+
+        expect(screen.getByText(/scheduled to issue/)).toBeVisible();
+        fireEvent.click(screen.getByRole('button', { name: 'Change dates' }));
+        const input = screen.getByLabelText('Scheduled issue date');
+        expect(input).toHaveValue('2026-10-01');
+        fireEvent.change(input, { target: { value: '' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Save dates' }));
+
+        await vi.waitFor(() => expect(inertia.reload).toHaveBeenCalled());
+        const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+        expect(JSON.parse(String(init.body))).toEqual({
+            expected_version: '0'.repeat(64),
+            scheduled_issue_date: null,
+        });
+    });
+
+    it('closes an unchanged form without asking the server', () => {
+        const fetchMock = vi.fn();
+        vi.stubGlobal('fetch', fetchMock);
+        render(<ClientInvoiceDetail {...props(draft())} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Change dates' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Save dates' }));
+
+        expect(fetchMock).not.toHaveBeenCalled();
+        expect(screen.queryByLabelText('Due date')).toBeNull();
     });
 
     it('shows the server refusal and keeps the form open', async () => {
@@ -604,10 +647,11 @@ describe('changing a draft due date through the API', () => {
         );
         render(<ClientInvoiceDetail {...props(draft())} />);
 
-        fireEvent.click(
-            screen.getByRole('button', { name: 'Change due date' }),
-        );
-        fireEvent.click(screen.getByRole('button', { name: 'Save due date' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Change dates' }));
+        fireEvent.change(screen.getByLabelText('Due date'), {
+            target: { value: '2026-08-01' },
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Save dates' }));
 
         expect(await screen.findByRole('alert')).toHaveTextContent(
             'The due date cannot precede the issue date.',
@@ -620,7 +664,7 @@ describe('changing a draft due date through the API', () => {
         render(<ClientInvoiceDetail {...props()} />);
 
         expect(
-            screen.queryByRole('button', { name: 'Change due date' }),
+            screen.queryByRole('button', { name: 'Change dates' }),
         ).toBeNull();
     });
 });

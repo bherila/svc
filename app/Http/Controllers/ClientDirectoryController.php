@@ -1120,6 +1120,7 @@ class ClientDirectoryController extends Controller
             'currency' => $invoice->currency,
             'issue_date' => $invoice->issue_date?->toDateString(),
             'due_date' => $invoice->due_date?->toDateString(),
+            'scheduled_issue_date' => $invoice->scheduled_issue_date?->toDateString(),
             'total_amount' => (int) $invoice->total_amount,
             'paid_amount' => (int) $invoice->paid_amount,
             'balance_amount' => (int) $invoice->balance_amount,

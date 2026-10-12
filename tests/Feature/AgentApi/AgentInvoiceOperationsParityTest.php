@@ -316,6 +316,43 @@ final class AgentInvoiceOperationsParityTest extends TestCase
         $this->getJson($this->base($workspace).'billing-audits/stale-and-missing')->assertForbidden();
     }
 
+    /**
+     * A draft is late on either date an operator set (#381): its due date, or
+     * the day it was scheduled to be issued. A null on either is no plan and
+     * never makes a draft stale by itself, a day that is today has not passed
+     * yet, and a draft late on both dates is one stale draft.
+     */
+    public function test_audit_flags_a_draft_whose_scheduled_issue_date_has_passed(): void
+    {
+        [$workspace, $owner, , , $draft] = $this->fixture();
+        $variants = [
+            'scheduled_only' => ['due_date' => null, 'scheduled_issue_date' => '2026-10-07', 'balance_amount' => 100],
+            'scheduled_before_future_due' => ['due_date' => '2026-10-20', 'scheduled_issue_date' => '2026-10-01', 'balance_amount' => 200],
+            'both_passed' => ['due_date' => '2026-10-07', 'scheduled_issue_date' => '2026-10-07', 'balance_amount' => 400],
+            'scheduled_today' => ['due_date' => null, 'scheduled_issue_date' => '2026-10-08', 'balance_amount' => 800],
+            'future_due_unscheduled' => ['due_date' => '2026-10-20', 'scheduled_issue_date' => null, 'balance_amount' => 1600],
+            'issued_after_schedule' => ['status' => 'issued', 'due_date' => '2026-10-20', 'scheduled_issue_date' => '2026-10-01', 'balance_amount' => 3200],
+        ];
+        $ids = [];
+        foreach ($variants as $name => $facts) {
+            $copy = $draft->replicate(['public_id']);
+            $copy->forceFill(['invoice_number' => 'SYNTHETIC-SCHEDULED-'.$name, ...$facts])->save();
+            $ids[$name] = $copy->public_id;
+        }
+        $this->actingAsMcp($owner, self::SCOPES);
+
+        $rest = $this->getJson($this->base($workspace).'billing-audits/stale-and-missing')->assertOk()->json();
+        $this->assertSame([], (new SchemaValidator)->validateAgainstJsonSchema($rest, AgentApiResponseSchemaCatalog::forOperation('billing_audit.stale_and_missing')));
+        $this->assertSame(3, $rest['data']['stale_draft_count']);
+        $this->assertSame([$ids['scheduled_only'], $ids['scheduled_before_future_due'], $ids['both_passed']], $rest['data']['stale_draft_ids']);
+        $this->assertSame([['currency' => 'USD', 'balance_amount' => 700]], $rest['data']['stale_draft_balances']);
+        // The agreement's started period has no invoice: both flags in one read.
+        $this->assertSame(1, $rest['data']['missing_period_count']);
+        $mcp = $this->callTool($this->initialize(), 'billing_audit.stale_and_missing', ['workspace_id' => $workspace->public_id]);
+        $this->assertSame($rest, $mcp['result']['structuredContent']);
+        $this->getJson($this->base($workspace).'invoices/'.$ids['scheduled_only'])->assertOk()->assertJsonPath('data.scheduled_issue_date', '2026-10-07');
+    }
+
     public function test_audit_identifier_lists_are_bounded_while_totals_are_complete(): void
     {
         [$workspace, $owner, , $agreement, $draft] = $this->fixture();

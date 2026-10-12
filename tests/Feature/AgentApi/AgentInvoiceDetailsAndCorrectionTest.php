@@ -24,6 +24,7 @@ use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
+use Inertia\Testing\AssertableInertia as Assert;
 use Tests\Concerns\WritesLegacyCrossTenantRows;
 use Tests\TestCase;
 
@@ -120,6 +121,7 @@ final class AgentInvoiceDetailsAndCorrectionTest extends TestCase
         $this->details($draft, [
             'expected_version' => AgentApiVersion::for($draft->fresh()),
             'due_date' => '2026-10-20',
+            'scheduled_issue_date' => '2026-10-03',
             'notes' => 'Synthetic note kept across regeneration.',
         ], 'details-regenerate')->assertOk();
 
@@ -130,7 +132,103 @@ final class AgentInvoiceDetailsAndCorrectionTest extends TestCase
 
         $this->assertSame($draft->id, $regenerated->id, 'The same draft was rebuilt');
         $this->assertSame('2026-10-20', $regenerated->fresh()->due_date?->toDateString());
+        $this->assertSame('2026-10-03', $regenerated->fresh()->scheduled_issue_date?->toDateString());
         $this->assertSame('Synthetic note kept across regeneration.', $regenerated->fresh()->notes);
+    }
+
+    /**
+     * The scheduled issue date (#381) is set, read back, recorded and cleared
+     * through the same versioned, idempotent door as the due date, on a
+     * generated draft that invoices.update_draft refuses. It is a plan, so it
+     * is held to neither the due date nor the issue date.
+     */
+    public function test_a_scheduled_issue_date_is_set_read_recorded_and_cleared_on_a_generated_draft(): void
+    {
+        $draft = $this->generatedDraft();
+        $dueDate = $draft->due_date?->toDateString();
+        $lineIds = $draft->lines()->pluck('public_id')->all();
+        $this->actingAsMcp($this->owner, [AgentApiScopes::BILLING_WRITE, AgentApiScopes::BILLING_READ]);
+
+        $body = ['expected_version' => AgentApiVersion::for($draft->fresh()), 'scheduled_issue_date' => '2026-08-31'];
+        $updated = $this->details($draft, $body, 'scheduled-set')->assertOk()->json('data');
+        $this->details($draft, $body, 'scheduled-set')->assertOk()->assertJsonPath('data.version', $updated['version']);
+        $this->assertSame('2026-08-31', $draft->fresh()->scheduled_issue_date?->toDateString());
+        $this->assertSame($dueDate, $draft->fresh()->due_date?->toDateString(), 'An omitted due date is left alone');
+        $this->assertSame($lineIds, $draft->lines()->pluck('public_id')->all());
+        $this->getJson("/api/v1/workspaces/{$this->workspace->public_id}/invoices/{$draft->public_id}")
+            ->assertOk()
+            ->assertJsonPath('data.scheduled_issue_date', '2026-08-31')
+            ->assertJsonPath('data.due_date', $dueDate);
+        $activity = ClientCompanyActivity::query()->where('action', 'invoice.details_updated')->sole();
+        $this->assertSame(['old' => null, 'new' => '2026-08-31'], $activity->payload['scheduled_issue_date']);
+        $this->assertSame(['old' => $dueDate, 'new' => $dueDate], $activity->payload['due_date']);
+
+        $cleared = ['expected_version' => $updated['version'], 'scheduled_issue_date' => null];
+        $this->details($draft, $cleared, 'scheduled-clear')->assertOk();
+        $this->assertNull($draft->fresh()->scheduled_issue_date);
+        $this->details($draft, [...$cleared, 'expected_version' => AgentApiVersion::for($draft->fresh())], 'scheduled-noop')
+            ->assertUnprocessable();
+        $this->details($draft, ['expected_version' => AgentApiVersion::for($draft->fresh()), 'scheduled_issue_date' => '1 October'], 'scheduled-format')
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('scheduled_issue_date');
+    }
+
+    /** Creating and replacing an ad-hoc draft carry the date too, and a replacement that omits it keeps it. */
+    public function test_create_and_update_draft_carry_a_scheduled_issue_date_over_rest_and_mcp(): void
+    {
+        $this->actingAsMcp($this->owner, [AgentApiScopes::MCP_USE, AgentApiScopes::BILLING_WRITE, AgentApiScopes::BILLING_READ]);
+        $line = ['project_id' => $this->project->public_id, 'type' => 'fee', 'description' => 'Synthetic fee', 'quantity' => '1', 'unit_amount' => 5000];
+        $created = $this->withHeader('Idempotency-Key', 'scheduled-create')
+            ->postJson("/api/v1/workspaces/{$this->workspace->public_id}/invoices", [
+                'company_id' => $this->company->public_id,
+                'manual_lines' => [$line],
+                'scheduled_issue_date' => '2026-11-01',
+            ])->assertCreated()->json('data');
+        $draft = ClientInvoice::query()->where('public_id', $created['id'])->sole();
+        $this->assertSame('2026-11-01', $draft->scheduled_issue_date?->toDateString());
+
+        $replace = fn (array $extra, string $key) => $this->withHeader('Idempotency-Key', $key)->patchJson(
+            "/api/v1/workspaces/{$this->workspace->public_id}/invoices/{$draft->public_id}",
+            ['expected_version' => AgentApiVersion::for($draft->fresh()), 'time_entry_ids' => [], 'manual_lines' => [$line], ...$extra],
+        )->assertOk();
+        $replace([], 'scheduled-replace-keep');
+        $this->assertSame('2026-11-01', $draft->fresh()->scheduled_issue_date?->toDateString());
+        $replace(['scheduled_issue_date' => null], 'scheduled-replace-clear');
+        $this->assertNull($draft->fresh()->scheduled_issue_date);
+
+        $session = $this->initialize();
+        $viaMcp = $this->callTool($session, 'invoices.create_draft', [
+            'workspace_id' => $this->workspace->public_id,
+            'company_id' => $this->company->public_id,
+            'idempotency_key' => 'scheduled-create-mcp',
+            'manual_lines' => [$line],
+            'scheduled_issue_date' => '2026-11-02',
+        ]);
+        $this->assertFalse($viaMcp['isError'] ?? false, json_encode($viaMcp, JSON_THROW_ON_ERROR));
+        $mcpDraft = ClientInvoice::query()->where('public_id', $viaMcp['structuredContent']['data']['id'])->sole();
+        $this->assertSame('2026-11-02', $mcpDraft->scheduled_issue_date?->toDateString());
+
+        $cleared = $this->callTool($session, 'invoices.update_details', [
+            'workspace_id' => $this->workspace->public_id,
+            'invoice_id' => $mcpDraft->public_id,
+            'expected_version' => AgentApiVersion::for($mcpDraft->fresh()),
+            'idempotency_key' => 'scheduled-clear-mcp',
+            'scheduled_issue_date' => null,
+        ]);
+        $this->assertFalse($cleared['isError'] ?? false, json_encode($cleared, JSON_THROW_ON_ERROR));
+        $this->assertNull($mcpDraft->fresh()->scheduled_issue_date, 'An explicit null clears the date rather than being dropped');
+    }
+
+    /** The operator's invoice form accepts the same field as invoices.create_draft. */
+    public function test_the_operator_invoice_form_stores_a_scheduled_issue_date(): void
+    {
+        $this->actingAs($this->owner)
+            ->postJson(route('svc.billing.invoices.store', [$this->workspace, $this->company]), [
+                'invoice_number' => 'INV-SYN-SCHEDULED', 'currency' => 'USD', 'scheduled_issue_date' => '2026-11-01',
+                'lines' => [['type' => 'fee', 'description' => 'Synthetic fee', 'quantity' => '1', 'unit_amount' => 5000]],
+            ])->assertCreated();
+
+        $this->assertSame('2026-11-01', ClientInvoice::query()->where('invoice_number', 'INV-SYN-SCHEDULED')->sole()->scheduled_issue_date?->toDateString());
     }
 
     public function test_details_updates_are_refused_for_bad_input_stale_versions_issued_invoices_and_missing_scope(): void
@@ -321,8 +419,24 @@ final class AgentInvoiceDetailsAndCorrectionTest extends TestCase
         $this->assertDatabaseCount('agent_mutation_audits', 0);
     }
 
+    /** The operator's invoice screen shows the date and offers the form that changes it. */
+    public function test_the_invoice_screen_carries_the_scheduled_issue_date_and_the_form_to_change_it(): void
+    {
+        $draft = $this->generatedDraft();
+        $draft->forceFill(['scheduled_issue_date' => '2026-10-03'])->save();
+
+        $this->actingAs($this->owner)
+            ->get(route('clients.invoice', [$this->workspace, $this->company, $draft]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('clients/invoice')
+                ->where('invoice.scheduled_issue_date', '2026-10-03')
+                ->where('actions.update_details', route('agent-api.v1.invoices.update_details', [$this->workspace, $draft->public_id], absolute: false))
+            );
+    }
+
     /** MCP advertises the same "at least one field" rule REST enforces, so a client can validate before calling. */
-    public function test_the_mcp_schema_requires_a_due_date_or_notes(): void
+    public function test_the_mcp_schema_requires_a_due_date_a_scheduled_issue_date_or_notes(): void
     {
         $this->actingAsMcp($this->owner, [AgentApiScopes::MCP_USE, AgentApiScopes::BILLING_WRITE]);
         $session = $this->initialize();
@@ -332,7 +446,7 @@ final class AgentInvoiceDetailsAndCorrectionTest extends TestCase
         $schema = collect($tools)->firstWhere('name', 'invoices.update_details')['inputSchema'] ?? null;
 
         $this->assertIsArray($schema);
-        $this->assertSame([['anyOf' => [['required' => ['due_date']], ['required' => ['notes']]]]], $schema['allOf'] ?? null);
+        $this->assertSame([['anyOf' => [['required' => ['due_date']], ['required' => ['scheduled_issue_date']], ['required' => ['notes']]]]], $schema['allOf'] ?? null);
     }
 
     /** An invoice in another workspace is not found through this one, and is not changed. */

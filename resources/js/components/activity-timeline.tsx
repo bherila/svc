@@ -161,17 +161,23 @@ function invoiceDetailsSubtitle(
 ): string | undefined {
     const day = (value: unknown): string =>
         typeof value === 'string' && value !== '' ? formatDay(value) : 'none';
-    const due = payload.due_date;
     const parts: string[] = [];
 
-    if (
-        due &&
-        typeof due === 'object' &&
-        'old' in due &&
-        'new' in due &&
-        due.old !== due.new
-    ) {
-        parts.push(`due date ${day(due.old)} → ${day(due.new)}`);
+    for (const [field, label] of [
+        ['due_date', 'due date'],
+        ['scheduled_issue_date', 'scheduled issue date'],
+    ] as const) {
+        const change = payload[field];
+
+        if (
+            change &&
+            typeof change === 'object' &&
+            'old' in change &&
+            'new' in change &&
+            change.old !== change.new
+        ) {
+            parts.push(`${label} ${day(change.old)} → ${day(change.new)}`);
+        }
     }
 
     if (payload.notes_changed === true) {

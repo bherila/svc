@@ -64,6 +64,7 @@ final class CalendarDateCastTablesTest extends TestCase
                 'id' => 'int',
                 'issue_date' => DateOnly::class,
                 'due_date' => DateOnly::class,
+                'scheduled_issue_date' => DateOnly::class,
                 'service_period_start' => DateOnly::class,
                 'service_period_end' => DateOnly::class,
                 'cycle_start' => DateOnly::class,

@@ -208,12 +208,34 @@ final class DateColumnBoundaryTest extends TestCase
     }
 
     /**
+     * Calendar-date columns created after the strip migration, each cast with
+     * `DateOnly` from its first write, so none ever held a time to strip. The
+     * strip migration runs before they exist and cannot name them. Keyed by
+     * table, each column mapped to the migration that creates it.
+     *
+     * @var array<string, array<string, string>>
+     */
+    private const BORN_DATE_ONLY = [
+        'client_invoices' => ['scheduled_issue_date' => '2026_10_12_120000_add_scheduled_issue_date_to_client_invoices'],
+    ];
+
+    /**
      * The strip migration covers exactly the calendar-date columns: a column
      * later moved to `DateOnly` and left out of it would keep its midnight
-     * suffix on SQLite. `worked_on` has its own migration from #354.
+     * suffix on SQLite. `worked_on` has its own migration from #354, and
+     * {@see self::BORN_DATE_ONLY} lists the columns that postdate it.
      */
     public function test_the_strip_migration_covers_every_calendar_date_column(): void
     {
+        foreach (self::BORN_DATE_ONLY as $columns) {
+            foreach ($columns as $migration) {
+                // Only a column whose own migration runs after the strip
+                // migration can have been DateOnly from its first write.
+                $this->assertFileExists(database_path("migrations/{$migration}.php"));
+                $this->assertGreaterThan('2026_09_30_000000', $migration);
+            }
+        }
+
         $migration = require database_path('migrations/2026_09_30_000000_store_every_calendar_date_without_a_time.php');
         /** @var array<string, list<string>> $stripped */
         $stripped = (new ReflectionClassConstant($migration, 'COLUMNS'))->getValue();
@@ -221,7 +243,7 @@ final class DateColumnBoundaryTest extends TestCase
         $cast = [];
         foreach (self::models() as $model) {
             foreach ($model->getCasts() as $attribute => $castType) {
-                if ($castType === DateOnly::class && $model->getTable() !== 'client_time_entries') {
+                if ($castType === DateOnly::class && $model->getTable() !== 'client_time_entries' && ! isset(self::BORN_DATE_ONLY[$model->getTable()][$attribute])) {
                     $cast[$model->getTable()][] = $attribute;
                 }
             }

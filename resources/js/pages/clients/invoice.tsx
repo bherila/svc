@@ -108,7 +108,7 @@ type InvoicePayment = {
 type InvoiceActions = {
     add_time?: string | null;
     issue: string | null;
-    /** The API operation that changes a draft's due date and notes. */
+    /** The API operation that changes a draft's dates and notes. */
     update_details?: string | null;
     send: string | null;
     payment: string | null;
@@ -215,24 +215,48 @@ export default function ClientInvoiceDetail({
     const [correctedDate, setCorrectedDate] = useState('');
     const [busy, setBusy] = useState(false);
     const [notice, setNotice] = useState<string | null>(null);
-    const [editingDueDate, setEditingDueDate] = useState(false);
+    const [editingDates, setEditingDates] = useState(false);
     const [dueDate, setDueDate] = useState('');
+    const [scheduledIssueDate, setScheduledIssueDate] = useState('');
 
-    const saveDueDate = async (href: string) => {
+    const saveDates = async (href: string) => {
         if (busy) {
             return;
         }
 
-        setBusy(true);
+        // Only what was changed is sent. A date left as it was is not
+        // restated, so it cannot trip a check on a value nobody touched, and
+        // a form saved unchanged has nothing to ask the server.
         const body: ApiSchema<'InvoiceDetailsUpdateRequest'> = {
             expected_version: version,
-            due_date: dueDate === '' ? null : dueDate,
         };
+        const nextDue = dueDate === '' ? null : dueDate;
+        const nextScheduled =
+            scheduledIssueDate === '' ? null : scheduledIssueDate;
+
+        if (nextDue !== invoice.due_date) {
+            body.due_date = nextDue;
+        }
+
+        if (nextScheduled !== (invoice.scheduled_issue_date ?? null)) {
+            body.scheduled_issue_date = nextScheduled;
+        }
+
+        if (
+            body.due_date === undefined &&
+            body.scheduled_issue_date === undefined
+        ) {
+            setEditingDates(false);
+
+            return;
+        }
+
+        setBusy(true);
         const result = await apiRequest('PATCH', href, body);
 
         if (result.ok) {
             setNotice(null);
-            setEditingDueDate(false);
+            setEditingDates(false);
             router.reload({ onFinish: () => setBusy(false) });
 
             return;
@@ -304,6 +328,9 @@ export default function ClientInvoiceDetail({
                             : `Issued ${formatDay(invoice.issue_date)}`}
                         {invoice.due_date !== null &&
                             ` · due ${formatDay(invoice.due_date)}`}
+                        {invoice.status === 'draft' &&
+                            (invoice.scheduled_issue_date ?? null) !== null &&
+                            ` · scheduled to issue ${formatDay(invoice.scheduled_issue_date ?? '')}`}
                     </p>
 
                     <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -341,10 +368,13 @@ export default function ClientInvoiceDetail({
                                 size="sm"
                                 onClick={() => {
                                     setDueDate(invoice.due_date ?? '');
-                                    setEditingDueDate(true);
+                                    setScheduledIssueDate(
+                                        invoice.scheduled_issue_date ?? '',
+                                    );
+                                    setEditingDates(true);
                                 }}
                             >
-                                Change due date
+                                Change dates
                             </Button>
                         )}
                         {actions.send !== null && email !== null && (
@@ -452,12 +482,12 @@ export default function ClientInvoiceDetail({
                         </p>
                     )}
 
-                    {editingDueDate && actions.update_details && (
+                    {editingDates && actions.update_details && (
                         <form
-                            className="mt-3 grid grid-cols-1 gap-3 rounded-lg border border-border p-4 sm:grid-cols-[minmax(0,16rem)_auto] sm:items-end"
+                            className="mt-3 grid grid-cols-1 gap-3 rounded-lg border border-border p-4 sm:grid-cols-[minmax(0,16rem)_minmax(0,16rem)_auto] sm:items-end"
                             onSubmit={(event) => {
                                 event.preventDefault();
-                                void saveDueDate(actions.update_details ?? '');
+                                void saveDates(actions.update_details ?? '');
                             }}
                         >
                             <div className="grid grid-cols-1 gap-1.5">
@@ -471,19 +501,43 @@ export default function ClientInvoiceDetail({
                                     }
                                 />
                             </div>
+                            <div className="grid grid-cols-1 gap-1.5">
+                                <Label htmlFor="draft-scheduled-issue-date">
+                                    Scheduled issue date
+                                </Label>
+                                <Input
+                                    id="draft-scheduled-issue-date"
+                                    type="date"
+                                    value={scheduledIssueDate}
+                                    aria-describedby="draft-scheduled-issue-date-hint"
+                                    onChange={(event) =>
+                                        setScheduledIssueDate(
+                                            event.target.value,
+                                        )
+                                    }
+                                />
+                            </div>
                             <div className="flex flex-wrap gap-2">
                                 <Button type="submit" size="sm" disabled={busy}>
-                                    Save due date
+                                    Save dates
                                 </Button>
                                 <Button
                                     type="button"
                                     variant="ghost"
                                     size="sm"
-                                    onClick={() => setEditingDueDate(false)}
+                                    onClick={() => setEditingDates(false)}
                                 >
                                     Cancel
                                 </Button>
                             </div>
+                            <p
+                                id="draft-scheduled-issue-date-hint"
+                                className="text-xs text-muted-foreground sm:col-span-3"
+                            >
+                                The scheduled issue date is a plan: nothing is
+                                issued or sent on that day. The billing audit
+                                flags the draft once it has passed.
+                            </p>
                         </form>
                     )}
 
