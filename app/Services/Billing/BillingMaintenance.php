@@ -43,6 +43,7 @@ final class BillingMaintenance
             if (! $setting instanceof \stdClass || ! isset($setting->seconds) || ! is_numeric($setting->seconds)) {
                 throw new LogicException('The billing lock wait setting could not be read.');
             }
+            /** @infection-ignore-all The integer-valued session setting produces identical restore SQL with or without this cast; the cast gives validated metadata its integer type. */
             $timeout = (int) $setting->seconds;
             $connection->statement('SET SESSION innodb_lock_wait_timeout = 2');
         }

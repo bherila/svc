@@ -128,7 +128,7 @@ final class BillingMaintenanceConcurrencyTest extends TestCase
         }
     }
 
-    /** @return array{workspace:int, workspace_public_id:string, company:int, company_public_id:string, agreement:int} */
+    /** @return array{workspace:int, workspace_public_id:string, company:int, company_public_id:string, agreement:int, generation_start:string} */
     private function fixture(string $name): array
     {
         $user = User::factory()->create(['email' => $name.'@synthetic.test']);
@@ -152,7 +152,8 @@ final class BillingMaintenanceConcurrencyTest extends TestCase
         $this->assertGreaterThanOrEqual(2, count($result['generated']));
 
         return ['workspace' => $workspace->id, 'workspace_public_id' => $workspace->public_id,
-            'company' => $company->id, 'company_public_id' => $company->public_id, 'agreement' => $agreement->id];
+            'company' => $company->id, 'company_public_id' => $company->public_id, 'agreement' => $agreement->id,
+            'generation_start' => Carbon::parse(ClientInvoice::query()->where('workspace_id', $workspace->id)->where('client_company_id', $company->id)->max('service_period_end'))->addDay()->startOfMonth()->toDateString()];
     }
 
     /** @return array<string, list<array<string,mixed>>> */
@@ -208,7 +209,9 @@ final class BillingMaintenanceConcurrencyTest extends TestCase
 
                 return;
             }
-            usleep(10_000);
+            // The server caches its transaction tables until they have been idle
+            // for 100ms. Reuse the existing probes' one-second observation gap.
+            usleep(1_000_000);
         } while ($second->isRunning() && microtime(true) < $deadline);
         $this->fail('No real lock wait was observed: '.$first->getOutput().$first->getErrorOutput().$second->getOutput().$second->getErrorOutput());
     }

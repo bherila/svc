@@ -107,7 +107,9 @@ final class LockOrderRecorder
 
     public static function maintenanceExclusive(string $command): void
     {
-        if (self::$recording && self::$frame !== null) {
+        // A frame exists only during active recording; outside-frame calls
+        // cannot assign an exemption to any transaction.
+        if (self::$frame !== null) {
             self::$exclusiveCommand = $command;
         }
     }

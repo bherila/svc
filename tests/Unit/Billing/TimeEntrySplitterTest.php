@@ -8,6 +8,9 @@ use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Billing\TimeEntrySplitter;
+use App\Support\Concurrency\LockMode;
+use App\Support\Concurrency\LockOrderRecorder;
+use App\Support\Concurrency\LockResource;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Collection;
 use Tests\TestCase;
@@ -22,6 +25,22 @@ class TimeEntrySplitterTest extends TestCase
     {
         parent::setUp();
         $this->splitter = new TimeEntrySplitter;
+    }
+
+    public function test_a_split_takes_the_maintenance_share_lock_before_writing_either_fragment(): void
+    {
+        $entry = $this->createTimeEntry($this->createUser()->id, 180, '2026-08-14');
+        LockOrderRecorder::start();
+        try {
+            $overflow = $this->splitter->splitEntry($entry, 60);
+            $locks = LockOrderRecorder::acquisitions();
+            $this->assertSame(LockResource::BillingMaintenance, $locks[0][0]->resource);
+            $this->assertSame(LockMode::Share, $locks[0][0]->mode);
+            $this->assertSame(60, $entry->fresh()->minutes);
+            $this->assertSame(120, $overflow['overflow']->minutes);
+        } finally {
+            LockOrderRecorder::stop();
+        }
     }
 
     public function test_allocate_time_entries_with_sufficient_prior_month_capacity(): void

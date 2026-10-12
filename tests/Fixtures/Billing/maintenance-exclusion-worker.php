@@ -50,7 +50,8 @@ try {
     if ($input['operation'] === 'generate') {
         $company = ClientCompany::query()->where('workspace_id', $input['workspace'])->findOrFail($input['company']);
         $agreement = ClientAgreement::query()->where('workspace_id', $input['workspace'])->findOrFail($input['agreement']);
-        app(ClientInvoicingService::class)->generateInvoice($company, Carbon::parse('2026-09-01'), Carbon::parse('2026-09-30'), $agreement);
+        $start = Carbon::parse($input['generation_start']);
+        app(ClientInvoicingService::class)->generateInvoice($company, $start, $start->copy()->endOfMonth()->startOfDay(), $agreement);
         $exit = 0;
         $output = '';
     } else {
