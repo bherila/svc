@@ -11,8 +11,10 @@ use App\Models\ClientInvoice;
 use App\Models\ClientProposal;
 use App\Models\ClientTimeEntry;
 use App\Models\Workspace;
+use App\Models\WorkspaceMembership;
+use App\Support\Access\StaffRole;
 use App\Support\AgentApi\Presenters\BillingScheduleReadPresenter;
-use Illuminate\Support\Facades\Gate;
+use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -20,10 +22,14 @@ class WorkspaceOperationsController extends Controller
 {
     public function __construct(private readonly BillingScheduleReadPresenter $schedules) {}
 
-    public function __invoke(Workspace $workspace): Response
+    public function __invoke(Request $request, Workspace $workspace): Response
     {
-        Gate::authorize('view', $workspace);
-        $canManage = Gate::allows('manage', $workspace);
+        $membership = WorkspaceMembership::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('user_id', $request->user()?->id)
+            ->first();
+        abort_unless($membership instanceof WorkspaceMembership, 403);
+        $canManage = StaffRole::tryFrom($membership->role)?->managesWorkspace() === true;
 
         $companies = $workspace->clientCompanies()
             ->with(['projects' => fn ($query) => $query->orderBy('name')])
