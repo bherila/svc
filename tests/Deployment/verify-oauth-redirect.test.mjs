@@ -125,6 +125,7 @@ test('encoded duplicate query keys cannot bypass uniqueness checks', () => {
 test('live verification rejects an invalid contract before credential issuance', () => {
     const fixture = mkdtempSync(path.join(tmpdir(), 'svc-oauth-redirect-'));
     const eventLog = path.join(fixture, 'events');
+    const assetLog = path.join(fixture, 'assets');
 
     try {
         writeFileSync(
@@ -138,6 +139,14 @@ test('live verification rejects an invalid contract before credential issuance',
             { mode: 0o700 },
         );
         writeFileSync(eventLog, '');
+        writeFileSync(assetLog, '');
+        // Hashed-asset validation has its own synthetic HTTP tests. Keep this
+        // orchestration proof offline while exercising the redirect boundary.
+        writeFileSync(
+            path.join(fixture, 'node'),
+            '#!/usr/bin/env bash\nif [[ "$1" == scripts/deploy/verify-hashed-assets.mjs ]]; then\n  printf "assets-checked\\n" >>"$FIXTURE_ASSETS"\n  exit 0\nfi\nexec "$FIXTURE_NODE_EXEC" "$@"\n',
+            { mode: 0o700 },
+        );
         const environment = {
             ...process.env,
             PATH: `${fixture}:${process.env.PATH}`,
@@ -150,6 +159,8 @@ test('live verification rejects an invalid contract before credential issuance',
             DEPLOY_LIVE_COMMIT: 'a'.repeat(40),
             DEPLOY_LIVE_STATE: 'serving',
             FIXTURE_EVENTS: eventLog,
+            FIXTURE_ASSETS: assetLog,
+            FIXTURE_NODE_EXEC: process.execPath,
         };
         const invalid = new URL(valid);
         invalid.searchParams.set('code_challenge_method', 'plain');
@@ -176,6 +187,10 @@ test('live verification rejects an invalid contract before credential issuance',
         assert.equal(
             readFileSync(eventLog, 'utf8'),
             'ssh-called\nssh-called\n',
+        );
+        assert.equal(
+            readFileSync(assetLog, 'utf8'),
+            'assets-checked\nassets-checked\n',
         );
     } finally {
         rmSync(fixture, { recursive: true, force: true });
