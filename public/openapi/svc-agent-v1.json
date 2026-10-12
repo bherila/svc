@@ -6962,9 +6962,11 @@
                                     "null"
                                 ]
                             }
-                        }
+                        },
+                        "additionalProperties": false
                     }
-                }
+                },
+                "additionalProperties": false
             },
             "InvoiceCreateRequest": {
                 "type": "object",
@@ -7202,7 +7204,8 @@
                                 "href": {
                                     "type": "string"
                                 }
-                            }
+                            },
+                            "additionalProperties": false
                         }
                     }
                 }
@@ -7584,7 +7587,8 @@
                             "href": {
                                 "type": "string"
                             }
-                        }
+                        },
+                        "additionalProperties": false
                     }
                 }
             },

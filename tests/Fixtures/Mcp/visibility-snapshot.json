@@ -2840,6 +2840,38 @@
                                     "web_url": {
                                         "type": "string",
                                         "format": "uri"
+                                    },
+                                    "correction": {
+                                        "type": [
+                                            "object",
+                                            "null"
+                                        ],
+                                        "required": [
+                                            "id",
+                                            "from_revision",
+                                            "to_revision",
+                                            "reason",
+                                            "href"
+                                        ],
+                                        "properties": {
+                                            "id": {
+                                                "type": "string",
+                                                "format": "uuid"
+                                            },
+                                            "from_revision": {
+                                                "type": "integer"
+                                            },
+                                            "to_revision": {
+                                                "type": "integer"
+                                            },
+                                            "reason": {
+                                                "type": "string"
+                                            },
+                                            "href": {
+                                                "type": "string"
+                                            }
+                                        },
+                                        "additionalProperties": false
                                     }
                                 }
                             },
@@ -6497,6 +6529,38 @@
                                     "web_url": {
                                         "type": "string",
                                         "format": "uri"
+                                    },
+                                    "correction": {
+                                        "type": [
+                                            "object",
+                                            "null"
+                                        ],
+                                        "required": [
+                                            "id",
+                                            "from_revision",
+                                            "to_revision",
+                                            "reason",
+                                            "href"
+                                        ],
+                                        "properties": {
+                                            "id": {
+                                                "type": "string",
+                                                "format": "uuid"
+                                            },
+                                            "from_revision": {
+                                                "type": "integer"
+                                            },
+                                            "to_revision": {
+                                                "type": "integer"
+                                            },
+                                            "reason": {
+                                                "type": "string"
+                                            },
+                                            "href": {
+                                                "type": "string"
+                                            }
+                                        },
+                                        "additionalProperties": false
                                     }
                                 }
                             },
@@ -6693,6 +6757,38 @@
                                     "web_url": {
                                         "type": "string",
                                         "format": "uri"
+                                    },
+                                    "correction": {
+                                        "type": [
+                                            "object",
+                                            "null"
+                                        ],
+                                        "required": [
+                                            "id",
+                                            "from_revision",
+                                            "to_revision",
+                                            "reason",
+                                            "href"
+                                        ],
+                                        "properties": {
+                                            "id": {
+                                                "type": "string",
+                                                "format": "uuid"
+                                            },
+                                            "from_revision": {
+                                                "type": "integer"
+                                            },
+                                            "to_revision": {
+                                                "type": "integer"
+                                            },
+                                            "reason": {
+                                                "type": "string"
+                                            },
+                                            "href": {
+                                                "type": "string"
+                                            }
+                                        },
+                                        "additionalProperties": false
                                     }
                                 }
                             },
@@ -6723,6 +6819,168 @@
                                 "pattern": "^[a-f0-9]{64}$"
                             }
                         }
+                    }
+                },
+                {
+                    "name": "invoices.corrections.get",
+                    "title": "Get invoice correction evidence",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "workspace_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "invoice_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "correction_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            }
+                        },
+                        "required": [
+                            "workspace_id",
+                            "invoice_id",
+                            "correction_id"
+                        ],
+                        "additionalProperties": false
+                    },
+                    "description": "Workspace managers only. Read the complete before/after evidence for one invoice correction.",
+                    "annotations": {
+                        "readOnlyHint": true,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": false
+                    },
+                    "outputSchema": {
+                        "type": "object",
+                        "required": [
+                            "data"
+                        ],
+                        "properties": {
+                            "data": {
+                                "type": "object",
+                                "required": [
+                                    "id",
+                                    "from_revision",
+                                    "to_revision",
+                                    "reason",
+                                    "previous_due_date",
+                                    "due_date",
+                                    "line_diffs",
+                                    "created_at"
+                                ],
+                                "properties": {
+                                    "id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "from_revision": {
+                                        "type": "integer"
+                                    },
+                                    "to_revision": {
+                                        "type": "integer"
+                                    },
+                                    "reason": {
+                                        "type": "string"
+                                    },
+                                    "previous_due_date": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date"
+                                    },
+                                    "due_date": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date"
+                                    },
+                                    "line_diffs": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "additionalProperties": false,
+                                            "required": [
+                                                "line",
+                                                "description_changed",
+                                                "before",
+                                                "after"
+                                            ],
+                                            "properties": {
+                                                "line": {
+                                                    "type": "string",
+                                                    "format": "uuid"
+                                                },
+                                                "description_changed": {
+                                                    "type": "boolean"
+                                                },
+                                                "before": {
+                                                    "type": "object",
+                                                    "additionalProperties": false,
+                                                    "required": [
+                                                        "description",
+                                                        "quantity",
+                                                        "unit_amount",
+                                                        "tax_amount"
+                                                    ],
+                                                    "properties": {
+                                                        "description": {
+                                                            "type": "string"
+                                                        },
+                                                        "quantity": {
+                                                            "type": "string"
+                                                        },
+                                                        "unit_amount": {
+                                                            "type": "integer"
+                                                        },
+                                                        "tax_amount": {
+                                                            "type": "integer"
+                                                        }
+                                                    }
+                                                },
+                                                "after": {
+                                                    "type": "object",
+                                                    "additionalProperties": false,
+                                                    "required": [
+                                                        "description",
+                                                        "quantity",
+                                                        "unit_amount",
+                                                        "tax_amount"
+                                                    ],
+                                                    "properties": {
+                                                        "description": {
+                                                            "type": "string"
+                                                        },
+                                                        "quantity": {
+                                                            "type": "string"
+                                                        },
+                                                        "unit_amount": {
+                                                            "type": "integer"
+                                                        },
+                                                        "tax_amount": {
+                                                            "type": "integer"
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    },
+                                    "created_at": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ]
+                                    }
+                                },
+                                "additionalProperties": false
+                            }
+                        },
+                        "additionalProperties": false
                     }
                 },
                 {
@@ -6889,6 +7147,38 @@
                                     "web_url": {
                                         "type": "string",
                                         "format": "uri"
+                                    },
+                                    "correction": {
+                                        "type": [
+                                            "object",
+                                            "null"
+                                        ],
+                                        "required": [
+                                            "id",
+                                            "from_revision",
+                                            "to_revision",
+                                            "reason",
+                                            "href"
+                                        ],
+                                        "properties": {
+                                            "id": {
+                                                "type": "string",
+                                                "format": "uuid"
+                                            },
+                                            "from_revision": {
+                                                "type": "integer"
+                                            },
+                                            "to_revision": {
+                                                "type": "integer"
+                                            },
+                                            "reason": {
+                                                "type": "string"
+                                            },
+                                            "href": {
+                                                "type": "string"
+                                            }
+                                        },
+                                        "additionalProperties": false
                                     }
                                 }
                             },
@@ -7018,6 +7308,38 @@
                                     "web_url": {
                                         "type": "string",
                                         "format": "uri"
+                                    },
+                                    "correction": {
+                                        "type": [
+                                            "object",
+                                            "null"
+                                        ],
+                                        "required": [
+                                            "id",
+                                            "from_revision",
+                                            "to_revision",
+                                            "reason",
+                                            "href"
+                                        ],
+                                        "properties": {
+                                            "id": {
+                                                "type": "string",
+                                                "format": "uuid"
+                                            },
+                                            "from_revision": {
+                                                "type": "integer"
+                                            },
+                                            "to_revision": {
+                                                "type": "integer"
+                                            },
+                                            "reason": {
+                                                "type": "string"
+                                            },
+                                            "href": {
+                                                "type": "string"
+                                            }
+                                        },
+                                        "additionalProperties": false
                                     }
                                 }
                             },
@@ -7146,6 +7468,38 @@
                                     "web_url": {
                                         "type": "string",
                                         "format": "uri"
+                                    },
+                                    "correction": {
+                                        "type": [
+                                            "object",
+                                            "null"
+                                        ],
+                                        "required": [
+                                            "id",
+                                            "from_revision",
+                                            "to_revision",
+                                            "reason",
+                                            "href"
+                                        ],
+                                        "properties": {
+                                            "id": {
+                                                "type": "string",
+                                                "format": "uuid"
+                                            },
+                                            "from_revision": {
+                                                "type": "integer"
+                                            },
+                                            "to_revision": {
+                                                "type": "integer"
+                                            },
+                                            "reason": {
+                                                "type": "string"
+                                            },
+                                            "href": {
+                                                "type": "string"
+                                            }
+                                        },
+                                        "additionalProperties": false
                                     }
                                 }
                             },
@@ -7352,6 +7706,38 @@
                                         ],
                                         "description": "Workspace managers only; null for other viewers.",
                                         "format": "date-time"
+                                    },
+                                    "corrections": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "required": [
+                                                "id",
+                                                "from_revision",
+                                                "to_revision",
+                                                "reason",
+                                                "href"
+                                            ],
+                                            "properties": {
+                                                "id": {
+                                                    "type": "string",
+                                                    "format": "uuid"
+                                                },
+                                                "from_revision": {
+                                                    "type": "integer"
+                                                },
+                                                "to_revision": {
+                                                    "type": "integer"
+                                                },
+                                                "reason": {
+                                                    "type": "string"
+                                                },
+                                                "href": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "additionalProperties": false
+                                        }
                                     }
                                 }
                             },
@@ -7523,6 +7909,38 @@
                                     "web_url": {
                                         "type": "string",
                                         "format": "uri"
+                                    },
+                                    "correction": {
+                                        "type": [
+                                            "object",
+                                            "null"
+                                        ],
+                                        "required": [
+                                            "id",
+                                            "from_revision",
+                                            "to_revision",
+                                            "reason",
+                                            "href"
+                                        ],
+                                        "properties": {
+                                            "id": {
+                                                "type": "string",
+                                                "format": "uuid"
+                                            },
+                                            "from_revision": {
+                                                "type": "integer"
+                                            },
+                                            "to_revision": {
+                                                "type": "integer"
+                                            },
+                                            "reason": {
+                                                "type": "string"
+                                            },
+                                            "href": {
+                                                "type": "string"
+                                            }
+                                        },
+                                        "additionalProperties": false
                                     }
                                 }
                             },
@@ -7798,6 +8216,38 @@
                                         ],
                                         "description": "Workspace managers only; null for other viewers.",
                                         "format": "date-time"
+                                    },
+                                    "corrections": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "required": [
+                                                "id",
+                                                "from_revision",
+                                                "to_revision",
+                                                "reason",
+                                                "href"
+                                            ],
+                                            "properties": {
+                                                "id": {
+                                                    "type": "string",
+                                                    "format": "uuid"
+                                                },
+                                                "from_revision": {
+                                                    "type": "integer"
+                                                },
+                                                "to_revision": {
+                                                    "type": "integer"
+                                                },
+                                                "reason": {
+                                                    "type": "string"
+                                                },
+                                                "href": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "additionalProperties": false
+                                        }
                                     }
                                 }
                             },
@@ -7884,6 +8334,38 @@
                                     "web_url": {
                                         "type": "string",
                                         "format": "uri"
+                                    },
+                                    "correction": {
+                                        "type": [
+                                            "object",
+                                            "null"
+                                        ],
+                                        "required": [
+                                            "id",
+                                            "from_revision",
+                                            "to_revision",
+                                            "reason",
+                                            "href"
+                                        ],
+                                        "properties": {
+                                            "id": {
+                                                "type": "string",
+                                                "format": "uuid"
+                                            },
+                                            "from_revision": {
+                                                "type": "integer"
+                                            },
+                                            "to_revision": {
+                                                "type": "integer"
+                                            },
+                                            "reason": {
+                                                "type": "string"
+                                            },
+                                            "href": {
+                                                "type": "string"
+                                            }
+                                        },
+                                        "additionalProperties": false
                                     }
                                 }
                             },
@@ -8407,6 +8889,38 @@
                                     "web_url": {
                                         "type": "string",
                                         "format": "uri"
+                                    },
+                                    "correction": {
+                                        "type": [
+                                            "object",
+                                            "null"
+                                        ],
+                                        "required": [
+                                            "id",
+                                            "from_revision",
+                                            "to_revision",
+                                            "reason",
+                                            "href"
+                                        ],
+                                        "properties": {
+                                            "id": {
+                                                "type": "string",
+                                                "format": "uuid"
+                                            },
+                                            "from_revision": {
+                                                "type": "integer"
+                                            },
+                                            "to_revision": {
+                                                "type": "integer"
+                                            },
+                                            "reason": {
+                                                "type": "string"
+                                            },
+                                            "href": {
+                                                "type": "string"
+                                            }
+                                        },
+                                        "additionalProperties": false
                                     }
                                 }
                             },
@@ -8540,6 +9054,38 @@
                                     "web_url": {
                                         "type": "string",
                                         "format": "uri"
+                                    },
+                                    "correction": {
+                                        "type": [
+                                            "object",
+                                            "null"
+                                        ],
+                                        "required": [
+                                            "id",
+                                            "from_revision",
+                                            "to_revision",
+                                            "reason",
+                                            "href"
+                                        ],
+                                        "properties": {
+                                            "id": {
+                                                "type": "string",
+                                                "format": "uuid"
+                                            },
+                                            "from_revision": {
+                                                "type": "integer"
+                                            },
+                                            "to_revision": {
+                                                "type": "integer"
+                                            },
+                                            "reason": {
+                                                "type": "string"
+                                            },
+                                            "href": {
+                                                "type": "string"
+                                            }
+                                        },
+                                        "additionalProperties": false
                                     }
                                 }
                             },
@@ -8688,6 +9234,38 @@
                                     "web_url": {
                                         "type": "string",
                                         "format": "uri"
+                                    },
+                                    "correction": {
+                                        "type": [
+                                            "object",
+                                            "null"
+                                        ],
+                                        "required": [
+                                            "id",
+                                            "from_revision",
+                                            "to_revision",
+                                            "reason",
+                                            "href"
+                                        ],
+                                        "properties": {
+                                            "id": {
+                                                "type": "string",
+                                                "format": "uuid"
+                                            },
+                                            "from_revision": {
+                                                "type": "integer"
+                                            },
+                                            "to_revision": {
+                                                "type": "integer"
+                                            },
+                                            "reason": {
+                                                "type": "string"
+                                            },
+                                            "href": {
+                                                "type": "string"
+                                            }
+                                        },
+                                        "additionalProperties": false
                                     }
                                 }
                             },
@@ -8895,6 +9473,38 @@
                                     "web_url": {
                                         "type": "string",
                                         "format": "uri"
+                                    },
+                                    "correction": {
+                                        "type": [
+                                            "object",
+                                            "null"
+                                        ],
+                                        "required": [
+                                            "id",
+                                            "from_revision",
+                                            "to_revision",
+                                            "reason",
+                                            "href"
+                                        ],
+                                        "properties": {
+                                            "id": {
+                                                "type": "string",
+                                                "format": "uuid"
+                                            },
+                                            "from_revision": {
+                                                "type": "integer"
+                                            },
+                                            "to_revision": {
+                                                "type": "integer"
+                                            },
+                                            "reason": {
+                                                "type": "string"
+                                            },
+                                            "href": {
+                                                "type": "string"
+                                            }
+                                        },
+                                        "additionalProperties": false
                                     }
                                 }
                             },
@@ -9024,6 +9634,38 @@
                                     "web_url": {
                                         "type": "string",
                                         "format": "uri"
+                                    },
+                                    "correction": {
+                                        "type": [
+                                            "object",
+                                            "null"
+                                        ],
+                                        "required": [
+                                            "id",
+                                            "from_revision",
+                                            "to_revision",
+                                            "reason",
+                                            "href"
+                                        ],
+                                        "properties": {
+                                            "id": {
+                                                "type": "string",
+                                                "format": "uuid"
+                                            },
+                                            "from_revision": {
+                                                "type": "integer"
+                                            },
+                                            "to_revision": {
+                                                "type": "integer"
+                                            },
+                                            "reason": {
+                                                "type": "string"
+                                            },
+                                            "href": {
+                                                "type": "string"
+                                            }
+                                        },
+                                        "additionalProperties": false
                                     }
                                 }
                             },
@@ -13928,7 +14570,7 @@
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
                 "billing_audit.stale_and_missing": "95b8222da2e1fcb1",
                 "billing_schedules.create": "ce808d037fdc2ee7",
-                "billing_schedules.generate": "8440515ec1419da9",
+                "billing_schedules.generate": "b1849c503fd5dc21",
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
                 "capacity_ledger.get": "d8a6997ba130cd5a",
@@ -13956,21 +14598,22 @@
                 "expenses.receipts.upload_url": "780799092164184f",
                 "expenses.unapprove": "ae21aae8d227dc06",
                 "expenses.update": "1e517d25f792bde9",
-                "invoices.add_time": "f4da43c2ef01402d",
-                "invoices.correct": "ad39f0b0e374f5c7",
-                "invoices.create_draft": "d476a9382d74ec50",
-                "invoices.discard_draft": "659279158522e0b2",
-                "invoices.generate_period": "2c75f72d21b2432f",
-                "invoices.get": "b78b42498722118f",
-                "invoices.hold_delivery": "864ee0746cbe0cd4",
-                "invoices.issue": "e7437d677982e491",
+                "invoices.add_time": "ee27431f3eebdb38",
+                "invoices.correct": "51b0c12ec9b5d762",
+                "invoices.corrections.get": "aa93da895756b80b",
+                "invoices.create_draft": "af0b7d4aef91b70b",
+                "invoices.discard_draft": "ab69a495454b6516",
+                "invoices.generate_period": "89231c301628e176",
+                "invoices.get": "e012e85260397f86",
+                "invoices.hold_delivery": "5d5d70aa02fac988",
+                "invoices.issue": "7e23d112aa2b7104",
                 "invoices.list": "98a09aab5c1f0f17",
                 "invoices.pdf": "8c5fa3116a39fcc4",
-                "invoices.release_delivery": "400c82e3938c3183",
-                "invoices.send": "bd8797f733ed23b4",
-                "invoices.update_details": "983d9adea4a39002",
-                "invoices.update_draft": "8bc797b5f6b0836f",
-                "invoices.void": "01d7f21ef92bbfe3",
+                "invoices.release_delivery": "f703c8eb40f1ed80",
+                "invoices.send": "3b2bc9ef256c4d18",
+                "invoices.update_details": "72d9e9f7f1c2f1fd",
+                "invoices.update_draft": "4854fa1de825dbfd",
+                "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.correct": "a89e5531f853028c",
                 "payments.list": "5f9d6942bc64d245",
@@ -14058,6 +14701,7 @@
                     "expenses.unapprove role",
                     "expenses.update role",
                     "invoices.add_time role",
+                    "invoices.corrections.get role",
                     "invoices.generate_period role",
                     "invoices.hold_delivery role",
                     "invoices.release_delivery role",
@@ -14089,17 +14733,17 @@
             "tools": {
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.correct": "ad39f0b0e374f5c7",
-                "invoices.create_draft": "d476a9382d74ec50",
-                "invoices.discard_draft": "659279158522e0b2",
-                "invoices.get": "b78b42498722118f",
-                "invoices.issue": "e7437d677982e491",
+                "invoices.correct": "51b0c12ec9b5d762",
+                "invoices.create_draft": "af0b7d4aef91b70b",
+                "invoices.discard_draft": "ab69a495454b6516",
+                "invoices.get": "e012e85260397f86",
+                "invoices.issue": "7e23d112aa2b7104",
                 "invoices.list": "98a09aab5c1f0f17",
                 "invoices.pdf": "8c5fa3116a39fcc4",
-                "invoices.send": "bd8797f733ed23b4",
-                "invoices.update_details": "983d9adea4a39002",
-                "invoices.update_draft": "8bc797b5f6b0836f",
-                "invoices.void": "01d7f21ef92bbfe3",
+                "invoices.send": "3b2bc9ef256c4d18",
+                "invoices.update_details": "72d9e9f7f1c2f1fd",
+                "invoices.update_draft": "4854fa1de825dbfd",
+                "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
                 "projects.get": "c7ffe7930b196d4b",
@@ -14175,6 +14819,7 @@
                     "expenses.unapprove role",
                     "expenses.update role",
                     "invoices.add_time role",
+                    "invoices.corrections.get role",
                     "invoices.generate_period role",
                     "invoices.hold_delivery role",
                     "invoices.release_delivery role",
@@ -14206,17 +14851,17 @@
             "tools": {
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.correct": "ad39f0b0e374f5c7",
-                "invoices.create_draft": "d476a9382d74ec50",
-                "invoices.discard_draft": "659279158522e0b2",
-                "invoices.get": "b78b42498722118f",
-                "invoices.issue": "e7437d677982e491",
+                "invoices.correct": "51b0c12ec9b5d762",
+                "invoices.create_draft": "af0b7d4aef91b70b",
+                "invoices.discard_draft": "ab69a495454b6516",
+                "invoices.get": "e012e85260397f86",
+                "invoices.issue": "7e23d112aa2b7104",
                 "invoices.list": "98a09aab5c1f0f17",
                 "invoices.pdf": "8c5fa3116a39fcc4",
-                "invoices.send": "bd8797f733ed23b4",
-                "invoices.update_details": "983d9adea4a39002",
-                "invoices.update_draft": "8bc797b5f6b0836f",
-                "invoices.void": "01d7f21ef92bbfe3",
+                "invoices.send": "3b2bc9ef256c4d18",
+                "invoices.update_details": "72d9e9f7f1c2f1fd",
+                "invoices.update_draft": "4854fa1de825dbfd",
+                "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
                 "projects.get": "c7ffe7930b196d4b",
@@ -14292,6 +14937,7 @@
                     "expenses.unapprove role",
                     "expenses.update role",
                     "invoices.add_time role",
+                    "invoices.corrections.get role",
                     "invoices.generate_period role",
                     "invoices.hold_delivery role",
                     "invoices.release_delivery role",
@@ -14323,17 +14969,17 @@
             "tools": {
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.correct": "ad39f0b0e374f5c7",
-                "invoices.create_draft": "d476a9382d74ec50",
-                "invoices.discard_draft": "659279158522e0b2",
-                "invoices.get": "b78b42498722118f",
-                "invoices.issue": "e7437d677982e491",
+                "invoices.correct": "51b0c12ec9b5d762",
+                "invoices.create_draft": "af0b7d4aef91b70b",
+                "invoices.discard_draft": "ab69a495454b6516",
+                "invoices.get": "e012e85260397f86",
+                "invoices.issue": "7e23d112aa2b7104",
                 "invoices.list": "98a09aab5c1f0f17",
                 "invoices.pdf": "8c5fa3116a39fcc4",
-                "invoices.send": "bd8797f733ed23b4",
-                "invoices.update_details": "983d9adea4a39002",
-                "invoices.update_draft": "8bc797b5f6b0836f",
-                "invoices.void": "01d7f21ef92bbfe3",
+                "invoices.send": "3b2bc9ef256c4d18",
+                "invoices.update_details": "72d9e9f7f1c2f1fd",
+                "invoices.update_draft": "4854fa1de825dbfd",
+                "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
                 "projects.get": "c7ffe7930b196d4b",
@@ -14409,6 +15055,7 @@
                     "expenses.unapprove role",
                     "expenses.update role",
                     "invoices.add_time role",
+                    "invoices.corrections.get role",
                     "invoices.generate_period role",
                     "invoices.hold_delivery role",
                     "invoices.release_delivery role",
@@ -14440,17 +15087,17 @@
             "tools": {
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.correct": "ad39f0b0e374f5c7",
-                "invoices.create_draft": "d476a9382d74ec50",
-                "invoices.discard_draft": "659279158522e0b2",
-                "invoices.get": "b78b42498722118f",
-                "invoices.issue": "e7437d677982e491",
+                "invoices.correct": "51b0c12ec9b5d762",
+                "invoices.create_draft": "af0b7d4aef91b70b",
+                "invoices.discard_draft": "ab69a495454b6516",
+                "invoices.get": "e012e85260397f86",
+                "invoices.issue": "7e23d112aa2b7104",
                 "invoices.list": "98a09aab5c1f0f17",
                 "invoices.pdf": "8c5fa3116a39fcc4",
-                "invoices.send": "bd8797f733ed23b4",
-                "invoices.update_details": "983d9adea4a39002",
-                "invoices.update_draft": "8bc797b5f6b0836f",
-                "invoices.void": "01d7f21ef92bbfe3",
+                "invoices.send": "3b2bc9ef256c4d18",
+                "invoices.update_details": "72d9e9f7f1c2f1fd",
+                "invoices.update_draft": "4854fa1de825dbfd",
+                "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
                 "projects.get": "c7ffe7930b196d4b",
@@ -14572,7 +15219,8 @@
                 "expenses.list": "444aff51ddc70e0d",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
-                "invoices.get": "b78b42498722118f",
+                "invoices.corrections.get": "aa93da895756b80b",
+                "invoices.get": "e012e85260397f86",
                 "invoices.list": "98a09aab5c1f0f17",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
@@ -14646,16 +15294,17 @@
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
                 "capacity_ledger.get": "d8a6997ba130cd5a",
-                "invoices.add_time": "f4da43c2ef01402d",
-                "invoices.create_draft": "d476a9382d74ec50",
-                "invoices.discard_draft": "659279158522e0b2",
-                "invoices.generate_period": "2c75f72d21b2432f",
-                "invoices.get": "b78b42498722118f",
-                "invoices.hold_delivery": "864ee0746cbe0cd4",
+                "invoices.add_time": "ee27431f3eebdb38",
+                "invoices.corrections.get": "aa93da895756b80b",
+                "invoices.create_draft": "af0b7d4aef91b70b",
+                "invoices.discard_draft": "ab69a495454b6516",
+                "invoices.generate_period": "89231c301628e176",
+                "invoices.get": "e012e85260397f86",
+                "invoices.hold_delivery": "5d5d70aa02fac988",
                 "invoices.list": "98a09aab5c1f0f17",
                 "invoices.pdf": "8c5fa3116a39fcc4",
-                "invoices.update_details": "983d9adea4a39002",
-                "invoices.update_draft": "8bc797b5f6b0836f"
+                "invoices.update_details": "72d9e9f7f1c2f1fd",
+                "invoices.update_draft": "4854fa1de825dbfd"
             },
             "resources": [],
             "resourceTemplates": {
@@ -14711,6 +15360,7 @@
                     "expenses.update scope_not_granted expenses:write",
                     "invoices.add_time scope_not_granted billing:write",
                     "invoices.correct scope_not_granted billing:deliver",
+                    "invoices.corrections.get role",
                     "invoices.create_draft scope_not_granted billing:write",
                     "invoices.discard_draft scope_not_granted billing:write",
                     "invoices.generate_period scope_not_granted billing:write",
@@ -14757,7 +15407,7 @@
             "tools": {
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "b78b42498722118f",
+                "invoices.get": "e012e85260397f86",
                 "invoices.list": "98a09aab5c1f0f17",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
@@ -14817,13 +15467,13 @@
             },
             "instructions": "Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
-                "invoices.create_draft": "d476a9382d74ec50",
-                "invoices.discard_draft": "659279158522e0b2",
-                "invoices.get": "b78b42498722118f",
+                "invoices.create_draft": "af0b7d4aef91b70b",
+                "invoices.discard_draft": "ab69a495454b6516",
+                "invoices.get": "e012e85260397f86",
                 "invoices.list": "98a09aab5c1f0f17",
                 "invoices.pdf": "8c5fa3116a39fcc4",
-                "invoices.update_details": "983d9adea4a39002",
-                "invoices.update_draft": "8bc797b5f6b0836f"
+                "invoices.update_details": "72d9e9f7f1c2f1fd",
+                "invoices.update_draft": "4854fa1de825dbfd"
             },
             "resources": [],
             "resourceTemplates": [],
@@ -14877,6 +15527,7 @@
                     "expenses.update scope_not_granted expenses:write",
                     "invoices.add_time scope_not_granted billing:write",
                     "invoices.correct scope_not_granted billing:deliver",
+                    "invoices.corrections.get role",
                     "invoices.create_draft scope_not_granted billing:write",
                     "invoices.discard_draft scope_not_granted billing:write",
                     "invoices.generate_period scope_not_granted billing:write",
@@ -14923,7 +15574,7 @@
             "tools": {
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "b78b42498722118f",
+                "invoices.get": "e012e85260397f86",
                 "invoices.list": "98a09aab5c1f0f17",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
@@ -14983,13 +15634,13 @@
             },
             "instructions": "Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
-                "invoices.create_draft": "d476a9382d74ec50",
-                "invoices.discard_draft": "659279158522e0b2",
-                "invoices.get": "b78b42498722118f",
+                "invoices.create_draft": "af0b7d4aef91b70b",
+                "invoices.discard_draft": "ab69a495454b6516",
+                "invoices.get": "e012e85260397f86",
                 "invoices.list": "98a09aab5c1f0f17",
                 "invoices.pdf": "8c5fa3116a39fcc4",
-                "invoices.update_details": "983d9adea4a39002",
-                "invoices.update_draft": "8bc797b5f6b0836f"
+                "invoices.update_details": "72d9e9f7f1c2f1fd",
+                "invoices.update_draft": "4854fa1de825dbfd"
             },
             "resources": [],
             "resourceTemplates": [],
@@ -15087,7 +15738,8 @@
                 "expenses.list": "444aff51ddc70e0d",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
-                "invoices.get": "b78b42498722118f",
+                "invoices.corrections.get": "aa93da895756b80b",
+                "invoices.get": "e012e85260397f86",
                 "invoices.list": "98a09aab5c1f0f17",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
@@ -15205,7 +15857,8 @@
                 "expenses.list": "444aff51ddc70e0d",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
-                "invoices.get": "b78b42498722118f",
+                "invoices.corrections.get": "aa93da895756b80b",
+                "invoices.get": "e012e85260397f86",
                 "invoices.list": "98a09aab5c1f0f17",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
@@ -15281,6 +15934,7 @@
                     "expenses.update deployment_disabled",
                     "invoices.add_time deployment_disabled",
                     "invoices.correct deployment_disabled",
+                    "invoices.corrections.get role",
                     "invoices.create_draft deployment_disabled",
                     "invoices.discard_draft deployment_disabled",
                     "invoices.generate_period deployment_disabled",
@@ -15324,7 +15978,7 @@
             "tools": {
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "b78b42498722118f",
+                "invoices.get": "e012e85260397f86",
                 "invoices.list": "98a09aab5c1f0f17",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
@@ -15397,6 +16051,7 @@
                     "expenses.update deployment_disabled",
                     "invoices.add_time deployment_disabled",
                     "invoices.correct deployment_disabled",
+                    "invoices.corrections.get role",
                     "invoices.create_draft deployment_disabled",
                     "invoices.discard_draft deployment_disabled",
                     "invoices.generate_period deployment_disabled",
@@ -15440,7 +16095,7 @@
             "tools": {
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "b78b42498722118f",
+                "invoices.get": "e012e85260397f86",
                 "invoices.list": "98a09aab5c1f0f17",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
@@ -15513,6 +16168,7 @@
                     "expenses.update deployment_disabled",
                     "invoices.add_time deployment_disabled",
                     "invoices.correct deployment_disabled",
+                    "invoices.corrections.get role",
                     "invoices.create_draft deployment_disabled",
                     "invoices.discard_draft deployment_disabled",
                     "invoices.generate_period deployment_disabled",
@@ -15556,7 +16212,7 @@
             "tools": {
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "b78b42498722118f",
+                "invoices.get": "e012e85260397f86",
                 "invoices.list": "98a09aab5c1f0f17",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
@@ -15629,6 +16285,7 @@
                     "expenses.update deployment_disabled",
                     "invoices.add_time deployment_disabled",
                     "invoices.correct deployment_disabled",
+                    "invoices.corrections.get role",
                     "invoices.create_draft deployment_disabled",
                     "invoices.discard_draft deployment_disabled",
                     "invoices.generate_period deployment_disabled",
@@ -15672,7 +16329,7 @@
             "tools": {
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "b78b42498722118f",
+                "invoices.get": "e012e85260397f86",
                 "invoices.list": "98a09aab5c1f0f17",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
@@ -15792,7 +16449,8 @@
                 "expenses.list": "444aff51ddc70e0d",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
-                "invoices.get": "b78b42498722118f",
+                "invoices.corrections.get": "aa93da895756b80b",
+                "invoices.get": "e012e85260397f86",
                 "invoices.list": "98a09aab5c1f0f17",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
@@ -15908,7 +16566,8 @@
                 "expenses.list": "444aff51ddc70e0d",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
-                "invoices.get": "b78b42498722118f",
+                "invoices.corrections.get": "aa93da895756b80b",
+                "invoices.get": "e012e85260397f86",
                 "invoices.list": "98a09aab5c1f0f17",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
@@ -15979,6 +16638,7 @@
                     "expenses.update deployment_disabled",
                     "invoices.add_time deployment_disabled",
                     "invoices.correct deployment_disabled",
+                    "invoices.corrections.get role",
                     "invoices.create_draft deployment_disabled",
                     "invoices.discard_draft deployment_disabled",
                     "invoices.generate_period deployment_disabled",
@@ -16025,7 +16685,7 @@
             "tools": {
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "b78b42498722118f",
+                "invoices.get": "e012e85260397f86",
                 "invoices.list": "98a09aab5c1f0f17",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
@@ -16093,6 +16753,7 @@
                     "expenses.update deployment_disabled",
                     "invoices.add_time deployment_disabled",
                     "invoices.correct deployment_disabled",
+                    "invoices.corrections.get role",
                     "invoices.create_draft deployment_disabled",
                     "invoices.discard_draft deployment_disabled",
                     "invoices.generate_period deployment_disabled",
@@ -16139,7 +16800,7 @@
             "tools": {
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "b78b42498722118f",
+                "invoices.get": "e012e85260397f86",
                 "invoices.list": "98a09aab5c1f0f17",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
@@ -16207,6 +16868,7 @@
                     "expenses.update deployment_disabled",
                     "invoices.add_time deployment_disabled",
                     "invoices.correct deployment_disabled",
+                    "invoices.corrections.get role",
                     "invoices.create_draft deployment_disabled",
                     "invoices.discard_draft deployment_disabled",
                     "invoices.generate_period deployment_disabled",
@@ -16253,7 +16915,7 @@
             "tools": {
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "b78b42498722118f",
+                "invoices.get": "e012e85260397f86",
                 "invoices.list": "98a09aab5c1f0f17",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
@@ -16321,6 +16983,7 @@
                     "expenses.update deployment_disabled",
                     "invoices.add_time deployment_disabled",
                     "invoices.correct deployment_disabled",
+                    "invoices.corrections.get role",
                     "invoices.create_draft deployment_disabled",
                     "invoices.discard_draft deployment_disabled",
                     "invoices.generate_period deployment_disabled",
@@ -16367,7 +17030,7 @@
             "tools": {
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "b78b42498722118f",
+                "invoices.get": "e012e85260397f86",
                 "invoices.list": "98a09aab5c1f0f17",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
@@ -16479,7 +17142,8 @@
                 "expenses.list": "444aff51ddc70e0d",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
-                "invoices.get": "b78b42498722118f",
+                "invoices.corrections.get": "aa93da895756b80b",
+                "invoices.get": "e012e85260397f86",
                 "invoices.list": "98a09aab5c1f0f17",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
@@ -16597,7 +17261,8 @@
                 "expenses.list": "444aff51ddc70e0d",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
-                "invoices.get": "b78b42498722118f",
+                "invoices.corrections.get": "aa93da895756b80b",
+                "invoices.get": "e012e85260397f86",
                 "invoices.list": "98a09aab5c1f0f17",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
@@ -16673,6 +17338,7 @@
                     "expenses.update deployment_disabled",
                     "invoices.add_time deployment_disabled",
                     "invoices.correct deployment_disabled",
+                    "invoices.corrections.get role",
                     "invoices.create_draft deployment_disabled",
                     "invoices.discard_draft deployment_disabled",
                     "invoices.generate_period deployment_disabled",
@@ -16716,7 +17382,7 @@
             "tools": {
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "b78b42498722118f",
+                "invoices.get": "e012e85260397f86",
                 "invoices.list": "98a09aab5c1f0f17",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
@@ -16789,6 +17455,7 @@
                     "expenses.update deployment_disabled",
                     "invoices.add_time deployment_disabled",
                     "invoices.correct deployment_disabled",
+                    "invoices.corrections.get role",
                     "invoices.create_draft deployment_disabled",
                     "invoices.discard_draft deployment_disabled",
                     "invoices.generate_period deployment_disabled",
@@ -16832,7 +17499,7 @@
             "tools": {
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "b78b42498722118f",
+                "invoices.get": "e012e85260397f86",
                 "invoices.list": "98a09aab5c1f0f17",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
@@ -16905,6 +17572,7 @@
                     "expenses.update deployment_disabled",
                     "invoices.add_time deployment_disabled",
                     "invoices.correct deployment_disabled",
+                    "invoices.corrections.get role",
                     "invoices.create_draft deployment_disabled",
                     "invoices.discard_draft deployment_disabled",
                     "invoices.generate_period deployment_disabled",
@@ -16948,7 +17616,7 @@
             "tools": {
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "b78b42498722118f",
+                "invoices.get": "e012e85260397f86",
                 "invoices.list": "98a09aab5c1f0f17",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
@@ -17021,6 +17689,7 @@
                     "expenses.update deployment_disabled",
                     "invoices.add_time deployment_disabled",
                     "invoices.correct deployment_disabled",
+                    "invoices.corrections.get role",
                     "invoices.create_draft deployment_disabled",
                     "invoices.discard_draft deployment_disabled",
                     "invoices.generate_period deployment_disabled",
@@ -17064,7 +17733,7 @@
             "tools": {
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "b78b42498722118f",
+                "invoices.get": "e012e85260397f86",
                 "invoices.list": "98a09aab5c1f0f17",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
@@ -17167,7 +17836,8 @@
                 "expenses.receipts.upload_url": "780799092164184f",
                 "expenses.unapprove": "ae21aae8d227dc06",
                 "expenses.update": "1e517d25f792bde9",
-                "invoices.get": "b78b42498722118f",
+                "invoices.corrections.get": "aa93da895756b80b",
+                "invoices.get": "e012e85260397f86",
                 "invoices.list": "98a09aab5c1f0f17",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
@@ -17285,7 +17955,8 @@
                 "expenses.receipts.upload_url": "780799092164184f",
                 "expenses.unapprove": "ae21aae8d227dc06",
                 "expenses.update": "1e517d25f792bde9",
-                "invoices.get": "b78b42498722118f",
+                "invoices.corrections.get": "aa93da895756b80b",
+                "invoices.get": "e012e85260397f86",
                 "invoices.list": "98a09aab5c1f0f17",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
@@ -17375,6 +18046,7 @@
                     "expenses.update role",
                     "invoices.add_time deployment_disabled",
                     "invoices.correct deployment_disabled",
+                    "invoices.corrections.get role",
                     "invoices.create_draft deployment_disabled",
                     "invoices.discard_draft deployment_disabled",
                     "invoices.generate_period deployment_disabled",
@@ -17413,7 +18085,7 @@
             "tools": {
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "b78b42498722118f",
+                "invoices.get": "e012e85260397f86",
                 "invoices.list": "98a09aab5c1f0f17",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
@@ -17491,6 +18163,7 @@
                     "expenses.update role",
                     "invoices.add_time deployment_disabled",
                     "invoices.correct deployment_disabled",
+                    "invoices.corrections.get role",
                     "invoices.create_draft deployment_disabled",
                     "invoices.discard_draft deployment_disabled",
                     "invoices.generate_period deployment_disabled",
@@ -17529,7 +18202,7 @@
             "tools": {
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "b78b42498722118f",
+                "invoices.get": "e012e85260397f86",
                 "invoices.list": "98a09aab5c1f0f17",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
@@ -17607,6 +18280,7 @@
                     "expenses.update role",
                     "invoices.add_time deployment_disabled",
                     "invoices.correct deployment_disabled",
+                    "invoices.corrections.get role",
                     "invoices.create_draft deployment_disabled",
                     "invoices.discard_draft deployment_disabled",
                     "invoices.generate_period deployment_disabled",
@@ -17645,7 +18319,7 @@
             "tools": {
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "b78b42498722118f",
+                "invoices.get": "e012e85260397f86",
                 "invoices.list": "98a09aab5c1f0f17",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
@@ -17723,6 +18397,7 @@
                     "expenses.update role",
                     "invoices.add_time deployment_disabled",
                     "invoices.correct deployment_disabled",
+                    "invoices.corrections.get role",
                     "invoices.create_draft deployment_disabled",
                     "invoices.discard_draft deployment_disabled",
                     "invoices.generate_period deployment_disabled",
@@ -17761,7 +18436,7 @@
             "tools": {
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "b78b42498722118f",
+                "invoices.get": "e012e85260397f86",
                 "invoices.list": "98a09aab5c1f0f17",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
@@ -17886,7 +18561,8 @@
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
                 "expenses.receipts.upload_url": "780799092164184f",
-                "invoices.get": "b78b42498722118f",
+                "invoices.corrections.get": "aa93da895756b80b",
+                "invoices.get": "e012e85260397f86",
                 "invoices.list": "98a09aab5c1f0f17",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
@@ -18002,7 +18678,8 @@
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
                 "expenses.receipts.upload_url": "780799092164184f",
-                "invoices.get": "b78b42498722118f",
+                "invoices.corrections.get": "aa93da895756b80b",
+                "invoices.get": "e012e85260397f86",
                 "invoices.list": "98a09aab5c1f0f17",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
@@ -18073,6 +18750,7 @@
                     "expenses.update deployment_disabled",
                     "invoices.add_time deployment_disabled",
                     "invoices.correct deployment_disabled",
+                    "invoices.corrections.get role",
                     "invoices.create_draft deployment_disabled",
                     "invoices.discard_draft deployment_disabled",
                     "invoices.generate_period deployment_disabled",
@@ -18119,7 +18797,7 @@
             "tools": {
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "b78b42498722118f",
+                "invoices.get": "e012e85260397f86",
                 "invoices.list": "98a09aab5c1f0f17",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
@@ -18187,6 +18865,7 @@
                     "expenses.update deployment_disabled",
                     "invoices.add_time deployment_disabled",
                     "invoices.correct deployment_disabled",
+                    "invoices.corrections.get role",
                     "invoices.create_draft deployment_disabled",
                     "invoices.discard_draft deployment_disabled",
                     "invoices.generate_period deployment_disabled",
@@ -18233,7 +18912,7 @@
             "tools": {
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "b78b42498722118f",
+                "invoices.get": "e012e85260397f86",
                 "invoices.list": "98a09aab5c1f0f17",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
@@ -18301,6 +18980,7 @@
                     "expenses.update deployment_disabled",
                     "invoices.add_time deployment_disabled",
                     "invoices.correct deployment_disabled",
+                    "invoices.corrections.get role",
                     "invoices.create_draft deployment_disabled",
                     "invoices.discard_draft deployment_disabled",
                     "invoices.generate_period deployment_disabled",
@@ -18347,7 +19027,7 @@
             "tools": {
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "b78b42498722118f",
+                "invoices.get": "e012e85260397f86",
                 "invoices.list": "98a09aab5c1f0f17",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
@@ -18415,6 +19095,7 @@
                     "expenses.update deployment_disabled",
                     "invoices.add_time deployment_disabled",
                     "invoices.correct deployment_disabled",
+                    "invoices.corrections.get role",
                     "invoices.create_draft deployment_disabled",
                     "invoices.discard_draft deployment_disabled",
                     "invoices.generate_period deployment_disabled",
@@ -18461,7 +19142,7 @@
             "tools": {
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "b78b42498722118f",
+                "invoices.get": "e012e85260397f86",
                 "invoices.list": "98a09aab5c1f0f17",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
@@ -18519,7 +19200,7 @@
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
                 "billing_audit.stale_and_missing": "95b8222da2e1fcb1",
                 "billing_schedules.create": "ce808d037fdc2ee7",
-                "billing_schedules.generate": "8440515ec1419da9",
+                "billing_schedules.generate": "b1849c503fd5dc21",
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
                 "capacity_ledger.get": "d8a6997ba130cd5a",
@@ -18547,21 +19228,22 @@
                 "expenses.receipts.upload_url": "780799092164184f",
                 "expenses.unapprove": "ae21aae8d227dc06",
                 "expenses.update": "1e517d25f792bde9",
-                "invoices.add_time": "f4da43c2ef01402d",
-                "invoices.correct": "ad39f0b0e374f5c7",
-                "invoices.create_draft": "d476a9382d74ec50",
-                "invoices.discard_draft": "659279158522e0b2",
-                "invoices.generate_period": "2c75f72d21b2432f",
-                "invoices.get": "b78b42498722118f",
-                "invoices.hold_delivery": "864ee0746cbe0cd4",
-                "invoices.issue": "e7437d677982e491",
+                "invoices.add_time": "ee27431f3eebdb38",
+                "invoices.correct": "51b0c12ec9b5d762",
+                "invoices.corrections.get": "aa93da895756b80b",
+                "invoices.create_draft": "af0b7d4aef91b70b",
+                "invoices.discard_draft": "ab69a495454b6516",
+                "invoices.generate_period": "89231c301628e176",
+                "invoices.get": "e012e85260397f86",
+                "invoices.hold_delivery": "5d5d70aa02fac988",
+                "invoices.issue": "7e23d112aa2b7104",
                 "invoices.list": "98a09aab5c1f0f17",
                 "invoices.pdf": "8c5fa3116a39fcc4",
-                "invoices.release_delivery": "400c82e3938c3183",
-                "invoices.send": "bd8797f733ed23b4",
-                "invoices.update_details": "983d9adea4a39002",
-                "invoices.update_draft": "8bc797b5f6b0836f",
-                "invoices.void": "01d7f21ef92bbfe3",
+                "invoices.release_delivery": "f703c8eb40f1ed80",
+                "invoices.send": "3b2bc9ef256c4d18",
+                "invoices.update_details": "72d9e9f7f1c2f1fd",
+                "invoices.update_draft": "4854fa1de825dbfd",
+                "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.correct": "a89e5531f853028c",
                 "payments.list": "5f9d6942bc64d245",
@@ -18636,7 +19318,7 @@
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
                 "billing_audit.stale_and_missing": "95b8222da2e1fcb1",
                 "billing_schedules.create": "ce808d037fdc2ee7",
-                "billing_schedules.generate": "8440515ec1419da9",
+                "billing_schedules.generate": "b1849c503fd5dc21",
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
                 "capacity_ledger.get": "d8a6997ba130cd5a",
@@ -18664,21 +19346,22 @@
                 "expenses.receipts.upload_url": "780799092164184f",
                 "expenses.unapprove": "ae21aae8d227dc06",
                 "expenses.update": "1e517d25f792bde9",
-                "invoices.add_time": "f4da43c2ef01402d",
-                "invoices.correct": "ad39f0b0e374f5c7",
-                "invoices.create_draft": "d476a9382d74ec50",
-                "invoices.discard_draft": "659279158522e0b2",
-                "invoices.generate_period": "2c75f72d21b2432f",
-                "invoices.get": "b78b42498722118f",
-                "invoices.hold_delivery": "864ee0746cbe0cd4",
-                "invoices.issue": "e7437d677982e491",
+                "invoices.add_time": "ee27431f3eebdb38",
+                "invoices.correct": "51b0c12ec9b5d762",
+                "invoices.corrections.get": "aa93da895756b80b",
+                "invoices.create_draft": "af0b7d4aef91b70b",
+                "invoices.discard_draft": "ab69a495454b6516",
+                "invoices.generate_period": "89231c301628e176",
+                "invoices.get": "e012e85260397f86",
+                "invoices.hold_delivery": "5d5d70aa02fac988",
+                "invoices.issue": "7e23d112aa2b7104",
                 "invoices.list": "98a09aab5c1f0f17",
                 "invoices.pdf": "8c5fa3116a39fcc4",
-                "invoices.release_delivery": "400c82e3938c3183",
-                "invoices.send": "bd8797f733ed23b4",
-                "invoices.update_details": "983d9adea4a39002",
-                "invoices.update_draft": "8bc797b5f6b0836f",
-                "invoices.void": "01d7f21ef92bbfe3",
+                "invoices.release_delivery": "f703c8eb40f1ed80",
+                "invoices.send": "3b2bc9ef256c4d18",
+                "invoices.update_details": "72d9e9f7f1c2f1fd",
+                "invoices.update_draft": "4854fa1de825dbfd",
+                "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.correct": "a89e5531f853028c",
                 "payments.list": "5f9d6942bc64d245",
@@ -18764,6 +19447,7 @@
                     "expenses.unapprove role",
                     "expenses.update role",
                     "invoices.add_time role",
+                    "invoices.corrections.get role",
                     "invoices.generate_period role",
                     "invoices.hold_delivery role",
                     "invoices.release_delivery role",
@@ -18795,17 +19479,17 @@
             "tools": {
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.correct": "ad39f0b0e374f5c7",
-                "invoices.create_draft": "d476a9382d74ec50",
-                "invoices.discard_draft": "659279158522e0b2",
-                "invoices.get": "b78b42498722118f",
-                "invoices.issue": "e7437d677982e491",
+                "invoices.correct": "51b0c12ec9b5d762",
+                "invoices.create_draft": "af0b7d4aef91b70b",
+                "invoices.discard_draft": "ab69a495454b6516",
+                "invoices.get": "e012e85260397f86",
+                "invoices.issue": "7e23d112aa2b7104",
                 "invoices.list": "98a09aab5c1f0f17",
                 "invoices.pdf": "8c5fa3116a39fcc4",
-                "invoices.send": "bd8797f733ed23b4",
-                "invoices.update_details": "983d9adea4a39002",
-                "invoices.update_draft": "8bc797b5f6b0836f",
-                "invoices.void": "01d7f21ef92bbfe3",
+                "invoices.send": "3b2bc9ef256c4d18",
+                "invoices.update_details": "72d9e9f7f1c2f1fd",
+                "invoices.update_draft": "4854fa1de825dbfd",
+                "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
                 "projects.get": "c7ffe7930b196d4b",
@@ -18881,6 +19565,7 @@
                     "expenses.unapprove role",
                     "expenses.update role",
                     "invoices.add_time role",
+                    "invoices.corrections.get role",
                     "invoices.generate_period role",
                     "invoices.hold_delivery role",
                     "invoices.release_delivery role",
@@ -18912,17 +19597,17 @@
             "tools": {
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.correct": "ad39f0b0e374f5c7",
-                "invoices.create_draft": "d476a9382d74ec50",
-                "invoices.discard_draft": "659279158522e0b2",
-                "invoices.get": "b78b42498722118f",
-                "invoices.issue": "e7437d677982e491",
+                "invoices.correct": "51b0c12ec9b5d762",
+                "invoices.create_draft": "af0b7d4aef91b70b",
+                "invoices.discard_draft": "ab69a495454b6516",
+                "invoices.get": "e012e85260397f86",
+                "invoices.issue": "7e23d112aa2b7104",
                 "invoices.list": "98a09aab5c1f0f17",
                 "invoices.pdf": "8c5fa3116a39fcc4",
-                "invoices.send": "bd8797f733ed23b4",
-                "invoices.update_details": "983d9adea4a39002",
-                "invoices.update_draft": "8bc797b5f6b0836f",
-                "invoices.void": "01d7f21ef92bbfe3",
+                "invoices.send": "3b2bc9ef256c4d18",
+                "invoices.update_details": "72d9e9f7f1c2f1fd",
+                "invoices.update_draft": "4854fa1de825dbfd",
+                "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
                 "projects.get": "c7ffe7930b196d4b",
@@ -18998,6 +19683,7 @@
                     "expenses.unapprove role",
                     "expenses.update role",
                     "invoices.add_time role",
+                    "invoices.corrections.get role",
                     "invoices.generate_period role",
                     "invoices.hold_delivery role",
                     "invoices.release_delivery role",
@@ -19029,17 +19715,17 @@
             "tools": {
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.correct": "ad39f0b0e374f5c7",
-                "invoices.create_draft": "d476a9382d74ec50",
-                "invoices.discard_draft": "659279158522e0b2",
-                "invoices.get": "b78b42498722118f",
-                "invoices.issue": "e7437d677982e491",
+                "invoices.correct": "51b0c12ec9b5d762",
+                "invoices.create_draft": "af0b7d4aef91b70b",
+                "invoices.discard_draft": "ab69a495454b6516",
+                "invoices.get": "e012e85260397f86",
+                "invoices.issue": "7e23d112aa2b7104",
                 "invoices.list": "98a09aab5c1f0f17",
                 "invoices.pdf": "8c5fa3116a39fcc4",
-                "invoices.send": "bd8797f733ed23b4",
-                "invoices.update_details": "983d9adea4a39002",
-                "invoices.update_draft": "8bc797b5f6b0836f",
-                "invoices.void": "01d7f21ef92bbfe3",
+                "invoices.send": "3b2bc9ef256c4d18",
+                "invoices.update_details": "72d9e9f7f1c2f1fd",
+                "invoices.update_draft": "4854fa1de825dbfd",
+                "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
                 "projects.get": "c7ffe7930b196d4b",
@@ -19115,6 +19801,7 @@
                     "expenses.unapprove role",
                     "expenses.update role",
                     "invoices.add_time role",
+                    "invoices.corrections.get role",
                     "invoices.generate_period role",
                     "invoices.hold_delivery role",
                     "invoices.release_delivery role",
@@ -19146,17 +19833,17 @@
             "tools": {
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.correct": "ad39f0b0e374f5c7",
-                "invoices.create_draft": "d476a9382d74ec50",
-                "invoices.discard_draft": "659279158522e0b2",
-                "invoices.get": "b78b42498722118f",
-                "invoices.issue": "e7437d677982e491",
+                "invoices.correct": "51b0c12ec9b5d762",
+                "invoices.create_draft": "af0b7d4aef91b70b",
+                "invoices.discard_draft": "ab69a495454b6516",
+                "invoices.get": "e012e85260397f86",
+                "invoices.issue": "7e23d112aa2b7104",
                 "invoices.list": "98a09aab5c1f0f17",
                 "invoices.pdf": "8c5fa3116a39fcc4",
-                "invoices.send": "bd8797f733ed23b4",
-                "invoices.update_details": "983d9adea4a39002",
-                "invoices.update_draft": "8bc797b5f6b0836f",
-                "invoices.void": "01d7f21ef92bbfe3",
+                "invoices.send": "3b2bc9ef256c4d18",
+                "invoices.update_details": "72d9e9f7f1c2f1fd",
+                "invoices.update_draft": "4854fa1de825dbfd",
+                "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
                 "projects.get": "c7ffe7930b196d4b",
@@ -19226,7 +19913,7 @@
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
                 "billing_audit.stale_and_missing": "95b8222da2e1fcb1",
                 "billing_schedules.create": "ce808d037fdc2ee7",
-                "billing_schedules.generate": "8440515ec1419da9",
+                "billing_schedules.generate": "b1849c503fd5dc21",
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
                 "capacity_ledger.get": "d8a6997ba130cd5a",
@@ -19253,20 +19940,21 @@
                 "expenses.receipts.upload_url": "780799092164184f",
                 "expenses.unapprove": "ae21aae8d227dc06",
                 "expenses.update": "1e517d25f792bde9",
-                "invoices.add_time": "f4da43c2ef01402d",
-                "invoices.correct": "ad39f0b0e374f5c7",
-                "invoices.create_draft": "d476a9382d74ec50",
-                "invoices.discard_draft": "659279158522e0b2",
-                "invoices.generate_period": "2c75f72d21b2432f",
-                "invoices.hold_delivery": "864ee0746cbe0cd4",
-                "invoices.issue": "e7437d677982e491",
+                "invoices.add_time": "ee27431f3eebdb38",
+                "invoices.correct": "51b0c12ec9b5d762",
+                "invoices.corrections.get": "aa93da895756b80b",
+                "invoices.create_draft": "af0b7d4aef91b70b",
+                "invoices.discard_draft": "ab69a495454b6516",
+                "invoices.generate_period": "89231c301628e176",
+                "invoices.hold_delivery": "5d5d70aa02fac988",
+                "invoices.issue": "7e23d112aa2b7104",
                 "invoices.list": "98a09aab5c1f0f17",
                 "invoices.pdf": "8c5fa3116a39fcc4",
-                "invoices.release_delivery": "400c82e3938c3183",
-                "invoices.send": "bd8797f733ed23b4",
-                "invoices.update_details": "983d9adea4a39002",
-                "invoices.update_draft": "8bc797b5f6b0836f",
-                "invoices.void": "01d7f21ef92bbfe3",
+                "invoices.release_delivery": "f703c8eb40f1ed80",
+                "invoices.send": "3b2bc9ef256c4d18",
+                "invoices.update_details": "72d9e9f7f1c2f1fd",
+                "invoices.update_draft": "4854fa1de825dbfd",
+                "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.correct": "a89e5531f853028c",
                 "payments.list": "5f9d6942bc64d245",
@@ -19342,7 +20030,7 @@
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
                 "billing_audit.stale_and_missing": "95b8222da2e1fcb1",
                 "billing_schedules.create": "ce808d037fdc2ee7",
-                "billing_schedules.generate": "8440515ec1419da9",
+                "billing_schedules.generate": "b1849c503fd5dc21",
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
                 "capacity_ledger.get": "d8a6997ba130cd5a",
@@ -19369,20 +20057,21 @@
                 "expenses.receipts.upload_url": "780799092164184f",
                 "expenses.unapprove": "ae21aae8d227dc06",
                 "expenses.update": "1e517d25f792bde9",
-                "invoices.add_time": "f4da43c2ef01402d",
-                "invoices.correct": "ad39f0b0e374f5c7",
-                "invoices.create_draft": "d476a9382d74ec50",
-                "invoices.discard_draft": "659279158522e0b2",
-                "invoices.generate_period": "2c75f72d21b2432f",
-                "invoices.hold_delivery": "864ee0746cbe0cd4",
-                "invoices.issue": "e7437d677982e491",
+                "invoices.add_time": "ee27431f3eebdb38",
+                "invoices.correct": "51b0c12ec9b5d762",
+                "invoices.corrections.get": "aa93da895756b80b",
+                "invoices.create_draft": "af0b7d4aef91b70b",
+                "invoices.discard_draft": "ab69a495454b6516",
+                "invoices.generate_period": "89231c301628e176",
+                "invoices.hold_delivery": "5d5d70aa02fac988",
+                "invoices.issue": "7e23d112aa2b7104",
                 "invoices.list": "98a09aab5c1f0f17",
                 "invoices.pdf": "8c5fa3116a39fcc4",
-                "invoices.release_delivery": "400c82e3938c3183",
-                "invoices.send": "bd8797f733ed23b4",
-                "invoices.update_details": "983d9adea4a39002",
-                "invoices.update_draft": "8bc797b5f6b0836f",
-                "invoices.void": "01d7f21ef92bbfe3",
+                "invoices.release_delivery": "f703c8eb40f1ed80",
+                "invoices.send": "3b2bc9ef256c4d18",
+                "invoices.update_details": "72d9e9f7f1c2f1fd",
+                "invoices.update_draft": "4854fa1de825dbfd",
+                "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.correct": "a89e5531f853028c",
                 "payments.list": "5f9d6942bc64d245",
@@ -19467,6 +20156,7 @@
                     "expenses.unapprove role",
                     "expenses.update role",
                     "invoices.add_time role",
+                    "invoices.corrections.get role",
                     "invoices.generate_period role",
                     "invoices.get deployment_disabled",
                     "invoices.hold_delivery role",
@@ -19499,16 +20189,16 @@
             "instructions": "Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.correct": "ad39f0b0e374f5c7",
-                "invoices.create_draft": "d476a9382d74ec50",
-                "invoices.discard_draft": "659279158522e0b2",
-                "invoices.issue": "e7437d677982e491",
+                "invoices.correct": "51b0c12ec9b5d762",
+                "invoices.create_draft": "af0b7d4aef91b70b",
+                "invoices.discard_draft": "ab69a495454b6516",
+                "invoices.issue": "7e23d112aa2b7104",
                 "invoices.list": "98a09aab5c1f0f17",
                 "invoices.pdf": "8c5fa3116a39fcc4",
-                "invoices.send": "bd8797f733ed23b4",
-                "invoices.update_details": "983d9adea4a39002",
-                "invoices.update_draft": "8bc797b5f6b0836f",
-                "invoices.void": "01d7f21ef92bbfe3",
+                "invoices.send": "3b2bc9ef256c4d18",
+                "invoices.update_details": "72d9e9f7f1c2f1fd",
+                "invoices.update_draft": "4854fa1de825dbfd",
+                "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
                 "projects.get": "c7ffe7930b196d4b",
@@ -19581,6 +20271,7 @@
                     "expenses.unapprove role",
                     "expenses.update role",
                     "invoices.add_time role",
+                    "invoices.corrections.get role",
                     "invoices.generate_period role",
                     "invoices.get deployment_disabled",
                     "invoices.hold_delivery role",
@@ -19613,16 +20304,16 @@
             "instructions": "Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.correct": "ad39f0b0e374f5c7",
-                "invoices.create_draft": "d476a9382d74ec50",
-                "invoices.discard_draft": "659279158522e0b2",
-                "invoices.issue": "e7437d677982e491",
+                "invoices.correct": "51b0c12ec9b5d762",
+                "invoices.create_draft": "af0b7d4aef91b70b",
+                "invoices.discard_draft": "ab69a495454b6516",
+                "invoices.issue": "7e23d112aa2b7104",
                 "invoices.list": "98a09aab5c1f0f17",
                 "invoices.pdf": "8c5fa3116a39fcc4",
-                "invoices.send": "bd8797f733ed23b4",
-                "invoices.update_details": "983d9adea4a39002",
-                "invoices.update_draft": "8bc797b5f6b0836f",
-                "invoices.void": "01d7f21ef92bbfe3",
+                "invoices.send": "3b2bc9ef256c4d18",
+                "invoices.update_details": "72d9e9f7f1c2f1fd",
+                "invoices.update_draft": "4854fa1de825dbfd",
+                "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
                 "projects.get": "c7ffe7930b196d4b",
@@ -19695,6 +20386,7 @@
                     "expenses.unapprove role",
                     "expenses.update role",
                     "invoices.add_time role",
+                    "invoices.corrections.get role",
                     "invoices.generate_period role",
                     "invoices.get deployment_disabled",
                     "invoices.hold_delivery role",
@@ -19727,16 +20419,16 @@
             "instructions": "Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.correct": "ad39f0b0e374f5c7",
-                "invoices.create_draft": "d476a9382d74ec50",
-                "invoices.discard_draft": "659279158522e0b2",
-                "invoices.issue": "e7437d677982e491",
+                "invoices.correct": "51b0c12ec9b5d762",
+                "invoices.create_draft": "af0b7d4aef91b70b",
+                "invoices.discard_draft": "ab69a495454b6516",
+                "invoices.issue": "7e23d112aa2b7104",
                 "invoices.list": "98a09aab5c1f0f17",
                 "invoices.pdf": "8c5fa3116a39fcc4",
-                "invoices.send": "bd8797f733ed23b4",
-                "invoices.update_details": "983d9adea4a39002",
-                "invoices.update_draft": "8bc797b5f6b0836f",
-                "invoices.void": "01d7f21ef92bbfe3",
+                "invoices.send": "3b2bc9ef256c4d18",
+                "invoices.update_details": "72d9e9f7f1c2f1fd",
+                "invoices.update_draft": "4854fa1de825dbfd",
+                "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
                 "projects.get": "c7ffe7930b196d4b",
@@ -19809,6 +20501,7 @@
                     "expenses.unapprove role",
                     "expenses.update role",
                     "invoices.add_time role",
+                    "invoices.corrections.get role",
                     "invoices.generate_period role",
                     "invoices.get deployment_disabled",
                     "invoices.hold_delivery role",
@@ -19841,16 +20534,16 @@
             "instructions": "Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.correct": "ad39f0b0e374f5c7",
-                "invoices.create_draft": "d476a9382d74ec50",
-                "invoices.discard_draft": "659279158522e0b2",
-                "invoices.issue": "e7437d677982e491",
+                "invoices.correct": "51b0c12ec9b5d762",
+                "invoices.create_draft": "af0b7d4aef91b70b",
+                "invoices.discard_draft": "ab69a495454b6516",
+                "invoices.issue": "7e23d112aa2b7104",
                 "invoices.list": "98a09aab5c1f0f17",
                 "invoices.pdf": "8c5fa3116a39fcc4",
-                "invoices.send": "bd8797f733ed23b4",
-                "invoices.update_details": "983d9adea4a39002",
-                "invoices.update_draft": "8bc797b5f6b0836f",
-                "invoices.void": "01d7f21ef92bbfe3",
+                "invoices.send": "3b2bc9ef256c4d18",
+                "invoices.update_details": "72d9e9f7f1c2f1fd",
+                "invoices.update_draft": "4854fa1de825dbfd",
+                "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
                 "projects.get": "c7ffe7930b196d4b",
@@ -19927,6 +20620,7 @@
                     "expenses.update deployment_disabled",
                     "invoices.add_time deployment_disabled",
                     "invoices.correct deployment_disabled",
+                    "invoices.corrections.get deployment_disabled",
                     "invoices.create_draft deployment_disabled",
                     "invoices.discard_draft deployment_disabled",
                     "invoices.generate_period deployment_disabled",
@@ -20022,6 +20716,7 @@
                     "expenses.update deployment_disabled",
                     "invoices.add_time deployment_disabled",
                     "invoices.correct deployment_disabled",
+                    "invoices.corrections.get deployment_disabled",
                     "invoices.create_draft deployment_disabled",
                     "invoices.discard_draft deployment_disabled",
                     "invoices.generate_period deployment_disabled",
@@ -20117,6 +20812,7 @@
                     "expenses.update deployment_disabled",
                     "invoices.add_time deployment_disabled",
                     "invoices.correct deployment_disabled",
+                    "invoices.corrections.get deployment_disabled",
                     "invoices.create_draft deployment_disabled",
                     "invoices.discard_draft deployment_disabled",
                     "invoices.generate_period deployment_disabled",
@@ -20212,6 +20908,7 @@
                     "expenses.update deployment_disabled",
                     "invoices.add_time deployment_disabled",
                     "invoices.correct deployment_disabled",
+                    "invoices.corrections.get deployment_disabled",
                     "invoices.create_draft deployment_disabled",
                     "invoices.discard_draft deployment_disabled",
                     "invoices.generate_period deployment_disabled",
@@ -20307,6 +21004,7 @@
                     "expenses.update deployment_disabled",
                     "invoices.add_time deployment_disabled",
                     "invoices.correct deployment_disabled",
+                    "invoices.corrections.get deployment_disabled",
                     "invoices.create_draft deployment_disabled",
                     "invoices.discard_draft deployment_disabled",
                     "invoices.generate_period deployment_disabled",
@@ -20402,6 +21100,7 @@
                     "expenses.update deployment_disabled",
                     "invoices.add_time deployment_disabled",
                     "invoices.correct deployment_disabled",
+                    "invoices.corrections.get deployment_disabled",
                     "invoices.create_draft deployment_disabled",
                     "invoices.discard_draft deployment_disabled",
                     "invoices.generate_period deployment_disabled",

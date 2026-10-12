@@ -220,6 +220,7 @@ final class AgentMcpContractTest extends TestCase
             'expenses.update' => ['expenses:write'],
             'invoices.add_time' => ['billing:write', 'billing:read'],
             'invoices.correct' => ['billing:deliver'],
+            'invoices.corrections.get' => ['billing:read'],
             'invoices.create_draft' => ['billing:write'],
             'invoices.discard_draft' => ['billing:write'],
             'invoices.download_pdf' => ['billing:read'],
