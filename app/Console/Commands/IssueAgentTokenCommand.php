@@ -44,6 +44,14 @@ final class IssueAgentTokenCommand extends Command
 {
     public const int MAX_TTL_MINUTES = 240;
 
+    /**
+     * Stored before the operator's name, as the browser's personal tokens
+     * carry their own prefix, so revocation by name can only ever select a
+     * token this command issued - never a person's own credential or an
+     * OAuth-connected agent's that happens to share the name.
+     */
+    public const string NAME_PREFIX = 'operator-agent-token: ';
+
     private const string PROVIDER = 'agent-principals';
 
     /** Used only when no personal access client exists for agent principals yet. */
@@ -67,8 +75,9 @@ final class IssueAgentTokenCommand extends Command
         }
 
         $name = trim((string) $this->argument('name'));
-        if ($name === '' || mb_strlen($name) > 255 || preg_match('/[\x00-\x1F\x7F]/', $name) === 1) {
-            $this->error('The token name must be 1-255 characters with no control characters.');
+        $maxName = 255 - strlen(self::NAME_PREFIX);
+        if ($name === '' || mb_strlen($name) > $maxName || preg_match('/[\x00-\x1F\x7F]/', $name) === 1) {
+            $this->error("The token name must be 1-{$maxName} characters with no control characters.");
 
             return self::INVALID;
         }
@@ -124,7 +133,7 @@ final class IssueAgentTokenCommand extends Command
             $issued = $this->withLifetime($ttl, fn () => $tokens->issueToken(
                 $principal,
                 $this->personalAccessClient(),
-                $name,
+                self::NAME_PREFIX.$name,
                 $scopes,
                 $resourceName,
                 $providerStamp,

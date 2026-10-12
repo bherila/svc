@@ -2,6 +2,8 @@
 
 namespace Tests\Feature\Auth;
 
+use App\Console\Commands\IssueAgentTokenCommand;
+use App\Models\AgentPrincipal;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Support\AgentApi\AgentApiScopes;
@@ -13,6 +15,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
+use Laravel\Passport\ClientRepository;
 use Laravel\Passport\Passport;
 use League\OAuth2\Server\AuthorizationServer;
 use League\OAuth2\Server\ResourceServer;
@@ -61,7 +64,7 @@ final class IssueAgentTokenCommandTest extends TestCase
 
         $row = Passport::token()->newQuery()->sole();
         $this->assertSame($user->id, (int) $row->user_id);
-        $this->assertSame('Operator REST', $row->name);
+        $this->assertSame('operator-agent-token: Operator REST', $row->name);
         $this->assertSame([AgentApiScopes::IDENTITY_READ, AgentApiScopes::PROJECTS_READ], $row->scopes);
         $this->assertSame(OAuthResourceIndicator::resource('rest'), $row->resource_uri);
         $this->assertTrue(Carbon::parse($issued['expires_at'])->equalTo($row->expires_at));
@@ -140,7 +143,8 @@ final class IssueAgentTokenCommandTest extends TestCase
             [$user->public_id, 'No scopes', []],
             [$user->public_id, '   ', [AgentApiScopes::IDENTITY_READ]],
             [$user->public_id, "Line\nbreak", [AgentApiScopes::IDENTITY_READ]],
-            [$user->public_id, str_repeat('n', 256), [AgentApiScopes::IDENTITY_READ]],
+            // Within the stored column once the reserved prefix is added.
+            [$user->public_id, str_repeat('n', 256 - strlen(IssueAgentTokenCommand::NAME_PREFIX)), [AgentApiScopes::IDENTITY_READ]],
             ['not-a-uuid', 'Bad id', [AgentApiScopes::IDENTITY_READ]],
             [(string) $user->id, 'Internal id', [AgentApiScopes::IDENTITY_READ]],
         ];
@@ -214,6 +218,29 @@ final class IssueAgentTokenCommandTest extends TestCase
 
         $this->assertSame(2, Artisan::call('svc:auth:revoke-agent-token', ['user_public_id' => 'not-a-uuid', 'name' => 'Kept']));
         $this->assertSame(1, Artisan::call('svc:auth:revoke-agent-token', ['user_public_id' => (string) Str::uuid(), 'name' => 'Kept']));
+    }
+
+    public function test_revocation_never_reaches_a_token_this_command_did_not_issue(): void
+    {
+        [$user, $workspace] = $this->member('provenance');
+        $principal = AgentPrincipal::query()->findOrFail($user->id);
+        app(ClientRepository::class)->createPersonalAccessGrantClient('Synthetic personal client', 'agent-principals');
+        // A browser-created personal token and an OAuth-flow token, each stored
+        // under a name an operator could type.
+        $browser = $principal->createToken('api-token: Laptop', [AgentApiScopes::PROJECTS_READ]);
+        $other = $principal->createToken('Laptop', [AgentApiScopes::PROJECTS_READ]);
+
+        $this->assertSame(1, Artisan::call('svc:auth:revoke-agent-token', ['user_public_id' => $user->public_id, 'name' => 'api-token: Laptop']));
+        $this->assertSame(1, Artisan::call('svc:auth:revoke-agent-token', ['user_public_id' => $user->public_id, 'name' => 'Laptop', '--all' => true]));
+        $this->assertSame(0, Passport::token()->newQuery()->where('revoked', true)->count());
+
+        $issued = $this->decode($this->issue($user, 'Laptop', [AgentApiScopes::PROJECTS_READ])[1]);
+        $this->assertSame('Laptop', $issued['name']);
+        $this->assertSame(0, Artisan::call('svc:auth:revoke-agent-token', ['user_public_id' => $user->public_id, 'name' => 'Laptop']));
+        $this->assertSame(['revoked' => 1], $this->decode(Artisan::output()));
+        $this->bearer($issued['token'])->getJson("/api/v1/workspaces/{$workspace->public_id}/projects")->assertUnauthorized();
+        $this->assertFalse((bool) Passport::token()->newQuery()->whereKey($browser->accessTokenId)->value('revoked'));
+        $this->assertFalse((bool) Passport::token()->newQuery()->whereKey($other->accessTokenId)->value('revoked'));
     }
 
     public function test_an_expired_token_of_the_same_name_is_neither_a_duplicate_nor_revoked(): void

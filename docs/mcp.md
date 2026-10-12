@@ -151,7 +151,7 @@ php artisan svc:auth:issue-agent-token USER_PUBLIC_UUID "Support session" \
 ```
 
 Each scope must be one of the agent scopes listed above; an unknown scope,
-a non-UUID or unknown user, a blank name or one with control characters, or a
+a non-UUID or unknown user, a blank or over-long name or one with control characters, or a
 `--ttl` outside 1-240 minutes (default 60) is refused and nothing is issued. A
 token is bound to one resource, chosen by its scopes: naming `mcp:use` makes an
 MCP token for `APP_URL/api/v1/mcp`, and omitting it makes a REST token for
@@ -173,8 +173,10 @@ Revoke by name, which takes effect on the next request:
 php artisan svc:auth:revoke-agent-token USER_PUBLIC_UUID "Support session"
 ```
 
-When more than one live token shares the name the command fails closed unless
-`--all` is given. It logs `agent_token.revoked` with the same metadata.
+The name is stored under a reserved prefix, so revocation by name only ever
+selects tokens this command issued, never a person's own personal token or an
+OAuth-connected agent's. Expired tokens are ignored; when more than one live
+token shares the name the command fails closed unless `--all` is given. It logs `agent_token.revoked` with the same metadata.
 
 ## Public capability inventory
 

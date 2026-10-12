@@ -10,8 +10,8 @@ use Laravel\Passport\Passport;
 use Psr\Log\LoggerInterface;
 
 /**
- * Revoke an exact person's named agent access tokens, as issued by
- * `svc:auth:issue-agent-token`. Revocation is checked on every request, so
+ * Revoke an exact person's named agent access tokens issued by
+ * `svc:auth:issue-agent-token`, and only those. Revocation is checked on every request, so
  * the token stops working at once rather than at its expiry.
  */
 final class RevokeAgentTokenCommand extends Command
@@ -43,7 +43,8 @@ final class RevokeAgentTokenCommand extends Command
 
         $ids = Passport::token()->newQuery()
             ->where('user_id', $user->getKey())
-            ->where('name', $name)
+            // Exact equality on the reserved prefix, never a LIKE.
+            ->where('name', IssueAgentTokenCommand::NAME_PREFIX.$name)
             ->where('revoked', false)
             // An expired token authenticates nothing, so it is neither a
             // duplicate of a live one nor something to report revoking.
