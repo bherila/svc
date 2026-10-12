@@ -36,11 +36,8 @@ use PHPStan\Rules\RuleErrorBuilder;
  * that a copy of the helper somewhere else does not inherit the exemption by
  * calling itself `Locks`.
  *
- * `sharedLock()` is not flagged. It takes a read lock rather than a write lock,
- * this application does not use it anywhere, and a rule that forbade a call
- * nobody makes would be enforcing a claim it has never tested. If a shared lock
- * is ever wanted, it needs its own ordering question answered first, and that
- * is the point at which to extend this.
+ * The maintenance protocol also uses share locks. Both modes must pass through
+ * the same registry; an unrecorded share lock would hide its ordering and mode.
  *
  * @implements Rule<CallLike>
  */
@@ -61,7 +58,7 @@ final class DisallowRawLockForUpdateRule implements Rule
             return [];
         }
 
-        if (! $node->name instanceof Identifier || strtolower($node->name->name) !== 'lockforupdate') {
+        if (! $node->name instanceof Identifier || ! in_array(strtolower($node->name->name), ['lockforupdate', 'sharedlock'], true)) {
             return [];
         }
 
@@ -75,6 +72,11 @@ final class DisallowRawLockForUpdateRule implements Rule
 
         if (str_ends_with($file, self::HELPER)) {
             return [];
+        }
+
+        if (strtolower($node->name->name) === 'sharedlock') {
+            return [RuleErrorBuilder::message('sharedLock() taken outside the lock-order registry; write ->tap(Locks::forShare()) in its place.')
+                ->identifier('svc.rawSharedLock')->build()];
         }
 
         return [RuleErrorBuilder::message(

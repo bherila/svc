@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\ProjectAccess;
 use App\Services\Billing\AgreementBillingRateResolver;
+use App\Services\Billing\BillingMaintenance;
 use App\Services\Billing\DraftInvoiceTimeRegenerator;
 use App\Services\Billing\MoneyService;
 use App\Services\Engagement\EngagementException;
@@ -268,6 +269,7 @@ final class TimeEntryMutationService
     private function serialized(Workspace $workspace, ClientTimeEntry $entry, callable $write): mixed
     {
         return DB::transaction(function () use ($workspace, $entry, $write) {
+            BillingMaintenance::share($workspace->id);
             $probe = ClientTimeEntry::query()
                 ->whereKey($entry->id)
                 ->where('workspace_id', $workspace->id)
@@ -323,6 +325,7 @@ final class TimeEntryMutationService
     public function approve(Workspace $workspace, User $actor, array $entries): void
     {
         DB::transaction(function () use ($workspace, $actor, $entries): void {
+            BillingMaintenance::share($workspace->id);
             $lockedEntries = ClientTimeEntry::query()
                 ->where('workspace_id', $workspace->id)
                 ->whereIn('public_id', array_column($entries, 'id'))

@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands\Billing;
 
+use App\Exceptions\BillingMaintenanceBusy;
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientExpense;
@@ -11,6 +12,7 @@ use App\Models\ClientProject;
 use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
 use App\Models\Workspace;
+use App\Services\Billing\BillingMaintenance;
 use App\Services\Billing\ClientInvoicingService;
 use App\Services\Billing\ReplayCadenceAgreementRepository;
 use App\Services\Billing\ReplayContractCorrectionClassifier;
@@ -187,25 +189,26 @@ final class ReplayInvoicesCommand extends Command
             return self::FAILURE;
         }
 
-        $companies = $this->companies($workspace);
-        if ($companies->isEmpty()) {
-            $this->components->error('No client companies with invoice history to replay.');
-
-            return self::FAILURE;
-        }
-
-        $this->components->info(sprintf(
-            'Replaying %d client compan%s. Nothing will be written - the transaction is always rolled back.',
-            $companies->count(),
-            $companies->count() === 1 ? 'y' : 'ies',
-        ));
-
         /** @var array{comparisons: list<array<string, mixed>>, generation: list<string>} $outcome */
         $outcome = ['comparisons' => [], 'generation' => []];
 
         DB::beginTransaction();
 
         try {
+            BillingMaintenance::exclusive($workspace->id, self::class);
+            $companies = $this->companies($workspace);
+            if ($companies->isEmpty()) {
+                $this->components->error('No client companies with invoice history to replay.');
+
+                return self::FAILURE;
+            }
+
+            $this->components->info(sprintf(
+                'Replaying %d client compan%s. Nothing will be written - the transaction is always rolled back.',
+                $companies->count(),
+                $companies->count() === 1 ? 'y' : 'ies',
+            ));
+
             $historySeeds = $this->prepareReplayOnlyHistoryBasis($workspace, $companies);
             $expected = $this->snapshot($workspace, $companies);
             $this->openingCapacityContexts = $this->openingCapacityContexts($expected);
@@ -308,6 +311,10 @@ final class ReplayInvoicesCommand extends Command
                     sprintf('%d time(s), %d distinct reason(s) - see the report', array_sum($this->skipReasons), count($this->skipReasons)),
                 );
             }
+        } catch (BillingMaintenanceBusy $exception) {
+            $this->components->error($exception->getMessage());
+
+            return self::FAILURE;
         } finally {
             // Unconditional. This is the whole safety model.
             $historyBasis->reset();

@@ -53,6 +53,7 @@ final class BillingScheduleService
     public function generateDue(ClientBillingSchedule $schedule, CarbonImmutable $through, ?string $expectedVersion = null): array
     {
         return DB::transaction(function () use ($schedule, $through, $expectedVersion): array {
+            BillingMaintenance::share($schedule->workspace_id);
             $locked = ClientBillingSchedule::query()->where('workspace_id', $schedule->workspace_id)->whereKey($schedule->id)->tap(Locks::forUpdate())->firstOrFail();
             if ($expectedVersion !== null) {
                 abort_unless(AgentApiVersion::matches($locked, $expectedVersion), 409, 'The billing schedule has changed; read it and retry.');

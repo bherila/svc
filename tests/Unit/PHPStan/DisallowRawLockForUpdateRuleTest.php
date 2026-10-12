@@ -24,15 +24,14 @@ final class DisallowRawLockForUpdateRuleTest extends RuleTestCase
             __DIR__.'/../../Fixtures/PHPStan/locks/app/Services/Billing/Locking.php',
             __DIR__.'/../../Fixtures/PHPStan/locks/app/Support/Concurrency/Locks.php',
         ], [
-            // The routed call on line 13 and the shared lock on line 33 are
-            // absent by design: one is the replacement this rule asks for, the
-            // other is a different lock with a different question behind it.
+            // The routed call on line 13 is the recorded replacement.
             // The helper fixture's own call is absent because its path is the
             // exemption, which is the half of the rule an assertion about the
             // flagged lines alone would not reach.
             [$message, 18],
             [$message, 23],
             [$message, 28],
+            ['sharedLock() taken outside the lock-order registry; write ->tap(Locks::forShare()) in its place.', 33],
         ]);
     }
 }

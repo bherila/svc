@@ -6,6 +6,7 @@ use App\Contracts\WorkspaceOwned;
 use App\Models\ClientAttachment;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Billing\BillingMaintenance;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Concurrency\Locks;
 use Illuminate\Database\Eloquent\Model;
@@ -35,6 +36,7 @@ final class AttachmentAction
     public function publishPrepared(Workspace $workspace, string $type, string $id, ClientAttachment $prepared, string $expectedVersion): ClientAttachment
     {
         return DB::transaction(function () use ($workspace, $type, $id, $prepared, $expectedVersion): ClientAttachment {
+            BillingMaintenance::share($workspace->id);
             $record = $this->lockedRecord($workspace, $type, $id);
             abort_unless(AgentApiVersion::matches($record, $expectedVersion), 409, 'The record changed. Read it again before uploading.');
 
@@ -45,6 +47,7 @@ final class AttachmentAction
     public function delete(Workspace $workspace, string $id, ?string $expectedVersion = null): ClientAttachment
     {
         return DB::transaction(function () use ($workspace, $id, $expectedVersion): ClientAttachment {
+            BillingMaintenance::share($workspace->id);
             $attachment = ClientAttachment::query()->where('workspace_id', $workspace->id)->where('public_id', $id)
                 ->tap(Locks::forUpdate())->firstOrFail();
             if ($attachment->record_type === 'expense') {
