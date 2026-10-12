@@ -152,7 +152,8 @@ php artisan svc:auth:issue-agent-token USER_PUBLIC_UUID "Support session" \
 
 Each scope must be one of the agent scopes listed above; an unknown scope,
 a non-UUID or unknown user, a blank or over-long name or one with control characters, or a
-`--ttl` outside 1-240 minutes (default 60) is refused and nothing is issued. A
+`--ttl` outside 1-240 minutes (default 60) is refused and nothing is issued. Nothing is issued
+while `AGENT_API_OAUTH_SERVER_ENABLED` is off, as for any other new credential. A
 token is bound to one resource, chosen by its scopes: naming `mcp:use` makes an
 MCP token for `APP_URL/api/v1/mcp`, and omitting it makes a REST token for
 `APP_URL/api/v1`. The token is an ordinary personal access token on the same

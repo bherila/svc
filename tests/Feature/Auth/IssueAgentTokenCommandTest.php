@@ -220,6 +220,20 @@ final class IssueAgentTokenCommandTest extends TestCase
         $this->assertSame(1, Artisan::call('svc:auth:revoke-agent-token', ['user_public_id' => (string) Str::uuid(), 'name' => 'Kept']));
     }
 
+    public function test_nothing_is_issued_while_oauth_issuance_is_switched_off(): void
+    {
+        [$user] = $this->member('switched-off');
+        config(['bherila-auth.oauth_server.enabled' => false]);
+
+        foreach ([[AgentApiScopes::IDENTITY_READ], [AgentApiScopes::MCP_USE, AgentApiScopes::IDENTITY_READ]] as $scopes) {
+            [$exit, $output] = $this->issue($user, 'Switched off', $scopes);
+            $this->assertSame(1, $exit);
+            $this->assertStringNotContainsString('"token"', $output);
+        }
+        $this->assertSame(0, Passport::token()->newQuery()->count());
+        $this->assertSame(0, Passport::client()->newQuery()->count());
+    }
+
     public function test_revocation_never_reaches_a_token_this_command_did_not_issue(): void
     {
         [$user, $workspace] = $this->member('provenance');

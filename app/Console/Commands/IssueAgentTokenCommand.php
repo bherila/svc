@@ -103,6 +103,14 @@ final class IssueAgentTokenCommand extends Command
             return self::INVALID;
         }
 
+        // The OAuth server's switch turns off issuing new credentials while
+        // already-issued ones keep working; an operator token is one too.
+        if (! (bool) config('bherila-auth.oauth_server.enabled', false)) {
+            $this->error('Agent token issuance is disabled on this deployment (AGENT_API_OAUTH_SERVER_ENABLED).');
+
+            return self::FAILURE;
+        }
+
         $user = User::query()->where('public_id', $publicId)->first();
         if ($user === null) {
             $this->error('No user exists for that public UUID.');
