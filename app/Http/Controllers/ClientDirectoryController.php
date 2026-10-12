@@ -25,10 +25,12 @@ use App\Services\Authorization\ProjectAccess;
 use App\Services\Billing\InvoiceCorrectionReadService;
 use App\Services\Billing\InvoiceCorrectionService;
 use App\Services\Billing\InvoiceEmailService;
+use App\Services\Square\SquareLinkRepository;
 use App\Services\WorkspaceAuthorization;
 use App\Support\Access\PortalAccessScope;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\AgentApi\Presenters\AgreementReadPresenter;
+use App\Support\AgentApi\Presenters\SquareLinkPresenter;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceLineDetail;
 use App\Support\Billing\InvoiceStatus;
@@ -282,6 +284,10 @@ class ClientDirectoryController extends Controller
         $moneyCorrectable = $canCorrect
             ? $corrections->moneyCorrectableLineIds($clientInvoice, $workspace)
             : [];
+        // Square collects a linked invoice, or one whose agreement is billed in
+        // Square (#438): its collection actions are not offered at all.
+        $square = $manages ? app(SquareLinkPresenter::class)->invoice($clientInvoice) : null;
+        $squareCollects = $square !== null && $square['square_collects'] === true;
 
         return Inertia::render('clients/invoice', [
             'company' => [
@@ -309,6 +315,7 @@ class ClientDirectoryController extends Controller
                     ? route('agent-api.v1.invoices.update_details', [$workspace, $clientInvoice->public_id], absolute: false)
                     : null,
                 'send' => $manages
+                    && ! $squareCollects
                     && in_array($status, InvoiceStatus::collectible(), true)
                     && $clientInvoice->automatic_delivery_status !== 'automatically_sent'
                     && ! (bool) $clientInvoice->getAttribute('send_has_blocking_delivery')
@@ -324,6 +331,7 @@ class ClientDirectoryController extends Controller
                     ? $base.'/automatic-delivery/hold'
                     : null,
                 'release_automatic' => $manages
+                    && ! $squareCollects
                     && $clientInvoice->automatic_delivery_status === 'held'
                     && $clientInvoice->automatic_delivery_due_at !== null
                     ? $base.'/automatic-delivery/release'
@@ -352,6 +360,15 @@ class ClientDirectoryController extends Controller
                 ? $this->administratorNotificationOf($workspace, $clientInvoice)
                 : null,
             'invoice' => $this->invoicePayload($clientInvoice),
+            // The link itself, through the API the website shares with agents.
+            'square' => $square === null ? null : $square + [
+                'link_href' => $status === InvoiceStatus::Void->value
+                    ? null
+                    : route('agent-api.v1.invoices.square-link.store', [$workspace, $clientInvoice->public_id], absolute: false),
+                'unlink_href' => $square['link'] === null
+                    ? null
+                    : route('agent-api.v1.invoices.square-link.destroy', [$workspace, $clientInvoice->public_id], absolute: false),
+            ],
             // What each line is made of, keyed by line. The pivot has carried
             // this since the billing workflow was written - a line billed from
             // time attaches the entries it drew on - and nothing ever showed
@@ -508,6 +525,8 @@ class ClientDirectoryController extends Controller
                     : (int) $clientAgreement->period_retainer_amount,
                 'agreement_text' => $clientAgreement->agreement_text,
                 'is_visible_to_client' => (bool) $clientAgreement->is_visible_to_client,
+                // Billed in Square (#438): SVC issues, Square collects.
+                'square_series_key' => $clientAgreement->square_series_key,
             ],
             'recurring_items' => $items->map(fn (ClientAgreementRecurringItem $item): array => [
                 'id' => $item->public_id,
@@ -743,6 +762,8 @@ class ClientDirectoryController extends Controller
                 'automatic_invoice_email_delay_days' => $clientCompany->automatic_invoice_email_delay_days,
                 'invoice_recipients' => $emails->suggestedRecipientsForCompany($clientCompany),
                 'is_active' => (bool) $clientCompany->is_active,
+                // The confirmed Square customer (#438); set through the API.
+                'square_customer' => app(SquareLinkPresenter::class)->customer(app(SquareLinkRepository::class)->activeCustomer($clientCompany)),
             ],
             'projects' => $projects->map(fn (ClientProject $project): array => [
                 'id' => $project->public_id,

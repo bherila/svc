@@ -9,6 +9,8 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import WorkspaceShell from '@/layouts/workspace-shell';
+import type { ApiSchema } from '@/lib/api';
+import { formatTimestamp } from '@/lib/datetime';
 import { statusLabel } from '@/lib/labels';
 import { SHELL_CONTAINER } from '@/lib/layout';
 import { cn } from '@/lib/utils';
@@ -21,6 +23,8 @@ type ManagedCompany = {
     automatic_invoice_email_delay_days?: number | null;
     invoice_recipients?: { email: string; label: string }[];
     is_active: boolean;
+    /** The confirmed Square customer (#438), or null when none is. */
+    square_customer?: ApiSchema<'CompanySquareCustomer'> | null;
 };
 
 type ProjectMember = { user: string; role: string };
@@ -577,6 +581,50 @@ export default function ClientManage({
                         />
                     </CardContent>
                 </Card>
+
+                {company.square_customer !== undefined && (
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Square</CardTitle>
+                        </CardHeader>
+                        <CardContent className="grid grid-cols-1 gap-1 text-sm">
+                            {company.square_customer === null ? (
+                                <p className="text-muted-foreground">
+                                    No Square customer is confirmed for this
+                                    client.
+                                </p>
+                            ) : (
+                                <dl className="grid grid-cols-1 gap-1">
+                                    <div className="flex min-w-0 flex-wrap gap-2">
+                                        <dt className="text-muted-foreground">
+                                            Square customer
+                                        </dt>
+                                        <dd className="min-w-0 font-mono wrap-anywhere">
+                                            {
+                                                company.square_customer
+                                                    .square_customer_id
+                                            }
+                                        </dd>
+                                    </div>
+                                    <div className="flex min-w-0 flex-wrap gap-2">
+                                        <dt className="text-muted-foreground">
+                                            Confirmed
+                                        </dt>
+                                        <dd className="min-w-0 wrap-anywhere">
+                                            {formatTimestamp(
+                                                company.square_customer
+                                                    .confirmed_at,
+                                            )}
+                                            {company.square_customer
+                                                .confirmed_by !== null &&
+                                                ` by ${company.square_customer.confirmed_by}`}
+                                        </dd>
+                                    </div>
+                                </dl>
+                            )}
+                        </CardContent>
+                    </Card>
+                )}
 
                 <Card>
                     <CardHeader>

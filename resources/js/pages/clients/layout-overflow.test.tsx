@@ -75,6 +75,9 @@ const LONG_NAME =
 const LONG_DESCRIPTION =
     'SOC 2 / Vanta (Week 35, 08-24 to 08-30): policy approvals completed, control and automated-test progress, root lockout found and filed. Issues: #2541, #2747, #2213, #2214, #949, #2748';
 
+/** A Square identifier as long as Square allows, with nowhere to break. */
+const LONG_SQUARE_ID = `inv:0-${'SYNTHETICFIXTURE'.repeat(11)}`;
+
 /** An identifier from an import, which is where the unreasonable ones come from. */
 const LONG_INVOICE_NUMBER = 'VETV-202608-0000000000000000000001-RECONCILIATION';
 
@@ -257,6 +260,11 @@ describe('client screens under data that does not fit', () => {
                         },
                     ],
                     is_active: true,
+                    square_customer: {
+                        square_customer_id: LONG_SQUARE_ID,
+                        confirmed_at: '2026-10-08T12:00:00Z',
+                        confirmed_by: LONG_NAME,
+                    },
                 }}
                 projects={[
                     {
@@ -365,6 +373,66 @@ describe('client screens under data that does not fit', () => {
         fireEvent.click(
             container.querySelectorAll('button')[1] as HTMLButtonElement,
         );
+
+        expect(horizontalOverflowRisks(container)).toEqual([]);
+    });
+
+    /**
+     * The Square card, linked, with its re-point form open: identifiers as long
+     * as Square allows, with nothing to break them at.
+     */
+    it('keeps the Square link card and its form inside the window', () => {
+        const { container, getByRole } = render(
+            <ClientInvoiceDetail
+                company={company}
+                invoices_href="/workspaces/workspace-1/clients/company-1/invoices"
+                pdf_href="/workspaces/workspace-1/invoices/invoice-1/pdf"
+                version={'0'.repeat(64)}
+                actions={{ issue: null, send: null, payment: null, void: null }}
+                email={null}
+                deliveries={[]}
+                invoice={{
+                    id: 'invoice-1',
+                    invoice_number: LONG_INVOICE_NUMBER,
+                    status: 'issued',
+                    currency: 'USD',
+                    issue_date: '2026-08-02',
+                    due_date: '2026-09-01',
+                    total_amount: 375000,
+                    paid_amount: 0,
+                    balance_amount: 375000,
+                }}
+                lines={[]}
+                line_detail={{}}
+                payments={[]}
+                timezone="America/Los_Angeles"
+                square={{
+                    invoice_id: 'invoice-1',
+                    invoice_version: '0'.repeat(64),
+                    link: {
+                        id: 'link-1',
+                        square_invoice_id: LONG_SQUARE_ID,
+                        square_invoice_number: LONG_SQUARE_ID,
+                        series_key: '000001',
+                        currency: 'USD',
+                        match_method: 'suggested',
+                        score: 100,
+                        reasons: [LONG_DESCRIPTION, LONG_NAME],
+                        linked_at: '2026-10-08T12:00:00Z',
+                        linked_by: LONG_NAME,
+                    },
+                    agreement_series_key: '000001',
+                    square_collects: true,
+                    collection_refusal: LONG_DESCRIPTION,
+                    link_href:
+                        '/api/v1/workspaces/workspace-1/invoices/invoice-1/square-link',
+                    unlink_href:
+                        '/api/v1/workspaces/workspace-1/invoices/invoice-1/square-link',
+                }}
+            />,
+        );
+
+        fireEvent.click(getByRole('button', { name: 'Re-point' }));
 
         expect(horizontalOverflowRisks(container)).toEqual([]);
     });
