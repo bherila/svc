@@ -79,6 +79,15 @@ revision and a reason, increments the revision, recalculates totals, creates an
 activity record, and holds automatic delivery. A generated credit keeps its
 signed amount and total during a description-only correction.
 
+Each correction stores its complete before/after line evidence, due dates,
+reason, and revision pair in `client_invoice_corrections`, inside the same
+transaction as the invoice and activity. The activity contains a changed-line
+count, correction public id, and authenticated recovery URL instead of the
+line diff. This keeps a 100-line correction well below the activity payload
+limit. The recovery endpoint returns the evidence as JSON and requires
+workspace management access; it is scoped to both the workspace and invoice.
+Earlier corrections remain recoverable after a later revision.
+
 Paid, partially paid, void, already sent, and in-flight invoices cannot use
 this path. Their accounting correction is void/reissue or the narrower payment
 workflow, as applicable.

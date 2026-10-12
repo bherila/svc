@@ -26,6 +26,7 @@ final class InvoiceCorrectionService
 {
     public function __construct(
         private readonly ClientActivityRecorder $activities,
+        private readonly InvoiceCorrectionRepository $evidence,
         private readonly WorkspaceClock $clock = new WorkspaceClock,
     ) {}
 
@@ -72,6 +73,7 @@ final class InvoiceCorrectionService
                 throw new DomainException('The invoice changed after this correction form was opened. Reload it and try again.');
             }
             $fromRevision = $locked->document_revision;
+            $previousDueDate = $locked->due_date?->toDateString();
             if ($locked->payments()->where('workspace_id', $workspace->id)->exists()) {
                 throw new DomainException('Resolve or remove the recorded payment attempt before correcting this invoice.');
             }
@@ -142,6 +144,7 @@ final class InvoiceCorrectionService
                 }
 
                 $before = [
+                    'description' => $line->description,
                     'quantity' => (string) $line->quantity,
                     'unit_amount' => (int) $line->unit_amount,
                     'tax_amount' => (int) $line->tax_amount,
@@ -171,6 +174,7 @@ final class InvoiceCorrectionService
                     'description_changed' => $descriptionChanged,
                     'before' => $before,
                     'after' => [
+                        'description' => $line->description,
                         'quantity' => $quantity,
                         'unit_amount' => $unit,
                         'tax_amount' => $tax,
@@ -211,6 +215,8 @@ final class InvoiceCorrectionService
                     : 'Held after an invoice correction; release explicitly after review.',
             ])->save();
 
+            $correction = $this->evidence->append($workspace, $locked, $fromRevision, $reason, $previousDueDate, $changes);
+
             $this->activities->record(
                 $workspace,
                 $company,
@@ -221,9 +227,16 @@ final class InvoiceCorrectionService
                     'to_revision' => $locked->document_revision,
                     'reason' => trim($reason),
                     'due_date_changed' => $dueChanged,
-                    'lines' => $changes,
+                    // Keep the empty legacy key for due-date-only readers; full
+                    // line evidence belongs to the dedicated correction record.
+                    'lines' => [],
+                    'changed_line_count' => count($changes),
+                    'correction_id' => $correction->public_id,
+                    'correction_url' => route('svc.billing.invoices.corrections.show', [
+                        'workspace' => $workspace, 'clientInvoice' => $locked, 'correction' => $correction->public_id,
+                    ], absolute: false),
                 ],
-                occurrence: (string) Str::uuid(),
+                occurrence: $correction->public_id,
             );
 
             $locked->setRelation('lines', ClientInvoiceLine::query()
