@@ -10,6 +10,7 @@ use App\Models\Workspace;
 use App\Support\Billing\InvoicePaymentStatus;
 use App\Support\Concurrency\Locks;
 use App\Support\WorkspaceClock;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Stripe\Event;
@@ -72,7 +73,18 @@ final class StripeWebhookService
     /** @param array<string, mixed> $object */
     private function handle(Event $event, array $object, ClientStripeEvent $ledger): bool
     {
-        return DB::transaction(function () use ($event, $object, $ledger): bool {
+        // Resolve scope outside the business transaction: its first ordinary
+        // read must not establish a snapshot before the payment/invoice locks.
+        $paymentWorkspaceId = null;
+        if (str_starts_with((string) $event->type, 'payment_intent.') || str_starts_with((string) $event->type, 'charge.')) {
+            $probe = $this->paymentQuery($object)->first(['workspace_id']);
+            $paymentWorkspaceId = $probe !== null && $probe->workspace_id > 0 ? $probe->workspace_id : null;
+        }
+
+        return DB::transaction(function () use ($event, $object, $ledger, $paymentWorkspaceId): bool {
+            if ($paymentWorkspaceId !== null) {
+                BillingMaintenance::share($paymentWorkspaceId);
+            }
             $providerCreatedAt = max(0, (int) ($event->created ?? 0));
             if (in_array($event->type, ['payment_method.attached', 'setup_intent.succeeded'], true)) {
                 $paymentMethod = $this->paymentMethodObject($event, $object);
@@ -112,7 +124,7 @@ final class StripeWebhookService
                 );
                 $ledger->workspace_id = is_int($workspaceId) && $workspaceId > 0 ? $workspaceId : null;
             } else {
-                $this->handleInvoiceEvent($event, $object, $ledger);
+                $this->handleInvoiceEvent($event, $object, $ledger, $paymentWorkspaceId);
             }
 
             $ledger->forceFill(['status' => 'processed', 'processed_at' => $this->clock->now()])->save();
@@ -122,9 +134,10 @@ final class StripeWebhookService
     }
 
     /** @param array<string, mixed> $object */
-    private function handleInvoiceEvent(Event $event, array $object, ClientStripeEvent $ledger): void
+    private function handleInvoiceEvent(Event $event, array $object, ClientStripeEvent $ledger, ?int $paymentWorkspaceId): void
     {
-        $payment = $this->findPayment($object);
+        $payment = $paymentWorkspaceId === null ? null : $this->paymentQuery($object)
+            ->where('workspace_id', $paymentWorkspaceId)->tap(Locks::forUpdate())->first();
         $providerCreatedAt = max(0, (int) ($event->created ?? 0));
         // Stripe's vocabulary on the left, this application's on the right.
         // The mapping is the one place the two meet, so the right-hand side
@@ -259,8 +272,9 @@ final class StripeWebhookService
         return $this->gateway->client()->paymentMethods->retrieve($paymentMethod, [])->toArray();
     }
 
-    /** @param array<string, mixed> $object */
-    private function findPayment(array $object): ?ClientInvoicePayment
+    /** @param array<string, mixed> $object
+     * @return Builder<ClientInvoicePayment> */
+    private function paymentQuery(array $object): Builder
     {
         $ids = array_values(array_filter([
             isset($object['id']) ? (string) $object['id'] : null,
@@ -269,9 +283,7 @@ final class StripeWebhookService
 
         return ClientInvoicePayment::query()
             ->where('provider', 'stripe')
-            ->whereIn('provider_payment_identifier', $ids)
-            ->tap(Locks::forUpdate())
-            ->first();
+            ->whereIn('provider_payment_identifier', $ids);
     }
 
     /** @param array<string, mixed> $object */

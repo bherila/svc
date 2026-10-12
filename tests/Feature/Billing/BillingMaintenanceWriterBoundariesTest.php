@@ -7,11 +7,14 @@ use App\Models\ClientInvoice;
 use App\Models\Workspace;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Services\Billing\StripePaymentIntentService;
+use App\Services\Billing\StripeWebhookService;
 use App\Support\Concurrency\LockMode;
 use App\Support\Concurrency\LockOrderRecorder;
 use App\Support\Concurrency\LockResource;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\DataProvider;
 use RuntimeException;
+use Stripe\Event;
 use Tests\TestCase;
 
 final class BillingMaintenanceWriterBoundariesTest extends TestCase
@@ -37,6 +40,27 @@ final class BillingMaintenanceWriterBoundariesTest extends TestCase
         }
         $this->assertShareBeforeBilling();
         $this->assertDatabaseCount('client_invoice_payments', 0);
+    }
+
+    public static function paymentEvents(): iterable
+    {
+        yield 'status' => ['payment_intent.succeeded', 'pending'];
+        yield 'refund' => ['charge.refunded', 'succeeded'];
+    }
+
+    #[DataProvider('paymentEvents')]
+    public function test_provider_payment_events_take_share_mode_before_payment_locks(string $type, string $status): void
+    {
+        [$workspace, $invoice] = $this->invoice();
+        app(InvoiceLifecycleService::class)->applyPayment($invoice, ['amount' => 1000, 'currency' => 'USD', 'status' => $status,
+            'method' => 'stripe', 'provider' => 'stripe', 'provider_payment_identifier' => 'pi_synthetic_maintenance'], $workspace);
+        $data = ['id' => 'evt_synthetic_maintenance', 'type' => $type, 'created' => 200,
+            'data' => ['object' => ['id' => $type === 'charge.refunded' ? 'ch_synthetic_maintenance' : 'pi_synthetic_maintenance',
+                'payment_intent' => 'pi_synthetic_maintenance', 'amount_received' => 1000, 'amount_refunded' => 100, 'currency' => 'usd']]];
+        LockOrderRecorder::start();
+        $this->assertTrue(app(StripeWebhookService::class)->process(Event::constructFrom($data), json_encode($data, JSON_THROW_ON_ERROR)));
+        $this->assertShareBeforeBilling();
+        $this->assertSame(1, $invoice->payments()->where('workspace_id', $workspace->id)->count());
     }
 
     private function assertShareBeforeBilling(): void
