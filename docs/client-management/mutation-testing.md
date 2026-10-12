@@ -32,8 +32,11 @@ skipped at workflow detection time. Their feature tests, static rules, and
 normal CI remain authoritative; this lane asks the narrower question, “do the
 fast focused tests discriminate this changed PHP behavior?”
 
-The per-mutant timeout is 30 seconds because a unit mutation taking longer is a
-test-design signal rather than grounds to restore feature-suite runtime. The
+The per-mutant timeout is 120 seconds: about three times the idle cost of
+booting the Unit suite for a service-provider mutant, so a loaded hosted runner
+running one child per core does not read as a timeout. A unit mutation taking
+longer is a test-design signal rather than grounds to restore feature-suite
+runtime. The
 Actions job keeps a 45-minute hard failsafe while the broader application scope
 collects measurements. Changing the mutator profile at the same time as the
 score, source scope, and test suite would make those measurements incomparable,
@@ -76,7 +79,15 @@ The hook is idempotent, skips production installs without the runner, and fails
 if the dependency's polling code changes. Remove it when that correction is
 available in the dependency.
 
-The hosted mutation job remains advisory while runtime is calibrated. A red
+A **measurement gate** (`scripts/mutation-gate.php`, run by both the Composer
+script and the hosted job) fails when more than half of the generated mutants
+timed out or were skipped, or when Infection wrote no summary, and prints the
+killed/escaped/timed-out/skipped counts to the job summary. Such a run
+classified nothing, so it cannot be allowed to look green (#443).
+`MutationGateScriptTest` runs it against fixtures. This gate is not advisory:
+the hosted job fails on it.
+
+The hosted mutation *score* remains advisory while runtime is calibrated. A red
 hosted result on an already-reviewed pull request creates a focused follow-up;
 it does not by itself reopen unrelated review. That does not waive the local
 rule: before re-requesting review after a code fix, refresh `origin/main` and

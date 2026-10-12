@@ -9,9 +9,15 @@
     // The PR lane deliberately measures fast unit discrimination. Feature-only
     // behavior is reported as zero mutants rather than spending minutes per
     // mutant in database-backed scenarios.
-    // Bootstrapping the Laravel Unit suite takes roughly 37 seconds on the
-    // supported local/CI runners when a service-provider line is mutated.
-    timeout: 60,
+    // Bootstrapping the Laravel Unit suite takes roughly 37 seconds on an idle
+    // machine when a service-provider line is mutated, and `threads: max`
+    // runs one such child per core on a shared hosted runner, which roughly
+    // doubles it. 60s left no margin: on #443 every mutant of a diff that
+    // the same machine killed 14/14 locally timed out in CI. 120s is about
+    // 3x the idle cost, so contention no longer reads as a timeout while a
+    // genuinely hung mutant is still cut off. scripts/mutation-gate.php fails
+    // the lane if more than half the mutants still time out or are skipped.
+    timeout: 120,
     threads: "max",
     tmpDir: "storage/framework/cache/infection-diff",
     logs: {

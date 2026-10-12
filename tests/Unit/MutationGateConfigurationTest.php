@@ -23,7 +23,7 @@ final class MutationGateConfigurationTest extends TestCase
         $this->assertMatchesRegularExpression('/directories:\s*\["app"\]/', $configuration);
         $this->assertStringContainsString('summaryJson:', $configuration);
         $this->assertStringContainsString('--testsuite=Unit', $configuration);
-        $this->assertStringContainsString('timeout: 60', $configuration);
+        $this->assertStringContainsString('timeout: 120', $configuration);
         $this->assertStringNotContainsString('ExternalImport', $configuration);
         $this->assertStringContainsString('scripts/run-mutation-diff.sh', $command);
         $this->assertStringContainsString('MUTATION_BASE:-origin/main', $runner);
@@ -31,12 +31,13 @@ final class MutationGateConfigurationTest extends TestCase
         $this->assertStringContainsString('GIT_CONFIG_VALUE_0=false', $runner);
         $this->assertStringContainsString('--git-diff-lines', $runner);
         $this->assertStringContainsString('--min-covered-msi=82', $runner);
+        $this->assertStringContainsString('php scripts/mutation-gate.php', $runner);
         $this->assertStringNotContainsString('--with-uncovered', $runner);
         $this->assertStringNotContainsString('--min-msi=', $runner);
         // An agent shell swaps PHPUnit's output for a JSON line Infection
         // cannot read, which counts every mutant as killed.
         $this->assertMatchesRegularExpression('/^export PAO_DISABLE=1$/m', $runner);
-        $this->assertLessThan(strpos($runner, 'exec php'), strpos($runner, 'export PAO_DISABLE=1'));
+        $this->assertLessThan(strpos($runner, 'php -d pcov'), strpos($runner, 'export PAO_DISABLE=1'));
         $this->assertContains('@putenv PAO_DISABLE=1', $composer['scripts']['test:mutation']);
     }
 
@@ -54,7 +55,11 @@ final class MutationGateConfigurationTest extends TestCase
         $this->assertStringContainsString('Mutation gate not applicable', $workflow);
         $this->assertStringContainsString('Mutation gate produced zero mutants', $workflow);
         $this->assertStringContainsString('No mutants were produced', $workflow);
-        $this->assertStringContainsString('continue-on-error: true', $workflow);
+        // The score stays advisory per step; the job itself must be able to fail
+        // so a run that measured nothing cannot show a green lane (#443).
+        $this->assertStringContainsString('        continue-on-error: true', $workflow);
+        $this->assertStringContainsString('php scripts/mutation-gate.php', $workflow);
+        $this->assertDoesNotMatchRegularExpression('/^  mutation:\n(?:(?!^  \S).*\n)*?    continue-on-error: true/m', $workflow);
     }
 
     public function test_the_escape_policy_requires_a_code_local_reason(): void

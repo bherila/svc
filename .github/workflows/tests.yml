@@ -251,7 +251,6 @@ jobs:
   mutation:
     name: Diff-scoped mutation tests
     if: ${{ github.event_name == 'pull_request' }}
-    continue-on-error: true
     # Typical diffs should remain near the ten-minute target. This is only the
     # hard failsafe for unusually broad money-path changes: #125 generated
     # 1,407 mutants and was cancelled by the former 12-minute cap before
@@ -323,40 +322,40 @@ jobs:
         if: ${{ steps.mutation_scope.outputs.required == 'true' }}
         env:
           MUTATION_BASE: ${{ steps.mutation_scope.outputs.merge_base }}
+        # The score is advisory (docs/client-management/mutation-testing.md),
+        # so a red Infection exit does not fail the job. The measurement gate
+        # in the next step does.
+        continue-on-error: true
         run: composer test:mutation-diff
 
-      - name: Report mutation result
+      - name: Gate on mutants actually measured
         if: ${{ always() && steps.mutation_scope.outputs.required == 'true' }}
         env:
           MUTATION_OUTCOME: ${{ steps.mutation_run.outcome }}
         run: |
           summary=storage/framework/cache/infection-diff/summary.json
-          if [ ! -f "$summary" ]; then
-            echo "::warning title=Mutation result unavailable::Infection did not produce its summary; inspect the mutation step output."
-            {
-              echo
-              echo "Infection outcome: **$MUTATION_OUTCOME**. No result summary was produced; inspect the mutation step output."
-            } >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-
-          total=$(jq -r '.stats.totalMutantsCount' "$summary")
-          killed=$(jq -r '.stats.killedCount' "$summary")
-          escaped=$(jq -r '.stats.escapedCount' "$summary")
-          covered_msi=$(jq -er '.stats.coveredCodeMsi // .coveredCodeMutationScoreIndicator' "$summary")
-
-          if [ "$total" -eq 0 ]; then
-            echo "::notice title=Mutation gate produced zero mutants::The changed PHP source was analyzed, but no covered changed line produced a mutant."
-          fi
-
+          echo "Infection outcome: $MUTATION_OUTCOME"
           {
             echo
-            echo "Infection outcome: **$MUTATION_OUTCOME**. Mutants: **$total** total, **$killed** killed, **$escaped** escaped. Covered-code MSI: **$covered_msi%**."
-            if [ "$total" -eq 0 ]; then
-              echo
-              echo "No mutants were produced; this is not evidence that tests discriminated a behavioral change."
-            fi
+            echo "Infection outcome: **$MUTATION_OUTCOME**."
           } >> "$GITHUB_STEP_SUMMARY"
+
+          # Fails when the summary is missing or more than half the mutants
+          # timed out or were skipped (#443); writes the counts to the summary.
+          php scripts/mutation-gate.php "$summary"
+
+          if [ -f "$summary" ]; then
+            total=$(jq -r '.stats.totalMutantsCount' "$summary")
+            covered_msi=$(jq -er '.stats.coveredCodeMsi // .coveredCodeMutationScoreIndicator' "$summary")
+            echo "Covered-code MSI: **$covered_msi%**." >> "$GITHUB_STEP_SUMMARY"
+            if [ "$total" -eq 0 ]; then
+              echo "::notice title=Mutation gate produced zero mutants::The changed PHP source was analyzed, but no covered changed line produced a mutant."
+              {
+                echo
+                echo "No mutants were produced; this is not evidence that tests discriminated a behavioral change."
+              } >> "$GITHUB_STEP_SUMMARY"
+            fi
+          fi
 
   deploy:
     name: Deploy empty alpha to web1
