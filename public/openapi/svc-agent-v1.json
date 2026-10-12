@@ -5630,6 +5630,55 @@
                 "x-mcp-tool": "square.payments.list"
             }
         },
+        "/workspaces/{workspace}/square/sync": {
+            "post": {
+                "operationId": "square.sync",
+                "description": "Workspace managers only. Refresh svc's read-only mirror of the connected Square account now, rather than waiting for the scheduled sync every 15 minutes: locations, customers, every invoice with its series_key, status, amounts, due date, Square reminder schedule and public_url, and payment ids for paid invoices. Reads Square only; nothing is created, changed or paid in Square, and no svc invoice changes. Returns the run, which ends completed or failed with a reason; a few manual syncs are allowed per ten minutes. Repeating the same idempotency key returns the same run.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "billing:write"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/SquareSyncRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The sync run, completed or failed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SquareSyncRunResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                }
+            }
+        },
         "/workspaces/{workspace}/projects/{project}/tasks": {
             "post": {
                 "operationId": "tasks.create",
@@ -12401,6 +12450,146 @@
                 "type": "string",
                 "pattern": "^[0-9]{6}$",
                 "description": "A Square recurring series: the six-digit prefix of its invoices' NNNNNN-R-NNNN numbers."
+            },
+            "SquareSyncRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "No fields: a sync always refreshes the whole mirror.",
+                "properties": {}
+            },
+            "SquareSyncRun": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "id",
+                    "trigger",
+                    "status",
+                    "square_version",
+                    "requested_at",
+                    "started_at",
+                    "finished_at",
+                    "locations_seen",
+                    "customers_seen",
+                    "customers_changed",
+                    "invoices_seen",
+                    "invoices_changed",
+                    "payments_resolved",
+                    "high_water_mark",
+                    "truncated",
+                    "error_code",
+                    "error"
+                ],
+                "description": "One pass of the Square mirror sync.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "trigger": {
+                        "type": "string",
+                        "enum": [
+                            "schedule",
+                            "request"
+                        ]
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "requested",
+                            "running",
+                            "completed",
+                            "failed"
+                        ]
+                    },
+                    "square_version": {
+                        "type": "string",
+                        "maxLength": 16,
+                        "description": "The Square-Version every request of the run sent."
+                    },
+                    "requested_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time"
+                    },
+                    "started_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time"
+                    },
+                    "finished_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time"
+                    },
+                    "locations_seen": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "customers_seen": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "customers_changed": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "invoices_seen": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "invoices_changed": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "payments_resolved": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "high_water_mark": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "The newest Square updated_at the run saw."
+                    },
+                    "truncated": {
+                        "type": "boolean",
+                        "description": "True when a listing was longer than one run reads; the mirror is then incomplete."
+                    },
+                    "error_code": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 64
+                    },
+                    "error": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 255
+                    }
+                }
+            },
+            "SquareSyncRunResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data"
+                ],
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/SquareSyncRun"
+                    }
+                }
             },
             "StaleAndMissingInvoiceAudit": {
                 "type": "object",

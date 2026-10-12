@@ -22,6 +22,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Sleep;
 use Tests\Concerns\CapturesTenantOwnedWrites;
 use Tests\Concerns\FakesSquare;
+use Tests\Concerns\ServesSyntheticSquareAccount;
 use Tests\TestCase;
 
 /**
@@ -33,14 +34,12 @@ final class SquareMirrorSyncTest extends TestCase
     use CapturesTenantOwnedWrites;
     use FakesSquare;
     use RefreshDatabase;
+    use ServesSyntheticSquareAccount;
 
     private Workspace $workspace;
 
     /** @var list<array{string, array<string, mixed>}> */
     private array $logged = [];
-
-    /** @var array{pages: list<list<array<string, mixed>>>, customers: list<array<string, mixed>>, loop: bool}|null */
-    private ?array $account = null;
 
     protected function setUp(): void
     {
@@ -65,7 +64,7 @@ final class SquareMirrorSyncTest extends TestCase
 
     public function test_a_sync_mirrors_locations_customers_and_invoices_with_their_series_and_payment_ids(): void
     {
-        $this->fakeAccount();
+        $this->serveSquareAccount();
 
         $run = $this->sync();
 
@@ -125,7 +124,7 @@ final class SquareMirrorSyncTest extends TestCase
 
     public function test_an_unchanged_account_writes_nothing_but_when_each_row_was_last_seen(): void
     {
-        $this->fakeAccount();
+        $this->serveSquareAccount();
         $this->sync();
         $before = SquareInvoiceSnapshot::query()->orderBy('id')->get(['square_invoice_id', 'synced_at', 'updated_at'])->toArray();
 
@@ -142,14 +141,14 @@ final class SquareMirrorSyncTest extends TestCase
 
     public function test_a_changed_invoice_is_rewritten_and_its_payment_ids_read_again(): void
     {
-        $this->fakeAccount();
+        $this->serveSquareAccount();
         $this->sync();
 
         $paidNow = self::squareInvoice('inv:0-fixture1', '000001-R-0001');
         $paidNow['version'] = 3;
         $paidNow['status'] = 'PAID';
         $paidNow['payment_requests'][0]['total_completed_amount_money'] = ['amount' => 12_345, 'currency' => 'USD'];
-        $this->fakeAccount(invoices: [$paidNow, ...array_slice($this->invoices(), 1)]);
+        $this->serveSquareAccount(invoices: [$paidNow, ...array_slice($this->syntheticInvoices(), 1)]);
         $run = $this->sync();
 
         $this->assertSame([1, 1], [$run->invoices_changed, $run->payments_resolved]);
@@ -181,15 +180,15 @@ final class SquareMirrorSyncTest extends TestCase
 
     public function test_listings_are_followed_across_pages_and_a_repeated_cursor_fails_the_run(): void
     {
-        $invoices = $this->invoices();
-        $this->fakeAccount(invoicePages: [[$invoices[0]], [$invoices[1]], [$invoices[2]]]);
+        $invoices = $this->syntheticInvoices();
+        $this->serveSquareAccount(invoicePages: [[$invoices[0]], [$invoices[1]], [$invoices[2]]]);
 
         $run = $this->sync();
 
         $this->assertSame([SquareSyncRun::COMPLETED, 3], [$run->status, $run->invoices_seen]);
         Http::assertSent(static fn (Request $request): bool => str_contains($request->url(), '/v2/invoices') && ($request->data()['cursor'] ?? null) === 'cursor-2');
 
-        $this->fakeAccount(invoicePages: [[$invoices[0]], [$invoices[1]]], loopCursor: true);
+        $this->serveSquareAccount(invoicePages: [[$invoices[0]], [$invoices[1]]], loopCursor: true);
         $looping = $this->sync();
         $this->assertSame([SquareSyncRun::FAILED, 'UNREADABLE'], [$looping->status, $looping->error_code]);
         $this->assertSame(3, SquareInvoiceSnapshot::query()->count());
@@ -209,7 +208,7 @@ final class SquareMirrorSyncTest extends TestCase
 
     public function test_a_run_is_performed_once_and_a_run_for_an_unbound_workspace_does_nothing(): void
     {
-        $this->fakeAccount();
+        $this->serveSquareAccount();
         $sync = app(SquareMirrorSync::class);
         $run = $sync->perform($this->workspace, $sync->request($this->workspace, SquareSyncRun::TRIGGER_REQUEST));
         $calls = count(Http::recorded());
@@ -241,13 +240,13 @@ final class SquareMirrorSyncTest extends TestCase
 
     public function test_every_mirror_write_names_its_workspace(): void
     {
-        $this->fakeAccount();
+        $this->serveSquareAccount();
         $this->sync();
         $paidNow = self::squareInvoice('inv:0-fixture1', '000001-R-0001');
         $paidNow['version'] = 3;
         $paidNow['status'] = 'PAID';
         $paidNow['payment_requests'][0]['total_completed_amount_money'] = ['amount' => 12_345, 'currency' => 'USD'];
-        $this->fakeAccount(invoices: [$paidNow, ...array_slice($this->invoices(), 1)]);
+        $this->serveSquareAccount(invoices: [$paidNow, ...array_slice($this->syntheticInvoices(), 1)]);
 
         $writes = $this->writesIssuedBy(fn () => $this->sync());
 
@@ -261,7 +260,7 @@ final class SquareMirrorSyncTest extends TestCase
         $this->assertSame('*/15 * * * *', $events[0]->expression);
         $this->assertTrue($events[0]->withoutOverlapping);
 
-        $this->fakeAccount();
+        $this->serveSquareAccount();
         $this->artisan('svc:square:sync')->assertSuccessful();
         $this->assertSame(['trigger' => SquareSyncRun::TRIGGER_SCHEDULE, 'status' => SquareSyncRun::COMPLETED], SquareSyncRun::query()->sole()->only(['trigger', 'status']));
 
@@ -278,59 +277,5 @@ final class SquareMirrorSyncTest extends TestCase
         $sync = app(SquareMirrorSync::class);
 
         return $sync->perform($this->workspace, $sync->request($this->workspace, SquareSyncRun::TRIGGER_REQUEST));
-    }
-
-    /** @return list<array<string, mixed>> */
-    private function invoices(): array
-    {
-        $paid = self::squareInvoice('inv:0-fixture2', '000001-R-0002');
-        $paid['status'] = 'PAID';
-        $paid['updated_at'] = '2026-10-02T15:00:00Z';
-        $paid['payment_requests'][0]['total_completed_amount_money'] = ['amount' => 12_345, 'currency' => 'USD'];
-        $oneOff = self::squareInvoice('inv:0-fixture3', '000002');
-        $oneOff['order_id'] = 'order_fixture_3';
-        $oneOff['payment_requests'][0]['automatic_payment_source'] = 'NONE';
-        unset($oneOff['payment_requests'][0]['card_id']);
-
-        return [self::squareInvoice(), $paid, $oneOff];
-    }
-
-    /**
-     * Serves the synthetic account from {@see $account}, which a test may
-     * change between syncs; the fake is registered once, because a later
-     * Http::fake() is consulted only after the earlier one.
-     *
-     * @param  list<array<string, mixed>>|null  $invoices
-     * @param  list<list<array<string, mixed>>>|null  $invoicePages
-     */
-    private function fakeAccount(?array $invoices = null, ?array $invoicePages = null, bool $loopCursor = false): void
-    {
-        $second = self::squareCustomer('cust_fixture_b');
-        $second['company_name'] = null;
-        $second['email_address'] = 'blake@example.test';
-        $first = $this->account === null;
-        $this->account = ['pages' => $invoicePages ?? [$invoices ?? $this->invoices()], 'customers' => [self::squareCustomer(), $second], 'loop' => $loopCursor];
-        if (! $first) {
-            return;
-        }
-        Http::fake(function (Request $request) {
-            $path = (string) parse_url($request->url(), PHP_URL_PATH);
-            parse_str((string) parse_url($request->url(), PHP_URL_QUERY), $query);
-            $pages = $this->account['pages'];
-
-            if ($path === '/v2/invoices') {
-                $index = isset($query['cursor']) ? (int) substr((string) $query['cursor'], 7) - 1 : 0;
-                $next = $index + 1 < count($pages) ? 'cursor-'.($index + 2) : ($this->account['loop'] ? 'cursor-'.($index + 1) : null);
-
-                return Http::response(array_filter(['invoices' => $pages[$index], 'cursor' => $next]));
-            }
-
-            return match (true) {
-                $path === '/v2/locations' => Http::response(['locations' => [self::squareLocation()]]),
-                $path === '/v2/customers' => Http::response(['customers' => $this->account['customers']]),
-                str_starts_with($path, '/v2/orders/') => Http::response(['order' => self::squareOrder(rawurldecode(substr($path, strlen('/v2/orders/'))))]),
-                default => Http::response(['errors' => [['category' => 'INVALID_REQUEST_ERROR', 'code' => 'NOT_FOUND']]], 404),
-            };
-        });
     }
 }

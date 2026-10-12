@@ -1233,6 +1233,18 @@
             "mcp.switch:square.payments.list"
         ]
     },
+    "square.sync": {
+        "scopes": [
+            "billing:write"
+        ],
+        "flags": [
+            "agent.writes",
+            "square.connected",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:square.sync"
+        ]
+    },
     "tasks.create": {
         "scopes": [
             "tasks:write"

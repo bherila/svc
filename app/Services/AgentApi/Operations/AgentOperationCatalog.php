@@ -15,6 +15,7 @@ use App\Services\Mcp\AgentMcpPortalInvitationTools;
 use App\Services\Mcp\AgentMcpPrompts;
 use App\Services\Mcp\AgentMcpReadTools;
 use App\Services\Mcp\AgentMcpSquareLinkTools;
+use App\Services\Mcp\AgentMcpSquareMirrorTools;
 use App\Services\Mcp\AgentMcpSquareTools;
 use App\Services\Mcp\AgentMcpWriteTools;
 use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
@@ -158,6 +159,7 @@ final class AgentOperationCatalog
         'square.orders.get' => ['square.orders.show', '/workspaces/{workspace}/square/orders/{order}', [200]],
         'square.payments.get' => ['square.payments.show', '/workspaces/{workspace}/square/payments/{payment}', [200]],
         'square.payments.list' => ['square.payments.index', '/workspaces/{workspace}/square/payments', [200]],
+        'square.sync' => ['square.sync', '/workspaces/{workspace}/square/sync', [200]],
         'tasks.create' => ['tasks.store', '/workspaces/{workspace}/projects/{project}/tasks', [201]],
         'tasks.get' => ['tasks.show', '/workspaces/{workspace}/tasks/{task}', [200]],
         'tasks.list' => ['tasks.index', '/workspaces/{workspace}/tasks', [200]],
@@ -203,7 +205,7 @@ final class AgentOperationCatalog
     private function build(): OperationRegistry
     {
         $registry = new OperationRegistry;
-        $registry->register(...$this->tools(), ...$this->restOnly(), ...$this->resourcesAndPrompts(), ...$this->square());
+        $registry->register(...$this->tools(), ...$this->restOnly(), ...$this->resourcesAndPrompts(), ...$this->square(), ...$this->squareMirror());
         $documented = array_keys(AgentRestDocumentation::operations());
         $bound = array_keys(self::ROUTES);
         sort($documented);
@@ -1344,6 +1346,40 @@ final class AgentOperationCatalog
         }
 
         return $operations;
+    }
+
+    /**
+     * svc's read-only mirror of Square (#438): manager-only, offered only
+     * while Square is configured. The sync reads Square and writes only the
+     * mirror, so it is a local write in an open world, and the outer agent
+     * write switch withholds it like any other write.
+     *
+     * @return list<Operation>
+     */
+    private function squareMirror(): array
+    {
+        $this->external['square.sync'] = true;
+
+        return [
+            $this->tool(
+                'square.sync',
+                'Sync Square mirror',
+                self::documented('square.sync'),
+                [AgentMcpSquareMirrorTools::class, 'sync'],
+                Effect::LocalWrite,
+                true,
+                'mcp.write',
+                cutovers: [AgentDeploymentFlags::WRITES, AgentDeploymentFlags::SQUARE],
+                manager: true,
+            ),
+        ];
+    }
+
+    private static function documented(string $id): string
+    {
+        $description = AgentRestDocumentation::operations()[$id]['description'] ?? null;
+
+        return is_string($description) ? $description : throw new LogicException("Operation [{$id}] has no documented description.");
     }
 
     /** @return list<Operation> */

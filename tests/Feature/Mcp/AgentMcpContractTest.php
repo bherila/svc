@@ -277,6 +277,7 @@ final class AgentMcpContractTest extends TestCase
             'square.orders.get' => ['billing:read'],
             'square.payments.get' => ['billing:read'],
             'square.payments.list' => ['billing:read'],
+            'square.sync' => ['billing:write'],
             'tasks.create' => ['tasks:write'],
             'tasks.get' => ['tasks:read'],
             'tasks.list' => ['tasks:read'],

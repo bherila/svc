@@ -21000,6 +21000,7 @@
                     "square.orders.get role",
                     "square.payments.get role",
                     "square.payments.list role",
+                    "square.sync role",
                     "time_entries.unapprove role"
                 ]
             },
@@ -21140,6 +21141,7 @@
                     "square.orders.get role",
                     "square.payments.get role",
                     "square.payments.list role",
+                    "square.sync role",
                     "time_entries.unapprove role"
                 ]
             },
@@ -21280,6 +21282,7 @@
                     "square.orders.get role",
                     "square.payments.get role",
                     "square.payments.list role",
+                    "square.sync role",
                     "time_entries.unapprove role"
                 ]
             },
@@ -21420,6 +21423,7 @@
                     "square.orders.get role",
                     "square.payments.get role",
                     "square.payments.list role",
+                    "square.sync role",
                     "time_entries.unapprove role"
                 ]
             },
@@ -21535,6 +21539,7 @@
                     "proposals.accept scope_not_granted proposals:accept",
                     "proposals.create scope_not_granted proposals:write",
                     "proposals.send scope_not_granted proposals:write",
+                    "square.sync scope_not_granted billing:write",
                     "tasks.create scope_not_granted tasks:write",
                     "tasks.update scope_not_granted tasks:write",
                     "time_entries.approve scope_not_granted time:approve",
@@ -21696,7 +21701,8 @@
                 "square.locations.list": "3d2ed25073bb7214",
                 "square.orders.get": "b771200ad7c9f57f",
                 "square.payments.get": "2ca42a3d1bb45cc8",
-                "square.payments.list": "b64361da80f37d8a"
+                "square.payments.list": "b64361da80f37d8a",
+                "square.sync": "107c06a20bae1b8a"
             },
             "resources": [],
             "resourceTemplates": {
@@ -21795,6 +21801,7 @@
                     "square.orders.get role",
                     "square.payments.get role",
                     "square.payments.list role",
+                    "square.sync scope_not_granted billing:write",
                     "tasks.create scope_not_granted tasks:write",
                     "tasks.update scope_not_granted tasks:write",
                     "time_entries.approve scope_not_granted time:approve",
@@ -21984,6 +21991,7 @@
                     "square.orders.get role",
                     "square.payments.get role",
                     "square.payments.list role",
+                    "square.sync scope_not_granted billing:write",
                     "tasks.create scope_not_granted tasks:write",
                     "tasks.update scope_not_granted tasks:write",
                     "time_entries.approve scope_not_granted time:approve",
@@ -22152,6 +22160,7 @@
                     "square.orders.get deployment_disabled",
                     "square.payments.get deployment_disabled",
                     "square.payments.list deployment_disabled",
+                    "square.sync deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.update deployment_disabled",
                     "time_entries.approve deployment_disabled",
@@ -22293,6 +22302,7 @@
                     "square.orders.get deployment_disabled",
                     "square.payments.get deployment_disabled",
                     "square.payments.list deployment_disabled",
+                    "square.sync deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.update deployment_disabled",
                     "time_entries.approve deployment_disabled",
@@ -22457,6 +22467,7 @@
                     "square.orders.get deployment_disabled",
                     "square.payments.get deployment_disabled",
                     "square.payments.list deployment_disabled",
+                    "square.sync deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.update deployment_disabled",
                     "time_entries.approve deployment_disabled",
@@ -22596,6 +22607,7 @@
                     "square.orders.get deployment_disabled",
                     "square.payments.get deployment_disabled",
                     "square.payments.list deployment_disabled",
+                    "square.sync deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.update deployment_disabled",
                     "time_entries.approve deployment_disabled",
@@ -22735,6 +22747,7 @@
                     "square.orders.get deployment_disabled",
                     "square.payments.get deployment_disabled",
                     "square.payments.list deployment_disabled",
+                    "square.sync deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.update deployment_disabled",
                     "time_entries.approve deployment_disabled",
@@ -22874,6 +22887,7 @@
                     "square.orders.get deployment_disabled",
                     "square.payments.get deployment_disabled",
                     "square.payments.list deployment_disabled",
+                    "square.sync deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.update deployment_disabled",
                     "time_entries.approve deployment_disabled",
@@ -22981,6 +22995,7 @@
                     "proposals.accept deployment_disabled",
                     "proposals.create deployment_disabled",
                     "proposals.send deployment_disabled",
+                    "square.sync deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.update deployment_disabled",
                     "time_entries.approve deployment_disabled",
@@ -23120,6 +23135,7 @@
                     "proposals.accept deployment_disabled",
                     "proposals.create deployment_disabled",
                     "proposals.send deployment_disabled",
+                    "square.sync deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.update deployment_disabled",
                     "time_entries.approve deployment_disabled",
@@ -23293,6 +23309,7 @@
                     "square.orders.get role",
                     "square.payments.get role",
                     "square.payments.list role",
+                    "square.sync deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.update deployment_disabled",
                     "time_entries.approve deployment_disabled",
@@ -23430,6 +23447,7 @@
                     "square.orders.get role",
                     "square.payments.get role",
                     "square.payments.list role",
+                    "square.sync deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.update deployment_disabled",
                     "time_entries.approve deployment_disabled",
@@ -23567,6 +23585,7 @@
                     "square.orders.get role",
                     "square.payments.get role",
                     "square.payments.list role",
+                    "square.sync deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.update deployment_disabled",
                     "time_entries.approve deployment_disabled",
@@ -23704,6 +23723,7 @@
                     "square.orders.get role",
                     "square.payments.get role",
                     "square.payments.list role",
+                    "square.sync deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.update deployment_disabled",
                     "time_entries.approve deployment_disabled",
@@ -23809,6 +23829,7 @@
                     "proposals.accept deployment_disabled",
                     "proposals.create deployment_disabled",
                     "proposals.send deployment_disabled",
+                    "square.sync deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.update deployment_disabled",
                     "time_entries.approve deployment_disabled",
@@ -23950,6 +23971,7 @@
                     "proposals.accept deployment_disabled",
                     "proposals.create deployment_disabled",
                     "proposals.send deployment_disabled",
+                    "square.sync deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.update deployment_disabled",
                     "time_entries.approve deployment_disabled",
@@ -24125,6 +24147,7 @@
                     "square.orders.get role",
                     "square.payments.get role",
                     "square.payments.list role",
+                    "square.sync deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.update deployment_disabled",
                     "time_entries.approve deployment_disabled",
@@ -24264,6 +24287,7 @@
                     "square.orders.get role",
                     "square.payments.get role",
                     "square.payments.list role",
+                    "square.sync deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.update deployment_disabled",
                     "time_entries.approve deployment_disabled",
@@ -24403,6 +24427,7 @@
                     "square.orders.get role",
                     "square.payments.get role",
                     "square.payments.list role",
+                    "square.sync deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.update deployment_disabled",
                     "time_entries.approve deployment_disabled",
@@ -24542,6 +24567,7 @@
                     "square.orders.get role",
                     "square.payments.get role",
                     "square.payments.list role",
+                    "square.sync deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.update deployment_disabled",
                     "time_entries.approve deployment_disabled",
@@ -24711,6 +24737,7 @@
                 "square.orders.get": "b771200ad7c9f57f",
                 "square.payments.get": "2ca42a3d1bb45cc8",
                 "square.payments.list": "b64361da80f37d8a",
+                "square.sync": "107c06a20bae1b8a",
                 "tasks.create": "bb5e6c39c20f5540",
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
@@ -24852,6 +24879,7 @@
                 "square.orders.get": "b771200ad7c9f57f",
                 "square.payments.get": "2ca42a3d1bb45cc8",
                 "square.payments.list": "b64361da80f37d8a",
+                "square.sync": "107c06a20bae1b8a",
                 "tasks.create": "bb5e6c39c20f5540",
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
@@ -24964,6 +24992,7 @@
                     "square.orders.get role",
                     "square.payments.get role",
                     "square.payments.list role",
+                    "square.sync role",
                     "time_entries.unapprove role"
                 ]
             },
@@ -25103,6 +25132,7 @@
                     "square.orders.get role",
                     "square.payments.get role",
                     "square.payments.list role",
+                    "square.sync role",
                     "time_entries.unapprove role"
                 ]
             },
@@ -25242,6 +25272,7 @@
                     "square.orders.get role",
                     "square.payments.get role",
                     "square.payments.list role",
+                    "square.sync role",
                     "time_entries.unapprove role"
                 ]
             },
@@ -25381,6 +25412,7 @@
                     "square.orders.get role",
                     "square.payments.get role",
                     "square.payments.list role",
+                    "square.sync role",
                     "time_entries.unapprove role"
                 ]
             },
@@ -25469,6 +25501,7 @@
                     "proposals.accept deployment_disabled",
                     "proposals.create deployment_disabled",
                     "proposals.send deployment_disabled",
+                    "square.sync deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.update deployment_disabled",
                     "time_entries.approve deployment_disabled",
@@ -25608,6 +25641,7 @@
                     "proposals.accept deployment_disabled",
                     "proposals.create deployment_disabled",
                     "proposals.send deployment_disabled",
+                    "square.sync deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.update deployment_disabled",
                     "time_entries.approve deployment_disabled",
@@ -25801,6 +25835,7 @@
                     "square.orders.get role",
                     "square.payments.get role",
                     "square.payments.list role",
+                    "square.sync deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.update deployment_disabled",
                     "time_entries.approve deployment_disabled",
@@ -25938,6 +25973,7 @@
                     "square.orders.get role",
                     "square.payments.get role",
                     "square.payments.list role",
+                    "square.sync deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.update deployment_disabled",
                     "time_entries.approve deployment_disabled",
@@ -26075,6 +26111,7 @@
                     "square.orders.get role",
                     "square.payments.get role",
                     "square.payments.list role",
+                    "square.sync deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.update deployment_disabled",
                     "time_entries.approve deployment_disabled",
@@ -26212,6 +26249,7 @@
                     "square.orders.get role",
                     "square.payments.get role",
                     "square.payments.list role",
+                    "square.sync deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.update deployment_disabled",
                     "time_entries.approve deployment_disabled",
@@ -26622,6 +26660,7 @@
                     "square.orders.get role",
                     "square.payments.get role",
                     "square.payments.list role",
+                    "square.sync role",
                     "time_entries.unapprove role"
                 ]
             },
@@ -26762,6 +26801,7 @@
                     "square.orders.get role",
                     "square.payments.get role",
                     "square.payments.list role",
+                    "square.sync role",
                     "time_entries.unapprove role"
                 ]
             },
@@ -26902,6 +26942,7 @@
                     "square.orders.get role",
                     "square.payments.get role",
                     "square.payments.list role",
+                    "square.sync role",
                     "time_entries.unapprove role"
                 ]
             },
@@ -27042,6 +27083,7 @@
                     "square.orders.get role",
                     "square.payments.get role",
                     "square.payments.list role",
+                    "square.sync role",
                     "time_entries.unapprove role"
                 ]
             },
@@ -27464,6 +27506,7 @@
                     "square.orders.get role",
                     "square.payments.get role",
                     "square.payments.list role",
+                    "square.sync role",
                     "time_entries.list deployment_disabled",
                     "time_entries.unapprove role"
                 ]
@@ -27601,6 +27644,7 @@
                     "square.orders.get role",
                     "square.payments.get role",
                     "square.payments.list role",
+                    "square.sync role",
                     "time_entries.list deployment_disabled",
                     "time_entries.unapprove role"
                 ]
@@ -27738,6 +27782,7 @@
                     "square.orders.get role",
                     "square.payments.get role",
                     "square.payments.list role",
+                    "square.sync role",
                     "time_entries.list deployment_disabled",
                     "time_entries.unapprove role"
                 ]
@@ -27875,6 +27920,7 @@
                     "square.orders.get role",
                     "square.payments.get role",
                     "square.payments.list role",
+                    "square.sync role",
                     "time_entries.list deployment_disabled",
                     "time_entries.unapprove role"
                 ]
@@ -28033,6 +28079,7 @@
                     "square.orders.get deployment_disabled",
                     "square.payments.get deployment_disabled",
                     "square.payments.list deployment_disabled",
+                    "square.sync deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.get deployment_disabled",
                     "tasks.list deployment_disabled",
@@ -28151,6 +28198,7 @@
                     "square.orders.get deployment_disabled",
                     "square.payments.get deployment_disabled",
                     "square.payments.list deployment_disabled",
+                    "square.sync deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.get deployment_disabled",
                     "tasks.list deployment_disabled",
@@ -28269,6 +28317,7 @@
                     "square.orders.get deployment_disabled",
                     "square.payments.get deployment_disabled",
                     "square.payments.list deployment_disabled",
+                    "square.sync deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.get deployment_disabled",
                     "tasks.list deployment_disabled",
@@ -28387,6 +28436,7 @@
                     "square.orders.get deployment_disabled",
                     "square.payments.get deployment_disabled",
                     "square.payments.list deployment_disabled",
+                    "square.sync deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.get deployment_disabled",
                     "tasks.list deployment_disabled",
@@ -28505,6 +28555,7 @@
                     "square.orders.get deployment_disabled",
                     "square.payments.get deployment_disabled",
                     "square.payments.list deployment_disabled",
+                    "square.sync deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.get deployment_disabled",
                     "tasks.list deployment_disabled",
@@ -28623,6 +28674,7 @@
                     "square.orders.get deployment_disabled",
                     "square.payments.get deployment_disabled",
                     "square.payments.list deployment_disabled",
+                    "square.sync deployment_disabled",
                     "tasks.create deployment_disabled",
                     "tasks.get deployment_disabled",
                     "tasks.list deployment_disabled",

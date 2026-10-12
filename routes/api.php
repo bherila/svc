@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\V1\AgentProposalController;
 use App\Http\Controllers\Api\V1\AgentReadController;
 use App\Http\Controllers\Api\V1\AgentSquareController;
 use App\Http\Controllers\Api\V1\AgentSquareLinkController;
+use App\Http\Controllers\Api\V1\AgentSquareMirrorController;
 use App\Http\Controllers\Api\V1\AgentTaskMutationController;
 use App\Http\Controllers\Api\V1\AgentTimeEntryMutationController;
 use App\Http\Controllers\Api\V1\AgentWorkspaceMiscController;
@@ -308,6 +309,11 @@ Route::prefix('v1')
                 $route->where($id, '[A-Za-z0-9][A-Za-z0-9:_\-]{0,191}');
             }
         }
+        // svc's read-only mirror of Square (#438), refreshed by the scheduled
+        // sync or on request; reads of it never reach Square.
+        $operation('square.sync', [AgentSquareMirrorController::class, 'sync'])
+            ->middleware(EnsureAgentWorkspaceVisible::class)
+            ->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']));
         $operation('billing_schedules.list', [AgentBillingScheduleController::class, 'index'])
             ->middleware(EnsureAgentWorkspaceVisible::class)
             ->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']));

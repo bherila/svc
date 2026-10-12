@@ -1168,6 +1168,7 @@ final class AgentRestDocumentation
                 'response_description' => 'Create a workspace owned by the actor. Fresh creation has no prior expected_version. Atomic actor/client/key reservation; replay rechecks current membership. Requires outer and workspace write flags.',
             ],
             ...self::square(),
+            ...self::squareMirror(),
         ];
     }
 
@@ -1266,6 +1267,27 @@ final class AgentRestDocumentation
         }
 
         return $documented;
+    }
+
+    /**
+     * svc's read-only mirror of Square (#438): refreshed by a scheduled sync
+     * every 15 minutes or on request, and read without reaching Square.
+     *
+     * @return array<string, array{method: string, scopes: list<string>, description: string, parameters: list<string|array<string, mixed>>, request?: string, response: string, response_description: string}>
+     */
+    private static function squareMirror(): array
+    {
+        return [
+            'square.sync' => [
+                'method' => 'POST',
+                'scopes' => ['billing:write'],
+                'description' => 'Workspace managers only. Refresh svc\'s read-only mirror of the connected Square account now, rather than waiting for the scheduled sync every 15 minutes: locations, customers, every invoice with its series_key, status, amounts, due date, Square reminder schedule and public_url, and payment ids for paid invoices. Reads Square only; nothing is created, changed or paid in Square, and no svc invoice changes. Returns the run, which ends completed or failed with a reason; a few manual syncs are allowed per ten minutes. Repeating the same idempotency key returns the same run.',
+                'parameters' => ['WorkspaceId', 'IdempotencyKey'],
+                'request' => 'SquareSyncRequest',
+                'response' => 'SquareSyncRunResponse',
+                'response_description' => 'The sync run, completed or failed',
+            ],
+        ];
     }
 
     /**

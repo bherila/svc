@@ -1328,6 +1328,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    '/workspaces/{workspace}/square/sync': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Workspace managers only. Refresh svc's read-only mirror of the connected Square account now, rather than waiting for the scheduled sync every 15 minutes: locations, customers, every invoice with its series_key, status, amounts, due date, Square reminder schedule and public_url, and payment ids for paid invoices. Reads Square only; nothing is created, changed or paid in Square, and no svc invoice changes. Returns the run, which ends completed or failed with a reason; a few manual syncs are allowed per ten minutes. Repeating the same idempotency key returns the same run. */
+        post: operations['square.sync'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     '/workspaces/{workspace}/projects/{project}/tasks': {
         parameters: {
             query?: never;
@@ -2847,6 +2864,43 @@ export interface components {
         };
         /** @description A Square recurring series: the six-digit prefix of its invoices' NNNNNN-R-NNNN numbers. */
         SquareSeriesKey: string;
+        /** @description No fields: a sync always refreshes the whole mirror. */
+        SquareSyncRequest: Record<string, never>;
+        /** @description One pass of the Square mirror sync. */
+        SquareSyncRun: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            trigger: 'schedule' | 'request';
+            /** @enum {string} */
+            status: 'requested' | 'running' | 'completed' | 'failed';
+            /** @description The Square-Version every request of the run sent. */
+            square_version: string;
+            /** Format: date-time */
+            requested_at: string | null;
+            /** Format: date-time */
+            started_at: string | null;
+            /** Format: date-time */
+            finished_at: string | null;
+            locations_seen: number;
+            customers_seen: number;
+            customers_changed: number;
+            invoices_seen: number;
+            invoices_changed: number;
+            payments_resolved: number;
+            /**
+             * Format: date-time
+             * @description The newest Square updated_at the run saw.
+             */
+            high_water_mark: string | null;
+            /** @description True when a listing was longer than one run reads; the mirror is then incomplete. */
+            truncated: boolean;
+            error_code: string | null;
+            error: string | null;
+        };
+        SquareSyncRunResponse: {
+            data: components['schemas']['SquareSyncRun'];
+        };
         StaleAndMissingInvoiceAudit: {
             /** Format: date */
             as_of: string;
@@ -6034,6 +6088,35 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['SquarePaymentListResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'square.sync': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['SquareSyncRequest'];
+            };
+        };
+        responses: {
+            /** @description The sync run, completed or failed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['SquareSyncRunResponse'];
                 };
             };
             default: components['responses']['Error'];

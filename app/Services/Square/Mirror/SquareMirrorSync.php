@@ -41,8 +41,11 @@ final class SquareMirrorSync
     /** Pages per listing in one run: 10,000 customers, 20,000 invoices per location. */
     public const int MAX_PAGES = 100;
 
-    /** Orders read per run to resolve paid invoices' payment ids; the rest wait for the next run. */
+    /** Orders a scheduled run reads to resolve paid invoices' payment ids; the rest wait for the next run. */
     public const int PAYMENT_LOOKUPS_PER_RUN = 50;
+
+    /** Fewer for a run someone is waiting on in a request. */
+    public const int PAYMENT_LOOKUPS_PER_REQUESTED_RUN = 10;
 
     /** A run still requested or running after this long died with its process. */
     public const int ABANDONED_AFTER_MINUTES = 30;
@@ -98,7 +101,7 @@ final class SquareMirrorSync
             foreach ($locations as $locationId) {
                 $this->invoices($workspace, $run, $configuration, $tally, $locationId);
             }
-            $this->paymentIds($workspace, $tally);
+            $this->paymentIds($workspace, $tally, $run->trigger === SquareSyncRun::TRIGGER_SCHEDULE ? self::PAYMENT_LOOKUPS_PER_RUN : self::PAYMENT_LOOKUPS_PER_REQUESTED_RUN);
         } catch (SquareRequestFailed $failure) {
             return $this->finish($workspace, $run, $tally, self::errorCode($failure));
         } catch (Throwable $exception) {
@@ -178,9 +181,9 @@ final class SquareMirrorSync
         );
     }
 
-    private function paymentIds(Workspace $workspace, SquareSyncTally $tally): void
+    private function paymentIds(Workspace $workspace, SquareSyncTally $tally, int $limit): void
     {
-        foreach ($this->mirror->invoicesNeedingPaymentIds($workspace, self::PAYMENT_LOOKUPS_PER_RUN) as $invoice) {
+        foreach ($this->mirror->invoicesNeedingPaymentIds($workspace, $limit) as $invoice) {
             $order = $this->client->retrieveOrder($invoice['square_order_id'])['order'] ?? null;
             if (! is_array($order)) {
                 throw SquareRequestFailed::unreadable();

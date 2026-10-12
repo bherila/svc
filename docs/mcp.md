@@ -1107,3 +1107,38 @@ Configuration (server environment only; nothing is stored in the database):
 | `SQUARE_TIMEOUT_SECONDS`, `SQUARE_CONNECT_TIMEOUT_SECONDS` | Request and connect timeouts (defaults 10 and 5, bounded) |
 | `SQUARE_MAX_ATTEMPTS`, `SQUARE_RETRY_BASE_MILLISECONDS` | Attempts for a retryable read (default 3, at most 5) and the first backoff (default 250 ms) |
 | `SQUARE_RATE_LIMIT_PER_MINUTE` | Per-workspace pass-through budget (default 60) |
+
+### Square mirror (#438)
+
+SVC keeps a read-only mirror of the connected Square account, so the explore
+screen, series and (later) link suggestions never wait on Square. Square stays
+the source of truth; the mirror is a cache that a sync refreshes.
+
+| Operation | REST (`/api/v1/workspaces/{workspace}/square/…`) | Notes |
+| --- | --- | --- |
+| `square.sync` | `POST sync` | `billing:write`, `Idempotency-Key`; refresh the mirror now and return the run |
+
+- **What is mirrored.** Locations; customers (the allow-listed fields of
+  `square.customers.get`); and every location's invoices with their number,
+  `series_key` and occurrence, status, currency, total, paid and next amounts,
+  due, scheduled and service dates, Square's payment requests with their
+  reminder schedule, `public_url`, autopay, and - for paid invoices - the
+  Square payment ids from the invoice's order. Records pass through the same
+  allow-listed projection as the pass-through reads before anything is stored.
+- **When.** `svc:square:sync` runs every 15 minutes (never more often) without
+  overlapping, and does nothing while Square is not configured.
+  `square.sync` runs one now; a workspace gets a few manual syncs per ten
+  minutes, and repeating an idempotency key returns the same run without
+  reading Square again.
+- **How.** Square has no "changed since" filter on its invoice or customer
+  lists, so each run pages through them whole (bounded: a run that stops early
+  says `truncated`). A fingerprint of each record decides whether its row is
+  written, so an unchanged account costs reads and no writes; the run records
+  the newest Square `updated_at` it saw as its `high_water_mark`. Rows are
+  unique per Square id and an older Square version never replaces a newer
+  one, so two syncs at once leave one row per Square object. The
+  `Square-Version` sent is recorded on the run and logged with every page.
+- **Runs.** A run ends `completed`, or `failed` with an `error_code` and a
+  readable `error` (Square unavailable, rate limited, an unreadable response,
+  a refused credential, or a run a dead process abandoned). A failed run is a
+  200 answer, not an error: the mirror keeps what earlier runs stored.
