@@ -75,9 +75,15 @@ final class AgentOAuthBehaviourSnapshotTest extends TestCase
             'keys' => $this->sortedKeys($registration),
             'values' => array_diff_key($registration, array_flip(['client_id', 'client_id_issued_at'])),
         ];
+        // Since auth package 0.24.4 a requested secret method registers a
+        // public client and is answered as `none` (RFC 7591 section 3.2.1).
+        $secret = $this->postJson('/oauth/register', [
+            'client_name' => 'Secret method', 'redirect_uris' => [self::REDIRECT], 'token_endpoint_auth_method' => 'client_secret_basic',
+        ]);
+        $observed['registration_secret_method'] = ['status' => $secret->getStatusCode(), 'token_endpoint_auth_method' => $secret->json('token_endpoint_auth_method'), 'has_secret' => $secret->json('client_secret') !== null];
         $observed['registration_refusals'] = [
             'confidential' => $this->refusal($this->postJson('/oauth/register', [
-                'client_name' => 'Confidential', 'redirect_uris' => [self::REDIRECT], 'token_endpoint_auth_method' => 'client_secret_basic',
+                'client_name' => 'Confidential', 'redirect_uris' => [self::REDIRECT], 'token_endpoint_auth_method' => 'private_key_jwt',
             ])),
             'insecure_redirect' => $this->refusal($this->postJson('/oauth/register', [
                 'client_name' => 'Insecure', 'redirect_uris' => ['http://app.example.test/cb'], 'token_endpoint_auth_method' => 'none',
