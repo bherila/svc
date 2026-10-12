@@ -250,7 +250,7 @@ final class AgentOperationCatalog
             $this->tool(
                 'time_entries.list',
                 'List time entries',
-                'List authorized time entries and their tenant-owned invoice allocation with bounded cursor pagination. Use unallocated: true for exactly the approved, priced, billable, non-deferred work counted in operations.summary; allocation_state filters all rows by allocation, including draft and deferred work.',
+                'List authorized time entries and their tenant-owned invoice allocation with bounded cursor pagination. Use unallocated: true or allocation_state: unallocated with is_billable: true for exactly the approved, priced, billable, non-deferred work counted in operations.summary. allocation_state alone classifies all rows, including draft and deferred work. compact: true returns null description fields while retaining allocation, minutes and permitted financial facts.',
                 [AgentMcpReadTools::class, 'timeEntries'],
                 Effect::Read,
                 true,
@@ -295,7 +295,7 @@ final class AgentOperationCatalog
             $this->tool(
                 'invoices.list',
                 'List invoices',
-                'List authorized invoices with bounded cursor pagination.',
+                'List authorized invoices with client names and service periods. Filter by company, invoice kind, issue or due date ranges, service-period overlap, collectible status or overdue status, with bounded cursor pagination.',
                 [AgentMcpReadTools::class, 'invoices'],
                 Effect::Read,
                 true,

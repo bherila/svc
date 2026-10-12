@@ -71,7 +71,7 @@ final class AgentReadController extends Controller
 
     public function timeEntries(Request $request, Workspace $workspace): JsonResponse
     {
-        foreach (['is_billable', 'unallocated'] as $field) {
+        foreach (['is_billable', 'unallocated', 'compact'] as $field) {
             $value = $request->query($field);
             if ($value === 'true' || $value === 'false') {
                 $request->merge([$field => $value === 'true']);
@@ -81,6 +81,7 @@ final class AgentReadController extends Controller
             'allocation_state' => ['sometimes', 'nullable', 'in:unallocated,reserved,consumed'],
             'is_billable' => ['sometimes', 'boolean'],
             'unallocated' => ['sometimes', 'boolean'],
+            'compact' => ['sometimes', 'boolean'],
         ]);
 
         return response()->json($this->reads->timeEntries(
@@ -95,6 +96,7 @@ final class AgentReadController extends Controller
             $request->query('allocation_state'),
             $request->has('is_billable') ? $request->boolean('is_billable') : null,
             $request->boolean('unallocated'),
+            $request->boolean('compact'),
         ));
     }
 

@@ -15,6 +15,7 @@ final class AgentTimeEntryPresenter
         ClientTimeEntry $entry,
         bool $includeFinancials = false,
         bool $useClientDescription = false,
+        bool $compact = false,
     ): array {
         if (! $entry->relationLoaded('invoiceLines')) {
             $entry->load(['invoiceLines' => fn ($lines) => $lines
@@ -33,13 +34,13 @@ final class AgentTimeEntryPresenter
             'task_id' => $entry->task?->public_id,
             'worked_on' => $entry->worked_on->toDateString(),
             'minutes' => $entry->minutes,
-            'description' => $useClientDescription
+            'description' => $compact ? null : ($useClientDescription
                 ? $entry->client_visible_description
-                : $entry->description,
+                : $entry->description),
             'is_billable' => $entry->is_billable,
             'is_deferred' => $entry->is_deferred,
             'is_visible_to_client' => $entry->is_visible_to_client,
-            'client_visible_description' => $entry->client_visible_description,
+            'client_visible_description' => $compact ? null : $entry->client_visible_description,
             'status' => $entry->status,
             'version' => AgentApiVersion::for($entry),
             'web_url' => route('workspaces.operations', $workspace).'?time_entry='.$entry->public_id,

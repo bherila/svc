@@ -208,7 +208,7 @@ final class AgentReadService
     }
 
     /** @return array{data:list<array<string, mixed>>,meta:array{next_cursor:?string}} */
-    public function timeEntries(User|AgentPrincipal $user, Workspace $workspace, ?string $projectId, ?string $status, ?string $from, ?string $to, int $limit, ?string $cursor, ?string $allocationState = null, ?bool $isBillable = null, bool $unallocated = false): array
+    public function timeEntries(User|AgentPrincipal $user, Workspace $workspace, ?string $projectId, ?string $status, ?string $from, ?string $to, int $limit, ?string $cursor, ?string $allocationState = null, ?bool $isBillable = null, bool $unallocated = false, bool $compact = false): array
     {
         $this->requireWorkspace($user, $workspace);
         $query = $this->timeQueries->visibleTo($user, $workspace)->with(['project', 'clientCompany', 'task', 'user'])->withCapacityPlacement($workspace->id)->orderBy('id');
@@ -230,7 +230,7 @@ final class AgentReadService
         if ($isBillable !== null) {
             $query->where('is_billable', $isBillable);
         }
-        if ($unallocated) {
+        if ($unallocated || ($allocationState === 'unallocated' && $isBillable === true)) {
             $this->allocations->invoiceReady($query);
         }
         $includeFinancials = $this->access->isWorkspaceManager($user, $workspace);
@@ -245,6 +245,7 @@ final class AgentReadService
                 $entry,
                 $includeFinancials,
                 $entry->is_visible_to_client && ! ($canReadInternalNotes[$entry->id] ?? false),
+                $compact,
             );
         }
 
