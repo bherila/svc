@@ -12,6 +12,7 @@ use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
 use App\Models\Workspace;
 use App\Services\Activity\ClientActivityRecorder;
+use App\Services\Square\SquareCollectionGuard;
 use App\Services\WorkspaceAuthorization;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Billing\InvoiceKind;
@@ -558,6 +559,9 @@ final class InvoiceLifecycleService
             if ($automatic && $delayDays === null) {
                 throw new DomainException('Automatic invoice delivery is enabled without a configured delay.');
             }
+            // Issued, but never scheduled to the client when Square collects
+            // it (#438): the books stay complete and Square does the asking.
+            $squareCollected = $automatic && $this->squareCollection()->isSquareCollected($locked);
 
             $locked->forceFill([
                 'issue_date' => $issueDate,
@@ -570,11 +574,12 @@ final class InvoiceLifecycleService
                 // The setting is snapped only on the first committed issue.
                 // Adding calendar days to the workspace-local instant keeps
                 // its wall-clock time across daylight-saving transitions.
-                'automatic_delivery_status' => $automatic ? 'scheduled' : null,
+                'automatic_delivery_status' => $automatic ? ($squareCollected ? 'cancelled' : 'scheduled') : null,
                 'automatic_delivery_delay_days' => $delayDays,
-                'automatic_delivery_due_at' => $automatic
+                'automatic_delivery_due_at' => $automatic && ! $squareCollected
                     ? $issuedAt->setTimezone($owningWorkspace->timezone)->addDays($delayDays)->utc()
                     : null,
+                ...($squareCollected ? ['automatic_delivery_note' => 'Square collects this invoice, so SVC does not email it to the client.'] : []),
             ])->save();
 
             foreach ($locked->lines()->with('timeEntries')->get() as $line) {
@@ -790,6 +795,11 @@ final class InvoiceLifecycleService
     private function interimOverageGenerator(): InterimOverageGenerator
     {
         return app(InterimOverageGenerator::class);
+    }
+
+    private function squareCollection(): SquareCollectionGuard
+    {
+        return app(SquareCollectionGuard::class);
     }
 
     /**

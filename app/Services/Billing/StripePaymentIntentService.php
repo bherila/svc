@@ -6,6 +6,7 @@ use App\Models\ClientInvoice;
 use App\Models\ClientInvoicePayment;
 use App\Models\ClientStripeCustomer;
 use App\Models\Workspace;
+use App\Services\Square\SquareCollectionGuard;
 use App\Services\WorkspaceAuthorization;
 use App\Support\Billing\InvoicePaymentStatus;
 use App\Support\Billing\InvoiceStatus;
@@ -21,6 +22,7 @@ final class StripePaymentIntentService
         private readonly InvoiceLifecycleService $invoices,
         private readonly WorkspaceAuthorization $workspaceAuthorization,
         private readonly WorkspaceClock $clock = new WorkspaceClock,
+        private readonly ?SquareCollectionGuard $squareCollection = null,
     ) {}
 
     /** @return array{payment_intent_id:string,client_secret:string|null,payment:ClientInvoicePayment} */
@@ -51,6 +53,8 @@ final class StripePaymentIntentService
         if ($invoice->balance_amount <= 0) {
             throw new DomainException('The invoice has no remaining balance.');
         }
+        // Square collects this invoice (#438): no SVC payment link or charge.
+        ($this->squareCollection ?? app(SquareCollectionGuard::class))->assertSvcMayCollect($invoice);
 
         $existing = $invoice->payments()
             ->where('idempotency_key', $idempotencyKey)
