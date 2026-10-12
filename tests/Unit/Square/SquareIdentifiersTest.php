@@ -67,11 +67,17 @@ final class SquareIdentifiersTest extends TestCase
     {
         $reference = new SquareInvoiceReference('inv:0-fixture1', '000001-R-0002', 'USD', SquareMatchMethod::Suggested, 70, ['exact amount']);
         $this->assertSame('000001', $reference->seriesKey());
+        $this->assertNull((new SquareInvoiceReference('inv:0-fixture1', '000001', null, SquareMatchMethod::Manual))->seriesKey());
+        $this->assertSame(0, (new SquareInvoiceReference('inv:0-fixture1', '000001', 'EUR', SquareMatchMethod::Suggested, 0))->score);
+        $this->assertSame(100, (new SquareInvoiceReference('inv:0-fixture1', '000001', null, SquareMatchMethod::Suggested, 100, []))->score);
 
         foreach ([
             static fn () => new SquareInvoiceReference('inv 0', '000001', null, SquareMatchMethod::Manual),
             static fn () => new SquareInvoiceReference('inv:0-fixture1', ' 000001', null, SquareMatchMethod::Manual),
             static fn () => new SquareInvoiceReference('inv:0-fixture1', '000001', 'usd', SquareMatchMethod::Manual),
+            static fn () => new SquareInvoiceReference('inv:0-fixture1', '000001', 'USDX', SquareMatchMethod::Manual),
+            static fn () => new SquareInvoiceReference('inv:0-fixture1', '000001', 'XUSD', SquareMatchMethod::Manual),
+            static fn () => new SquareInvoiceReference('inv:0-fixture1', '000001', "USD\n", SquareMatchMethod::Manual),
             static fn () => new SquareInvoiceReference('inv:0-fixture1', '000001', null, SquareMatchMethod::Manual, 50),
             static fn () => new SquareInvoiceReference('inv:0-fixture1', '000001', null, SquareMatchMethod::Manual, null, ['reason']),
             static fn () => new SquareInvoiceReference('inv:0-fixture1', '000001', null, SquareMatchMethod::Suggested, 101),
