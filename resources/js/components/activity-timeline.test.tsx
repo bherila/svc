@@ -30,6 +30,28 @@ const activities: CompanyActivity[] = [
 ];
 
 describe('activity timeline', () => {
+    it('exposes the server-provided correction evidence capability', () => {
+        const href =
+            '/workspaces/synthetic/invoices/synthetic/corrections/synthetic';
+        render(
+            <ActivityTimeline
+                activities={[
+                    {
+                        id: 'synthetic-correction',
+                        action: 'invoice.corrected',
+                        actor_name: 'Synthetic Manager',
+                        payload: {},
+                        created_at: null,
+                        correction_url: href,
+                    },
+                ]}
+            />,
+        );
+        expect(
+            screen.getByRole('link', { name: 'View correction evidence' }),
+        ).toHaveAttribute('href', href);
+    });
+
     it('surfaces notable events and keeps system noise available on demand', async () => {
         const user = userEvent.setup();
         render(<ActivityTimeline activities={activities} />);

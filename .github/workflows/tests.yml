@@ -14,6 +14,10 @@ on:
         description: Run the portal access browser layout pass
         type: boolean
         default: false
+      correction_layout:
+        description: Run the invoice correction browser layout pass
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -24,8 +28,8 @@ concurrency:
 
 jobs:
   portal-layout:
-    name: Portal access browser layout
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.portal_layout }}
+    name: ${{ inputs.correction_layout && 'Invoice correction browser layout' || 'Portal access browser layout' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.portal_layout || inputs.correction_layout) }}
     runs-on: ubuntu-24.04-arm
     steps:
       - name: Checkout code
@@ -57,12 +61,12 @@ jobs:
       - name: Prepare browser on the disposable runner
         run: pnpm exec playwright install --with-deps chromium
       - name: Check portal access layout
-        run: node scripts/check-layout.mjs --portal-access
+        run: node scripts/check-layout.mjs ${{ inputs.correction_layout && '--invoice-correction' || '--portal-access' }}
       - name: Upload synthetic screenshots and measurements
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: portal-access-layout
+          name: ${{ inputs.correction_layout && 'invoice-correction-layout' || 'portal-access-layout' }}
           path: test-results/layout/
           retention-days: 7
 

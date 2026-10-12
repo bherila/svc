@@ -619,6 +619,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    '/workspaces/{workspace}/invoices/{invoice}/corrections/{correction}': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Workspace managers only. Read complete before/after evidence for one correction, scoped to its workspace and invoice. */
+        get: operations['invoices.corrections.get'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     '/workspaces/{workspace}/invoices': {
         parameters: {
             query?: never;
@@ -1589,6 +1606,37 @@ export interface components {
             due_date?: string | null;
             lines?: components['schemas']['InvoiceCorrectionLine'][];
         } & (unknown | unknown);
+        InvoiceCorrectionResponse: {
+            data: {
+                /** Format: uuid */
+                id: string;
+                from_revision: number;
+                to_revision: number;
+                reason: string;
+                /** Format: date */
+                previous_due_date: string | null;
+                /** Format: date */
+                due_date: string | null;
+                line_diffs: {
+                    /** Format: uuid */
+                    line: string;
+                    description_changed: boolean;
+                    before: {
+                        description: string;
+                        quantity: string;
+                        unit_amount: number;
+                        tax_amount: number;
+                    };
+                    after: {
+                        description: string;
+                        quantity: string;
+                        unit_amount: number;
+                        tax_amount: number;
+                    };
+                }[];
+                created_at: string | null;
+            };
+        };
         InvoiceCreateRequest: {
             company_id: components['schemas']['Uuid'];
             currency?: string | null;
@@ -1642,6 +1690,14 @@ export interface components {
              * @description Workspace managers only; null for other viewers.
              */
             automatic_delivery_due_at: string | null;
+            corrections?: {
+                /** Format: uuid */
+                id: string;
+                from_revision: number;
+                to_revision: number;
+                reason: string;
+                href: string;
+            }[];
         };
         InvoiceDetailResponse: {
             data: components['schemas']['InvoiceDetail'];
@@ -1728,6 +1784,14 @@ export interface components {
             version: components['schemas']['Version'];
             /** Format: uri */
             web_url: string;
+            correction?: {
+                /** Format: uuid */
+                id: string;
+                from_revision: number;
+                to_revision: number;
+                reason: string;
+                href: string;
+            } | null;
         };
         InvoiceMutationResponse: {
             data: components['schemas']['InvoiceMutation'];
@@ -3696,6 +3760,31 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['InvoiceMutationResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'invoices.corrections.get': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                invoice: components['parameters']['InvoiceId'];
+                correction: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Correction evidence */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['InvoiceCorrectionResponse'];
                 };
             };
             default: components['responses']['Error'];

@@ -5,6 +5,7 @@ export type CompanyActivity = {
     id: string;
     action: string;
     actor_name: string | null;
+    correction_url?: string | null;
     subject_type?: string | null;
     subject_id?: string | null;
     payload: Record<string, unknown>;
@@ -293,6 +294,14 @@ function ActivityRow({ activity }: { activity: FormattedActivity }) {
                         : formatTimestamp(activity.created_at)}
                 </time>
             </div>
+            {activity.correction_url && (
+                <a
+                    className="mt-1 block text-sm wrap-anywhere text-cyan-700 underline"
+                    href={activity.correction_url}
+                >
+                    View correction evidence
+                </a>
+            )}
             {activity.subtitle && (
                 <p className="mt-1 text-sm wrap-anywhere text-slate-700">
                     {activity.subtitle}

@@ -103,6 +103,7 @@ final class TenantReferenceInventory
             TenantReference::enforcedBy('client_billing_schedules', 'client_agreement_id', 'client_agreements', 'cbs_ws_agreement_fk'),
 
             // Invoices and money.
+            TenantReference::enforcedBy('client_invoice_corrections', 'client_invoice_id', 'client_invoices', 'invoice_correction_tenant_fk'),
             TenantReference::enforcedBy('client_invoice_lines', 'client_invoice_id', 'client_invoices', 'cil_ws_invoice_fk'),
             TenantReference::enforcedBy('client_invoice_payments', 'client_invoice_id', 'client_invoices', 'cip_ws_invoice_fk'),
             TenantReference::enforcedBy('client_invoice_email_deliveries', 'client_invoice_id', 'client_invoices', 'cied_ws_invoice_fk'),

@@ -10,6 +10,7 @@ use App\Queries\Expenses\WorkspaceExpenses;
 use App\Queries\Expenses\WorkspaceExpenseSchedules;
 use App\Services\Access\WorkspaceAccess;
 use App\Services\Billing\ExpenseInvoiceAllocations;
+use App\Services\Billing\InvoiceCorrectionService;
 use App\Services\Billing\InvoiceFromTimeService;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Services\Files\AttachmentStorageService;
@@ -74,6 +75,9 @@ $reviewInvoice = $service->issue($service->createDraft($workspace, $company, [
     'type' => 'adjustment', 'description' => str_repeat('SyntheticReviewDescriptionWithoutBreaks', 10),
     'quantity' => '1', 'unit_amount' => 12500, 'tax_amount' => 0, 'sort_order' => 1,
 ]]), $workspace);
+app(InvoiceCorrectionService::class)->correct($reviewInvoice, $workspace, 1, true,
+    app(WorkspaceClock::class)->today($workspace)->addDays(20)->toDateString(),
+    str_repeat('SyntheticCorrectionReasonWithoutBreaks', 12), null);
 $proposal = ClientProposal::query()->create([
     'workspace_id' => $workspace->id, 'client_company_id' => $company->id,
     'title' => str_repeat('SyntheticProposal', 12), 'summary' => $description,

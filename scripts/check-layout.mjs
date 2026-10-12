@@ -35,6 +35,7 @@ const artifacts = path.join(
 );
 const widths = [390, 820, 1440, 1920];
 const portalOnly = process.argv.includes('--portal-access');
+const correctionOnly = process.argv.includes('--invoice-correction');
 const results = [];
 const failures = [];
 const serverLog = [];
@@ -270,21 +271,23 @@ try {
 
         for (const screen of portalOnly
             ? ['settings']
-            : [
-                  'mcp_setup',
-                  'invoice',
-                  'invoice_review',
-                  'settings',
-                  'draft_invoice',
-                  'draft_time',
-                  'proposal',
-                  'proposal_acceptance',
-                  'operations',
-                  'time',
-                  'expenses',
-                  'receipts',
-                  'expense_schedules',
-              ]) {
+            : correctionOnly
+              ? ['invoice_review']
+              : [
+                    'mcp_setup',
+                    'invoice',
+                    'invoice_review',
+                    'settings',
+                    'draft_invoice',
+                    'draft_time',
+                    'proposal',
+                    'proposal_acceptance',
+                    'operations',
+                    'time',
+                    'expenses',
+                    'receipts',
+                    'expense_schedules',
+                ]) {
             const response = await page.goto(origin + fixture[screen]);
             expect(response.status()).toBe(200);
             await expect(page.locator('main'))
@@ -506,6 +509,17 @@ try {
             }
 
             if (screen === 'invoice_review') {
+                const evidence = page.getByRole('link', {
+                    name: 'View correction evidence for revision 2',
+                });
+                await expect(evidence).toBeVisible();
+                const recovered = await page.request.get(
+                    origin + (await evidence.getAttribute('href')),
+                    { headers },
+                );
+                expect(recovered.status()).toBe(200);
+                expect((await recovered.json()).data.to_revision).toBe(2);
+
                 await page
                     .getByRole('button', {
                         name: 'Correct invoice',
@@ -525,7 +539,7 @@ try {
         }
     }
 
-    if (!portalOnly) {
+    if (!portalOnly && !correctionOnly) {
         // Full operator correction path, all writes confined to the seeded records.
         await page.setViewportSize({ width: 1440, height: 1000 });
         await page.goto(origin + fixture.draft_invoice);

@@ -625,6 +625,12 @@ final class AgentRestDocumentation
                     'x-mcp-tool' => 'invoices.generate_period',
                 ],
             ],
+            'invoices.corrections.get' => [
+                'method' => 'GET', 'scopes' => ['billing:read'],
+                'description' => 'Workspace managers only. Read complete before/after evidence for one correction, scoped to its workspace and invoice.',
+                'parameters' => ['WorkspaceId', 'InvoiceId', self::uuidPath('correction')],
+                'response' => 'InvoiceCorrectionResponse', 'response_description' => 'Correction evidence',
+            ],
             'invoices.get' => [
                 'method' => 'GET',
                 'scopes' => ['billing:read'],

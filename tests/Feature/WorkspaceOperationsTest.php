@@ -125,6 +125,27 @@ class WorkspaceOperationsTest extends TestCase
         $this->actingAs($outsider)->get($operationsPath)->assertForbidden();
     }
 
+    public function test_correction_capabilities_use_the_acting_membership_in_this_workspace(): void
+    {
+        $person = User::factory()->create(['email' => 'operations-membership@synthetic.test']);
+        $workspace = Workspace::query()->create(['name' => 'Synthetic Membership', 'slug' => 'synthetic-membership']);
+        $membership = $workspace->memberships()->create(['user_id' => $person->id, 'role' => 'member']);
+        $foreign = Workspace::query()->create(['name' => 'Synthetic Foreign', 'slug' => 'synthetic-membership-foreign']);
+        $foreign->memberships()->create(['user_id' => $person->id, 'role' => 'owner']);
+        $company = ClientCompany::query()->create(['workspace_id' => $workspace->id, 'name' => 'Synthetic Client', 'slug' => 'synthetic-membership-client']);
+        $href = '/workspaces/'.$workspace->public_id.'/invoices/'.Str::uuid().'/corrections/'.Str::uuid();
+        ClientCompanyActivity::query()->create([
+            'workspace_id' => $workspace->id, 'client_company_id' => $company->id,
+            'action' => 'invoice.corrected', 'payload' => ['correction_url' => $href],
+        ]);
+        $path = "/workspaces/{$workspace->public_id}/operations";
+        $this->actingAs($person)->get($path)->assertOk()->assertInertia(fn (Assert $page) => $page->where('workspace.clients.0.activities.0.correction_url', null));
+        $membership->forceFill(['role' => 'admin'])->save();
+        $this->get($path)->assertOk()->assertInertia(fn (Assert $page) => $page->where('workspace.clients.0.activities.0.correction_url', $href));
+        $membership->delete();
+        $this->get($path)->assertForbidden();
+    }
+
     public function test_operations_activity_is_workspace_scoped_and_bounded_per_company(): void
     {
         $manager = User::factory()->create(['name' => 'Synthetic Manager']);

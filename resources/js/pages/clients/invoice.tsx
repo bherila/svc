@@ -155,6 +155,7 @@ export default function ClientInvoiceDetail({
     email,
     deliveries,
     administrator_notification: administratorNotification = null,
+    corrections = [],
     invoice,
     lines,
     line_detail: lineDetail,
@@ -173,6 +174,13 @@ export default function ClientInvoiceDetail({
     email: InvoiceEmailContext | null;
     deliveries: InvoiceDelivery[];
     administrator_notification?: AdministratorNotification | null;
+    corrections?: {
+        id: string;
+        from_revision: number;
+        to_revision: number;
+        reason: string;
+        href: string;
+    }[];
     invoice: CompanyInvoice;
     lines: InvoiceLine[];
     /** The work behind each line, keyed by line id. Absent for a line with none. */
@@ -844,6 +852,33 @@ export default function ClientInvoiceDetail({
                                         {invoice.automatic_delivery_note}
                                     </p>
                                 )}
+                        </CardContent>
+                    </Card>
+                )}
+
+                {corrections.length > 0 && (
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Correction history</CardTitle>
+                        </CardHeader>
+                        <CardContent className="grid grid-cols-1 gap-3 text-sm">
+                            {corrections.map((correction) => (
+                                <div
+                                    key={correction.id}
+                                    className="min-w-0 space-y-1"
+                                >
+                                    <a
+                                        className="wrap-anywhere text-primary underline"
+                                        href={correction.href}
+                                    >
+                                        View correction evidence for revision{' '}
+                                        {correction.to_revision}
+                                    </a>
+                                    <p className="wrap-anywhere">
+                                        {correction.reason}
+                                    </p>
+                                </div>
+                            ))}
                         </CardContent>
                     </Card>
                 )}

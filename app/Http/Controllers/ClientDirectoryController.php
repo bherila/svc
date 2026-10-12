@@ -22,6 +22,7 @@ use App\Models\Workspace;
 use App\Queries\ClientHome\OperatorClientHomeQuery;
 use App\Services\Authorization\BillingRecordAccess;
 use App\Services\Authorization\ProjectAccess;
+use App\Services\Billing\InvoiceCorrectionReadService;
 use App\Services\Billing\InvoiceCorrectionService;
 use App\Services\Billing\InvoiceEmailService;
 use App\Services\WorkspaceAuthorization;
@@ -346,6 +347,7 @@ class ClientDirectoryController extends Controller
                 'self' => (string) $user->email,
             ] : null,
             'deliveries' => $manages ? $this->deliveriesOf($workspace, $clientInvoice) : [],
+            'corrections' => $manages ? app(InvoiceCorrectionReadService::class)->browserHistory($workspace, $clientInvoice) : [],
             'administrator_notification' => $manages
                 ? $this->administratorNotificationOf($workspace, $clientInvoice)
                 : null,
