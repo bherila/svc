@@ -4883,7 +4883,9 @@ export interface operations {
                 status?: components['schemas']['TimeStatus'];
                 allocation_state?: 'unallocated' | 'reserved' | 'consumed';
                 is_billable?: boolean;
-                /** @description When true, selects exactly the approved, priced, billable, non-deferred unallocated work counted by operations.summary. allocation_state alone classifies all rows, including drafts and deferred work. */
+                /** @description When true, both description fields are null; identifiers, allocation, minutes and permitted financial facts are unchanged. */
+                compact?: boolean;
+                /** @description When true, selects exactly the approved, priced, billable, non-deferred unallocated work counted by operations.summary. allocation_state: unallocated with is_billable: true selects the same work; allocation_state alone classifies all rows, including drafts and deferred work. */
                 unallocated?: boolean;
                 from?: string;
                 to?: string;

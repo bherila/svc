@@ -4696,9 +4696,18 @@
                         }
                     },
                     {
+                        "name": "compact",
+                        "in": "query",
+                        "description": "When true, both description fields are null; identifiers, allocation, minutes and permitted financial facts are unchanged.",
+                        "schema": {
+                            "type": "boolean",
+                            "default": false
+                        }
+                    },
+                    {
                         "name": "unallocated",
                         "in": "query",
-                        "description": "When true, selects exactly the approved, priced, billable, non-deferred unallocated work counted by operations.summary. allocation_state alone classifies all rows, including drafts and deferred work.",
+                        "description": "When true, selects exactly the approved, priced, billable, non-deferred unallocated work counted by operations.summary. allocation_state: unallocated with is_billable: true selects the same work; allocation_state alone classifies all rows, including drafts and deferred work.",
                         "schema": {
                             "type": "boolean",
                             "default": false

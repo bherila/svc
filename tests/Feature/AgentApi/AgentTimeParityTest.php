@@ -205,7 +205,10 @@ final class AgentTimeParityTest extends TestCase
         $draftInvoice = $this->allocate($workspace, $company, $reserved, 'draft');
         $consumed = $this->entry($owner, $workspace, $company, $project, ['minutes' => 19]);
         $paidInvoice = $this->allocate($workspace, $company, $consumed, 'paid');
-        $this->actingAsMcp($owner, [AgentApiScopes::TIME_READ, AgentApiScopes::IDENTITY_READ]);
+        // Legacy retainer allocations can retain the approved time status.
+        $paidInvoice->update(['invoice_kind' => 'cadence_period']);
+        $paidInvoice->lines()->update(['type' => 'retainer']);
+        $this->actingAsMcp($owner, [AgentApiScopes::MCP_USE, AgentApiScopes::TIME_READ, AgentApiScopes::IDENTITY_READ]);
         $base = "/api/v1/workspaces/{$workspace->public_id}";
         $list = $this->getJson($base.'/time-entries')->assertOk()->json('data');
         $rows = collect($list)->keyBy('id');
@@ -219,6 +222,12 @@ final class AgentTimeParityTest extends TestCase
         $this->assertSame([$ready->public_id, $flat->public_id], array_column($invoiceReady, 'id'));
         $summary = $this->getJson($base.'/summary')->assertOk();
         $this->assertSame(array_sum(array_column($invoiceReady, 'minutes')), $summary->json('data.time.approved_billable_unallocated_minutes'));
+        $filtered = $this->getJson($base.'/time-entries?allocation_state=unallocated&is_billable=true')->assertOk()->json('data');
+        $this->assertSame($invoiceReady, $filtered);
+        $mcp = $this->mcpCall('tools/call', ['name' => 'time_entries.list', 'arguments' => ['workspace_id' => $workspace->public_id, 'allocation_state' => 'unallocated', 'is_billable' => true]]);
+        $this->assertFalse($mcp['isError']);
+        $this->assertSame($filtered, $mcp['structuredContent']['data']);
+        $this->assertSame(array_sum(array_column($filtered, 'minutes')), $summary->json('data.time.approved_billable_unallocated_minutes'));
         $this->assertSame(17, $summary->json('data.time.allocated_to_draft_minutes'));
         $this->getJson($base.'/time-entries?allocation_state=invalid')->assertUnprocessable();
         $this->getJson($base.'/time-entries?is_billable=invalid')->assertUnprocessable();
@@ -228,6 +237,27 @@ final class AgentTimeParityTest extends TestCase
         $this->assertIsString($cursor);
         $this->getJson($base.'/time-entries?allocation_state=consumed&limit=1&cursor='.urlencode($cursor))->assertUnprocessable();
         $this->getJson($base.'/time-entries?allocation_state=unallocated&unallocated=1&limit=1&cursor='.urlencode($cursor))->assertUnprocessable();
+    }
+
+    public function test_compact_time_rows_omit_prose_without_losing_allocation_or_financial_facts(): void
+    {
+        [$owner, $workspace, $company, $project] = $this->tenant();
+        $entry = $this->entry($owner, $workspace, $company, $project, ['description' => str_repeat('Synthetic internal note. ', 120), 'client_visible_description' => str_repeat('Synthetic client note. ', 120)]);
+        for ($index = 1; $index < 100; $index++) {
+            $this->entry($owner, $workspace, $company, $project, ['description' => $entry->description, 'client_visible_description' => $entry->client_visible_description]);
+        }
+        $this->actingAsMcp($owner, [AgentApiScopes::MCP_USE, AgentApiScopes::TIME_READ]);
+        $base = "/api/v1/workspaces/{$workspace->public_id}/time-entries?limit=100";
+        $full = $this->getJson($base)->assertOk()->json('data');
+        $compact = $this->getJson($base.'&compact=true')->assertOk()->assertJsonCount(100, 'data')->json('data');
+        $this->assertSame(array_map(fn (array $row): array => [...$row, 'description' => null, 'client_visible_description' => null], $full), $compact);
+        $this->assertLessThan(strlen(json_encode($full, JSON_THROW_ON_ERROR)) / 2, strlen(json_encode($compact, JSON_THROW_ON_ERROR)));
+        $this->assertSame($entry->description, $entry->fresh()->description);
+        $mcp = $this->mcpCall('tools/call', ['name' => 'time_entries.list', 'arguments' => ['workspace_id' => $workspace->public_id, 'compact' => true, 'limit' => 100]]);
+        $this->assertFalse($mcp['isError']);
+        $this->assertSame($compact, $mcp['structuredContent']['data']);
+        $this->getJson($base.'&compact=invalid')->assertUnprocessable();
+        $this->getJson($base.'&compact=false')->assertOk()->assertJsonPath('data', $full);
     }
 
     public static function foreignAllocationParts(): iterable
@@ -260,6 +290,8 @@ final class AgentTimeParityTest extends TestCase
         $base = "/api/v1/workspaces/{$workspace->public_id}";
         $this->getJson($base.'/time-entries?unallocated=1')->assertOk()->assertJsonCount(1, 'data')
             ->assertJsonPath('data.0.id', $entry->public_id)->assertJsonPath('data.0.invoice_id', null)->assertJsonPath('data.0.allocation_state', 'unallocated');
+        $this->getJson($base.'/time-entries?allocation_state=unallocated&is_billable=true&compact=true')->assertOk()->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $entry->public_id)->assertJsonPath('data.0.invoice_id', null)->assertJsonPath('data.0.description', null);
         $this->getJson($base.'/time-entries?allocation_state=reserved')->assertOk()->assertJsonCount(0, 'data');
         $this->getJson($base.'/summary')->assertOk()->assertJsonPath('data.time.approved_billable_unallocated_minutes', 29)->assertJsonPath('data.time.allocated_to_draft_minutes', 0);
     }
