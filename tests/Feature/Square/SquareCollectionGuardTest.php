@@ -169,11 +169,20 @@ final class SquareCollectionGuardTest extends TestCase
             $company->forceFill(['automatic_invoice_email_enabled' => true, 'automatic_invoice_email_delay_days' => 0])->save();
             $invoice->forceFill(['automatic_delivery_status' => 'scheduled', 'automatic_delivery_delay_days' => 0, 'automatic_delivery_due_at' => now()->subMinute()])->save();
         }
+        // Fired on the invoice update that follows the claim's insert, still
+        // inside the claim's transaction: not on the insert itself, whose
+        // listener runs before the driver reads the inserted id back.
+        $claimed = false;
         $armed = true;
-        DB::listen(function (QueryExecuted $query) use (&$armed, $reason, $workspace, $invoice, $agreement): void {
+        DB::listen(function (QueryExecuted $query) use (&$claimed, &$armed, $reason, $workspace, $invoice, $agreement): void {
             // Unquoted, so it matches SQLite's "..." and MariaDB's `...` alike.
             $sql = str_replace(['"', '`'], '', strtolower($query->sql));
-            if (! $armed || ! str_starts_with($sql, 'update client_invoice_email_deliveries') && ! str_starts_with($sql, 'insert into client_invoice_email_deliveries')) {
+            if (str_starts_with($sql, 'insert into client_invoice_email_deliveries')) {
+                $claimed = true;
+
+                return;
+            }
+            if (! $armed || ! $claimed || ! str_starts_with($sql, 'update client_invoices ')) {
                 return;
             }
             $armed = false;
