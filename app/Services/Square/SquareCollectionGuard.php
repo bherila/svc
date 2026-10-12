@@ -37,6 +37,7 @@ final class SquareCollectionGuard
     public const array SITES = [
         'App\Services\Billing\InvoiceEmailService::assertSendable' => 'manual email delivery: website send, invoices.send over REST and MCP, and a keyed retry of a failed send',
         'App\Services\Billing\InvoiceEmailService::sendAutomatic' => 'automatic email delivery claimed by svc:billing:dispatch-invoice-emails, run every minute by the scheduler',
+        'App\Services\Billing\InvoiceEmailService::deliver' => 'the last check before any client email leaves, outside every transaction, after its claim has committed',
         'App\Services\Billing\InvoiceEmailService::deliverRegistered' => 'an email registered inside an API transaction and sent after it commits',
         'App\Services\Billing\InvoiceLifecycleService::issue' => 'scheduling automatic email delivery when an invoice is issued',
         'App\Services\Billing\InvoiceCorrectionService::setHold' => 'releasing a held automatic delivery back onto the schedule, on the website and invoices.release_delivery',

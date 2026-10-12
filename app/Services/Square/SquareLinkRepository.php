@@ -5,11 +5,14 @@ namespace App\Services\Square;
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
+use App\Models\ClientInvoiceEmailDelivery;
 use App\Models\ClientInvoicePayment;
 use App\Models\CompanySquareCustomer;
 use App\Models\InvoiceSquareLink;
 use App\Support\Billing\InvoicePaymentStatus;
 use App\Support\Concurrency\Locks;
+use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
 /**
@@ -122,6 +125,54 @@ final class SquareLinkRepository
         $number = ClientInvoice::query()->where('workspace_id', $agreement->workspace_id)->whereKey($invoiceIds->first())->value('invoice_number');
 
         return is_string($number) ? $number : 'another invoice';
+    }
+
+    /**
+     * Whether an email to the client for this invoice may be leaving right
+     * now: registered or claimed since `$since`. Read under a share lock after
+     * the invoice lock, so a claim committed while this waited is seen.
+     */
+    public function hasEmailDeliveryInFlight(ClientInvoice $invoice, CarbonImmutable $since): bool
+    {
+        return $this->deliveriesInFlight($invoice->workspace_id, $since)
+            ->where('client_invoice_id', $invoice->id)
+            ->tap(Locks::forShare())
+            ->exists();
+    }
+
+    /** The number of an invoice of this agreement with an email to the client in flight, if any. */
+    public function emailDeliveryInFlightForAgreement(ClientAgreement $agreement, CarbonImmutable $since): ?string
+    {
+        $invoiceId = $this->deliveriesInFlight($agreement->workspace_id, $since)
+            ->whereIn('client_invoice_id', ClientInvoice::query()->select('id')
+                ->where('workspace_id', $agreement->workspace_id)
+                ->where('client_agreement_id', $agreement->id))
+            ->orderBy('id')
+            ->tap(Locks::forShare())
+            ->value('client_invoice_id');
+        if ($invoiceId === null) {
+            return null;
+        }
+        $number = ClientInvoice::query()->where('workspace_id', $agreement->workspace_id)->whereKey($invoiceId)->value('invoice_number');
+
+        return is_string($number) ? $number : 'another invoice';
+    }
+
+    /**
+     * Deliveries that can still reach the client: registered and not yet
+     * claimed, or claimed and not yet resolved, recently. A claim older than
+     * that is an ambiguous outcome awaiting reconciliation, not a message about
+     * to leave - sending is synchronous - and must not block a hand-off forever.
+     *
+     * @return Builder<ClientInvoiceEmailDelivery>
+     */
+    private function deliveriesInFlight(int $workspaceId, CarbonImmutable $since): Builder
+    {
+        return ClientInvoiceEmailDelivery::query()
+            ->where('workspace_id', $workspaceId)
+            ->whereIn('status', ['pending', 'sending'])
+            ->where(fn (Builder $recent): Builder => $recent->where('claimed_at', '>=', $since)
+                ->orWhere(fn (Builder $unclaimed): Builder => $unclaimed->whereNull('claimed_at')->where('queued_at', '>=', $since)));
     }
 
     /** The agreement holding this series as its billed-in-Square marker, if any. */

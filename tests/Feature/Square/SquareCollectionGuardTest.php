@@ -9,6 +9,7 @@ use App\Models\ClientCompanyMembership;
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceEmailDelivery;
 use App\Models\ClientInvoicePayment;
+use App\Models\InvoiceSquareLink;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Billing\InvoiceEmailService;
@@ -20,8 +21,10 @@ use App\Support\Square\SquareInvoiceReference;
 use App\Support\Square\SquareMatchMethod;
 use Illuminate\Console\Scheduling\Event;
 use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Concerns\CallsMcp;
@@ -127,19 +130,76 @@ final class SquareCollectionGuardTest extends TestCase
     {
         [$workspace, , , $invoice] = $this->issuedInvoice();
         $draft = InvoiceEmailDraft::of(['billing@synthetic.example.test'], [], 'Invoice SYN-1', null);
-        // Registered as sendAfterCommit() registers it, inside an API
-        // transaction that has not committed yet.
+        $this->makeSquareCollected($reason, $workspace, $invoice);
+        // Registered as sendAfterCommit() registers it, by an API transaction
+        // whose snapshot predates the hand-off, and sent once that commits.
         $delivery = ClientInvoiceEmailDelivery::query()->create([
             'workspace_id' => $workspace->id, 'client_invoice_id' => $invoice->id, 'origin' => 'manual',
-            'invoice_revision' => $invoice->document_revision, 'attempt_number' => 1,
+            'invoice_revision' => $invoice->refresh()->document_revision, 'attempt_number' => 1,
             'recipients' => $draft->recipients, 'subject' => $draft->subject, 'status' => 'pending', 'queued_at' => now(),
         ]);
-        $this->makeSquareCollected($reason, $workspace, $invoice);
 
-        app(InvoiceEmailService::class)->deliverRegistered($invoice->refresh(), $delivery->id, $draft);
+        app(InvoiceEmailService::class)->deliverRegistered($invoice, $delivery->id, $draft);
 
         Mail::assertNothingSent();
         $this->assertSame('failed', $delivery->refresh()->status);
+        $this->assertSame('Not sent: Square collects this invoice.', $delivery->error_summary);
+    }
+
+    /** @return iterable<string, array{string, string}> */
+    public static function deliveryOrigins(): iterable
+    {
+        foreach (['manual', 'automatic'] as $origin) {
+            foreach (['linked', 'agreement'] as $reason) {
+                yield "{$origin}, {$reason}" => [$origin, $reason];
+            }
+        }
+    }
+
+    /**
+     * A hand-off committed after a delivery was claimed but before the message
+     * left: the claim commits outside the invoice lock, so the last check is
+     * made in deliver() itself, and nothing is sent.
+     */
+    #[DataProvider('deliveryOrigins')]
+    public function test_a_hand_off_between_claim_and_send_stops_the_email(string $origin, string $reason): void
+    {
+        [$workspace, , $company, $invoice, $agreement] = $this->issuedInvoice();
+        if ($origin === 'automatic') {
+            $company->forceFill(['automatic_invoice_email_enabled' => true, 'automatic_invoice_email_delay_days' => 0])->save();
+            $invoice->forceFill(['automatic_delivery_status' => 'scheduled', 'automatic_delivery_delay_days' => 0, 'automatic_delivery_due_at' => now()->subMinute()])->save();
+        }
+        $armed = true;
+        DB::listen(function (QueryExecuted $query) use (&$armed, $reason, $workspace, $invoice, $agreement): void {
+            if (! $armed || ! str_starts_with(strtolower($query->sql), 'update "client_invoice_email_deliveries"') && ! str_starts_with(strtolower($query->sql), 'insert into "client_invoice_email_deliveries"')) {
+                return;
+            }
+            $armed = false;
+            // Written as a concurrent request would leave it, without that
+            // request's checks: they are what the hand-off side tests cover.
+            if ($reason === 'linked') {
+                InvoiceSquareLink::query()->create(['workspace_id' => $workspace->id, 'client_invoice_id' => $invoice->id, 'square_invoice_id' => 'inv:0-fixturelate', 'square_invoice_number' => '000009-R-0001', 'series_key' => '000009', 'currency' => 'USD', 'match_method' => 'manual', 'active_invoice_slot' => $invoice->id, 'active_square_invoice_slot' => 'inv:0-fixturelate', 'linked_at' => now()]);
+            } else {
+                $agreement->forceFill(['square_series_key' => '000009'])->save();
+            }
+        });
+        $draft = InvoiceEmailDraft::of(['billing@synthetic.example.test'], [], 'Invoice SYN-1', null);
+
+        if ($origin === 'manual') {
+            try {
+                app(InvoiceEmailService::class)->send($invoice, $draft, $workspace);
+                $this->fail('The manual send went out after the hand-off.');
+            } catch (CollectionBelongsToSquare $refused) {
+                $this->assertSame('Not sent: Square collects this invoice.', $refused->getMessage());
+            }
+        } else {
+            app(InvoiceEmailService::class)->sendAutomatic($invoice);
+            $this->assertSame('cancelled', $invoice->refresh()->automatic_delivery_status);
+        }
+
+        Mail::assertNothingSent();
+        $delivery = ClientInvoiceEmailDelivery::query()->where('workspace_id', $workspace->id)->sole();
+        $this->assertSame('failed', $delivery->status);
         $this->assertSame('Not sent: Square collects this invoice.', $delivery->error_summary);
     }
 

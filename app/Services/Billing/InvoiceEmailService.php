@@ -2,6 +2,7 @@
 
 namespace App\Services\Billing;
 
+use App\Exceptions\CollectionBelongsToSquare;
 use App\Mail\InvoiceMail;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
@@ -687,6 +688,14 @@ final class InvoiceEmailService
         ClientInvoiceEmailDelivery $delivery,
         InvoiceEmailDraft $draft,
     ): ClientInvoiceEmailDelivery {
+        // The last word before the message leaves (#438). The claim committed
+        // before this, outside the invoice lock, so a link or a billed-in-Square
+        // marker can land in between; read now, outside any transaction, it is
+        // current. A hand-off that comes later still sees this claim and waits.
+        if ($this->squareCollection()->isSquareCollected($invoice)) {
+            $this->abandonForSquare($invoice, $delivery);
+        }
+
         try {
             // Email is a client-facing boundary, so the audience is explicit.
             // Reuse the same document service as the authenticated PDF route;
@@ -771,6 +780,47 @@ final class InvoiceEmailService
                 'The mail provider accepted the request, but its local result could not be saved. Delivery is marked in progress for reconciliation.',
             );
         }
+    }
+
+    /**
+     * Resolve a claimed delivery that Square now collects for: nothing was
+     * sent, and an automatic one is cancelled rather than retried.
+     *
+     * @throws CollectionBelongsToSquare always
+     */
+    private function abandonForSquare(ClientInvoice $invoice, ClientInvoiceEmailDelivery $delivery): never
+    {
+        DB::transaction(function () use ($invoice, $delivery): void {
+            $lockedInvoice = ClientInvoice::query()
+                ->where('workspace_id', $invoice->workspace_id)
+                ->whereKey($invoice->id)
+                ->tap(Locks::forUpdate())
+                ->with('workspace')
+                ->firstOrFail();
+            $lockedDelivery = ClientInvoiceEmailDelivery::query()
+                ->where('workspace_id', $lockedInvoice->workspace_id)
+                ->where('client_invoice_id', $lockedInvoice->id)
+                ->whereKey($delivery->id)
+                ->tap(Locks::forUpdate())
+                ->firstOrFail();
+            $lockedDelivery->forceFill([
+                'status' => 'failed',
+                'failed_at' => $this->clock->now($lockedInvoice->workspace)->utc(),
+                'next_attempt_at' => null,
+                'error_summary' => 'Not sent: Square collects this invoice.',
+            ])->save();
+            if ($lockedDelivery->origin === 'automatic') {
+                $lockedInvoice->forceFill([
+                    'automatic_delivery_status' => 'cancelled',
+                    'automatic_delivery_due_at' => null,
+                    'automatic_delivery_note' => 'Square collects this invoice, so SVC does not email it to the client.',
+                ])->save();
+            } else {
+                $lockedInvoice->advanceAgentRevision();
+            }
+        });
+
+        throw new CollectionBelongsToSquare('Not sent: Square collects this invoice.');
     }
 
     private function recordFailure(

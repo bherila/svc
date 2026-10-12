@@ -6,6 +6,7 @@ use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientCompanyMembership;
 use App\Models\ClientInvoice;
+use App\Models\ClientInvoiceEmailDelivery;
 use App\Models\ClientInvoicePayment;
 use App\Models\InvoiceSquareLink;
 use App\Models\User;
@@ -137,6 +138,38 @@ final class SquareCollectionHandoffTest extends TestCase
         $this->putJson("/api/v1/workspaces/{$workspace->public_id}/agreements/{$agreement->public_id}/square-series", [
             'expected_version' => AgentApiVersion::for($agreement), 'series_key' => '000001', 'confirm' => true,
         ], ['Idempotency-Key' => 'synthetic-settled-mark'])->assertOk();
+    }
+
+    /**
+     * A claimed client email commits before it is sent, outside the invoice
+     * lock, so neither hand-off proceeds while one is recent. A claim left
+     * unresolved for over an hour is an ambiguous outcome, not a message about
+     * to leave, and does not block forever.
+     */
+    public function test_neither_hand_off_proceeds_while_a_client_email_may_be_leaving(): void
+    {
+        [$workspace, $owner, , $invoice, $agreement] = $this->fixture();
+        $this->travelTo('2026-10-08 12:00:00');
+        $delivery = ClientInvoiceEmailDelivery::query()->create([
+            'workspace_id' => $workspace->id, 'client_invoice_id' => $invoice->id, 'origin' => 'manual', 'invoice_revision' => 1, 'attempt_number' => 1,
+            'recipients' => ['billing@synthetic.example.test'], 'subject' => 'Invoice SYN-1', 'status' => 'sending', 'queued_at' => now(), 'claimed_at' => now(),
+        ]);
+        $this->actingAsMcp($owner, self::SCOPES);
+        $link = fn (string $key) => $this->postJson("/api/v1/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/square-link", [
+            'expected_version' => AgentApiVersion::for($invoice->refresh()), 'square_invoice_id' => 'inv:0-fixture1', 'square_invoice_number' => '000001-R-0001',
+        ], ['Idempotency-Key' => $key]);
+        $mark = fn (string $key) => $this->putJson("/api/v1/workspaces/{$workspace->public_id}/agreements/{$agreement->public_id}/square-series", [
+            'expected_version' => AgentApiVersion::for($agreement->refresh()), 'series_key' => '000001', 'confirm' => true,
+        ], ['Idempotency-Key' => $key]);
+
+        $link('synthetic-sending-link')->assertConflict()->assertJsonPath('message', 'An email to the client for invoice SYN-1 is being sent. Retry once it has gone.');
+        $mark('synthetic-sending-mark')->assertConflict()->assertJsonPath('message', 'An email to the client for invoice SYN-1 of this agreement is being sent. Retry once it has gone.');
+        $delivery->forceFill(['status' => 'pending', 'claimed_at' => null])->save();
+        $link('synthetic-pending-link')->assertConflict();
+
+        $this->travelTo('2026-10-08 13:01:00');
+        $mark('synthetic-stale-mark')->assertOk();
+        $link('synthetic-stale-link')->assertOk();
     }
 
     private function pendingStripePayment(ClientInvoice $invoice): void

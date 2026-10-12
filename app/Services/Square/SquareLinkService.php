@@ -15,6 +15,7 @@ use App\Support\Billing\InvoiceStatus;
 use App\Support\Concurrency\Locks;
 use App\Support\Square\SquareInvoiceReference;
 use App\Support\WorkspaceClock;
+use Carbon\CarbonImmutable;
 use DomainException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
@@ -69,6 +70,11 @@ final class SquareLinkService
                 // who read it after sees the payment here.
                 if ($this->links->hasStripePaymentInFlight($locked)) {
                     abort(409, sprintf('A Stripe payment on invoice %s can still complete (pending, or failed and retryable). Let it succeed or cancel it in Stripe before Square collects this invoice.', (string) $locked->invoice_number));
+                }
+                // Nor while an email to the client may be leaving: a claim
+                // commits before the message is sent, outside its lock.
+                if ($this->links->hasEmailDeliveryInFlight($locked, $this->emailWindow($workspace))) {
+                    abort(409, sprintf('An email to the client for invoice %s is being sent. Retry once it has gone.', (string) $locked->invoice_number));
                 }
                 if ($square->currency !== null && $square->currency !== strtoupper((string) $locked->currency)) {
                     throw new DomainException(sprintf(
@@ -240,6 +246,10 @@ final class SquareLinkService
                 if ($pending !== null) {
                     abort(409, sprintf('A Stripe payment on invoice %s of this agreement can still complete (pending, or failed and retryable). Let it succeed or cancel it in Stripe before Square collects the agreement\'s invoices.', $pending));
                 }
+                $emailing = $this->links->emailDeliveryInFlightForAgreement($locked, $this->emailWindow($workspace));
+                if ($emailing !== null) {
+                    abort(409, sprintf('An email to the client for invoice %s of this agreement is being sent. Retry once it has gone.', $emailing));
+                }
                 $holder = $this->links->agreementForSeries($workspace->id, $seriesKey);
                 if ($holder !== null) {
                     abort(409, sprintf('Square series %s already marks agreement "%s". Clear it there first.', $seriesKey, (string) $holder->title));
@@ -273,6 +283,16 @@ final class SquareLinkService
 
             return $locked;
         });
+    }
+
+    /**
+     * How far back a registered or claimed client email still counts as
+     * leaving: the same hour after which a payment treats an unresolved claim
+     * as ambiguous rather than in progress.
+     */
+    private function emailWindow(Workspace $workspace): CarbonImmutable
+    {
+        return $this->clock->now($workspace)->utc()->subMinutes(60);
     }
 
     private function retire(InvoiceSquareLink $link, User $actor, \DateTimeInterface $now): void
