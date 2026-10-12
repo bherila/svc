@@ -27,6 +27,7 @@ use Carbon\CarbonImmutable;
 use Closure;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Throwable;
@@ -404,18 +405,35 @@ final class PortalInvitations
      * Record what the provider issued, or withdraw it there if recording is
      * refused or fails, so nothing this application refused can admit anyone.
      *
+     * A caller's enclosing transaction - an agent receipt's - can still roll
+     * back after the record is written: its response snapshot, receipt or
+     * commit can fail. The withdrawal is registered on that transaction too,
+     * and runs once whichever way the record is lost. With no enclosing
+     * transaction the registration does nothing and the record commits
+     * before this returns.
+     *
      * @param  Closure(): ClientPortalInvitation  $record
      */
     private function recordOrWithdraw(string $subject, IssuedInvitation $issued, Closure $record): ClientPortalInvitation
     {
-        try {
-            return $record();
-        } catch (Throwable $failure) {
+        $withdrawn = false;
+        $withdraw = static function () use (&$withdrawn, $subject, $issued): void {
+            if ($withdrawn) {
+                return;
+            }
+            $withdrawn = true;
             try {
                 app(ApplicationInvitations::class)->revoke($subject, $issued->id);
             } catch (Throwable) {
                 Log::warning('A provider invitation that was not recorded here could not be withdrawn; it lapses on its own.', ['provider_invitation_id' => $issued->id]);
             }
+        };
+        DB::afterRollBack($withdraw);
+
+        try {
+            return $record();
+        } catch (Throwable $failure) {
+            $withdraw();
 
             throw $failure;
         }

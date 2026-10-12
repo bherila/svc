@@ -103,6 +103,34 @@ final class AgentPortalInvitationTest extends TestCase
         $this->assertSame(3, AccessAuditEvent::query()->whereNotNull('operation_id')->count());
     }
 
+    /**
+     * Codex review on #444: the agent receipt's transaction encloses the
+     * invitation. If it rolls back after the invitation was recorded - here,
+     * completing the receipt fails - the provider invitation is withdrawn too,
+     * so nothing untracked can admit anyone.
+     */
+    public function test_an_invitation_rolled_back_with_its_receipt_is_withdrawn_at_the_provider(): void
+    {
+        [$workspace, $owner, $company] = $this->fixture();
+        $this->actingAsMcp($owner, self::SCOPES);
+        $failed = false;
+        DB::listen(function (QueryExecuted $query) use (&$failed): void {
+            if (! $failed && preg_match('/^update [`"]agent_mutation_receipts[`"]/i', $query->sql) === 1) {
+                $failed = true;
+                throw new \RuntimeException('Synthetic receipt completion failure.');
+            }
+        });
+
+        $this->postJson('/api/v1/workspaces/'.$workspace->public_id.'/clients/'.$company->public_id.'/portal-invitations', $this->body('create'), ['Idempotency-Key' => 'rolled-back'])
+            ->assertServerError();
+
+        $this->assertTrue($failed);
+        $this->provider->assertCreated('invitee@client.example.test');
+        $this->provider->assertRevoked(1);
+        $this->assertSame(0, ClientPortalInvitation::query()->count());
+        $this->assertCount(1, $this->provider->calls('revoke'), 'Withdrawn once, not once per path.');
+    }
+
     /** Codex review on #444: a page loads its invitations' projects in one query, however long it is. */
     public function test_a_listing_page_costs_the_same_queries_for_one_invitation_or_many(): void
     {
