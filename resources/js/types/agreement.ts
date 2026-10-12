@@ -32,6 +32,11 @@ export type AgreementTerms = CompanyAgreement & {
     period_retainer_amount: number | null;
     agreement_text: string | null;
     is_visible_to_client: boolean | null;
+    /**
+     * Billed in Square (#438): the Square series that bills this agreement,
+     * or null. Operators only - absent on the client's own copy.
+     */
+    square_series_key?: string | null;
 };
 
 /**

@@ -137,6 +137,42 @@ export default function ClientAgreementDetail({
                     </div>
                 </header>
 
+                {forOperator && agreement.square_series_key !== undefined && (
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Square</CardTitle>
+                        </CardHeader>
+                        <CardContent className="grid grid-cols-1 gap-2 text-sm">
+                            {agreement.square_series_key === null ? (
+                                <p className="text-muted-foreground">
+                                    Not billed in Square. SVC collects this
+                                    agreement&apos;s invoices.
+                                </p>
+                            ) : (
+                                <>
+                                    <p className="flex flex-wrap items-center gap-2">
+                                        <Badge variant="outline">
+                                            Billed in Square
+                                        </Badge>
+                                        <span>
+                                            Series{' '}
+                                            <span className="font-mono">
+                                                {agreement.square_series_key}
+                                            </span>
+                                        </span>
+                                    </p>
+                                    <p className="text-muted-foreground">
+                                        SVC still generates and issues this
+                                        agreement&apos;s invoices, but never
+                                        emails, charges or offers a payment link
+                                        for them: Square collects.
+                                    </p>
+                                </>
+                            )}
+                        </CardContent>
+                    </Card>
+                )}
+
                 <Card>
                     <CardHeader className="flex flex-row items-center justify-between gap-3">
                         <CardTitle>Terms</CardTitle>

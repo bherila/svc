@@ -132,7 +132,7 @@ final class AgentOperationRegistryTest extends TestCase
                 $checked++;
             }
         }
-        $this->assertSame(27, $checked);
+        $this->assertSame(34, $checked);
     }
 
     public function test_an_under_scoped_rest_call_is_refused_by_the_gate_with_its_reason(): void

@@ -112,6 +112,10 @@ final class TenantReferenceInventory
             TenantReference::enforcedBy('client_invoice_line_time_entries', 'client_invoice_line_id', 'client_invoice_lines', 'cilte_ws_line_fk'),
             TenantReference::enforcedBy('client_invoice_line_time_entries', 'client_time_entry_id', 'client_time_entries', 'cilte_ws_time_entry_fk'),
 
+            // Square (#438): SVC's links to records held in Square.
+            TenantReference::enforcedBy('company_square_customers', 'client_company_id', 'client_companies', 'csqc_ws_company_fk'),
+            TenantReference::enforcedBy('invoice_square_links', 'client_invoice_id', 'client_invoices', 'isql_ws_invoice_fk'),
+
             // Stripe.
             TenantReference::enforcedBy('client_stripe_payment_methods', 'client_stripe_customer_id', 'client_stripe_customers', 'cspm_ws_customer_fk'),
 

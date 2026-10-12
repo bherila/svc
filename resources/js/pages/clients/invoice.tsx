@@ -3,6 +3,8 @@ import { useState } from 'react';
 import { InvoiceLineRows } from '@/components/billing/invoice-line-detail';
 import type { InvoiceLineItem } from '@/components/billing/invoice-line-detail';
 import { SendInvoiceDialog } from '@/components/billing/send-invoice-dialog';
+import { SquareInvoiceCard } from '@/components/billing/square-link';
+import type { InvoiceSquareState } from '@/components/billing/square-link';
 import {
     AlertDialog,
     AlertDialogAction,
@@ -161,6 +163,7 @@ export default function ClientInvoiceDetail({
     line_detail: lineDetail,
     payments,
     timezone,
+    square = null,
 }: {
     company: { id: string; name: string };
     invoices_href: string;
@@ -186,6 +189,8 @@ export default function ClientInvoiceDetail({
     /** The work behind each line, keyed by line id. Absent for a line with none. */
     line_detail: Record<string, InvoiceLineItem[]>;
     payments: InvoicePayment[];
+    /** Who collects this invoice and its Square link; null for a viewer who cannot manage it. */
+    square?: InvoiceSquareState | null;
 }) {
     const [paying, setPaying] = useState(false);
     const [sending, setSending] = useState(false);
@@ -865,6 +870,8 @@ export default function ClientInvoiceDetail({
                         </form>
                     )}
                 </header>
+
+                {square !== null && <SquareInvoiceCard square={square} />}
 
                 {(invoice.automatic_delivery_status ?? null) !== null && (
                     <Card>

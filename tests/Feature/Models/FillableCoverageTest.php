@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Models;
 
+use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientCompanyMembership;
 use App\Models\ClientInvoice;
@@ -60,6 +61,9 @@ final class FillableCoverageTest extends TestCase
             'password' => 'Hashed and set explicitly so a plaintext value can never be assigned by accident.',
             'last_workspace_id' => 'Where this person was last working. An internal id written only by WorkspaceReturnPoint, after the navigation factory has authorized the workspace; a caller who could assign it could point someone at a tenant they were never admitted to.',
             'last_client_company_id' => 'The same, for the client. Both are revalidated against current access on the way out, but a value that can only be written after authorization is one fewer thing that has to be.',
+        ],
+        ClientAgreement::class => [
+            'square_series_key' => 'The billed-in-Square marker (#438). Written only by SquareLinkService through forceFill, under the agreement lock, after the version check and the one-agreement-per-series check; assignable through the model, an agreement update could switch off SVC\'s collection paths with no confirmation and no history.',
         ],
         ClientInvoice::class => [
             'hours_statement' => 'The hours statement the generator measured with the lines. Written only by ClientInvoicingService through forceFill in the generating transaction, and frozen at issue; a value assignable through the model could put figures on a client\'s invoice that no computation produced.',

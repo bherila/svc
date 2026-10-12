@@ -10,6 +10,7 @@ use App\Models\ClientInvoiceLine;
 use App\Models\ClientTask;
 use App\Models\Workspace;
 use App\Services\Activity\ClientActivityRecorder;
+use App\Services\Square\SquareCollectionGuard;
 use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\InvoiceStatus;
 use App\Support\Concurrency\Locks;
@@ -291,6 +292,10 @@ final class InvoiceCorrectionService
             }
             $company = $this->loadOwningCompany($locked, $workspace);
             $locked->setRelation('clientCompany', $company);
+            if (! $hold) {
+                // Releasing puts the client email back on the schedule (#438).
+                app(SquareCollectionGuard::class)->assertSvcMayCollect($locked);
+            }
             if ($locked->status !== InvoiceStatus::Issued->value || $locked->automatic_delivery_due_at === null) {
                 throw new DomainException('This invoice has no active automatic delivery to change.');
             }

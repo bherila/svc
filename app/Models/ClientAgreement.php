@@ -40,6 +40,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property CarbonImmutable $starts_on
  * @property CarbonImmutable|null $ends_on
  * @property CarbonImmutable|null $signed_at
+ * @property string|null $square_series_key
  * @property-read float $monthly_retainer_hours
  * @property-read float $monthly_retainer_fee
  * @property-read float|null $retainer_hours
@@ -57,7 +58,9 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'rollover_months', 'initial_rollover_minutes', 'bill_overage_interim',
     'first_cycle_proration', 'agreement_link',
 ])]
-#[Hidden(['id', 'workspace_id', 'lock_version', 'client_company_id', 'client_project_id', 'source_proposal_id', 'signed_by_user_id'])]
+// `square_series_key` is the billed-in-Square marker (#438): an operator fact
+// read through the agent API and the operator screen, never serialized whole.
+#[Hidden(['id', 'workspace_id', 'lock_version', 'client_company_id', 'client_project_id', 'source_proposal_id', 'signed_by_user_id', 'square_series_key'])]
 class ClientAgreement extends Model implements RetainerAgreementTerms, WorkspaceOwned
 {
     use BelongsToWorkspace, HasPublicId, IncrementsAgentRevision;

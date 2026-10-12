@@ -83,6 +83,8 @@ final class AgentAgreementReadService
             'client_id' => $agreement->clientCompany->public_id,
             'client_name' => $agreement->clientCompany->name,
             'project_id' => $agreement->project?->public_id,
+            // Billed in Square (#438): SVC issues but never collects its invoices.
+            'square_series_key' => $agreement->square_series_key,
         ];
     }
 }

@@ -14,7 +14,7 @@ final class AgentMcpAgreementSchema
         return [
             'type' => 'object',
             'additionalProperties' => false,
-            'required' => ['version', 'id', 'title', 'status', 'currency', 'billing_cadence', 'effective_billing_cadence', 'effective_first_cycle_proration', 'is_recurring', 'starts_on', 'ends_on', 'signed_at', 'retainer_minutes_per_period', 'retainer_minutes_per_month', 'retainer_amount_per_period', 'hourly_rate_amount', 'rollover_months', 'project', 'client_id', 'client_name', 'project_id'],
+            'required' => ['version', 'id', 'title', 'status', 'currency', 'billing_cadence', 'effective_billing_cadence', 'effective_first_cycle_proration', 'is_recurring', 'starts_on', 'ends_on', 'signed_at', 'retainer_minutes_per_period', 'retainer_minutes_per_month', 'retainer_amount_per_period', 'hourly_rate_amount', 'rollover_months', 'project', 'client_id', 'client_name', 'project_id', 'square_series_key'],
             'properties' => [
                 'version' => ['type' => 'string', 'minLength' => 64, 'maxLength' => 64],
                 'id' => ['type' => 'string', 'format' => 'uuid'],
@@ -37,6 +37,7 @@ final class AgentMcpAgreementSchema
                 'client_id' => ['type' => 'string', 'format' => 'uuid'],
                 'client_name' => ['type' => 'string', 'maxLength' => 160],
                 'project_id' => ['type' => ['string', 'null'], 'format' => 'uuid'],
+                'square_series_key' => ['type' => ['string', 'null'], 'pattern' => '^[0-9]{6}$'],
             ],
         ];
     }

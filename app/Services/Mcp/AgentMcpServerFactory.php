@@ -106,6 +106,7 @@ final class AgentMcpServerFactory
             AgentMcpSquareTools::class => new AgentMcpSquareTools($this->squareReadService, $this->accounts, $context),
             AgentMcpClientWriteTools::class => $clientWrites,
             AgentMcpPortalAccessTools::class => new AgentMcpPortalAccessTools(app(InternalAgentApiTransport::class), $this->requestArguments),
+            AgentMcpSquareLinkTools::class => new AgentMcpSquareLinkTools(app(InternalAgentApiTransport::class), $this->requestArguments),
             AgentMcpWriteTools::class => $writes,
             AgentMcpPrompts::class => $this->prompts,
         ];

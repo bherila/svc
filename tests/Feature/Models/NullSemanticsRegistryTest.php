@@ -30,6 +30,7 @@ use Tests\Feature\Billing\UnplaceableInvoiceAuditorTest;
 use Tests\Feature\Billing\UnpricedAgreementRefusalTest;
 use Tests\Feature\Engagement\TimeSheetTest;
 use Tests\Feature\EngagementWorkflowTest;
+use Tests\Feature\Square\SquareCollectionGuardTest;
 use Tests\TestCase;
 use Tests\Unit\Billing\InvoiceLedgerBuilderTest;
 use Tests\Unit\Billing\RetainerCalculatorTest;
@@ -184,6 +185,7 @@ final class NullSemanticsRegistryTest extends TestCase
         'client_agreements.rollover_months => covered_by:Tests\Unit\Billing\InvoiceLedgerBuilderTest::test_an_agreement_with_no_rollover_term_carries_nothing_forward',
         'client_agreements.signed_at => covered_by:Tests\Feature\EngagementWorkflowTest::test_only_an_unsigned_agreement_can_be_signed',
         'client_agreements.source_proposal_id => covered_by:Tests\Feature\EngagementWorkflowTest::test_an_active_agreement_whose_proposal_link_is_missing_stops_acceptance',
+        'client_agreements.square_series_key => covered_by:Tests\Feature\Square\SquareCollectionGuardTest::test_an_invoice_of_an_unmarked_agreement_is_collected_by_svc',
         'client_invoice_lines.client_agreement_id => covered_by:Tests\Feature\Billing\ReplaySnapshotNullIdentityTest::test_a_line_with_no_agreement_snapshots_an_empty_agreement_identity',
         'client_invoice_lines.client_agreement_recurring_item_id => covered_by:Tests\Feature\Billing\ReplaySnapshotNullIdentityTest::test_a_line_with_no_recurring_item_snapshots_an_empty_recurring_identity',
         'client_invoice_lines.client_project_id => covered_by:Tests\Feature\Billing\InvoiceFromTimeServiceTest::test_a_manual_line_without_a_project_is_accepted_unattributed',
@@ -798,6 +800,13 @@ final class NullSemanticsRegistryTest extends TestCase
             'source_proposal_id' => [
                 'covered_by' => EngagementWorkflowTest::class,
                 'method' => 'test_an_active_agreement_whose_proposal_link_is_missing_stops_acceptance',
+            ],
+            // Null is "not billed in Square" (#438): SVC collects the
+            // agreement's invoices. A key means Square does, and every
+            // collection path refuses them; the guard reads the null.
+            'square_series_key' => [
+                'covered_by' => SquareCollectionGuardTest::class,
+                'method' => 'test_an_invoice_of_an_unmarked_agreement_is_collected_by_svc',
             ],
             // `starts_on` is gone from this registry, not demoted in it. It had
             // three entries here and seven readings in the code - the resolver

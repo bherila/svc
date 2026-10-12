@@ -668,3 +668,170 @@ describe('changing a draft due date through the API', () => {
         ).toBeNull();
     });
 });
+
+describe('the Square link on an invoice', () => {
+    const linkUrl = '/api/v1/workspaces/w-1/invoices/invoice-1/square-link';
+    const version = 'a'.repeat(64);
+    const square = (
+        overrides: Partial<NonNullable<Props['square']>> = {},
+    ): NonNullable<Props['square']> => ({
+        invoice_id: 'invoice-1',
+        invoice_version: version,
+        link: null,
+        agreement_series_key: null,
+        square_collects: false,
+        collection_refusal: null,
+        link_href: linkUrl,
+        unlink_href: null,
+        ...overrides,
+    });
+    const linked = {
+        id: 'link-1',
+        square_invoice_id: 'inv:0-fixture1',
+        square_invoice_number: '000001-R-0002',
+        series_key: '000001',
+        currency: 'USD',
+        match_method: 'suggested' as const,
+        score: 85,
+        reasons: ['exact amount', 'period slot'],
+        linked_at: '2026-10-08T12:00:00Z',
+        linked_by: 'Synthetic Operator',
+    };
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+        inertia.reload.mockReset();
+    });
+
+    it('shows the link, how it was matched and that Square collects, with no Square address', () => {
+        const { container } = render(
+            <ClientInvoiceDetail
+                {...props({
+                    square: square({
+                        link: linked,
+                        square_collects: true,
+                        collection_refusal: 'Square collects it',
+                        unlink_href: linkUrl,
+                    }),
+                })}
+            />,
+        );
+
+        expect(screen.getByText('000001-R-0002')).toBeVisible();
+        expect(screen.getByText('Suggested, score 85')).toBeVisible();
+        expect(screen.getByText('exact amount · period slot')).toBeVisible();
+        expect(screen.getByText(/by Synthetic Operator/)).toBeVisible();
+        expect(screen.getByText(/Square collects this invoice/)).toBeVisible();
+        expect(screen.getByRole('button', { name: 'Re-point' })).toBeVisible();
+        expect(screen.getByRole('button', { name: 'Unlink' })).toBeVisible();
+        expect(container.innerHTML).not.toMatch(/squareup|square\.link/i);
+    });
+
+    it('links through the API with the invoice version and reloads', async () => {
+        const fetchMock = vi
+            .fn()
+            .mockResolvedValue(
+                new Response(JSON.stringify({ data: {} }), { status: 200 }),
+            );
+        vi.stubGlobal('fetch', fetchMock);
+        render(<ClientInvoiceDetail {...props({ square: square() })} />);
+
+        expect(
+            screen.getByText('Not linked to a Square invoice.'),
+        ).toBeVisible();
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Link to Square invoice' }),
+        );
+        fireEvent.change(screen.getByLabelText('Square invoice id'), {
+            target: { value: ' inv:0-fixture1 ' },
+        });
+        fireEvent.change(screen.getByLabelText('Square invoice number'), {
+            target: { value: '000001-R-0003' },
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Link' }));
+
+        await vi.waitFor(() => expect(inertia.reload).toHaveBeenCalled());
+        const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+        expect(url).toBe(linkUrl);
+        expect(init.method).toBe('POST');
+        expect(JSON.parse(String(init.body))).toEqual({
+            expected_version: version,
+            square_invoice_id: 'inv:0-fixture1',
+            square_invoice_number: '000001-R-0003',
+            match_method: 'manual',
+            replace: false,
+        });
+    });
+
+    it('re-points an already linked invoice explicitly and reports a refusal', async () => {
+        const fetchMock = vi.fn().mockResolvedValue(
+            new Response(
+                JSON.stringify({
+                    message:
+                        'Square invoice 000002-R-0001 is already linked to invoice SYN-2. Unlink it there first.',
+                }),
+                { status: 409 },
+            ),
+        );
+        vi.stubGlobal('fetch', fetchMock);
+        render(
+            <ClientInvoiceDetail
+                {...props({
+                    square: square({ link: linked, unlink_href: linkUrl }),
+                })}
+            />,
+        );
+
+        fireEvent.click(screen.getByRole('button', { name: 'Re-point' }));
+        fireEvent.change(screen.getByLabelText('Square invoice id'), {
+            target: { value: 'inv:0-fixture2' },
+        });
+        fireEvent.change(screen.getByLabelText('Square invoice number'), {
+            target: { value: '000002-R-0001' },
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Re-point link' }));
+
+        expect(
+            await screen.findByText(/already linked to invoice SYN-2/),
+        ).toBeVisible();
+        expect(inertia.reload).not.toHaveBeenCalled();
+        const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+        expect(JSON.parse(String(init.body)).replace).toBe(true);
+    });
+
+    it('unlinks only after confirmation', async () => {
+        const fetchMock = vi
+            .fn()
+            .mockResolvedValue(
+                new Response(JSON.stringify({ data: {} }), { status: 200 }),
+            );
+        vi.stubGlobal('fetch', fetchMock);
+        render(
+            <ClientInvoiceDetail
+                {...props({
+                    square: square({ link: linked, unlink_href: linkUrl }),
+                })}
+            />,
+        );
+
+        fireEvent.click(screen.getByRole('button', { name: 'Unlink' }));
+        expect(fetchMock).not.toHaveBeenCalled();
+        const dialog = await screen.findByRole('alertdialog');
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Unlink' }));
+
+        await vi.waitFor(() => expect(inertia.reload).toHaveBeenCalled());
+        const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+        expect(url).toBe(linkUrl);
+        expect(init.method).toBe('DELETE');
+        expect(JSON.parse(String(init.body))).toEqual({
+            expected_version: version,
+            confirm: true,
+        });
+    });
+
+    it('renders nothing about Square for a viewer who cannot manage the invoice', () => {
+        render(<ClientInvoiceDetail {...props()} />);
+
+        expect(screen.queryByText('Square')).toBeNull();
+    });
+});

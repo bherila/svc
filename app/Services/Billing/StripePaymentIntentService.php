@@ -2,10 +2,12 @@
 
 namespace App\Services\Billing;
 
+use App\Models\ClientAgreement;
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoicePayment;
 use App\Models\ClientStripeCustomer;
 use App\Models\Workspace;
+use App\Services\Square\SquareCollectionGuard;
 use App\Services\WorkspaceAuthorization;
 use App\Support\Billing\InvoicePaymentStatus;
 use App\Support\Billing\InvoiceStatus;
@@ -21,6 +23,7 @@ final class StripePaymentIntentService
         private readonly InvoiceLifecycleService $invoices,
         private readonly WorkspaceAuthorization $workspaceAuthorization,
         private readonly WorkspaceClock $clock = new WorkspaceClock,
+        private readonly ?SquareCollectionGuard $squareCollection = null,
     ) {}
 
     /** @return array{payment_intent_id:string,client_secret:string|null,payment:ClientInvoicePayment} */
@@ -36,6 +39,13 @@ final class StripePaymentIntentService
         return DB::transaction(function () use ($invoice, $workspace, $paymentMethodId, $idempotencyKey): array {
             $workspaceId = $workspace->id ?? $invoice->workspace_id;
             BillingMaintenance::share($workspaceId);
+            // The agreement first, in registry order: marking it billed in
+            // Square (#438) holds it exclusively while it checks for pending
+            // Stripe payments, so an intent either completes before that check
+            // or starts after the marker it then refuses on.
+            if ($invoice->client_agreement_id !== null) {
+                ClientAgreement::query()->where('workspace_id', $workspaceId)->whereKey($invoice->client_agreement_id)->tap(Locks::forShare())->first();
+            }
             $invoice = ClientInvoice::query()->where('workspace_id', $workspaceId)->whereKey($invoice->id)->tap(Locks::forUpdate())->firstOrFail();
 
             return $this->createLocked($invoice, $workspace, $paymentMethodId, $idempotencyKey);
@@ -51,6 +61,8 @@ final class StripePaymentIntentService
         if ($invoice->balance_amount <= 0) {
             throw new DomainException('The invoice has no remaining balance.');
         }
+        // Square collects this invoice (#438): no SVC payment link or charge.
+        ($this->squareCollection ?? app(SquareCollectionGuard::class))->assertSvcMayCollect($invoice);
 
         $existing = $invoice->payments()
             ->where('idempotency_key', $idempotencyKey)
@@ -138,6 +150,10 @@ final class StripePaymentIntentService
             'provider_payment_identifier' => $intentId,
             'idempotency_key' => $idempotencyKey,
         ], $workspace);
+        // The reserved balance is a change to the invoice: advance its version
+        // so a writer that read it before - handing collection to Square, say
+        // (#438) - is refused rather than acting beside a live intent.
+        $invoice->advanceAgentRevision();
 
         return [
             'payment_intent_id' => $intentId,
