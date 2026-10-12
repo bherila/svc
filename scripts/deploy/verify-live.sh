@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
 # Runner-side verification performed before the shared atomic action commits a
-# release as healthy. It verifies the rendered home page, production OAuth redirect, protected
-# resource discovery, authentication, operation scopes and MCP session
+# release as healthy. It verifies the rendered home page, its manifest-derived hashed
+# JS and CSS assets, production OAuth redirect, protected resource discovery, authentication, operation scopes and MCP session
 # isolation. Smoke credentials are short-lived, data-blind and always revoked.
 set -euo pipefail
 
@@ -30,6 +30,10 @@ case "${home_content_type,,}" in
     text/html | text/html\;*) ;;
     *) echo 'Public home page did not render HTML.' >&2; exit 1 ;;
 esac
+
+# The rendered page must reference the manifest's hashed JS and CSS, and each must be served with
+# the right MIME type; this also proves the vhost selects this release's public root.
+ASSET_SITE_URL="$DEPLOY_SITE_URL" node scripts/deploy/verify-hashed-assets.mjs
 
 redirect_url=$(curl --fail --silent --show-error --connect-timeout 10 --max-time 20 \
     --output /dev/null --write-out '%{redirect_url}' \
