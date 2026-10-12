@@ -592,6 +592,54 @@ the plain mutation shape (`InvoiceIssueResponse`). REST returns the mutation
 shape. The REST route accepts the same `payment` object and applies the same
 gates.
 
+### Square links (#438)
+
+SVC is the system of record; some clients still pay through Square. These
+operations record SVC's side of that relationship and never call Square:
+Square identifiers are opaque, shape-checked strings.
+
+| Operation | REST | Scopes | Write cutover |
+|---|---|---|---|
+| `invoices.square_link` | `POST /workspaces/{workspace}/invoices/{invoice}/square-link` | `billing:write`, `billing:read` | invoices |
+| `invoices.square_unlink` | `DELETE /workspaces/{workspace}/invoices/{invoice}/square-link` | `billing:write`, `billing:read` | invoices |
+| `companies.square_customer.get` | `GET /workspaces/{workspace}/clients/{client}/square-customer` | `billing:read` | - |
+| `companies.square_customer.set` | `PUT /workspaces/{workspace}/clients/{client}/square-customer` | `billing:write`, `billing:read` | clients |
+| `companies.square_customer.clear` | `DELETE /workspaces/{workspace}/clients/{client}/square-customer` | `billing:write`, `billing:read` | clients |
+| `agreements.square_series.set` | `PUT /workspaces/{workspace}/agreements/{agreement}/square-series` | `billing:write`, `billing:read` | clients |
+| `agreements.square_series.clear` | `DELETE /workspaces/{workspace}/agreements/{agreement}/square-series` | `billing:write`, `billing:read` | clients |
+
+All are workspace-manager only, take an idempotency key and the record's
+current `expected_version`, and are recorded in the client's activity.
+
+- **Links.** Each side has at most one active link. Linking a Square invoice
+  that is linked anywhere in the workspace is refused with 409, and so is
+  linking an invoice that is already linked unless `replace: true` re-points it.
+  Unlinking needs `confirm: true` and is soft: the row stays as history with who
+  and when, and either side can be linked again. The link records the Square
+  number, its series key (the six-digit prefix of a recurring `NNNNNN-R-NNNN`
+  number; null for a one-off), the invoice's currency (a supplied `currency`
+  must match it), and how it was found: `manual`, or `suggested` with the score
+  and reasons the person confirmed. Nothing is ever linked automatically.
+- **Customer mapping.** One active mapping per client and per Square customer.
+- **Billed in Square.** An agreement's `square_series_key` marks it as billed by
+  that Square series; one agreement per series.
+
+**Square collects what Square bills.** An invoice that is linked, or whose
+agreement is billed in Square, may still be generated, issued and have payments
+recorded, but SVC never collects it: every client-facing collection path -
+invoice email (website, `invoices.send`, keyed retries, after-commit sends, the
+scheduled dispatcher), scheduling automatic delivery at issue, releasing a held
+delivery, and the Stripe payment intent behind the client's payment link -
+refuses it with a 422 that says why. `SquareCollectionGuard::SITES` lists them,
+and `SquareCollectionSitesTest` fails if code reaches a collection primitive
+anywhere else.
+
+Reads: `invoices.get` carries `square` (link, agreement series, whether Square
+collects, and the refusal text) for managers and null otherwise;
+`clients.get` and `clients.list` carry `square_customer`; agreement reads carry
+`square_series_key`. No Square URL is returned or rendered yet: the hosted
+page's address will come only from Square's own data.
+
 ## Legacy REST receipt cutover
 
 REST time-entry, task, and invoice writes now derive their idempotency namespace

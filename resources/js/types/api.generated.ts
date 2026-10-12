@@ -71,6 +71,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    '/workspaces/{workspace}/agreements/{agreement}/square-series': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** @description Workspace managers only. Mark an agreement as billed in Square by its recurring series key (the six-digit prefix of the series' NNNNNN-R-NNNN invoice numbers). SVC still generates and issues the agreement's invoices, but never emails, charges or offers a payment link for them. Requires the agreement's current expected_version and confirm: true. A series already marking another agreement is refused with 409. Nothing is sent to Square. */
+        put: operations['agreements.square_series.set'];
+        post?: never;
+        /** @description Workspace managers only. Clear an agreement's billed-in-Square marker so SVC collects its invoices again. Requires the agreement's current expected_version and confirm: true; the change is recorded in the client history. */
+        delete: operations['agreements.square_series.clear'];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     '/workspaces/{workspace}/agreements/{agreement}/terminate': {
         parameters: {
             query?: never;
@@ -359,6 +377,25 @@ export interface paths {
         /** @description Workspace managers only. Requires both AGENT_API_WRITES_ENABLED and AGENT_API_CLIENT_WRITES_ENABLED. Versioned writes also require the corresponding read scope. Enabling automatic delivery requires a delay and a valid billing email or client portal recipient. Existing records require their current opaque expected_version; agreement creation uses the parent client version. Activation and termination require confirm: true. */
         post: operations['clients.restore'];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/clients/{client}/square-customer': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Workspace managers only. The client's confirmed Square customer, if any, with the client version that companies.square_customer.set and .clear require. */
+        get: operations['companies.square_customer.get'];
+        /** @description Workspace managers only. Confirm a client's Square customer id, replacing any earlier mapping (kept as history). One client per Square customer: a customer already mapped to another client is refused with 409. Requires the client's current version from companies.square_customer.get. Square ids are checked for shape only; nothing is sent to Square. */
+        put: operations['companies.square_customer.set'];
+        post?: never;
+        /** @description Workspace managers only. Clear a client's confirmed Square customer. The mapping is kept as history. Requires the client's current version from companies.square_customer.get and confirm: true. */
+        delete: operations['companies.square_customer.clear'];
         options?: never;
         head?: never;
         patch?: never;
@@ -812,6 +849,24 @@ export interface paths {
         put?: never;
         post: operations['invoices.send'];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/invoices/{invoice}/square-link': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Workspace managers only. Link an SVC invoice to its Square invoice, as confirmed by a person: never automatically. Each side has at most one active link: a Square invoice already linked anywhere is refused with 409, and so is an invoice that is already linked unless replace: true re-points it (the replaced link is kept as history). Requires the invoice's current expected_version. When currency is given it must equal the invoice's. While an invoice is linked, or its agreement is billed in Square, SVC never emails it to the client, charges it or offers a payment link for it; issuing it and recording payments stay open. Square ids are checked for shape only; nothing is sent to Square. */
+        post: operations['invoices.square_link'];
+        /** @description Workspace managers only. Unlink an invoice from its Square invoice. The link is kept as history and either side may be linked again. Requires the invoice's current expected_version and confirm: true. */
+        delete: operations['invoices.square_unlink'];
         options?: never;
         head?: never;
         patch?: never;
@@ -1389,6 +1444,8 @@ export interface components {
             client_name: string;
             /** Format: uuid */
             project_id: string | null;
+            /** @description Billed in Square: the Square series that bills this agreement. While set, SVC issues the agreement's invoices but never emails, charges or offers a payment link for them. */
+            square_series_key: string | null;
         };
         AgreementListResponse: {
             data: components['schemas']['Agreement'][];
@@ -1396,6 +1453,17 @@ export interface components {
         };
         AgreementResponse: {
             data: components['schemas']['Agreement'];
+        };
+        AgreementSquareSeriesClearRequest: {
+            expected_version: components['schemas']['Version'];
+            /** @constant */
+            confirm: true;
+        };
+        AgreementSquareSeriesRequest: {
+            expected_version: components['schemas']['Version'];
+            series_key: components['schemas']['SquareSeriesKey'];
+            /** @constant */
+            confirm: true;
         };
         ApprovalReceipt: {
             approved_ids: components['schemas']['Uuid'][];
@@ -1547,6 +1615,9 @@ export interface components {
             is_active: boolean;
             automatic_invoice_email_enabled: boolean;
             automatic_invoice_email_delay_days: number | null;
+            /** @description The confirmed Square customer, or null. */
+            square_customer:
+                components['schemas']['CompanySquareCustomer'] | null;
         };
         ClientCompanyListResponse: {
             data: components['schemas']['ClientCompany'][];
@@ -1554,6 +1625,32 @@ export interface components {
         };
         ClientCompanyResponse: {
             data: components['schemas']['ClientCompany'];
+        };
+        CompanySquareCustomer: {
+            square_customer_id: components['schemas']['SquareCustomerId'];
+            /** Format: date-time */
+            confirmed_at: string;
+            /** @description Who confirmed the mapping, by name. */
+            confirmed_by: string | null;
+        };
+        CompanySquareCustomerClearRequest: {
+            expected_version: components['schemas']['Version'];
+            /** @constant */
+            confirm: true;
+        };
+        CompanySquareCustomerRequest: {
+            expected_version: components['schemas']['Version'];
+            square_customer_id: components['schemas']['SquareCustomerId'];
+        };
+        CompanySquareState: {
+            client_id: components['schemas']['Uuid'];
+            version: components['schemas']['Version'];
+            /** @description The confirmed Square customer, or null. */
+            square_customer:
+                components['schemas']['CompanySquareCustomer'] | null;
+        };
+        CompanySquareStateResponse: {
+            data: components['schemas']['CompanySquareState'];
         };
         Context: {
             id: components['schemas']['Uuid'];
@@ -1901,6 +1998,8 @@ export interface components {
                 reason: string;
                 href: string;
             }[];
+            /** @description Workspace managers only; null for other viewers. Who collects this invoice and its Square link. */
+            square: components['schemas']['InvoiceSquare'] | null;
         };
         InvoiceDetailResponse: {
             data: components['schemas']['InvoiceDetail'];
@@ -2077,6 +2176,47 @@ export interface components {
             /** @constant */
             confirm: true;
             recipients: string[];
+        };
+        InvoiceSquare: {
+            invoice_id: components['schemas']['Uuid'];
+            invoice_version: components['schemas']['Version'];
+            /** @description The active link to a Square invoice, or null. */
+            link: components['schemas']['SquareInvoiceLink'] | null;
+            /** @description The Square series of the agreement this invoice was generated under, when that agreement is billed in Square. */
+            agreement_series_key: string | null;
+            /** @description True when the invoice is linked or its agreement is billed in Square. SVC then never emails it to the client, charges it or offers a payment link; issuing and recording payments stay open. */
+            square_collects: boolean;
+            /** @description Why SVC will not collect this invoice, as the collection paths report it; null when SVC collects. */
+            collection_refusal: string | null;
+        };
+        InvoiceSquareLinkRequest: {
+            expected_version: components['schemas']['Version'];
+            square_invoice_id: components['schemas']['SquareInvoiceId'];
+            square_invoice_number: components['schemas']['SquareInvoiceNumber'];
+            /** @description The Square invoice's currency. When given it must equal the SVC invoice's; the link records the SVC invoice's currency. */
+            currency?: string;
+            /**
+             * @default manual
+             * @enum {string}
+             */
+            match_method: 'manual' | 'suggested';
+            /** @description Suggested links only: the score the person saw. */
+            score?: number | null;
+            /** @description Suggested links only: the reasons the person saw. */
+            reasons?: string[] | null;
+            /**
+             * @description Required to re-point an invoice that is already linked; the replaced link is kept as history.
+             * @default false
+             */
+            replace: boolean;
+        };
+        InvoiceSquareResponse: {
+            data: components['schemas']['InvoiceSquare'];
+        };
+        InvoiceSquareUnlinkRequest: {
+            expected_version: components['schemas']['Version'];
+            /** @constant */
+            confirm: true;
         };
         /** @enum {string} */
         InvoiceStatus: 'draft' | 'issued' | 'partially_paid' | 'paid' | 'void';
@@ -2397,6 +2537,8 @@ export interface components {
             created_at: string | null;
             updated_at: string | null;
         };
+        /** @description A Square customer id, held as an opaque string. SVC checks its shape only. */
+        SquareCustomerId: string;
         SquareCustomerListResponse: {
             data: components['schemas']['SquareCustomer'][];
             meta: {
@@ -2475,12 +2617,34 @@ export interface components {
             payment_requests_truncated: boolean;
             attachment_count: number;
         };
+        /** @description A Square invoice id, held as an opaque string. SVC checks its shape only; it never resolves it against Square. */
+        SquareInvoiceId: string;
+        SquareInvoiceLink: {
+            id: components['schemas']['Uuid'];
+            square_invoice_id: components['schemas']['SquareInvoiceId'];
+            square_invoice_number: components['schemas']['SquareInvoiceNumber'];
+            /** @description Derived from the number at link time; null for a one-off. */
+            series_key: string | null;
+            currency: components['schemas']['Currency'];
+            /** @enum {string} */
+            match_method: 'manual' | 'suggested';
+            /** @description The suggestion score the person confirmed; null for a manual link. */
+            score: number | null;
+            /** @description The suggestion reasons the person confirmed; null for a manual link. */
+            reasons: string[] | null;
+            /** Format: date-time */
+            linked_at: string;
+            /** @description Who confirmed the link, by name. */
+            linked_by: string | null;
+        };
         SquareInvoiceListResponse: {
             data: components['schemas']['SquareInvoice'][];
             meta: {
                 next_cursor: string | null;
             };
         };
+        /** @description The Square invoice number as Square shows it. A recurring series occurrence is NNNNNN-R-NNNN, whose six-digit prefix is the series key. */
+        SquareInvoiceNumber: string;
         SquareInvoiceResponse: {
             data: components['schemas']['SquareInvoice'];
         };
@@ -2589,6 +2753,8 @@ export interface components {
         SquarePaymentResponse: {
             data: components['schemas']['SquarePayment'];
         };
+        /** @description A Square recurring series: the six-digit prefix of its invoices' NNNNNN-R-NNNN numbers. */
+        SquareSeriesKey: string;
         StaleAndMissingInvoiceAudit: {
             /** Format: date */
             as_of: string;
@@ -3053,6 +3219,66 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['AgreementListResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'agreements.square_series.set': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                agreement: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['AgreementSquareSeriesRequest'];
+            };
+        };
+        responses: {
+            /** @description Agreement billed in Square */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['AgreementResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'agreements.square_series.clear': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                agreement: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['AgreementSquareSeriesClearRequest'];
+            };
+        };
+        responses: {
+            /** @description Agreement no longer billed in Square */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['AgreementResponse'];
                 };
             };
             default: components['responses']['Error'];
@@ -3712,6 +3938,90 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['ClientCompanyResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'companies.square_customer.get': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                client: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['CompanySquareStateResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'companies.square_customer.set': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                client: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['CompanySquareCustomerRequest'];
+            };
+        };
+        responses: {
+            /** @description Square customer confirmed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['CompanySquareStateResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'companies.square_customer.clear': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                client: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['CompanySquareCustomerClearRequest'];
+            };
+        };
+        responses: {
+            /** @description Square customer cleared */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['CompanySquareStateResponse'];
                 };
             };
             default: components['responses']['Error'];
@@ -4642,6 +4952,66 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['InvoiceMutationResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'invoices.square_link': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                invoice: components['parameters']['InvoiceId'];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['InvoiceSquareLinkRequest'];
+            };
+        };
+        responses: {
+            /** @description Invoice linked to Square */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['InvoiceSquareResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'invoices.square_unlink': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                invoice: components['parameters']['InvoiceId'];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['InvoiceSquareUnlinkRequest'];
+            };
+        };
+        responses: {
+            /** @description Invoice unlinked from Square */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['InvoiceSquareResponse'];
                 };
             };
             default: components['responses']['Error'];

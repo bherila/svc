@@ -304,6 +304,132 @@
                 "x-svc-flags": []
             }
         },
+        "/workspaces/{workspace}/agreements/{agreement}/square-series": {
+            "delete": {
+                "operationId": "agreements.square_series.clear",
+                "description": "Workspace managers only. Clear an agreement's billed-in-Square marker so SVC collects its invoices again. Requires the agreement's current expected_version and confirm: true; the change is recorded in the client history.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "billing:write",
+                            "billing:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/AgreementSquareSeriesClearRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "agreement",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Agreement no longer billed in Square",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AgreementResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-mcp-tool": "agreements.square_series.clear",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_CLIENT_WRITES_ENABLED"
+                ]
+            },
+            "put": {
+                "operationId": "agreements.square_series.set",
+                "description": "Workspace managers only. Mark an agreement as billed in Square by its recurring series key (the six-digit prefix of the series' NNNNNN-R-NNNN invoice numbers). SVC still generates and issues the agreement's invoices, but never emails, charges or offers a payment link for them. Requires the agreement's current expected_version and confirm: true. A series already marking another agreement is refused with 409. Nothing is sent to Square.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "billing:write",
+                            "billing:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/AgreementSquareSeriesRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "agreement",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Agreement billed in Square",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AgreementResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-mcp-tool": "agreements.square_series.set",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_CLIENT_WRITES_ENABLED"
+                ]
+            }
+        },
         "/workspaces/{workspace}/agreements/{agreement}/terminate": {
             "post": {
                 "operationId": "agreements.terminate",
@@ -1637,6 +1763,177 @@
                     }
                 },
                 "x-mcp-tool": "clients.restore",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_CLIENT_WRITES_ENABLED"
+                ]
+            }
+        },
+        "/workspaces/{workspace}/clients/{client}/square-customer": {
+            "delete": {
+                "operationId": "companies.square_customer.clear",
+                "description": "Workspace managers only. Clear a client's confirmed Square customer. The mapping is kept as history. Requires the client's current version from companies.square_customer.get and confirm: true.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "billing:write",
+                            "billing:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CompanySquareCustomerClearRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "client",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Square customer cleared",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CompanySquareStateResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-mcp-tool": "companies.square_customer.clear",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_CLIENT_WRITES_ENABLED"
+                ]
+            },
+            "get": {
+                "operationId": "companies.square_customer.get",
+                "description": "Workspace managers only. The client's confirmed Square customer, if any, with the client version that companies.square_customer.set and .clear require.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "billing:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "client",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Authorized result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CompanySquareStateResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-mcp-tool": "companies.square_customer.get",
+                "x-svc-flags": []
+            },
+            "put": {
+                "operationId": "companies.square_customer.set",
+                "description": "Workspace managers only. Confirm a client's Square customer id, replacing any earlier mapping (kept as history). One client per Square customer: a customer already mapped to another client is refused with 409. Requires the client's current version from companies.square_customer.get. Square ids are checked for shape only; nothing is sent to Square.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "billing:write",
+                            "billing:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CompanySquareCustomerRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "client",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Square customer confirmed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CompanySquareStateResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-mcp-tool": "companies.square_customer.set",
                 "x-svc-flags": [
                     "AGENT_API_WRITES_ENABLED",
                     "AGENT_API_CLIENT_WRITES_ENABLED"
@@ -3404,6 +3701,120 @@
                         "$ref": "#/components/responses/Error"
                     }
                 }
+            }
+        },
+        "/workspaces/{workspace}/invoices/{invoice}/square-link": {
+            "post": {
+                "operationId": "invoices.square_link",
+                "description": "Workspace managers only. Link an SVC invoice to its Square invoice, as confirmed by a person: never automatically. Each side has at most one active link: a Square invoice already linked anywhere is refused with 409, and so is an invoice that is already linked unless replace: true re-points it (the replaced link is kept as history). Requires the invoice's current expected_version. When currency is given it must equal the invoice's. While an invoice is linked, or its agreement is billed in Square, SVC never emails it to the client, charges it or offers a payment link for it; issuing it and recording payments stay open. Square ids are checked for shape only; nothing is sent to Square.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "billing:write",
+                            "billing:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/InvoiceSquareLinkRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/InvoiceId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Invoice linked to Square",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/InvoiceSquareResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-mcp-tool": "invoices.square_link",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_INVOICE_WRITES_ENABLED"
+                ]
+            },
+            "delete": {
+                "operationId": "invoices.square_unlink",
+                "description": "Workspace managers only. Unlink an invoice from its Square invoice. The link is kept as history and either side may be linked again. Requires the invoice's current expected_version and confirm: true.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "billing:write",
+                            "billing:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/InvoiceSquareUnlinkRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/InvoiceId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Invoice unlinked from Square",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/InvoiceSquareResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-mcp-tool": "invoices.square_unlink",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_INVOICE_WRITES_ENABLED"
+                ]
             }
         },
         "/workspaces/{workspace}/invoices/{invoice}/details": {
@@ -5733,7 +6144,8 @@
                     "project",
                     "client_id",
                     "client_name",
-                    "project_id"
+                    "project_id",
+                    "square_series_key"
                 ],
                 "properties": {
                     "version": {
@@ -5868,6 +6280,14 @@
                             "null"
                         ],
                         "format": "uuid"
+                    },
+                    "square_series_key": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "pattern": "^[0-9]{6}$",
+                        "description": "Billed in Square: the Square series that bills this agreement. While set, SVC issues the agreement's invoices but never emails, charges or offers a payment link for them."
                     }
                 }
             },
@@ -5899,6 +6319,44 @@
                 "properties": {
                     "data": {
                         "$ref": "#/components/schemas/Agreement"
+                    }
+                }
+            },
+            "AgreementSquareSeriesClearRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "expected_version",
+                    "confirm"
+                ],
+                "properties": {
+                    "expected_version": {
+                        "$ref": "#/components/schemas/Version"
+                    },
+                    "confirm": {
+                        "type": "boolean",
+                        "const": true
+                    }
+                }
+            },
+            "AgreementSquareSeriesRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "expected_version",
+                    "series_key",
+                    "confirm"
+                ],
+                "properties": {
+                    "expected_version": {
+                        "$ref": "#/components/schemas/Version"
+                    },
+                    "series_key": {
+                        "$ref": "#/components/schemas/SquareSeriesKey"
+                    },
+                    "confirm": {
+                        "type": "boolean",
+                        "const": true
                     }
                 }
             },
@@ -6463,7 +6921,8 @@
                     "billing_email",
                     "is_active",
                     "automatic_invoice_email_enabled",
-                    "automatic_invoice_email_delay_days"
+                    "automatic_invoice_email_delay_days",
+                    "square_customer"
                 ],
                 "properties": {
                     "version": {
@@ -6499,6 +6958,17 @@
                         ],
                         "minimum": 0,
                         "maximum": 365
+                    },
+                    "square_customer": {
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/CompanySquareCustomer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "description": "The confirmed Square customer, or null."
                     }
                 }
             },
@@ -6530,6 +7000,104 @@
                 "properties": {
                     "data": {
                         "$ref": "#/components/schemas/ClientCompany"
+                    }
+                }
+            },
+            "CompanySquareCustomer": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "square_customer_id",
+                    "confirmed_at",
+                    "confirmed_by"
+                ],
+                "properties": {
+                    "square_customer_id": {
+                        "$ref": "#/components/schemas/SquareCustomerId"
+                    },
+                    "confirmed_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "confirmed_by": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Who confirmed the mapping, by name."
+                    }
+                }
+            },
+            "CompanySquareCustomerClearRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "expected_version",
+                    "confirm"
+                ],
+                "properties": {
+                    "expected_version": {
+                        "$ref": "#/components/schemas/Version"
+                    },
+                    "confirm": {
+                        "type": "boolean",
+                        "const": true
+                    }
+                }
+            },
+            "CompanySquareCustomerRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "expected_version",
+                    "square_customer_id"
+                ],
+                "properties": {
+                    "expected_version": {
+                        "$ref": "#/components/schemas/Version"
+                    },
+                    "square_customer_id": {
+                        "$ref": "#/components/schemas/SquareCustomerId"
+                    }
+                }
+            },
+            "CompanySquareState": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "client_id",
+                    "version",
+                    "square_customer"
+                ],
+                "properties": {
+                    "client_id": {
+                        "$ref": "#/components/schemas/Uuid"
+                    },
+                    "version": {
+                        "$ref": "#/components/schemas/Version"
+                    },
+                    "square_customer": {
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/CompanySquareCustomer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "description": "The confirmed Square customer, or null."
+                    }
+                }
+            },
+            "CompanySquareStateResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data"
+                ],
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/CompanySquareState"
                     }
                 }
             },
@@ -7746,7 +8314,8 @@
                     "service_period_start",
                     "service_period_end",
                     "automatic_delivery_status",
-                    "automatic_delivery_due_at"
+                    "automatic_delivery_due_at",
+                    "square"
                 ],
                 "properties": {
                     "id": {
@@ -7891,6 +8460,17 @@
                             },
                             "additionalProperties": false
                         }
+                    },
+                    "square": {
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/InvoiceSquare"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "description": "Workspace managers only; null for other viewers. Who collects this invoice and its Square link."
                     }
                 }
             },
@@ -8556,6 +9136,145 @@
                             "type": "string",
                             "format": "email"
                         }
+                    }
+                }
+            },
+            "InvoiceSquare": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "invoice_id",
+                    "invoice_version",
+                    "link",
+                    "agreement_series_key",
+                    "square_collects",
+                    "collection_refusal"
+                ],
+                "properties": {
+                    "invoice_id": {
+                        "$ref": "#/components/schemas/Uuid"
+                    },
+                    "invoice_version": {
+                        "$ref": "#/components/schemas/Version"
+                    },
+                    "link": {
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/SquareInvoiceLink"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "description": "The active link to a Square invoice, or null."
+                    },
+                    "agreement_series_key": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "pattern": "^[0-9]{6}$",
+                        "description": "The Square series of the agreement this invoice was generated under, when that agreement is billed in Square."
+                    },
+                    "square_collects": {
+                        "type": "boolean",
+                        "description": "True when the invoice is linked or its agreement is billed in Square. SVC then never emails it to the client, charges it or offers a payment link; issuing and recording payments stay open."
+                    },
+                    "collection_refusal": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Why SVC will not collect this invoice, as the collection paths report it; null when SVC collects."
+                    }
+                }
+            },
+            "InvoiceSquareLinkRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "expected_version",
+                    "square_invoice_id",
+                    "square_invoice_number"
+                ],
+                "properties": {
+                    "expected_version": {
+                        "$ref": "#/components/schemas/Version"
+                    },
+                    "square_invoice_id": {
+                        "$ref": "#/components/schemas/SquareInvoiceId"
+                    },
+                    "square_invoice_number": {
+                        "$ref": "#/components/schemas/SquareInvoiceNumber"
+                    },
+                    "currency": {
+                        "type": "string",
+                        "pattern": "^[A-Z]{3}$",
+                        "description": "The Square invoice's currency. When given it must equal the SVC invoice's; the link records the SVC invoice's currency."
+                    },
+                    "match_method": {
+                        "type": "string",
+                        "enum": [
+                            "manual",
+                            "suggested"
+                        ],
+                        "default": "manual"
+                    },
+                    "score": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "minimum": 0,
+                        "maximum": 100,
+                        "description": "Suggested links only: the score the person saw."
+                    },
+                    "reasons": {
+                        "type": [
+                            "array",
+                            "null"
+                        ],
+                        "maxItems": 10,
+                        "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200
+                        },
+                        "description": "Suggested links only: the reasons the person saw."
+                    },
+                    "replace": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Required to re-point an invoice that is already linked; the replaced link is kept as history."
+                    }
+                }
+            },
+            "InvoiceSquareResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data"
+                ],
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/InvoiceSquare"
+                    }
+                }
+            },
+            "InvoiceSquareUnlinkRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "expected_version",
+                    "confirm"
+                ],
+                "properties": {
+                    "expected_version": {
+                        "$ref": "#/components/schemas/Version"
+                    },
+                    "confirm": {
+                        "type": "boolean",
+                        "const": true
                     }
                 }
             },
@@ -9936,6 +10655,12 @@
                     }
                 }
             },
+            "SquareCustomerId": {
+                "type": "string",
+                "maxLength": 191,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,190}$",
+                "description": "A Square customer id, held as an opaque string. SVC checks its shape only."
+            },
             "SquareCustomerListResponse": {
                 "type": "object",
                 "additionalProperties": false,
@@ -10397,6 +11122,87 @@
                     }
                 }
             },
+            "SquareInvoiceId": {
+                "type": "string",
+                "maxLength": 191,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9:_-]{0,190}$",
+                "description": "A Square invoice id, held as an opaque string. SVC checks its shape only; it never resolves it against Square."
+            },
+            "SquareInvoiceLink": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "id",
+                    "square_invoice_id",
+                    "square_invoice_number",
+                    "series_key",
+                    "currency",
+                    "match_method",
+                    "score",
+                    "reasons",
+                    "linked_at",
+                    "linked_by"
+                ],
+                "properties": {
+                    "id": {
+                        "$ref": "#/components/schemas/Uuid"
+                    },
+                    "square_invoice_id": {
+                        "$ref": "#/components/schemas/SquareInvoiceId"
+                    },
+                    "square_invoice_number": {
+                        "$ref": "#/components/schemas/SquareInvoiceNumber"
+                    },
+                    "series_key": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "pattern": "^[0-9]{6}$",
+                        "description": "Derived from the number at link time; null for a one-off."
+                    },
+                    "currency": {
+                        "$ref": "#/components/schemas/Currency"
+                    },
+                    "match_method": {
+                        "type": "string",
+                        "enum": [
+                            "manual",
+                            "suggested"
+                        ]
+                    },
+                    "score": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "minimum": 0,
+                        "maximum": 100,
+                        "description": "The suggestion score the person confirmed; null for a manual link."
+                    },
+                    "reasons": {
+                        "type": [
+                            "array",
+                            "null"
+                        ],
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "The suggestion reasons the person confirmed; null for a manual link."
+                    },
+                    "linked_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "linked_by": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Who confirmed the link, by name."
+                    }
+                }
+            },
             "SquareInvoiceListResponse": {
                 "type": "object",
                 "additionalProperties": false,
@@ -10429,6 +11235,12 @@
                         }
                     }
                 }
+            },
+            "SquareInvoiceNumber": {
+                "type": "string",
+                "maxLength": 191,
+                "pattern": "^[!-~](?:[ -~]{0,189}[!-~])?$",
+                "description": "The Square invoice number as Square shows it. A recurring series occurrence is NNNNNN-R-NNNN, whose six-digit prefix is the series key."
             },
             "SquareInvoiceResponse": {
                 "type": "object",
@@ -11169,6 +11981,11 @@
                         "$ref": "#/components/schemas/SquarePayment"
                     }
                 }
+            },
+            "SquareSeriesKey": {
+                "type": "string",
+                "pattern": "^[0-9]{6}$",
+                "description": "A Square recurring series: the six-digit prefix of its invoices' NNNNNN-R-NNNN numbers."
             },
             "StaleAndMissingInvoiceAudit": {
                 "type": "object",

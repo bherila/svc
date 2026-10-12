@@ -25,6 +25,7 @@ use App\Support\AgentApi\Presenters\AgentInvoicePresenter;
 use App\Support\AgentApi\Presenters\AgentProjectPresenter;
 use App\Support\AgentApi\Presenters\AgentTaskPresenter;
 use App\Support\AgentApi\Presenters\AgentTimeEntryPresenter;
+use App\Support\AgentApi\Presenters\SquareLinkPresenter;
 use App\Support\Billing\InvoiceKind;
 use App\Support\WorkspaceClock;
 use Closure;
@@ -358,6 +359,8 @@ final class AgentReadService
         $record = $this->invoiceQuery($user, $workspace)->where('public_id', $invoiceId)->with(['clientCompany' => fn ($companies) => $companies->where('workspace_id', $workspace->id), 'lines' => fn ($lines) => $lines->where('workspace_id', $workspace->id), 'lines.project' => fn ($projects) => $projects->where('workspace_id', $workspace->id)])->firstOrFail();
 
         return $this->invoicePresenter->present($workspace, $record, $this->access->isWorkspaceManager($user, $workspace)) + [
+            // Managers only, like the delivery state: who collects this invoice (#438).
+            'square' => $this->access->isWorkspaceManager($user, $workspace) ? app(SquareLinkPresenter::class)->invoice($record) : null,
             'corrections' => $this->access->isWorkspaceManager($user, $workspace)
                 ? app(InvoiceCorrectionReadService::class)->agentHistory($workspace, $record) : [],
             'lines' => $record->lines->map(fn ($line): array => ['id' => $line->public_id] + $this->invoicePresenter->line($line))->values()->all(),

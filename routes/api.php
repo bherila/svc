@@ -15,6 +15,7 @@ use App\Http\Controllers\Api\V1\AgentProjectController;
 use App\Http\Controllers\Api\V1\AgentProposalController;
 use App\Http\Controllers\Api\V1\AgentReadController;
 use App\Http\Controllers\Api\V1\AgentSquareController;
+use App\Http\Controllers\Api\V1\AgentSquareLinkController;
 use App\Http\Controllers\Api\V1\AgentTaskMutationController;
 use App\Http\Controllers\Api\V1\AgentTimeEntryMutationController;
 use App\Http\Controllers\Api\V1\AgentWorkspaceMiscController;
@@ -334,6 +335,16 @@ Route::prefix('v1')
             ->whereUuid('invoice');
         $operation('invoices.void', [AgentInvoiceMutationController::class, 'void'])
             ->whereUuid('invoice');
+
+        // SVC's side of Square (#438): links, the client's customer and the
+        // billed-in-Square marker. Nothing behind these routes calls Square.
+        $operation('invoices.square_link', [AgentSquareLinkController::class, 'link'])->whereUuid('invoice')->middleware(EnsureAgentWorkspaceVisible::class)->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']));
+        $operation('invoices.square_unlink', [AgentSquareLinkController::class, 'unlink'])->whereUuid('invoice')->middleware(EnsureAgentWorkspaceVisible::class)->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']));
+        $operation('companies.square_customer.get', [AgentSquareLinkController::class, 'customer'])->whereUuid('client')->middleware(EnsureAgentWorkspaceVisible::class)->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']));
+        $operation('companies.square_customer.set', [AgentSquareLinkController::class, 'setCustomer'])->whereUuid('client')->middleware(EnsureAgentWorkspaceVisible::class)->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']));
+        $operation('companies.square_customer.clear', [AgentSquareLinkController::class, 'clearCustomer'])->whereUuid('client')->middleware(EnsureAgentWorkspaceVisible::class)->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']));
+        $operation('agreements.square_series.set', [AgentSquareLinkController::class, 'markAgreement'])->whereUuid('agreement')->middleware(EnsureAgentWorkspaceVisible::class)->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']));
+        $operation('agreements.square_series.clear', [AgentSquareLinkController::class, 'clearAgreement'])->whereUuid('agreement')->middleware(EnsureAgentWorkspaceVisible::class)->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']));
     });
 
 // Disconnecting takes `mcp:use`, which only the MCP resource admits, so the

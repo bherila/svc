@@ -55,7 +55,7 @@ final class SquareCollectionSitesTest extends TestCase
     {
         $found = [];
         foreach ($this->methods() as $name => $method) {
-            if ($this->reachesPrimitive($method)) {
+            if ($this->reachesPrimitive($method, str_starts_with($name, 'App\Services\Billing\InvoiceEmailService::'))) {
                 $found[] = $name;
             }
         }
@@ -99,16 +99,17 @@ final class SquareCollectionSitesTest extends TestCase
         $this->assertTrue($guarded('sendAutomatic'));
     }
 
-    private function reachesPrimitive(Node\Stmt\ClassMethod $method): bool
+    /** `$this->deliver()` is the email primitive only inside InvoiceEmailService; other classes have their own `deliver`. */
+    private function reachesPrimitive(Node\Stmt\ClassMethod $method, bool $emailService): bool
     {
-        return (new NodeFinder)->findFirst($method->stmts ?? [], function (Node $node): bool {
+        return (new NodeFinder)->findFirst($method->stmts ?? [], function (Node $node) use ($emailService): bool {
             if ($node instanceof New_ && $node->class instanceof Name) {
                 return $node->class->toString() === 'App\Mail\InvoiceMail';
             }
             if ($node instanceof PropertyFetch && $node->name instanceof Identifier) {
                 return $node->name->toString() === 'paymentIntents';
             }
-            if ($node instanceof MethodCall && $node->name instanceof Identifier && $node->name->toString() === 'deliver'
+            if ($emailService && $node instanceof MethodCall && $node->name instanceof Identifier && $node->name->toString() === 'deliver'
                 && $node->var instanceof Node\Expr\Variable && $node->var->name === 'this') {
                 return true;
             }

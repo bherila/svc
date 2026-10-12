@@ -45,6 +45,32 @@
             "mcp.switch:agreements.list"
         ]
     },
+    "agreements.square_series.clear": {
+        "scopes": [
+            "billing:write",
+            "billing:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.clients",
+            "mcp",
+            "mcp.switch:mcp.write.clients",
+            "mcp.switch:agreements.square_series.clear"
+        ]
+    },
+    "agreements.square_series.set": {
+        "scopes": [
+            "billing:write",
+            "billing:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.clients",
+            "mcp",
+            "mcp.switch:mcp.write.clients",
+            "mcp.switch:agreements.square_series.set"
+        ]
+    },
     "agreements.terminate": {
         "scopes": [
             "clients:write",
@@ -359,6 +385,42 @@
             "mcp",
             "mcp.switch:mcp.write.clients",
             "mcp.switch:clients.update"
+        ]
+    },
+    "companies.square_customer.clear": {
+        "scopes": [
+            "billing:write",
+            "billing:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.clients",
+            "mcp",
+            "mcp.switch:mcp.write.clients",
+            "mcp.switch:companies.square_customer.clear"
+        ]
+    },
+    "companies.square_customer.get": {
+        "scopes": [
+            "billing:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read.clients",
+            "mcp.switch:companies.square_customer.get"
+        ]
+    },
+    "companies.square_customer.set": {
+        "scopes": [
+            "billing:write",
+            "billing:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.clients",
+            "mcp",
+            "mcp.switch:mcp.write.clients",
+            "mcp.switch:companies.square_customer.set"
         ]
     },
     "connections.revoke": {
@@ -702,6 +764,32 @@
             "mcp",
             "mcp.switch:mcp.write",
             "mcp.switch:invoices.send"
+        ]
+    },
+    "invoices.square_link": {
+        "scopes": [
+            "billing:write",
+            "billing:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.invoices",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:invoices.square_link"
+        ]
+    },
+    "invoices.square_unlink": {
+        "scopes": [
+            "billing:write",
+            "billing:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.invoices",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:invoices.square_unlink"
         ]
     },
     "invoices.update_details": {

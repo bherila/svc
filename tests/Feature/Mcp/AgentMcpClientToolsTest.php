@@ -52,6 +52,7 @@ final class AgentMcpClientToolsTest extends TestCase
             'is_active' => true,
             'automatic_invoice_email_enabled' => false,
             'automatic_invoice_email_delay_days' => null,
+            'square_customer' => null,
         ], $one['result']['structuredContent']['data']);
     }
 

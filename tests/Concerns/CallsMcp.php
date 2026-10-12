@@ -50,9 +50,17 @@ trait CallsMcp
     /** @return list<string> */
     protected function toolNames(string $session): array
     {
-        $tools = $this->mcp(['jsonrpc' => '2.0', 'id' => 99, 'method' => 'tools/list', 'params' => []], $session)
-            ->assertOk()->json('result.tools');
+        // Every page: discovery is paginated at 100 tools, and the inventory
+        // has outgrown one page.
+        $names = [];
+        $cursor = null;
+        do {
+            $result = $this->mcp(['jsonrpc' => '2.0', 'id' => 99, 'method' => 'tools/list', 'params' => $cursor === null ? [] : ['cursor' => $cursor]], $session)
+                ->assertOk()->json('result');
+            $names = [...$names, ...array_column($result['tools'], 'name')];
+            $cursor = $result['nextCursor'] ?? null;
+        } while (is_string($cursor) && $cursor !== '');
 
-        return array_column($tools, 'name');
+        return $names;
     }
 }
