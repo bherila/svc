@@ -2,12 +2,16 @@
 
 namespace Tests\Feature\Billing;
 
+use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
+use App\Models\User;
 use App\Models\Workspace;
+use App\Services\AgentApi\AgentInvoiceOperations;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Services\Billing\StripePaymentIntentService;
 use App\Services\Billing\StripeWebhookService;
+use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Concurrency\LockMode;
 use App\Support\Concurrency\LockOrderRecorder;
 use App\Support\Concurrency\LockResource;
@@ -61,6 +65,25 @@ final class BillingMaintenanceWriterBoundariesTest extends TestCase
         $this->assertTrue(app(StripeWebhookService::class)->process(Event::constructFrom($data), json_encode($data, JSON_THROW_ON_ERROR)));
         $this->assertShareBeforeBilling();
         $this->assertSame(1, $invoice->payments()->where('workspace_id', $workspace->id)->count());
+    }
+
+    public function test_agent_generation_takes_share_mode_before_agreement_and_invoice_preflight_locks(): void
+    {
+        $this->travelTo('2026-10-12 12:00:00');
+        config(['agent_api.writes_enabled' => true, 'agent_api.invoice_writes_enabled' => true]);
+        [$workspace, $invoice] = $this->invoice();
+        $actor = User::factory()->create(['email' => 'maintenance-actor@synthetic.test']);
+        $workspace->memberships()->create(['user_id' => $actor->id, 'role' => 'owner']);
+        $agreement = ClientAgreement::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $invoice->client_company_id,
+            'title' => 'Synthetic recurring agreement', 'status' => 'active', 'currency' => 'USD', 'starts_on' => '2026-07-01',
+            'retainer_minutes' => 120, 'retainer_amount' => 30000, 'hourly_rate_amount' => 12000,
+            'catch_up_threshold_minutes' => 0, 'billing_cadence' => 'monthly', 'bill_overage_interim' => false, 'rollover_months' => 0]);
+        LockOrderRecorder::start();
+        $draft = app(AgentInvoiceOperations::class)->generate($actor, $workspace, 'synthetic-client', 'synthetic-generation',
+            $agreement->public_id, ['expected_version' => AgentApiVersion::for($agreement), 'period_start' => '2026-10-01', 'confirm' => true]);
+        $this->assertSame('draft', $draft->status);
+        $this->assertSame($workspace->id, $draft->workspace_id);
+        $this->assertShareBeforeBilling();
     }
 
     private function assertShareBeforeBilling(): void
