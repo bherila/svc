@@ -189,19 +189,6 @@ final class ReplayInvoicesCommand extends Command
             return self::FAILURE;
         }
 
-        $companies = $this->companies($workspace);
-        if ($companies->isEmpty()) {
-            $this->components->error('No client companies with invoice history to replay.');
-
-            return self::FAILURE;
-        }
-
-        $this->components->info(sprintf(
-            'Replaying %d client compan%s. Nothing will be written - the transaction is always rolled back.',
-            $companies->count(),
-            $companies->count() === 1 ? 'y' : 'ies',
-        ));
-
         /** @var array{comparisons: list<array<string, mixed>>, generation: list<string>} $outcome */
         $outcome = ['comparisons' => [], 'generation' => []];
 
@@ -209,6 +196,19 @@ final class ReplayInvoicesCommand extends Command
 
         try {
             BillingMaintenance::exclusive($workspace->id, self::class);
+            $companies = $this->companies($workspace);
+            if ($companies->isEmpty()) {
+                $this->components->error('No client companies with invoice history to replay.');
+
+                return self::FAILURE;
+            }
+
+            $this->components->info(sprintf(
+                'Replaying %d client compan%s. Nothing will be written - the transaction is always rolled back.',
+                $companies->count(),
+                $companies->count() === 1 ? 'y' : 'ies',
+            ));
+
             $historySeeds = $this->prepareReplayOnlyHistoryBasis($workspace, $companies);
             $expected = $this->snapshot($workspace, $companies);
             $this->openingCapacityContexts = $this->openingCapacityContexts($expected);

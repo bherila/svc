@@ -74,38 +74,9 @@ final class RehearseGenerationCommand extends Command
             return self::FAILURE;
         }
 
-        $companyPublicId = $this->option('company');
-        $companies = ClientCompany::query()
-            ->where('workspace_id', $workspace->id)
-            ->when(is_string($companyPublicId) && $companyPublicId !== '', fn ($query) => $query->where('public_id', $companyPublicId))
-            ->get();
-
-        if (is_string($companyPublicId) && $companyPublicId !== '' && $companies->isEmpty()) {
-            $this->components->error('No client company in that workspace matches that public id.');
-
-            return self::FAILURE;
-        }
-
         $show = (bool) $this->option('show');
         /** @var list<string> $shown */
         $shown = [];
-
-        $this->components->info(sprintf(
-            'Rehearsing generation for %d client companies. Nothing will be written - the transaction is always rolled back.',
-            $companies->count(),
-        ));
-
-        if ($companies->isEmpty()) {
-            // Nothing was generated and nothing was compared, so "safe to run"
-            // would be a claim about an empty set stated with the authority of
-            // a check.
-            $this->components->error(
-                'This workspace has no client companies, so there is nothing to rehearse. '.
-                'Select a workspace that holds the data you mean to test.',
-            );
-
-            return self::FAILURE;
-        }
 
         $settledBefore = [];
         $created = 0;
@@ -118,6 +89,35 @@ final class RehearseGenerationCommand extends Command
 
         try {
             BillingMaintenance::exclusive($workspace->id, self::class);
+            $companyPublicId = $this->option('company');
+            $companies = ClientCompany::query()
+                ->where('workspace_id', $workspace->id)
+                ->when(is_string($companyPublicId) && $companyPublicId !== '', fn ($query) => $query->where('public_id', $companyPublicId))
+                ->get();
+
+            if (is_string($companyPublicId) && $companyPublicId !== '' && $companies->isEmpty()) {
+                $this->components->error('No client company in that workspace matches that public id.');
+
+                return self::FAILURE;
+            }
+
+            $this->components->info(sprintf(
+                'Rehearsing generation for %d client companies. Nothing will be written - the transaction is always rolled back.',
+                $companies->count(),
+            ));
+
+            if ($companies->isEmpty()) {
+                // Nothing was generated and nothing was compared, so "safe to run"
+                // would be a claim about an empty set stated with the authority of
+                // a check.
+                $this->components->error(
+                    'This workspace has no client companies, so there is nothing to rehearse. '.
+                    'Select a workspace that holds the data you mean to test.',
+                );
+
+                return self::FAILURE;
+            }
+
             $settledBefore = $this->settledFingerprints($workspace);
             $this->components->twoColumnDetail('settled invoices being watched', (string) count($settledBefore));
 

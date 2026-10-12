@@ -15,7 +15,10 @@ use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Concurrency\LockMode;
 use App\Support\Concurrency\LockOrderRecorder;
 use App\Support\Concurrency\LockResource;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\DataProvider;
 use RuntimeException;
 use Stripe\Event;
@@ -84,6 +87,31 @@ final class BillingMaintenanceWriterBoundariesTest extends TestCase
         $this->assertSame('draft', $draft->status);
         $this->assertSame($workspace->id, $draft->workspace_id);
         $this->assertShareBeforeBilling();
+    }
+
+    public static function commands(): iterable
+    {
+        yield 'replay' => ['svc:billing:replay'];
+        yield 'rehearsal' => ['svc:billing:rehearse-generation'];
+    }
+
+    #[DataProvider('commands')]
+    public function test_maintenance_resolves_the_company_set_only_after_exclusive_acquisition(string $command): void
+    {
+        [$workspace] = $this->invoice();
+        $protected = false;
+        $companyReads = [];
+        DB::listen(static function (QueryExecuted $query) use (&$protected, &$companyReads): void {
+            if (str_starts_with(strtolower($query->sql), 'select') && str_contains($query->sql, 'billing_maintenance_locks')) {
+                $protected = true;
+            }
+            if (str_starts_with(strtolower($query->sql), 'select') && str_contains($query->sql, 'client_companies')) {
+                $companyReads[] = $protected;
+            }
+        });
+        $this->assertSame(0, Artisan::call($command, ['--workspace' => $workspace->public_id]), Artisan::output());
+        $this->assertNotEmpty($companyReads);
+        $this->assertNotContains(false, $companyReads, 'Maintenance selected companies before acquiring exclusion.');
     }
 
     private function assertShareBeforeBilling(): void
