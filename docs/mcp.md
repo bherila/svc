@@ -964,8 +964,9 @@ cancels, refunds or marks anything paid in Square.
   stored card on an invoice appears only as `card_on_file`. Money is
   `{amount, currency}` in minor units. Every invoice carries `series_key` - the
   six-digit prefix every invoice of a recurring `NNNNNN-R-NNNN` series shares
-  - and `series_occurrence` (the suffix); both are null for a one-off. Square
-  carries no series id of its own.
+  - and `series_occurrence` (the suffix); both are null for a one-off. A
+  dashboard series has no series id in Square. An invoice that Square's
+  Subscriptions API generated also carries its `subscription_id`.
 - **Bounds.** Page sizes are capped as listed, and all of an account's
   locations (Square allows 300) come back in one answer. Nothing is cut
   silently. A page larger than its cap is refused (502), since Square's cursor

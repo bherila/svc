@@ -77,6 +77,9 @@ final class SquarePresenter
             'order_id' => self::text($invoice, 'order_id'),
             'invoice_number' => $number,
             ...SquareInvoiceSeries::of($number),
+            // Set only on invoices Square's Subscriptions API generated; a
+            // dashboard recurring series has none and is known by series_key.
+            'subscription_id' => self::text($invoice, 'subscription_id'),
             'title' => self::text($invoice, 'title'),
             'description' => self::text($invoice, 'description', 2000),
             'status' => self::text($invoice, 'status', 32),

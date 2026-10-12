@@ -1106,7 +1106,7 @@ final class AgentRestDocumentation
                 'SquareInvoiceResponse',
             ],
             'square.invoices.list' => [
-                'List one Square location\'s invoices, up to 50 per page, with cursor pagination. series_key is the six-digit prefix every invoice of a recurring NNNNNN-R-NNNN series shares, and series_occurrence its suffix; both are null for a one-off invoice. Amounts are in minor units.',
+                'List one Square location\'s invoices, up to 50 per page, with cursor pagination. series_key is the six-digit prefix every invoice of a recurring NNNNNN-R-NNNN series shares, and series_occurrence its suffix; both are null for a one-off invoice. An invoice a Square subscription generated also carries subscription_id. Amounts are in minor units.',
                 ['WorkspaceId', $location(true), $limit(50), 'Cursor'],
                 'SquareInvoiceListResponse',
             ],

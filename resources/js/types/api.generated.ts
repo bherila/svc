@@ -1126,7 +1126,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description List one Square location's invoices, up to 50 per page, with cursor pagination. series_key is the six-digit prefix every invoice of a recurring NNNNNN-R-NNNN series shares, and series_occurrence its suffix; both are null for a one-off invoice. Amounts are in minor units. Live, read-only Square data fetched on each call for finding Square records to link to svc records; svc never creates, changes or pays anything in Square, and linking is a separate svc operation. Workspace managers only, and only in the workspace Square is connected to; unavailable while Square is not configured. Square ids and cursors are opaque. */
+        /** @description List one Square location's invoices, up to 50 per page, with cursor pagination. series_key is the six-digit prefix every invoice of a recurring NNNNNN-R-NNNN series shares, and series_occurrence its suffix; both are null for a one-off invoice. An invoice a Square subscription generated also carries subscription_id. Amounts are in minor units. Live, read-only Square data fetched on each call for finding Square records to link to svc records; svc never creates, changes or pays anything in Square, and linking is a separate svc operation. Workspace managers only, and only in the workspace Square is connected to; unavailable while Square is not configured. Square ids and cursors are opaque. */
         get: operations['square.invoices.list'];
         put?: never;
         post?: never;
@@ -2416,6 +2416,8 @@ export interface components {
             series_key: string | null;
             /** @description The NNNN suffix of a recurring series invoice number; null for a one-off invoice. */
             series_occurrence: number | null;
+            /** @description Square's subscription id, set only on invoices its Subscriptions API generated; a dashboard recurring series has none and is grouped by series_key. */
+            subscription_id: string | null;
             title: string | null;
             description: string | null;
             status: string | null;
