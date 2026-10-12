@@ -5,6 +5,7 @@ use App\Http\Middleware\AuthenticateFirstPartySession;
 use App\Http\Middleware\EnsureAgentWorkspaceVisible;
 use App\Http\Middleware\EnsureOperationDeployed;
 use App\Http\Middleware\HandleInertiaRequests;
+use App\Http\Middleware\LogRejectedBearer;
 use App\Support\Billing\RetryableConflict;
 use Bherila\McpLaravelBridge\Http\GateOperation;
 use Bherila\McpLaravelBridge\Http\McpHttpSecurityMiddleware;
@@ -21,6 +22,7 @@ use Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Validation\ValidationException;
+use League\OAuth2\Server\Exception\OAuthServerException;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -33,6 +35,9 @@ return Application::configure(basePath: dirname(__DIR__))
         // Trusted proxies (only X-Forwarded-For and its scheme, only from the
         // configured proxies) are applied by the auth package from
         // bherila-auth.trusted_proxies.
+        // First on every API route, ahead of anything that can refuse a
+        // bearer: one log line per refusal, with a safe fingerprint (#441).
+        $middleware->api(prepend: [LogRejectedBearer::class]);
         $middleware->prependToPriorityList(AuthenticatesRequests::class, McpHttpSecurityMiddleware::class);
         $middleware->prependToPriorityList(AuthenticatesRequests::class, ExpectOAuthResource::class);
         $middleware->prependToPriorityList(AuthenticatesRequests::class, AuthenticateFirstPartySession::class);
@@ -69,6 +74,14 @@ return Application::configure(basePath: dirname(__DIR__))
         // operator's edits in the browser, so the field survives the round trip
         // without the server echoing it back.
         $exceptions->dontFlash(['repository']);
+
+        // Passport reports why its validator refused a bearer (malformed,
+        // expired, bad signature, revoked) and then answers a bare 401. On an
+        // API route the reason goes into that request's rejection log line,
+        // which replaces the report and its token-bearing stack trace.
+        $exceptions->report(static function (OAuthServerException $exception): ?bool {
+            return LogRejectedBearer::recordValidatorFailure($exception) ? false : null;
+        });
 
         // A route that declared its protected resource (ExpectOAuthResource:<name>)
         // challenges with that resource's own metadata document, from
