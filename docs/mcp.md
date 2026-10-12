@@ -140,6 +140,42 @@ creating a task are recoverable; `invoices.issue` allocates approved time
 irreversibly and `invoices.send` puts a document in front of a paying client,
 so the two groups no longer turn on together.
 
+### Operator-issued agent tokens
+
+An operator with shell access on the host can issue a short-lived agent token
+for one exact person without a browser consent flow:
+
+```bash
+php artisan svc:auth:issue-agent-token USER_PUBLIC_UUID "Support session" \
+  mcp:use identity:read projects:read --ttl=60
+```
+
+Each scope must be one of the agent scopes listed above; an unknown scope,
+a non-UUID or unknown user, a blank name or one with control characters, or a
+`--ttl` outside 1-240 minutes (default 60) is refused and nothing is issued. A
+token is bound to one resource, chosen by its scopes: naming `mcp:use` makes an
+MCP token for `APP_URL/api/v1/mcp`, and omitting it makes a REST token for
+`APP_URL/api/v1`. The token is an ordinary personal access token on the same
+issuance path as the deployment smoke's, so the resource checks, the identity
+provider policy and the person's own workspace, company and project roles apply
+to it exactly as to an OAuth-connected agent's; its scopes are a ceiling, never a
+grant. For a person bound to the identity provider it records the provider
+subject and credential generation, and issuing is refused when the provider
+reports the identity inactive (or, with enforcement on, cannot be asked).
+
+The command prints one JSON object on stdout - `token`, `expires_at`, `name`,
+`scopes` and `resource` - and the token appears nowhere else. It logs an
+`agent_token.issued` entry carrying the person's public UUID, the name, scopes,
+resource, expiry and a SHA-256 fingerprint of the credential id, never the token.
+Revoke by name, which takes effect on the next request:
+
+```bash
+php artisan svc:auth:revoke-agent-token USER_PUBLIC_UUID "Support session"
+```
+
+When more than one live token shares the name the command fails closed unless
+`--all` is given. It logs `agent_token.revoked` with the same metadata.
+
 ## Public capability inventory
 
 With all read scopes, discovery exposes these read-only tools, in this order:
