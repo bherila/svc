@@ -231,6 +231,15 @@ final class SquareLinkService
                 if ($previous === $seriesKey) {
                     return $locked;
                 }
+                // As for a link: no hand-off while a Stripe payment the client
+                // started is still in flight on one of these invoices. A
+                // locking read, after the agreement it is ordered behind, so it
+                // sees an intent committed while this waited - and starting an
+                // intent takes this agreement first, so none can begin after.
+                $pending = $this->links->pendingStripePaymentForAgreement($locked);
+                if ($pending !== null) {
+                    abort(409, sprintf('A Stripe payment is still pending on invoice %s of this agreement. Let it settle or cancel it before Square collects the agreement\'s invoices.', $pending));
+                }
                 $holder = $this->links->agreementForSeries($workspace->id, $seriesKey);
                 if ($holder !== null) {
                     abort(409, sprintf('Square series %s already marks agreement "%s". Clear it there first.', $seriesKey, (string) $holder->title));

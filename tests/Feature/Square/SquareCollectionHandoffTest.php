@@ -14,6 +14,7 @@ use App\Support\AgentApi\AgentApiVersion;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Stripe\ApiRequestor;
 use Stripe\HttpClient\ClientInterface;
+use Stripe\HttpClient\CurlClient;
 use Tests\TestCase;
 
 /**
@@ -39,7 +40,7 @@ final class SquareCollectionHandoffTest extends TestCase
 
     protected function tearDown(): void
     {
-        ApiRequestor::setHttpClient(null);
+        ApiRequestor::setHttpClient(CurlClient::instance());
         parent::tearDown();
     }
 
@@ -70,6 +71,11 @@ final class SquareCollectionHandoffTest extends TestCase
         config(['services.stripe.secret_key' => 'sk_test_synthetic']);
         ApiRequestor::setHttpClient(new class implements ClientInterface
         {
+            /**
+             * @param  array<int|string, mixed>  $headers
+             * @param  array<string, mixed>  $params
+             * @return array{0: string, 1: int, 2: array<string, string>}
+             */
             public function request($method, $absUrl, $headers, $params, $hasFile, $apiMode = 'v1', $maxNetworkRetries = null)
             {
                 return [json_encode(['id' => 'pi_synthetic_1', 'object' => 'payment_intent', 'client_secret' => 'pi_synthetic_1_secret_fixture'], JSON_THROW_ON_ERROR), 200, []];
@@ -89,6 +95,27 @@ final class SquareCollectionHandoffTest extends TestCase
         $this->postJson("/api/v1/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/square-link", ['expected_version' => AgentApiVersion::for($invoice), ...$body], ['Idempotency-Key' => 'synthetic-current'])
             ->assertConflict()->assertJsonPath('message', fn (string $message): bool => str_contains($message, 'Stripe payment is still pending'));
         $this->assertSame(0, InvoiceSquareLink::query()->where('workspace_id', $workspace->id)->count());
+    }
+
+    public function test_an_agreement_with_a_pending_stripe_payment_on_an_invoice_is_not_marked(): void
+    {
+        [$workspace, $owner, , $invoice, $agreement] = $this->fixture();
+        $this->pendingStripePayment($invoice);
+        $this->actingAsMcp($owner, self::SCOPES);
+
+        $this->putJson("/api/v1/workspaces/{$workspace->public_id}/agreements/{$agreement->public_id}/square-series", [
+            'expected_version' => AgentApiVersion::for($agreement), 'series_key' => '000001', 'confirm' => true,
+        ], ['Idempotency-Key' => 'synthetic-pending-mark'])
+            ->assertConflict()
+            ->assertJsonPath('message', 'A Stripe payment is still pending on invoice SYN-1 of this agreement. Let it settle or cancel it before Square collects the agreement\'s invoices.');
+
+        $this->assertNull($agreement->refresh()->square_series_key);
+
+        // A settled payment is not in flight: the hand-off proceeds.
+        ClientInvoicePayment::query()->where('workspace_id', $workspace->id)->update(['status' => 'failed']);
+        $this->putJson("/api/v1/workspaces/{$workspace->public_id}/agreements/{$agreement->public_id}/square-series", [
+            'expected_version' => AgentApiVersion::for($agreement), 'series_key' => '000001', 'confirm' => true,
+        ], ['Idempotency-Key' => 'synthetic-settled-mark'])->assertOk();
     }
 
     private function pendingStripePayment(ClientInvoice $invoice): void

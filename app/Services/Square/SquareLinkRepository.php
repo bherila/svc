@@ -9,6 +9,7 @@ use App\Models\ClientInvoicePayment;
 use App\Models\CompanySquareCustomer;
 use App\Models\InvoiceSquareLink;
 use App\Support\Billing\InvoicePaymentStatus;
+use App\Support\Concurrency\Locks;
 use Illuminate\Support\Collection;
 
 /**
@@ -87,6 +88,31 @@ final class SquareLinkRepository
             ->where('provider', 'stripe')
             ->where('status', InvoicePaymentStatus::Pending->value)
             ->exists();
+    }
+
+    /**
+     * The number of an invoice of this agreement with a Stripe payment still
+     * in flight, read under a share lock on the payment rows so a payment
+     * committed after this transaction's snapshot is still seen.
+     */
+    public function pendingStripePaymentForAgreement(ClientAgreement $agreement): ?string
+    {
+        $invoiceIds = ClientInvoicePayment::query()
+            ->where('workspace_id', $agreement->workspace_id)
+            ->where('provider', 'stripe')
+            ->where('status', InvoicePaymentStatus::Pending->value)
+            ->whereIn('client_invoice_id', ClientInvoice::query()->select('id')
+                ->where('workspace_id', $agreement->workspace_id)
+                ->where('client_agreement_id', $agreement->id))
+            ->orderBy('id')
+            ->tap(Locks::forShare())
+            ->pluck('client_invoice_id');
+        if ($invoiceIds->isEmpty()) {
+            return null;
+        }
+        $number = ClientInvoice::query()->where('workspace_id', $agreement->workspace_id)->whereKey($invoiceIds->first())->value('invoice_number');
+
+        return is_string($number) ? $number : 'another invoice';
     }
 
     /** The agreement holding this series as its billed-in-Square marker, if any. */

@@ -2,6 +2,7 @@
 
 namespace App\Services\Billing;
 
+use App\Models\ClientAgreement;
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoicePayment;
 use App\Models\ClientStripeCustomer;
@@ -38,6 +39,13 @@ final class StripePaymentIntentService
         return DB::transaction(function () use ($invoice, $workspace, $paymentMethodId, $idempotencyKey): array {
             $workspaceId = $workspace->id ?? $invoice->workspace_id;
             BillingMaintenance::share($workspaceId);
+            // The agreement first, in registry order: marking it billed in
+            // Square (#438) holds it exclusively while it checks for pending
+            // Stripe payments, so an intent either completes before that check
+            // or starts after the marker it then refuses on.
+            if ($invoice->client_agreement_id !== null) {
+                ClientAgreement::query()->where('workspace_id', $workspaceId)->whereKey($invoice->client_agreement_id)->tap(Locks::forShare())->first();
+            }
             $invoice = ClientInvoice::query()->where('workspace_id', $workspaceId)->whereKey($invoice->id)->tap(Locks::forUpdate())->firstOrFail();
 
             return $this->createLocked($invoice, $workspace, $paymentMethodId, $idempotencyKey);
