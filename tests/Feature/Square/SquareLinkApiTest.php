@@ -261,6 +261,30 @@ final class SquareLinkApiTest extends TestCase
         $this->assertNull($second->refresh()->square_series_key);
     }
 
+    /**
+     * Square ids are case-sensitive: ids that differ only in case are two
+     * Square records to the unique indexes as well as to the code, on
+     * MariaDB's collation as on SQLite.
+     */
+    public function test_square_ids_that_differ_only_in_case_are_distinct(): void
+    {
+        [$workspace, $owner, $company, $invoice] = $this->fixture();
+        $other = $this->invoice($company, 'SYN-2');
+        $second = ClientCompany::query()->create(['workspace_id' => $workspace->id, 'name' => 'Synthetic Second Client', 'slug' => 'synthetic-second-client']);
+        $this->actingAsMcp($owner, self::SCOPES);
+        $link = fn (ClientInvoice $target, string $id, string $key, array $extra = []): TestResponse => $this->rest('invoices.square_link', $workspace, ['invoice_id' => $target->public_id], [
+            'expected_version' => AgentApiVersion::for($target->refresh()), 'square_invoice_id' => $id, 'square_invoice_number' => '000001-R-0001', ...$extra,
+        ], $key);
+
+        $link($invoice, 'inv:0-FixtureCase', 'synthetic-upper')->assertOk();
+        $link($other, 'inv:0-fixturecase', 'synthetic-lower')->assertOk();
+        $link($invoice, 'inv:0-FIXTURECASE', 'synthetic-repoint', ['replace' => true])->assertOk()->assertJsonPath('data.link.square_invoice_id', 'inv:0-FIXTURECASE');
+        $this->assertSame(2, InvoiceSquareLink::query()->where('workspace_id', $workspace->id)->whereNull('unlinked_at')->count());
+
+        $this->rest('companies.square_customer.set', $workspace, ['client_id' => $company->public_id], ['expected_version' => AgentApiVersion::for($company), 'square_customer_id' => 'CustFixtureCase'], 'synthetic-customer-upper')->assertOk();
+        $this->rest('companies.square_customer.set', $workspace, ['client_id' => $second->public_id], ['expected_version' => AgentApiVersion::for($second), 'square_customer_id' => 'custfixturecase'], 'synthetic-customer-lower')->assertOk();
+    }
+
     /** A page of clients reads its Square customers and their confirmers in bounded queries, not one per row. */
     public function test_listing_clients_reads_square_customers_in_bounded_queries(): void
     {
