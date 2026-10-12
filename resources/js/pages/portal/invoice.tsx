@@ -200,7 +200,7 @@ export default function PortalInvoice({
                         <CardTitle>Totals</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <dl className="grid gap-2 text-sm sm:grid-cols-2">
+                        <dl className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
                             <div className="flex gap-2">
                                 <dt className="text-muted-foreground">
                                     Subtotal
