@@ -184,7 +184,7 @@ final class AgentOperationCatalog
     {
         $this->registry();
 
-        return isset($this->external[$operationId]);
+        return ($this->external[$operationId] ?? false) === true;
     }
 
     private function build(): OperationRegistry

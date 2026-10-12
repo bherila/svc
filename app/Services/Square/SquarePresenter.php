@@ -213,7 +213,7 @@ final class SquarePresenter
     /**
      * Square's hosted invoice page, only when it is HTTPS on a Square host.
      */
-    public static function squareUrl(mixed $url): ?string
+    private static function squareUrl(mixed $url): ?string
     {
         if (! is_string($url) || strlen($url) > 2048 || filter_var($url, FILTER_VALIDATE_URL) === false) {
             return null;
@@ -222,7 +222,7 @@ final class SquarePresenter
         if (! is_array($parts) || ($parts['scheme'] ?? null) !== 'https' || isset($parts['user']) || isset($parts['pass']) || isset($parts['port'])) {
             return null;
         }
-        $host = strtolower((string) ($parts['host'] ?? ''));
+        $host = strtolower($parts['host'] ?? '');
         foreach (self::SQUARE_HOSTS as $allowed) {
             if ($host === $allowed || str_ends_with($host, '.'.$allowed)) {
                 return $url;
