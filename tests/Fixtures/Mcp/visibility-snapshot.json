@@ -8528,7 +8528,7 @@
                         ],
                         "additionalProperties": false
                     },
-                    "description": "List authorized invoices with bounded cursor pagination.",
+                    "description": "List authorized invoices with client names and service periods. Filter by company, invoice kind, issue or due date ranges, service-period overlap, collectible status or overdue status, with bounded cursor pagination.",
                     "annotations": {
                         "readOnlyHint": true,
                         "destructiveHint": false,
@@ -13445,6 +13445,10 @@
                             "unallocated": {
                                 "type": "boolean",
                                 "default": false
+                            },
+                            "compact": {
+                                "type": "boolean",
+                                "default": false
                             }
                         },
                         "required": [
@@ -13452,7 +13456,7 @@
                         ],
                         "additionalProperties": false
                     },
-                    "description": "List authorized time entries and their tenant-owned invoice allocation with bounded cursor pagination. Use unallocated: true for exactly the approved, priced, billable, non-deferred work counted in operations.summary; allocation_state filters all rows by allocation, including draft and deferred work.",
+                    "description": "List authorized time entries and their tenant-owned invoice allocation with bounded cursor pagination. Use unallocated: true or allocation_state: unallocated with is_billable: true for exactly the approved, priced, billable, non-deferred work counted in operations.summary. allocation_state alone classifies all rows, including draft and deferred work. compact: true returns null description fields while retaining allocation, minutes and permitted financial facts.",
                     "annotations": {
                         "readOnlyHint": true,
                         "destructiveHint": false,
@@ -14607,7 +14611,7 @@
                 "invoices.get": "e012e85260397f86",
                 "invoices.hold_delivery": "5d5d70aa02fac988",
                 "invoices.issue": "7e23d112aa2b7104",
-                "invoices.list": "98a09aab5c1f0f17",
+                "invoices.list": "da8656785ffe2676",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.release_delivery": "f703c8eb40f1ed80",
                 "invoices.send": "3b2bc9ef256c4d18",
@@ -14637,7 +14641,7 @@
                 "tasks.update": "8ecdbb5c8eb349e8",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "3254045784e8772c",
+                "time_entries.list": "30070d50d2bb043f",
                 "time_entries.log": "aefa42432fe16287",
                 "time_entries.unapprove": "b3ac3f20d8fb2232",
                 "time_entries.update": "6315fe84b67213c2",
@@ -14738,7 +14742,7 @@
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.get": "e012e85260397f86",
                 "invoices.issue": "7e23d112aa2b7104",
-                "invoices.list": "98a09aab5c1f0f17",
+                "invoices.list": "da8656785ffe2676",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.send": "3b2bc9ef256c4d18",
                 "invoices.update_details": "72d9e9f7f1c2f1fd",
@@ -14758,7 +14762,7 @@
                 "tasks.update": "8ecdbb5c8eb349e8",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "3254045784e8772c",
+                "time_entries.list": "30070d50d2bb043f",
                 "time_entries.log": "aefa42432fe16287",
                 "time_entries.update": "6315fe84b67213c2",
                 "workspaces.create": "3a4435044291b1a4"
@@ -14856,7 +14860,7 @@
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.get": "e012e85260397f86",
                 "invoices.issue": "7e23d112aa2b7104",
-                "invoices.list": "98a09aab5c1f0f17",
+                "invoices.list": "da8656785ffe2676",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.send": "3b2bc9ef256c4d18",
                 "invoices.update_details": "72d9e9f7f1c2f1fd",
@@ -14876,7 +14880,7 @@
                 "tasks.update": "8ecdbb5c8eb349e8",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "3254045784e8772c",
+                "time_entries.list": "30070d50d2bb043f",
                 "time_entries.log": "aefa42432fe16287",
                 "time_entries.update": "6315fe84b67213c2",
                 "workspaces.create": "3a4435044291b1a4"
@@ -14974,7 +14978,7 @@
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.get": "e012e85260397f86",
                 "invoices.issue": "7e23d112aa2b7104",
-                "invoices.list": "98a09aab5c1f0f17",
+                "invoices.list": "da8656785ffe2676",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.send": "3b2bc9ef256c4d18",
                 "invoices.update_details": "72d9e9f7f1c2f1fd",
@@ -14994,7 +14998,7 @@
                 "tasks.update": "8ecdbb5c8eb349e8",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "3254045784e8772c",
+                "time_entries.list": "30070d50d2bb043f",
                 "time_entries.log": "aefa42432fe16287",
                 "time_entries.update": "6315fe84b67213c2",
                 "workspaces.create": "3a4435044291b1a4"
@@ -15092,7 +15096,7 @@
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.get": "e012e85260397f86",
                 "invoices.issue": "7e23d112aa2b7104",
-                "invoices.list": "98a09aab5c1f0f17",
+                "invoices.list": "da8656785ffe2676",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.send": "3b2bc9ef256c4d18",
                 "invoices.update_details": "72d9e9f7f1c2f1fd",
@@ -15112,7 +15116,7 @@
                 "tasks.update": "8ecdbb5c8eb349e8",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "3254045784e8772c",
+                "time_entries.list": "30070d50d2bb043f",
                 "time_entries.log": "aefa42432fe16287",
                 "time_entries.update": "6315fe84b67213c2",
                 "workspaces.create": "3a4435044291b1a4"
@@ -15221,7 +15225,7 @@
                 "expenses.receipts.list": "3ed3185eeaba5793",
                 "invoices.corrections.get": "aa93da895756b80b",
                 "invoices.get": "e012e85260397f86",
-                "invoices.list": "98a09aab5c1f0f17",
+                "invoices.list": "da8656785ffe2676",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
@@ -15233,7 +15237,7 @@
                 "search": "16364ecdaf8ef167",
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
-                "time_entries.list": "3254045784e8772c"
+                "time_entries.list": "30070d50d2bb043f"
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -15301,7 +15305,7 @@
                 "invoices.generate_period": "89231c301628e176",
                 "invoices.get": "e012e85260397f86",
                 "invoices.hold_delivery": "5d5d70aa02fac988",
-                "invoices.list": "98a09aab5c1f0f17",
+                "invoices.list": "da8656785ffe2676",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.update_details": "72d9e9f7f1c2f1fd",
                 "invoices.update_draft": "4854fa1de825dbfd"
@@ -15408,7 +15412,7 @@
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
                 "invoices.get": "e012e85260397f86",
-                "invoices.list": "98a09aab5c1f0f17",
+                "invoices.list": "da8656785ffe2676",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
@@ -15419,7 +15423,7 @@
                 "search": "16364ecdaf8ef167",
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
-                "time_entries.list": "3254045784e8772c"
+                "time_entries.list": "30070d50d2bb043f"
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -15470,7 +15474,7 @@
                 "invoices.create_draft": "af0b7d4aef91b70b",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.get": "e012e85260397f86",
-                "invoices.list": "98a09aab5c1f0f17",
+                "invoices.list": "da8656785ffe2676",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.update_details": "72d9e9f7f1c2f1fd",
                 "invoices.update_draft": "4854fa1de825dbfd"
@@ -15575,7 +15579,7 @@
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
                 "invoices.get": "e012e85260397f86",
-                "invoices.list": "98a09aab5c1f0f17",
+                "invoices.list": "da8656785ffe2676",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
@@ -15586,7 +15590,7 @@
                 "search": "16364ecdaf8ef167",
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
-                "time_entries.list": "3254045784e8772c"
+                "time_entries.list": "30070d50d2bb043f"
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -15637,7 +15641,7 @@
                 "invoices.create_draft": "af0b7d4aef91b70b",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.get": "e012e85260397f86",
-                "invoices.list": "98a09aab5c1f0f17",
+                "invoices.list": "da8656785ffe2676",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.update_details": "72d9e9f7f1c2f1fd",
                 "invoices.update_draft": "4854fa1de825dbfd"
@@ -15740,7 +15744,7 @@
                 "expenses.receipts.list": "3ed3185eeaba5793",
                 "invoices.corrections.get": "aa93da895756b80b",
                 "invoices.get": "e012e85260397f86",
-                "invoices.list": "98a09aab5c1f0f17",
+                "invoices.list": "da8656785ffe2676",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
@@ -15753,7 +15757,7 @@
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "3254045784e8772c",
+                "time_entries.list": "30070d50d2bb043f",
                 "time_entries.log": "aefa42432fe16287",
                 "time_entries.update": "6315fe84b67213c2"
             },
@@ -15859,7 +15863,7 @@
                 "expenses.receipts.list": "3ed3185eeaba5793",
                 "invoices.corrections.get": "aa93da895756b80b",
                 "invoices.get": "e012e85260397f86",
-                "invoices.list": "98a09aab5c1f0f17",
+                "invoices.list": "da8656785ffe2676",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
@@ -15872,7 +15876,7 @@
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "3254045784e8772c",
+                "time_entries.list": "30070d50d2bb043f",
                 "time_entries.log": "aefa42432fe16287",
                 "time_entries.update": "6315fe84b67213c2"
             },
@@ -15979,7 +15983,7 @@
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
                 "invoices.get": "e012e85260397f86",
-                "invoices.list": "98a09aab5c1f0f17",
+                "invoices.list": "da8656785ffe2676",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
@@ -15991,7 +15995,7 @@
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "3254045784e8772c",
+                "time_entries.list": "30070d50d2bb043f",
                 "time_entries.log": "aefa42432fe16287",
                 "time_entries.update": "6315fe84b67213c2"
             },
@@ -16096,7 +16100,7 @@
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
                 "invoices.get": "e012e85260397f86",
-                "invoices.list": "98a09aab5c1f0f17",
+                "invoices.list": "da8656785ffe2676",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
@@ -16108,7 +16112,7 @@
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "3254045784e8772c",
+                "time_entries.list": "30070d50d2bb043f",
                 "time_entries.log": "aefa42432fe16287",
                 "time_entries.update": "6315fe84b67213c2"
             },
@@ -16213,7 +16217,7 @@
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
                 "invoices.get": "e012e85260397f86",
-                "invoices.list": "98a09aab5c1f0f17",
+                "invoices.list": "da8656785ffe2676",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
@@ -16225,7 +16229,7 @@
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "3254045784e8772c",
+                "time_entries.list": "30070d50d2bb043f",
                 "time_entries.log": "aefa42432fe16287",
                 "time_entries.update": "6315fe84b67213c2"
             },
@@ -16330,7 +16334,7 @@
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
                 "invoices.get": "e012e85260397f86",
-                "invoices.list": "98a09aab5c1f0f17",
+                "invoices.list": "da8656785ffe2676",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
@@ -16342,7 +16346,7 @@
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "3254045784e8772c",
+                "time_entries.list": "30070d50d2bb043f",
                 "time_entries.log": "aefa42432fe16287",
                 "time_entries.update": "6315fe84b67213c2"
             },
@@ -16451,7 +16455,7 @@
                 "expenses.receipts.list": "3ed3185eeaba5793",
                 "invoices.corrections.get": "aa93da895756b80b",
                 "invoices.get": "e012e85260397f86",
-                "invoices.list": "98a09aab5c1f0f17",
+                "invoices.list": "da8656785ffe2676",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
@@ -16463,7 +16467,7 @@
                 "search": "16364ecdaf8ef167",
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
-                "time_entries.list": "3254045784e8772c"
+                "time_entries.list": "30070d50d2bb043f"
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -16568,7 +16572,7 @@
                 "expenses.receipts.list": "3ed3185eeaba5793",
                 "invoices.corrections.get": "aa93da895756b80b",
                 "invoices.get": "e012e85260397f86",
-                "invoices.list": "98a09aab5c1f0f17",
+                "invoices.list": "da8656785ffe2676",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
@@ -16580,7 +16584,7 @@
                 "search": "16364ecdaf8ef167",
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
-                "time_entries.list": "3254045784e8772c"
+                "time_entries.list": "30070d50d2bb043f"
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -16686,7 +16690,7 @@
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
                 "invoices.get": "e012e85260397f86",
-                "invoices.list": "98a09aab5c1f0f17",
+                "invoices.list": "da8656785ffe2676",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
@@ -16697,7 +16701,7 @@
                 "search": "16364ecdaf8ef167",
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
-                "time_entries.list": "3254045784e8772c"
+                "time_entries.list": "30070d50d2bb043f"
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -16801,7 +16805,7 @@
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
                 "invoices.get": "e012e85260397f86",
-                "invoices.list": "98a09aab5c1f0f17",
+                "invoices.list": "da8656785ffe2676",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
@@ -16812,7 +16816,7 @@
                 "search": "16364ecdaf8ef167",
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
-                "time_entries.list": "3254045784e8772c"
+                "time_entries.list": "30070d50d2bb043f"
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -16916,7 +16920,7 @@
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
                 "invoices.get": "e012e85260397f86",
-                "invoices.list": "98a09aab5c1f0f17",
+                "invoices.list": "da8656785ffe2676",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
@@ -16927,7 +16931,7 @@
                 "search": "16364ecdaf8ef167",
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
-                "time_entries.list": "3254045784e8772c"
+                "time_entries.list": "30070d50d2bb043f"
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -17031,7 +17035,7 @@
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
                 "invoices.get": "e012e85260397f86",
-                "invoices.list": "98a09aab5c1f0f17",
+                "invoices.list": "da8656785ffe2676",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
@@ -17042,7 +17046,7 @@
                 "search": "16364ecdaf8ef167",
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
-                "time_entries.list": "3254045784e8772c"
+                "time_entries.list": "30070d50d2bb043f"
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -17144,7 +17148,7 @@
                 "expenses.receipts.list": "3ed3185eeaba5793",
                 "invoices.corrections.get": "aa93da895756b80b",
                 "invoices.get": "e012e85260397f86",
-                "invoices.list": "98a09aab5c1f0f17",
+                "invoices.list": "da8656785ffe2676",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
@@ -17157,7 +17161,7 @@
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "3254045784e8772c",
+                "time_entries.list": "30070d50d2bb043f",
                 "time_entries.log": "aefa42432fe16287",
                 "time_entries.update": "6315fe84b67213c2"
             },
@@ -17263,7 +17267,7 @@
                 "expenses.receipts.list": "3ed3185eeaba5793",
                 "invoices.corrections.get": "aa93da895756b80b",
                 "invoices.get": "e012e85260397f86",
-                "invoices.list": "98a09aab5c1f0f17",
+                "invoices.list": "da8656785ffe2676",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
@@ -17276,7 +17280,7 @@
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "3254045784e8772c",
+                "time_entries.list": "30070d50d2bb043f",
                 "time_entries.log": "aefa42432fe16287",
                 "time_entries.update": "6315fe84b67213c2"
             },
@@ -17383,7 +17387,7 @@
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
                 "invoices.get": "e012e85260397f86",
-                "invoices.list": "98a09aab5c1f0f17",
+                "invoices.list": "da8656785ffe2676",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
@@ -17395,7 +17399,7 @@
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "3254045784e8772c",
+                "time_entries.list": "30070d50d2bb043f",
                 "time_entries.log": "aefa42432fe16287",
                 "time_entries.update": "6315fe84b67213c2"
             },
@@ -17500,7 +17504,7 @@
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
                 "invoices.get": "e012e85260397f86",
-                "invoices.list": "98a09aab5c1f0f17",
+                "invoices.list": "da8656785ffe2676",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
@@ -17512,7 +17516,7 @@
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "3254045784e8772c",
+                "time_entries.list": "30070d50d2bb043f",
                 "time_entries.log": "aefa42432fe16287",
                 "time_entries.update": "6315fe84b67213c2"
             },
@@ -17617,7 +17621,7 @@
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
                 "invoices.get": "e012e85260397f86",
-                "invoices.list": "98a09aab5c1f0f17",
+                "invoices.list": "da8656785ffe2676",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
@@ -17629,7 +17633,7 @@
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "3254045784e8772c",
+                "time_entries.list": "30070d50d2bb043f",
                 "time_entries.log": "aefa42432fe16287",
                 "time_entries.update": "6315fe84b67213c2"
             },
@@ -17734,7 +17738,7 @@
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
                 "invoices.get": "e012e85260397f86",
-                "invoices.list": "98a09aab5c1f0f17",
+                "invoices.list": "da8656785ffe2676",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
@@ -17746,7 +17750,7 @@
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "3254045784e8772c",
+                "time_entries.list": "30070d50d2bb043f",
                 "time_entries.log": "aefa42432fe16287",
                 "time_entries.update": "6315fe84b67213c2"
             },
@@ -17838,7 +17842,7 @@
                 "expenses.update": "1e517d25f792bde9",
                 "invoices.corrections.get": "aa93da895756b80b",
                 "invoices.get": "e012e85260397f86",
-                "invoices.list": "98a09aab5c1f0f17",
+                "invoices.list": "da8656785ffe2676",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.correct": "a89e5531f853028c",
@@ -17863,7 +17867,7 @@
                 "tasks.update": "8ecdbb5c8eb349e8",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "3254045784e8772c",
+                "time_entries.list": "30070d50d2bb043f",
                 "time_entries.log": "aefa42432fe16287",
                 "time_entries.unapprove": "b3ac3f20d8fb2232",
                 "time_entries.update": "6315fe84b67213c2",
@@ -17957,7 +17961,7 @@
                 "expenses.update": "1e517d25f792bde9",
                 "invoices.corrections.get": "aa93da895756b80b",
                 "invoices.get": "e012e85260397f86",
-                "invoices.list": "98a09aab5c1f0f17",
+                "invoices.list": "da8656785ffe2676",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.correct": "a89e5531f853028c",
@@ -17982,7 +17986,7 @@
                 "tasks.update": "8ecdbb5c8eb349e8",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "3254045784e8772c",
+                "time_entries.list": "30070d50d2bb043f",
                 "time_entries.log": "aefa42432fe16287",
                 "time_entries.unapprove": "b3ac3f20d8fb2232",
                 "time_entries.update": "6315fe84b67213c2",
@@ -18086,7 +18090,7 @@
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
                 "invoices.get": "e012e85260397f86",
-                "invoices.list": "98a09aab5c1f0f17",
+                "invoices.list": "da8656785ffe2676",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
@@ -18102,7 +18106,7 @@
                 "tasks.update": "8ecdbb5c8eb349e8",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "3254045784e8772c",
+                "time_entries.list": "30070d50d2bb043f",
                 "time_entries.log": "aefa42432fe16287",
                 "time_entries.update": "6315fe84b67213c2",
                 "workspaces.create": "3a4435044291b1a4"
@@ -18203,7 +18207,7 @@
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
                 "invoices.get": "e012e85260397f86",
-                "invoices.list": "98a09aab5c1f0f17",
+                "invoices.list": "da8656785ffe2676",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
@@ -18219,7 +18223,7 @@
                 "tasks.update": "8ecdbb5c8eb349e8",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "3254045784e8772c",
+                "time_entries.list": "30070d50d2bb043f",
                 "time_entries.log": "aefa42432fe16287",
                 "time_entries.update": "6315fe84b67213c2",
                 "workspaces.create": "3a4435044291b1a4"
@@ -18320,7 +18324,7 @@
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
                 "invoices.get": "e012e85260397f86",
-                "invoices.list": "98a09aab5c1f0f17",
+                "invoices.list": "da8656785ffe2676",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
@@ -18336,7 +18340,7 @@
                 "tasks.update": "8ecdbb5c8eb349e8",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "3254045784e8772c",
+                "time_entries.list": "30070d50d2bb043f",
                 "time_entries.log": "aefa42432fe16287",
                 "time_entries.update": "6315fe84b67213c2",
                 "workspaces.create": "3a4435044291b1a4"
@@ -18437,7 +18441,7 @@
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
                 "invoices.get": "e012e85260397f86",
-                "invoices.list": "98a09aab5c1f0f17",
+                "invoices.list": "da8656785ffe2676",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
@@ -18453,7 +18457,7 @@
                 "tasks.update": "8ecdbb5c8eb349e8",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "3254045784e8772c",
+                "time_entries.list": "30070d50d2bb043f",
                 "time_entries.log": "aefa42432fe16287",
                 "time_entries.update": "6315fe84b67213c2",
                 "workspaces.create": "3a4435044291b1a4"
@@ -18563,7 +18567,7 @@
                 "expenses.receipts.upload_url": "780799092164184f",
                 "invoices.corrections.get": "aa93da895756b80b",
                 "invoices.get": "e012e85260397f86",
-                "invoices.list": "98a09aab5c1f0f17",
+                "invoices.list": "da8656785ffe2676",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
@@ -18575,7 +18579,7 @@
                 "search": "16364ecdaf8ef167",
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
-                "time_entries.list": "3254045784e8772c"
+                "time_entries.list": "30070d50d2bb043f"
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -18680,7 +18684,7 @@
                 "expenses.receipts.upload_url": "780799092164184f",
                 "invoices.corrections.get": "aa93da895756b80b",
                 "invoices.get": "e012e85260397f86",
-                "invoices.list": "98a09aab5c1f0f17",
+                "invoices.list": "da8656785ffe2676",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
@@ -18692,7 +18696,7 @@
                 "search": "16364ecdaf8ef167",
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
-                "time_entries.list": "3254045784e8772c"
+                "time_entries.list": "30070d50d2bb043f"
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -18798,7 +18802,7 @@
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
                 "invoices.get": "e012e85260397f86",
-                "invoices.list": "98a09aab5c1f0f17",
+                "invoices.list": "da8656785ffe2676",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
@@ -18809,7 +18813,7 @@
                 "search": "16364ecdaf8ef167",
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
-                "time_entries.list": "3254045784e8772c"
+                "time_entries.list": "30070d50d2bb043f"
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -18913,7 +18917,7 @@
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
                 "invoices.get": "e012e85260397f86",
-                "invoices.list": "98a09aab5c1f0f17",
+                "invoices.list": "da8656785ffe2676",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
@@ -18924,7 +18928,7 @@
                 "search": "16364ecdaf8ef167",
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
-                "time_entries.list": "3254045784e8772c"
+                "time_entries.list": "30070d50d2bb043f"
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -19028,7 +19032,7 @@
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
                 "invoices.get": "e012e85260397f86",
-                "invoices.list": "98a09aab5c1f0f17",
+                "invoices.list": "da8656785ffe2676",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
@@ -19039,7 +19043,7 @@
                 "search": "16364ecdaf8ef167",
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
-                "time_entries.list": "3254045784e8772c"
+                "time_entries.list": "30070d50d2bb043f"
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -19143,7 +19147,7 @@
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
                 "invoices.get": "e012e85260397f86",
-                "invoices.list": "98a09aab5c1f0f17",
+                "invoices.list": "da8656785ffe2676",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
@@ -19154,7 +19158,7 @@
                 "search": "16364ecdaf8ef167",
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
-                "time_entries.list": "3254045784e8772c"
+                "time_entries.list": "30070d50d2bb043f"
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -19237,7 +19241,7 @@
                 "invoices.get": "e012e85260397f86",
                 "invoices.hold_delivery": "5d5d70aa02fac988",
                 "invoices.issue": "7e23d112aa2b7104",
-                "invoices.list": "98a09aab5c1f0f17",
+                "invoices.list": "da8656785ffe2676",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.release_delivery": "f703c8eb40f1ed80",
                 "invoices.send": "3b2bc9ef256c4d18",
@@ -19267,7 +19271,7 @@
                 "tasks.update": "8ecdbb5c8eb349e8",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "3254045784e8772c",
+                "time_entries.list": "30070d50d2bb043f",
                 "time_entries.log": "aefa42432fe16287",
                 "time_entries.unapprove": "b3ac3f20d8fb2232",
                 "time_entries.update": "6315fe84b67213c2",
@@ -19355,7 +19359,7 @@
                 "invoices.get": "e012e85260397f86",
                 "invoices.hold_delivery": "5d5d70aa02fac988",
                 "invoices.issue": "7e23d112aa2b7104",
-                "invoices.list": "98a09aab5c1f0f17",
+                "invoices.list": "da8656785ffe2676",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.release_delivery": "f703c8eb40f1ed80",
                 "invoices.send": "3b2bc9ef256c4d18",
@@ -19385,7 +19389,7 @@
                 "tasks.update": "8ecdbb5c8eb349e8",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "3254045784e8772c",
+                "time_entries.list": "30070d50d2bb043f",
                 "time_entries.log": "aefa42432fe16287",
                 "time_entries.unapprove": "b3ac3f20d8fb2232",
                 "time_entries.update": "6315fe84b67213c2",
@@ -19484,7 +19488,7 @@
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.get": "e012e85260397f86",
                 "invoices.issue": "7e23d112aa2b7104",
-                "invoices.list": "98a09aab5c1f0f17",
+                "invoices.list": "da8656785ffe2676",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.send": "3b2bc9ef256c4d18",
                 "invoices.update_details": "72d9e9f7f1c2f1fd",
@@ -19504,7 +19508,7 @@
                 "tasks.update": "8ecdbb5c8eb349e8",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "3254045784e8772c",
+                "time_entries.list": "30070d50d2bb043f",
                 "time_entries.log": "aefa42432fe16287",
                 "time_entries.update": "6315fe84b67213c2",
                 "workspaces.create": "3a4435044291b1a4"
@@ -19602,7 +19606,7 @@
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.get": "e012e85260397f86",
                 "invoices.issue": "7e23d112aa2b7104",
-                "invoices.list": "98a09aab5c1f0f17",
+                "invoices.list": "da8656785ffe2676",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.send": "3b2bc9ef256c4d18",
                 "invoices.update_details": "72d9e9f7f1c2f1fd",
@@ -19622,7 +19626,7 @@
                 "tasks.update": "8ecdbb5c8eb349e8",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "3254045784e8772c",
+                "time_entries.list": "30070d50d2bb043f",
                 "time_entries.log": "aefa42432fe16287",
                 "time_entries.update": "6315fe84b67213c2",
                 "workspaces.create": "3a4435044291b1a4"
@@ -19720,7 +19724,7 @@
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.get": "e012e85260397f86",
                 "invoices.issue": "7e23d112aa2b7104",
-                "invoices.list": "98a09aab5c1f0f17",
+                "invoices.list": "da8656785ffe2676",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.send": "3b2bc9ef256c4d18",
                 "invoices.update_details": "72d9e9f7f1c2f1fd",
@@ -19740,7 +19744,7 @@
                 "tasks.update": "8ecdbb5c8eb349e8",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "3254045784e8772c",
+                "time_entries.list": "30070d50d2bb043f",
                 "time_entries.log": "aefa42432fe16287",
                 "time_entries.update": "6315fe84b67213c2",
                 "workspaces.create": "3a4435044291b1a4"
@@ -19838,7 +19842,7 @@
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.get": "e012e85260397f86",
                 "invoices.issue": "7e23d112aa2b7104",
-                "invoices.list": "98a09aab5c1f0f17",
+                "invoices.list": "da8656785ffe2676",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.send": "3b2bc9ef256c4d18",
                 "invoices.update_details": "72d9e9f7f1c2f1fd",
@@ -19858,7 +19862,7 @@
                 "tasks.update": "8ecdbb5c8eb349e8",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "3254045784e8772c",
+                "time_entries.list": "30070d50d2bb043f",
                 "time_entries.log": "aefa42432fe16287",
                 "time_entries.update": "6315fe84b67213c2",
                 "workspaces.create": "3a4435044291b1a4"
@@ -19948,7 +19952,7 @@
                 "invoices.generate_period": "89231c301628e176",
                 "invoices.hold_delivery": "5d5d70aa02fac988",
                 "invoices.issue": "7e23d112aa2b7104",
-                "invoices.list": "98a09aab5c1f0f17",
+                "invoices.list": "da8656785ffe2676",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.release_delivery": "f703c8eb40f1ed80",
                 "invoices.send": "3b2bc9ef256c4d18",
@@ -20065,7 +20069,7 @@
                 "invoices.generate_period": "89231c301628e176",
                 "invoices.hold_delivery": "5d5d70aa02fac988",
                 "invoices.issue": "7e23d112aa2b7104",
-                "invoices.list": "98a09aab5c1f0f17",
+                "invoices.list": "da8656785ffe2676",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.release_delivery": "f703c8eb40f1ed80",
                 "invoices.send": "3b2bc9ef256c4d18",
@@ -20193,7 +20197,7 @@
                 "invoices.create_draft": "af0b7d4aef91b70b",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.issue": "7e23d112aa2b7104",
-                "invoices.list": "98a09aab5c1f0f17",
+                "invoices.list": "da8656785ffe2676",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.send": "3b2bc9ef256c4d18",
                 "invoices.update_details": "72d9e9f7f1c2f1fd",
@@ -20308,7 +20312,7 @@
                 "invoices.create_draft": "af0b7d4aef91b70b",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.issue": "7e23d112aa2b7104",
-                "invoices.list": "98a09aab5c1f0f17",
+                "invoices.list": "da8656785ffe2676",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.send": "3b2bc9ef256c4d18",
                 "invoices.update_details": "72d9e9f7f1c2f1fd",
@@ -20423,7 +20427,7 @@
                 "invoices.create_draft": "af0b7d4aef91b70b",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.issue": "7e23d112aa2b7104",
-                "invoices.list": "98a09aab5c1f0f17",
+                "invoices.list": "da8656785ffe2676",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.send": "3b2bc9ef256c4d18",
                 "invoices.update_details": "72d9e9f7f1c2f1fd",
@@ -20538,7 +20542,7 @@
                 "invoices.create_draft": "af0b7d4aef91b70b",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.issue": "7e23d112aa2b7104",
-                "invoices.list": "98a09aab5c1f0f17",
+                "invoices.list": "da8656785ffe2676",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.send": "3b2bc9ef256c4d18",
                 "invoices.update_details": "72d9e9f7f1c2f1fd",
