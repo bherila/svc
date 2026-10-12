@@ -228,6 +228,24 @@ final class AgentMcpInventoryTest extends TestCase
         $this->assertSame(self::TOOLS, $partition);
     }
 
+    /** More tools than one discovery page holds: a client follows the cursor to the rest. */
+    public function test_tool_discovery_pages_at_100_and_the_cursor_reaches_every_tool(): void
+    {
+        $this->enableAll();
+        $owner = User::factory()->create();
+        $workspace = Workspace::query()->create(['name' => 'Synthetic Paging Workspace', 'slug' => 'synthetic-paging']);
+        $workspace->memberships()->create(['user_id' => $owner->id, 'role' => 'owner']);
+        $this->actingAsMcp($owner, array_keys(AgentApiScopes::descriptions()));
+        $session = $this->initialize();
+
+        $first = $this->mcp(['jsonrpc' => '2.0', 'id' => 7, 'method' => 'tools/list', 'params' => []], $session)->assertOk()->json('result');
+        $this->assertCount(100, $first['tools']);
+        $this->assertIsString($first['nextCursor'] ?? null);
+        $all = $this->toolNames($session);
+        sort($all);
+        $this->assertSame(self::TOOLS, $all);
+    }
+
     /** The product switch withholds every invitation tool, the listing included, and nothing else (#430). */
     public function test_the_portal_invitation_switch_withholds_exactly_its_four_tools(): void
     {

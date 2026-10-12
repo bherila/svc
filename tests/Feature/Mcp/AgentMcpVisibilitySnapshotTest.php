@@ -146,7 +146,7 @@ final class AgentMcpVisibilitySnapshotTest extends TestCase
         $observed['server_info'] = $initialize->json('result.serverInfo');
         $observed['instructions'] = $initialize->json('result.instructions');
 
-        $tools = (array) $this->mcp(['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/list', 'params' => []], $session)->json('result.tools');
+        $tools = $this->listTools($session);
         usort($tools, static fn (array $a, array $b): int => $a['name'] <=> $b['name']);
         $observed['tools'] = $full ? $tools : $this->digests($tools, 'name');
         foreach (['resources/list' => 'resources', 'resources/templates/list' => 'resourceTemplates', 'prompts/list' => 'prompts'] as $method => $key) {
