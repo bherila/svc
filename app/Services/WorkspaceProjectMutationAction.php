@@ -81,12 +81,14 @@ final class WorkspaceProjectMutationAction
      * removed since the fast check is refused before anything is written -
      * and only then the target's membership.
      */
-    public function updateAccess(User $actor, Workspace $workspace, ClientProject $project, string $userId, string $role, string|int|null $expectedVersion = null, ?int $companyId = null): ClientProject
+    public function updateAccess(User $actor, Workspace $workspace, ClientProject $project, string $userId, string $role, string|int|null $expectedVersion = null, ?int $companyId = null, ?AccessMutationContext $context = null): ClientProject
     {
         $this->requireManager($actor, $workspace);
+        $context ??= AccessMutationContext::user($actor);
+        abort_unless($context->actorId() === $actor->id, 403);
         abort_unless($role === 'none' || ProjectRole::tryFrom($role) !== null, 422, 'Choose a supported project role or none.');
 
-        return $this->coordinator->locked($workspace, function (Workspace $lockedWorkspace) use ($actor, $project, $userId, $role, $expectedVersion, $companyId): ClientProject {
+        return $this->coordinator->locked($workspace, function (Workspace $lockedWorkspace) use ($actor, $project, $userId, $role, $expectedVersion, $companyId, $context): ClientProject {
             $locked = $this->lockedProject($lockedWorkspace, $project, $companyId);
             abort_unless($this->coordinator->currentRole($lockedWorkspace, $actor)?->managesWorkspace() === true, 403);
             if ($expectedVersion !== null) {
@@ -116,7 +118,7 @@ final class WorkspaceProjectMutationAction
             $locked->advanceAgentRevision();
             if ($previous !== $role) {
                 $this->audit->record(
-                    AccessMutationContext::user($actor),
+                    $context,
                     $lockedWorkspace,
                     AccessAuditAction::ProjectAssignmentChanged,
                     $membership->user()->firstOrFail(),

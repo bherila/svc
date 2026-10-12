@@ -47,8 +47,9 @@ final class AgentProjectController extends Controller
 
     private function mutate(Request $request, Workspace $workspace, string $operation, ?string $projectId, int $status = 200): JsonResponse
     {
-        $context = app(AgentMutationContextFactory::class)->from($request);
-        $project = app(AgentProjectMutationAction::class)->run($context->user, $workspace, $context->oauthClientId, $context->idempotencyKey, $operation, $projectId, $request->all());
+        $contexts = app(AgentMutationContextFactory::class);
+        $context = $contexts->from($request);
+        $project = app(AgentProjectMutationAction::class)->run($context->user, $workspace, $context->oauthClientId, $context->idempotencyKey, $operation, $projectId, $request->all(), $contexts->forAccess($request, $workspace, $context, $operation));
 
         return response()->json(['data' => app(AgentProjectPresenter::class)->present($workspace, $project, true)], $status);
     }

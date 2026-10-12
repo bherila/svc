@@ -102,6 +102,25 @@ final class AgentPortalAccessTest extends TestCase
     }
 
     #[DataProvider('transports')]
+    public function test_no_op_scope_changes_keep_receipts_without_new_access_audits(string $transport): void
+    {
+        [$workspace, $owner, $company, $person, $project] = $this->fixture();
+        $second = $this->project($company, 'Second synthetic project');
+        $this->seedPortal($owner, $company, $person);
+        $this->actingAsMcp($owner, self::SCOPES);
+        $version = $this->body('update', $person, $company)['expected_version'];
+        $unchanged = $this->success($this->portalOperation($transport, 'update', $workspace, $company, ['scope' => 'company', 'confirm' => true, 'expected_version' => $version], $person, 'synthetic-company-no-op'), 'update');
+        $this->assertSame($version, $unchanged['data']['version']);
+        $changed = $this->success($this->portalOperation($transport, 'update', $workspace, $company, ['scope' => 'projects', 'projects' => [$project->public_id, $second->public_id], 'confirm' => true, 'expected_version' => $version], $person, 'synthetic-project-change'), 'update');
+        $reordered = $this->success($this->portalOperation($transport, 'update', $workspace, $company, ['scope' => 'projects', 'projects' => [$second->public_id, $project->public_id], 'confirm' => true, 'expected_version' => $changed['data']['version']], $person, 'synthetic-project-no-op'), 'update');
+        $this->assertSame($changed, $reordered);
+        $this->assertSame(1, AccessAuditEvent::query()->where('workspace_id', $workspace->id)->where('action', 'portal.scope_changed')->count());
+        $this->assertSame(3, AgentMutationReceipt::query()->where('workspace_id', $workspace->id)->where('operation', 'clients.portal_access.update')->count());
+        $this->refusal($this->portalOperation($transport, 'update', $workspace, $company, ['scope' => 'projects', 'projects' => [$project->public_id, $second->public_id], 'confirm' => true, 'expected_version' => $version], $person, 'synthetic-stale-no-op'), 409);
+        $this->assertSame(1, AccessAuditEvent::query()->where('workspace_id', $workspace->id)->where('action', 'portal.scope_changed')->count());
+    }
+
+    #[DataProvider('transports')]
     public function test_clients_contacts_projects_and_cursors_are_isolated_between_workspaces_and_clients(string $transport): void
     {
         [$workspace, $owner, $company, $person, $project] = $this->fixture();
@@ -303,7 +322,7 @@ final class AgentPortalAccessTest extends TestCase
 
         return match ($kind) {
             'grant' => ['email' => $person->email, 'scope' => 'company', 'confirm' => true],
-            'update' => ['scope' => 'company', 'confirm' => true, 'expected_version' => $version],
+            'update' => ['scope' => 'projects', 'projects' => [$company->projects()->firstOrFail()->public_id], 'confirm' => true, 'expected_version' => $version],
             'revoke' => ['confirm' => true, 'expected_version' => $version],
         };
     }

@@ -77,7 +77,7 @@ class AppServiceProvider extends ServiceProvider
             exceptions: $app->make(ExceptionHandler::class),
             outerRequest: $app->make('request'),
             application: $app,
-            allowedHeaders: ['Idempotency-Key'],
+            allowedHeaders: ['Idempotency-Key', 'X-Request-Id'],
             temporaryFilePrefix: 'svc-agent-',
         ));
         $this->app->singleton(McpHttpPolicy::class, static fn (): McpHttpPolicy => new McpHttpPolicy(

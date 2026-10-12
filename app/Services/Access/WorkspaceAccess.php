@@ -263,6 +263,10 @@ final class WorkspaceAccess
             $before = $this->lockedPortalState($workspace, $membership, $locked);
             $this->assertPortalVersion($membership, $before, $expectedVersion);
             $projects = $this->portalProjects($company, $scope, $projectPublicIds, $locked);
+            $requested = new PortalAccessState($scope, array_values($projects->map(static fn (ClientProject $project): string => $project->public_id)->all()));
+            if ($before->toArray() === $requested->toArray()) {
+                return $membership;
+            }
 
             $membership->forceFill(['access_scope' => $scope->value])->save();
             $after = $this->replaceProjectLimits($workspace, $membership, $scope, $projects);
