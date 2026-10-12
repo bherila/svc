@@ -15,6 +15,7 @@ use App\Services\Mcp\Context\McpAccountContextResolver;
 use App\Services\Mcp\Context\McpAuthorizer;
 use App\Services\Mcp\Context\McpPrincipalResolverInterface;
 use App\Services\Mcp\Context\McpRequestContext;
+use App\Services\Square\SquareReadService;
 use App\Support\AgentApi\ProviderIdentityWrites;
 use Bherila\McpLaravelBridge\Capabilities\Effect;
 use Bherila\McpLaravelBridge\Capabilities\McpKind;
@@ -64,6 +65,7 @@ final class AgentMcpServerFactory
         private readonly AgentCapacityLedgerReadService $capacityLedgerReadService,
         private readonly AgentBillingAuditReadService $billingAuditReadService,
         private readonly AgentClientReadService $clientReadService,
+        private readonly SquareReadService $squareReadService,
         private readonly McpAccountContextResolver $accounts,
         private readonly McpAuthorizer $authorizer,
         private readonly McpPrincipalResolverInterface $principals,
@@ -101,6 +103,7 @@ final class AgentMcpServerFactory
             AgentMcpCapacityLedgerTools::class => $capacityLedger,
             AgentMcpBillingAuditTools::class => $billingAudits,
             AgentMcpClientTools::class => $clients,
+            AgentMcpSquareTools::class => new AgentMcpSquareTools($this->squareReadService, $this->accounts, $context),
             AgentMcpClientWriteTools::class => $clientWrites,
             AgentMcpPortalAccessTools::class => new AgentMcpPortalAccessTools(app(InternalAgentApiTransport::class), $this->requestArguments),
             AgentMcpWriteTools::class => $writes,
@@ -264,7 +267,8 @@ final class AgentMcpServerFactory
                     readOnlyHint: $operation->effect->readOnly(),
                     destructiveHint: $operation->effect === Effect::Destructive,
                     idempotentHint: $operation->isIdempotent(),
-                    openWorldHint: false,
+                    // Only the Square pass-through reaches outside SVC (#438).
+                    openWorldHint: $this->catalog->readsExternalSystem($operation->id),
                 ),
                 inputSchema: $this->schemas->input($operation),
                 outputSchema: $this->schemas->output($operation),

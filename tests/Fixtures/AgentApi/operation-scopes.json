@@ -991,6 +991,116 @@
             "mcp.switch:search"
         ]
     },
+    "square.customers.get": {
+        "scopes": [
+            "billing:read"
+        ],
+        "flags": [
+            "square.connected",
+            "mcp",
+            "mcp.switch:mcp.read.square",
+            "mcp.switch:square.customers.get"
+        ]
+    },
+    "square.customers.list": {
+        "scopes": [
+            "billing:read"
+        ],
+        "flags": [
+            "square.connected",
+            "mcp",
+            "mcp.switch:mcp.read.square",
+            "mcp.switch:square.customers.list"
+        ]
+    },
+    "square.customers.search": {
+        "scopes": [
+            "billing:read"
+        ],
+        "flags": [
+            "square.connected",
+            "mcp",
+            "mcp.switch:mcp.read.square",
+            "mcp.switch:square.customers.search"
+        ]
+    },
+    "square.invoices.get": {
+        "scopes": [
+            "billing:read"
+        ],
+        "flags": [
+            "square.connected",
+            "mcp",
+            "mcp.switch:mcp.read.square",
+            "mcp.switch:square.invoices.get"
+        ]
+    },
+    "square.invoices.list": {
+        "scopes": [
+            "billing:read"
+        ],
+        "flags": [
+            "square.connected",
+            "mcp",
+            "mcp.switch:mcp.read.square",
+            "mcp.switch:square.invoices.list"
+        ]
+    },
+    "square.invoices.search": {
+        "scopes": [
+            "billing:read"
+        ],
+        "flags": [
+            "square.connected",
+            "mcp",
+            "mcp.switch:mcp.read.square",
+            "mcp.switch:square.invoices.search"
+        ]
+    },
+    "square.locations.list": {
+        "scopes": [
+            "billing:read"
+        ],
+        "flags": [
+            "square.connected",
+            "mcp",
+            "mcp.switch:mcp.read.square",
+            "mcp.switch:square.locations.list"
+        ]
+    },
+    "square.orders.get": {
+        "scopes": [
+            "billing:read"
+        ],
+        "flags": [
+            "square.connected",
+            "mcp",
+            "mcp.switch:mcp.read.square",
+            "mcp.switch:square.orders.get"
+        ]
+    },
+    "square.payments.get": {
+        "scopes": [
+            "billing:read"
+        ],
+        "flags": [
+            "square.connected",
+            "mcp",
+            "mcp.switch:mcp.read.square",
+            "mcp.switch:square.payments.get"
+        ]
+    },
+    "square.payments.list": {
+        "scopes": [
+            "billing:read"
+        ],
+        "flags": [
+            "square.connected",
+            "mcp",
+            "mcp.switch:mcp.read.square",
+            "mcp.switch:square.payments.list"
+        ]
+    },
     "tasks.create": {
         "scopes": [
             "tasks:write"

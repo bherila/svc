@@ -152,7 +152,9 @@ With all read scopes, discovery exposes these read-only tools, in this order:
 `billing.audit_unplaceable_invoices`,
 `billing.audit_undated_collectible_invoices`, and
 `billing.audit_missing_billed_overage`, and
-`billing.audit_opening_rollover`.
+`billing.audit_opening_rollover`. While Square is configured, managers also
+see the read-only `square.*` pass-through tools described under
+[Square read-only pass-through](#square-read-only-pass-through-438).
 
 Agreement tools require `billing:read` and an SVC workspace-manager role. Each
 agreement names the client it is with (`client_id`, `client_name`) and, when it
@@ -924,3 +926,78 @@ website work. Invoice descriptions never promise payment recording unless the
 connection actually exposes the tool. A new cutover is a flag in `AgentDeploymentFlags`, named by each operation it
 withholds; nothing else needs to change for it to reach discovery, context and
 REST.
+
+### Square read-only pass-through (#438)
+
+Some invoices are also issued and collected in Square. Agents cannot reach
+Square, so SVC exposes bounded, read-only pass-through reads that let an agent
+find the Square record to link to an SVC record. Linking itself is a separate
+SVC operation. SVC remains the system of record and never creates, publishes,
+cancels, refunds or marks anything paid in Square.
+
+| Capability | REST (`/api/v1/workspaces/{workspace}/square/...`) | Notes |
+| --- | --- | --- |
+| `square.locations.list` | `GET locations` | Square invoice reads take a `location_id` from here |
+| `square.customers.list` | `GET customers` | `limit` 1–100, `cursor` |
+| `square.customers.search` | `GET customers/search` | `email` and/or `phone`, `match` `fuzzy` (default) or `exact`; Square has no name search |
+| `square.customers.get` | `GET customers/{customer}` | |
+| `square.invoices.list` | `GET invoices` | `location_id` required; `limit` 1–50, `cursor` |
+| `square.invoices.search` | `GET invoices/search` | `location_id` required, optional `customer_id` (Square accepts one of each), `sort_order` |
+| `square.invoices.get` | `GET invoices/{invoice}` | |
+| `square.orders.get` | `GET orders/{order}` | The order behind an invoice: line items, totals, tenders |
+| `square.payments.list` | `GET payments` | `begin_time`/`end_time` (RFC 3339), `location_id`, `sort_order`; `limit` 1–50, `cursor` |
+| `square.payments.get` | `GET payments/{payment}` | |
+
+- **Gate.** `billing:read` and a workspace owner/admin role, as for the other
+  billing reads; no new scope. The feature is off - every tool withheld as
+  `deployment_disabled` and every route answering 404 - until the server is
+  configured with a Square access token and bound to exactly one workspace.
+  Any other workspace answers "Square is not connected to this workspace."
+- **Read-only by construction.** `SquareClient` can only send a request built
+  from a `SquareEndpoint` case. The allow-list is ten reads: GETs plus the two
+  `/search` POSTs Square uses for reads. `SquareReadOnlyAllowListTest`
+  enumerates both the cases and the client's public methods. The access
+  token cannot be scope-limited, so this allow-list is the only enforcement.
+- **Shapes.** Responses are allow-listed projections (`SquarePresenter`), not
+  Square's raw objects. Card fingerprints, BINs, expiry dates, stored-card ids,
+  receipt links, version tokens, addresses and notes are never returned; a
+  stored card on an invoice appears only as `card_on_file`. Money is
+  `{amount, currency}` in minor units. Every invoice carries `series_key` - the
+  six-digit prefix every invoice of a recurring `NNNNNN-R-NNNN` series shares
+  - and `series_occurrence` (the suffix); both are null for a one-off. A
+  dashboard series has no series id in Square. An invoice that Square's
+  Subscriptions API generated also carries its `subscription_id`.
+- **Bounds.** Page sizes are capped as listed, and all of an account's
+  locations (Square allows 300) come back in one answer. Nothing is cut
+  silently. A page larger than its cap is refused (502), since Square's cursor
+  would skip what was dropped. Each nested list (payment requests, reminders,
+  line items, tenders, processing fees, refund ids) has a `<list>_truncated`
+  flag beside it. Square cursors pass through opaquely as `meta.next_cursor`. Every workspace has a shared per-minute
+  budget of Square reads across REST and MCP (`SQUARE_RATE_LIMIT_PER_MINUTE`,
+  default 60); over it, the answer is 429 with `Retry-After`.
+- **Errors.** The client sends the pinned `Square-Version` on every call. It
+  uses bounded timeouts, never follows a redirect, and retries only these
+  reads on connection failures, 429 or 5xx, with doubling backoff. Failures
+  become a fixed message plus Square's error category and code:
+  - a missing record is 404;
+  - a refused request is 422;
+  - a refused credential is 502 for an operator;
+  - Square's rate limit is 429;
+  - an unreachable Square is 503.
+
+  The access token, request headers and Square's free-text detail never
+  appear in a response, exception or log line. A response that would contain
+  the token is refused.
+
+Configuration (server environment only; nothing is stored in the database):
+
+| Variable | Meaning |
+| --- | --- |
+| `SQUARE_ACCESS_TOKEN` | Square access token; empty keeps the feature off |
+| `SQUARE_ENVIRONMENT` | `production` (default) or `sandbox`; anything else keeps it off |
+| `SQUARE_APPLICATION_ID` | Square application id (recorded for later webhook work) |
+| `SQUARE_WORKSPACE` | Public id of the one workspace the Square account belongs to |
+| `SQUARE_VERSION` | Pinned `Square-Version` (default `2026-09-16`) |
+| `SQUARE_TIMEOUT_SECONDS`, `SQUARE_CONNECT_TIMEOUT_SECONDS` | Request and connect timeouts (defaults 10 and 5, bounded) |
+| `SQUARE_MAX_ATTEMPTS`, `SQUARE_RETRY_BASE_MILLISECONDS` | Attempts for a retryable read (default 3, at most 5) and the first backoff (default 250 ms) |
+| `SQUARE_RATE_LIMIT_PER_MINUTE` | Per-workspace pass-through budget (default 60) |

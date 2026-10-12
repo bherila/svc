@@ -1059,7 +1059,105 @@ final class AgentRestDocumentation
                 'response' => 'WorkspaceCreateResponse',
                 'response_description' => 'Create a workspace owned by the actor. Fresh creation has no prior expected_version. Atomic actor/client/key reservation; replay rechecks current membership. Requires outer and workspace write flags.',
             ],
+            ...self::square(),
         ];
+    }
+
+    /**
+     * The read-only Square pass-through (#438). Square is live, outside svc and
+     * never changed by it; these reads exist so an agent, which cannot reach
+     * Square itself, can find Square records to link to svc's own.
+     *
+     * @return array<string, array{method: string, scopes: list<string>, description: string, parameters: list<string|array<string, mixed>>, response: string, response_description: string, extensions: array<string, mixed>}>
+     */
+    private static function square(): array
+    {
+        $common = ' Live, read-only Square data fetched on each call for finding Square records to link to svc records; svc never creates, changes or pays anything in Square, and linking is a separate svc operation. Workspace managers only, and only in the workspace Square is connected to; unavailable while Square is not configured. Square ids and cursors are opaque.';
+        $id = static fn (string $name): array => ['name' => $name, 'in' => 'path', 'required' => true, 'schema' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 192, 'pattern' => '^[A-Za-z0-9][A-Za-z0-9:_-]*$']];
+        $limit = static fn (int $max): array => ['name' => 'limit', 'in' => 'query', 'schema' => ['type' => 'integer', 'minimum' => 1, 'maximum' => $max, 'default' => 25]];
+        $location = static fn (bool $required): array => ['name' => 'location_id', 'in' => 'query', 'required' => $required, 'schema' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 192, 'pattern' => '^[A-Za-z0-9][A-Za-z0-9:_-]*$']];
+        $sortOrder = self::query('sort_order', ['type' => 'string', 'enum' => ['asc', 'desc'], 'default' => 'desc']);
+        $operations = [
+            'square.customers.get' => [
+                'Get one Square customer by its Square id.',
+                ['WorkspaceId', $id('customer')],
+                'SquareCustomerResponse',
+            ],
+            'square.customers.list' => [
+                'List Square customers in Square\'s default order, up to 100 per page, with cursor pagination.',
+                ['WorkspaceId', $limit(100), 'Cursor'],
+                'SquareCustomerListResponse',
+            ],
+            'square.customers.search' => [
+                'Search Square customers by email address or phone number (at least one), matched fuzzily by default or exactly with match=exact. Square has no name search: to find a customer by name, page through square.customers.list or read the recipient on their Square invoices.',
+                [
+                    'WorkspaceId',
+                    self::query('email', ['type' => 'string', 'minLength' => 1, 'maxLength' => 254]),
+                    self::query('phone', ['type' => 'string', 'minLength' => 1, 'maxLength' => 32]),
+                    self::query('match', ['type' => 'string', 'enum' => ['exact', 'fuzzy'], 'default' => 'fuzzy']),
+                    $limit(100),
+                    'Cursor',
+                ],
+                'SquareCustomerListResponse',
+            ],
+            'square.invoices.get' => [
+                'Get one Square invoice by its Square id, with series_key and series_occurrence derived from its number.',
+                ['WorkspaceId', $id('invoice')],
+                'SquareInvoiceResponse',
+            ],
+            'square.invoices.list' => [
+                'List one Square location\'s invoices, up to 50 per page, with cursor pagination. series_key is the six-digit prefix every invoice of a recurring NNNNNN-R-NNNN series shares, and series_occurrence its suffix; both are null for a one-off invoice. An invoice a Square subscription generated also carries subscription_id. Amounts are in minor units.',
+                ['WorkspaceId', $location(true), $limit(50), 'Cursor'],
+                'SquareInvoiceListResponse',
+            ],
+            'square.invoices.search' => [
+                'Search one Square location\'s invoices, optionally for one Square customer, by invoice date (newest first by default), up to 50 per page, with cursor pagination. Each invoice carries series_key and series_occurrence as in square.invoices.list.',
+                ['WorkspaceId', $location(true), self::query('customer_id', ['type' => 'string', 'minLength' => 1, 'maxLength' => 192, 'pattern' => '^[A-Za-z0-9][A-Za-z0-9:_-]*$']), $sortOrder, $limit(50), 'Cursor'],
+                'SquareInvoiceListResponse',
+            ],
+            'square.locations.list' => [
+                'List the connected Square account\'s locations; Square invoice reads take a location_id from here.',
+                ['WorkspaceId'],
+                'SquareLocationListResponse',
+            ],
+            'square.orders.get' => [
+                'Get one Square order - the order_id on a Square invoice - with its line items, totals and tenders.',
+                ['WorkspaceId', $id('order')],
+                'SquareOrderResponse',
+            ],
+            'square.payments.get' => [
+                'Get one Square payment by its Square id. Card details are limited to brand, type and last four digits.',
+                ['WorkspaceId', $id('payment')],
+                'SquarePaymentResponse',
+            ],
+            'square.payments.list' => [
+                'List Square payments created within an RFC 3339 time range (Square defaults to the past year), optionally at one location (Square defaults to the main location), up to 50 per page, with cursor pagination. Card details are limited to brand, type and last four digits.',
+                [
+                    'WorkspaceId',
+                    self::query('begin_time', ['type' => 'string', 'format' => 'date-time']),
+                    self::query('end_time', ['type' => 'string', 'format' => 'date-time']),
+                    $location(false),
+                    $sortOrder,
+                    $limit(50),
+                    'Cursor',
+                ],
+                'SquarePaymentListResponse',
+            ],
+        ];
+        $documented = [];
+        foreach ($operations as $operationId => [$description, $parameters, $response]) {
+            $documented[$operationId] = [
+                'method' => 'GET',
+                'scopes' => ['billing:read'],
+                'description' => $description.$common,
+                'parameters' => $parameters,
+                'response' => $response,
+                'response_description' => 'Result',
+                'extensions' => ['x-mcp-tool' => $operationId],
+            ];
+        }
+
+        return $documented;
     }
 
     /**

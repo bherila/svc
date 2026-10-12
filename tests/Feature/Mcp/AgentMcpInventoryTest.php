@@ -100,6 +100,16 @@ final class AgentMcpInventoryTest extends TestCase
         'proposals.list',
         'proposals.send',
         'search',
+        'square.customers.get',
+        'square.customers.list',
+        'square.customers.search',
+        'square.invoices.get',
+        'square.invoices.list',
+        'square.invoices.search',
+        'square.locations.list',
+        'square.orders.get',
+        'square.payments.get',
+        'square.payments.list',
         'tasks.create',
         'tasks.get',
         'tasks.list',
@@ -160,7 +170,7 @@ final class AgentMcpInventoryTest extends TestCase
             app(AgentWithheldTools::class)->for(fn (string $scope): bool => true, true));
     }
 
-    public function test_inventory_retains_all_90_tools_when_every_cutover_is_disabled(): void
+    public function test_inventory_retains_all_100_tools_when_every_cutover_is_disabled(): void
     {
         $this->enableAll();
         $disabled = ['time_entries.approve', 'tasks.create', 'tasks.update'];
@@ -171,14 +181,14 @@ final class AgentMcpInventoryTest extends TestCase
         config(['agent_api.writes_enabled' => false]);
         $disabled = array_values(array_unique($disabled));
         sort($disabled);
-        $this->assertCount(90, self::TOOLS);
+        $this->assertCount(100, self::TOOLS);
         $this->assertSame(self::TOOLS, $this->inventory());
         $this->assertSame(array_values(array_diff(self::TOOLS, $disabled)), $this->deployed());
         $this->assertSame(array_map(fn (string $name): array => ['name' => $name, 'reason' => 'deployment_disabled'], $disabled),
             app(AgentWithheldTools::class)->for(fn (string $scope): bool => true, true));
     }
 
-    public function test_actual_mcp_discovery_and_context_partition_all_90_tools_after_every_cutover_is_disabled(): void
+    public function test_actual_mcp_discovery_and_context_partition_all_100_tools_after_every_cutover_is_disabled(): void
     {
         $this->enableAll();
         $owner = User::factory()->create();
@@ -258,7 +268,8 @@ final class AgentMcpInventoryTest extends TestCase
             'proposals.create', 'proposals.send', 'time_entries.unapprove',
             'attachments.list', 'attachments.get', 'attachments.download_url', 'attachments.upload_url', 'attachments.delete',
             'expense_schedules.list', 'expense_schedules.create', 'expense_schedules.update', 'expense_schedules.generate',
-            'expenses.approve', 'expenses.unapprove', 'expenses.receipts.list', 'expenses.receipts.download', 'expenses.receipts.upload_url'] as $name) {
+            'expenses.approve', 'expenses.unapprove', 'expenses.receipts.list', 'expenses.receipts.download', 'expenses.receipts.upload_url',
+            'square.customers.get', 'square.customers.list', 'square.customers.search', 'square.invoices.get', 'square.invoices.list', 'square.invoices.search', 'square.locations.list', 'square.orders.get', 'square.payments.get', 'square.payments.list'] as $name) {
             $this->assertSame(['name' => $name, 'reason' => 'role'], $withheld[$name], $name);
         }
         foreach (['context.get', 'projects.list', 'projects.get', 'tasks.list', 'tasks.get', 'time_entries.list', 'invoices.list', 'invoices.get', 'invoices.pdf', 'proposals.list', 'proposals.get', 'proposals.accept'] as $name) {
@@ -285,7 +296,8 @@ final class AgentMcpInventoryTest extends TestCase
 
     private function enableAll(): void
     {
-        $configuration = ['agent_api.writes_enabled' => true, 'agent_api.mcp_enabled' => true, 'agent_api.mcp_feature_flags' => []];
+        $configuration = ['agent_api.writes_enabled' => true, 'agent_api.mcp_enabled' => true, 'agent_api.mcp_feature_flags' => [],
+            'services.square.access_token' => 'synthetic-square-token', 'services.square.workspace' => 'synthetic-square-workspace'];
         foreach (array_keys(self::gatedTools()) as $name) {
             $configuration['agent_api.'.$name] = true;
         }

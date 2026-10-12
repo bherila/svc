@@ -13,6 +13,7 @@ use App\Services\Mcp\AgentMcpContextResource;
 use App\Services\Mcp\AgentMcpPortalAccessTools;
 use App\Services\Mcp\AgentMcpPrompts;
 use App\Services\Mcp\AgentMcpReadTools;
+use App\Services\Mcp\AgentMcpSquareTools;
 use App\Services\Mcp\AgentMcpWriteTools;
 use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
 use Bherila\McpLaravelBridge\Capabilities\Effect;
@@ -134,6 +135,16 @@ final class AgentOperationCatalog
         'proposals.list' => ['proposals.index', '/workspaces/{workspace}/proposals', [200]],
         'proposals.send' => ['proposals.send', '/workspaces/{workspace}/proposals/{proposal}/send', [200]],
         'search' => ['search', '/workspaces/{workspace}/search', [200]],
+        'square.customers.get' => ['square.customers.show', '/workspaces/{workspace}/square/customers/{customer}', [200]],
+        'square.customers.list' => ['square.customers.index', '/workspaces/{workspace}/square/customers', [200]],
+        'square.customers.search' => ['square.customers.search', '/workspaces/{workspace}/square/customers/search', [200]],
+        'square.invoices.get' => ['square.invoices.show', '/workspaces/{workspace}/square/invoices/{invoice}', [200]],
+        'square.invoices.list' => ['square.invoices.index', '/workspaces/{workspace}/square/invoices', [200]],
+        'square.invoices.search' => ['square.invoices.search', '/workspaces/{workspace}/square/invoices/search', [200]],
+        'square.locations.list' => ['square.locations.index', '/workspaces/{workspace}/square/locations', [200]],
+        'square.orders.get' => ['square.orders.show', '/workspaces/{workspace}/square/orders/{order}', [200]],
+        'square.payments.get' => ['square.payments.show', '/workspaces/{workspace}/square/payments/{payment}', [200]],
+        'square.payments.list' => ['square.payments.index', '/workspaces/{workspace}/square/payments', [200]],
         'tasks.create' => ['tasks.store', '/workspaces/{workspace}/projects/{project}/tasks', [201]],
         'tasks.get' => ['tasks.show', '/workspaces/{workspace}/tasks/{task}', [200]],
         'tasks.list' => ['tasks.index', '/workspaces/{workspace}/tasks', [200]],
@@ -152,6 +163,9 @@ final class AgentOperationCatalog
     /** @var array<string, true> */
     private array $managerOnly = [];
 
+    /** @var array<string, true> */
+    private array $external = [];
+
     public function registry(): OperationRegistry
     {
         return $this->registry ??= $this->build();
@@ -165,10 +179,18 @@ final class AgentOperationCatalog
         return isset($this->managerOnly[$operationId]);
     }
 
+    /** Whether the operation reads a system outside SVC (an MCP open-world tool). */
+    public function readsExternalSystem(string $operationId): bool
+    {
+        $this->registry();
+
+        return ($this->external[$operationId] ?? false) === true;
+    }
+
     private function build(): OperationRegistry
     {
         $registry = new OperationRegistry;
-        $registry->register(...$this->tools(), ...$this->restOnly(), ...$this->resourcesAndPrompts());
+        $registry->register(...$this->tools(), ...$this->restOnly(), ...$this->resourcesAndPrompts(), ...$this->square());
         $documented = array_keys(AgentRestDocumentation::operations());
         $bound = array_keys(self::ROUTES);
         sort($documented);
@@ -1145,6 +1167,46 @@ final class AgentOperationCatalog
                 scopes: ['billing:read'],
             ),
         ];
+    }
+
+    /**
+     * The read-only Square pass-through (#438): manager-only reads, offered
+     * only while Square is configured ({@see AgentDeploymentFlags::SQUARE}).
+     *
+     * @return list<Operation>
+     */
+    private function square(): array
+    {
+        $tools = [
+            'square.locations.list' => ['List Square locations', 'locations'],
+            'square.customers.list' => ['List Square customers', 'customers'],
+            'square.customers.search' => ['Search Square customers', 'searchCustomers'],
+            'square.customers.get' => ['Get Square customer', 'customer'],
+            'square.invoices.list' => ['List Square invoices', 'invoices'],
+            'square.invoices.search' => ['Search Square invoices', 'searchInvoices'],
+            'square.invoices.get' => ['Get Square invoice', 'invoice'],
+            'square.orders.get' => ['Get Square order', 'order'],
+            'square.payments.list' => ['List Square payments', 'payments'],
+            'square.payments.get' => ['Get Square payment', 'payment'],
+        ];
+        $operations = [];
+        foreach ($tools as $id => [$title, $method]) {
+            $description = AgentRestDocumentation::operations()[$id]['description'];
+            $this->external[$id] = true;
+            $operations[] = $this->tool(
+                $id,
+                $title,
+                is_string($description) ? $description : $title,
+                [AgentMcpSquareTools::class, $method],
+                Effect::Read,
+                true,
+                'mcp.read.square',
+                cutovers: [AgentDeploymentFlags::SQUARE],
+                manager: true,
+            );
+        }
+
+        return $operations;
     }
 
     /** @return list<Operation> */
