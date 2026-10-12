@@ -180,22 +180,66 @@ ensure_composer() {
 }
 
 ensure_pnpm() {
-  if command -v pnpm >/dev/null 2>&1; then
-    log "pnpm already installed: $(pnpm --version)"
-    return 0
-  fi
-
-  need_cmd corepack
-  mkdir -p "$HOME/.local/bin"
-  corepack enable --install-directory "$HOME/.local/bin"
   local package_manager
-  package_manager="$(node -p 'require("./package.json").packageManager || ""')"
-  if [[ "$package_manager" != pnpm@* ]]; then
+  package_manager="$(
+    node - <<'NODE'
+try {
+  const { packageManager } = require("./package.json");
+  if (packageManager && packageManager.startsWith("pnpm@")) {
+    process.stdout.write(packageManager);
+  }
+} catch {}
+NODE
+  )"
+
+  if [[ -z "$package_manager" ]]; then
     echo "ERROR: package.json must define packageManager as pnpm@<version>." >&2
     exit 1
   fi
-  corepack prepare "$package_manager" --activate
-  pnpm --version
+
+  local wanted="${package_manager#pnpm@}"
+  wanted="${wanted%%+*}"
+
+  # A pnpm whose own version differs from packageManager tries to switch by downloading the
+  # wanted release (@pnpm/exe.<platform>) with Node's built-in fetch, which ignores the sandbox
+  # egress proxy, so even `pnpm --version` fails. Never let a version check trigger that.
+  local current=""
+  if command -v pnpm >/dev/null 2>&1; then
+    current="$(npm_config_manage_package_manager_versions=false pnpm --version 2>/dev/null || true)"
+  fi
+  if [[ "$current" == "$wanted" ]]; then
+    log "pnpm $wanted already installed"
+    return 0
+  fi
+
+  # npm honours the proxy and CA settings the sandbox provides, so install the exact version
+  # through npm into ~/.local (first on PATH) rather than letting pnpm or Corepack fetch it.
+  log "Installing pnpm $wanted via npm (found: ${current:-none})"
+  need_cmd npm
+  mkdir -p "$HOME/.local"
+  if npm install --global --prefix "$HOME/.local" --no-audit --no-fund "pnpm@$wanted"; then
+    hash -r
+    current="$(npm_config_manage_package_manager_versions=false pnpm --version 2>/dev/null || true)"
+  fi
+
+  if [[ "$current" != "$wanted" ]]; then
+    log "Installing pnpm $wanted via Corepack"
+    need_cmd corepack
+    mkdir -p "$HOME/.local/bin"
+    corepack enable --install-directory "$HOME/.local/bin"
+    corepack prepare "$package_manager" --activate
+    hash -r
+    current="$(npm_config_manage_package_manager_versions=false pnpm --version 2>/dev/null || true)"
+  fi
+
+  if [[ "$current" != "$wanted" ]]; then
+    echo "ERROR: could not install pnpm $wanted (have: ${current:-none}). The lockfile is pinned to it via packageManager." >&2
+    exit 1
+  fi
+
+  # The exact version is on PATH; nothing should try to switch versions from here on.
+  export npm_config_manage_package_manager_versions=false
+  log "pnpm $(pnpm --version)"
 }
 
 configure_github_auth() {
@@ -269,6 +313,8 @@ main() {
   export CI="${CI:-1}"
   export COMPOSER_ALLOW_SUPERUSER=1 COMPOSER_NO_INTERACTION=1
   export PATH="$HOME/.local/bin:$PATH"
+  # Node's built-in fetch ignores HTTP(S)_PROXY unless asked; pnpm and other Node tools use it.
+  export NODE_USE_ENV_PROXY=1
   exec </dev/null
   cd "$repo_root"
 

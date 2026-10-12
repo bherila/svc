@@ -170,6 +170,35 @@ test_apt_retries_once_and_propagates_essential_failures() (
   if apt_update; then return 1; else [[ "$?" == 100 ]]; fi
 )
 
+test_pnpm_is_installed_at_the_pinned_version_through_npm() (
+  # A pnpm at another version cannot even report its version without self-downloading, which
+  # fails behind the sandbox proxy; model that as a failure unless the switch guard is set.
+  home="$scratch/pnpm-home"
+  mkdir -p "$home" "$scratch/pnpm-repo"
+  printf '{"packageManager":"pnpm@12.11.2"}\n' > "$scratch/pnpm-repo/package.json"
+  trace="$scratch/pnpm.trace"
+  : > "$trace"
+  cd "$scratch/pnpm-repo"
+  export HOME="$home"
+  installed=0
+  npm() { printf 'npm %s\n' "$*" >> "$trace"; installed=1; }
+  pnpm() {
+    [[ "${npm_config_manage_package_manager_versions:-}" == false ]] || return 99
+    if [[ "$installed" == 1 ]]; then echo 12.11.2; else echo 11.0.0; fi
+  }
+  ensure_pnpm
+  [[ "$(cat "$trace")" == 'npm install --global --prefix '"$home"'/.local --no-audit --no-fund pnpm@12.11.2' ]]
+  # A second run finds the pinned version and installs nothing.
+  : > "$trace"
+  ensure_pnpm
+  [[ ! -s "$trace" ]]
+  # A pnpm that stays at the wrong version after the install is an error, never a silent pass.
+  installed=0
+  npm() { :; }
+  corepack() { :; }
+  ! (ensure_pnpm) 2>/dev/null
+)
+
 for case_name in \
   test_source_has_no_execution_side_effects \
   test_empty_cleanup_preserves_success \
@@ -177,7 +206,8 @@ for case_name in \
   test_missing_php_reaches_installer_before_php_requirement \
   test_keys_are_parsed_and_preserved \
   test_only_optional_apt_source_files_are_disabled \
-  test_apt_retries_once_and_propagates_essential_failures; do
+  test_apt_retries_once_and_propagates_essential_failures \
+  test_pnpm_is_installed_at_the_pinned_version_through_npm; do
   "$case_name"
   printf 'PASS: %s\n' "$case_name"
 done
