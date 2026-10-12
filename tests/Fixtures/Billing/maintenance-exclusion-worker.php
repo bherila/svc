@@ -44,7 +44,10 @@ DB::listen(static function (QueryExecuted $query) use ($input, &$paused): void {
     }
 });
 $connectionId = (int) DB::selectOne('SELECT CONNECTION_ID() AS id')->id;
-file_put_contents($input['ready'], json_encode(['connection_id' => $connectionId], JSON_THROW_ON_ERROR), LOCK_EX);
+// Publish the ready file by rename so the parent, which polls with is_file(),
+// never reads a created-but-not-yet-written file.
+file_put_contents($input['ready'].'.tmp', json_encode(['connection_id' => $connectionId], JSON_THROW_ON_ERROR));
+rename($input['ready'].'.tmp', $input['ready']);
 $started = microtime(true);
 try {
     if ($input['operation'] === 'generate') {
