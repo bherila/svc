@@ -76,31 +76,40 @@ final class SquareLinkRepository
     }
 
     /**
-     * Whether a Stripe payment the client started is still in flight on this
+     * Stripe payment states whose intent can still take the client's money.
+     *
+     * Pending, and failed too: a declined intent returns to
+     * `requires_payment_method` and its client secret can be confirmed again,
+     * so it stays live until it succeeds or is canceled in Stripe.
+     */
+    public const array STRIPE_IN_FLIGHT = [InvoicePaymentStatus::Pending->value, InvoicePaymentStatus::Failed->value];
+
+    /**
+     * Whether a Stripe payment the client started can still complete on this
      * invoice. Its intent and client secret are already out; nothing SVC
      * decides now can take them back.
      */
-    public function hasPendingStripePayment(ClientInvoice $invoice): bool
+    public function hasStripePaymentInFlight(ClientInvoice $invoice): bool
     {
         return ClientInvoicePayment::query()
             ->where('workspace_id', $invoice->workspace_id)
             ->where('client_invoice_id', $invoice->id)
             ->where('provider', 'stripe')
-            ->where('status', InvoicePaymentStatus::Pending->value)
+            ->whereIn('status', self::STRIPE_IN_FLIGHT)
             ->exists();
     }
 
     /**
-     * The number of an invoice of this agreement with a Stripe payment still
-     * in flight, read under a share lock on the payment rows so a payment
+     * The number of an invoice of this agreement with a Stripe payment that
+     * can still complete, read under a share lock on the payment rows so a payment
      * committed after this transaction's snapshot is still seen.
      */
-    public function pendingStripePaymentForAgreement(ClientAgreement $agreement): ?string
+    public function stripePaymentInFlightForAgreement(ClientAgreement $agreement): ?string
     {
         $invoiceIds = ClientInvoicePayment::query()
             ->where('workspace_id', $agreement->workspace_id)
             ->where('provider', 'stripe')
-            ->where('status', InvoicePaymentStatus::Pending->value)
+            ->whereIn('status', self::STRIPE_IN_FLIGHT)
             ->whereIn('client_invoice_id', ClientInvoice::query()->select('id')
                 ->where('workspace_id', $agreement->workspace_id)
                 ->where('client_agreement_id', $agreement->id))

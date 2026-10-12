@@ -67,8 +67,8 @@ final class SquareLinkService
                 // its version when it reserves the balance, so a caller who read
                 // the invoice before it fails the version check above, and one
                 // who read it after sees the payment here.
-                if ($this->links->hasPendingStripePayment($locked)) {
-                    abort(409, sprintf('A Stripe payment is still pending on invoice %s. Let it settle or cancel it before Square collects this invoice.', (string) $locked->invoice_number));
+                if ($this->links->hasStripePaymentInFlight($locked)) {
+                    abort(409, sprintf('A Stripe payment on invoice %s can still complete (pending, or failed and retryable). Let it succeed or cancel it in Stripe before Square collects this invoice.', (string) $locked->invoice_number));
                 }
                 if ($square->currency !== null && $square->currency !== strtoupper((string) $locked->currency)) {
                     throw new DomainException(sprintf(
@@ -236,9 +236,9 @@ final class SquareLinkService
                 // locking read, after the agreement it is ordered behind, so it
                 // sees an intent committed while this waited - and starting an
                 // intent takes this agreement first, so none can begin after.
-                $pending = $this->links->pendingStripePaymentForAgreement($locked);
+                $pending = $this->links->stripePaymentInFlightForAgreement($locked);
                 if ($pending !== null) {
-                    abort(409, sprintf('A Stripe payment is still pending on invoice %s of this agreement. Let it settle or cancel it before Square collects the agreement\'s invoices.', $pending));
+                    abort(409, sprintf('A Stripe payment on invoice %s of this agreement can still complete (pending, or failed and retryable). Let it succeed or cancel it in Stripe before Square collects the agreement\'s invoices.', $pending));
                 }
                 $holder = $this->links->agreementForSeries($workspace->id, $seriesKey);
                 if ($holder !== null) {

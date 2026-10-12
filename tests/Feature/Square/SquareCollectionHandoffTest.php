@@ -54,9 +54,25 @@ final class SquareCollectionHandoffTest extends TestCase
             'expected_version' => AgentApiVersion::for($invoice->refresh()), 'square_invoice_id' => 'inv:0-fixture1', 'square_invoice_number' => '000001-R-0001',
         ], ['Idempotency-Key' => 'synthetic-pending'])
             ->assertConflict()
-            ->assertJsonPath('message', 'A Stripe payment is still pending on invoice SYN-1. Let it settle or cancel it before Square collects this invoice.');
+            ->assertJsonPath('message', 'A Stripe payment on invoice SYN-1 can still complete (pending, or failed and retryable). Let it succeed or cancel it in Stripe before Square collects this invoice.');
 
         $this->assertSame(0, InvoiceSquareLink::query()->where('workspace_id', $workspace->id)->count());
+    }
+
+    /** A declined intent is retryable with its client secret, so it still blocks; a canceled one does not. */
+    public function test_a_failed_stripe_intent_still_blocks_linking_until_it_is_canceled(): void
+    {
+        [$workspace, $owner, , $invoice] = $this->fixture();
+        $this->pendingStripePayment($invoice);
+        ClientInvoicePayment::query()->where('workspace_id', $workspace->id)->update(['status' => 'failed']);
+        $this->actingAsMcp($owner, self::SCOPES);
+        $link = fn (string $key) => $this->postJson("/api/v1/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/square-link", [
+            'expected_version' => AgentApiVersion::for($invoice->refresh()), 'square_invoice_id' => 'inv:0-fixture1', 'square_invoice_number' => '000001-R-0001',
+        ], ['Idempotency-Key' => $key]);
+
+        $link('synthetic-failed')->assertConflict();
+        ClientInvoicePayment::query()->where('workspace_id', $workspace->id)->update(['status' => 'canceled']);
+        $link('synthetic-canceled')->assertOk();
     }
 
     /**
@@ -93,7 +109,7 @@ final class SquareCollectionHandoffTest extends TestCase
         $this->postJson("/api/v1/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/square-link", ['expected_version' => $before, ...$body], ['Idempotency-Key' => 'synthetic-stale'])
             ->assertConflict()->assertJsonPath('message', 'The invoice has changed; read it and retry.');
         $this->postJson("/api/v1/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/square-link", ['expected_version' => AgentApiVersion::for($invoice), ...$body], ['Idempotency-Key' => 'synthetic-current'])
-            ->assertConflict()->assertJsonPath('message', fn (string $message): bool => str_contains($message, 'Stripe payment is still pending'));
+            ->assertConflict()->assertJsonPath('message', fn (string $message): bool => str_contains($message, 'can still complete'));
         $this->assertSame(0, InvoiceSquareLink::query()->where('workspace_id', $workspace->id)->count());
     }
 
@@ -107,12 +123,17 @@ final class SquareCollectionHandoffTest extends TestCase
             'expected_version' => AgentApiVersion::for($agreement), 'series_key' => '000001', 'confirm' => true,
         ], ['Idempotency-Key' => 'synthetic-pending-mark'])
             ->assertConflict()
-            ->assertJsonPath('message', 'A Stripe payment is still pending on invoice SYN-1 of this agreement. Let it settle or cancel it before Square collects the agreement\'s invoices.');
+            ->assertJsonPath('message', 'A Stripe payment on invoice SYN-1 of this agreement can still complete (pending, or failed and retryable). Let it succeed or cancel it in Stripe before Square collects the agreement\'s invoices.');
 
         $this->assertNull($agreement->refresh()->square_series_key);
 
-        // A settled payment is not in flight: the hand-off proceeds.
+        // A declined intent can be confirmed again with its client secret:
+        // still in flight. Canceled in Stripe, it no longer is.
         ClientInvoicePayment::query()->where('workspace_id', $workspace->id)->update(['status' => 'failed']);
+        $this->putJson("/api/v1/workspaces/{$workspace->public_id}/agreements/{$agreement->public_id}/square-series", [
+            'expected_version' => AgentApiVersion::for($agreement), 'series_key' => '000001', 'confirm' => true,
+        ], ['Idempotency-Key' => 'synthetic-failed-mark'])->assertConflict();
+        ClientInvoicePayment::query()->where('workspace_id', $workspace->id)->update(['status' => 'canceled']);
         $this->putJson("/api/v1/workspaces/{$workspace->public_id}/agreements/{$agreement->public_id}/square-series", [
             'expected_version' => AgentApiVersion::for($agreement), 'series_key' => '000001', 'confirm' => true,
         ], ['Idempotency-Key' => 'synthetic-settled-mark'])->assertOk();
