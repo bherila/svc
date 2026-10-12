@@ -7,11 +7,13 @@ use App\Models\User;
 use App\Support\AgentApi\AgentApiScopes;
 use DateTimeImmutable;
 use Illuminate\Auth\Middleware\Authenticate;
+use Illuminate\Cache\RateLimiter as CacheRateLimiter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Log\Events\MessageLogged;
 use Illuminate\Routing\Route;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
 use Laravel\Passport\Http\Middleware\CheckToken;
@@ -184,6 +186,40 @@ final class RejectedBearerLogTest extends TestCase
         $this->travel(61)->seconds();
         $this->restWith($expiredA)->assertUnauthorized();
         $this->assertSame(LogRejectedBearer::LINES_PER_MINUTE + 1, array_count_values(array_filter(array_column($this->rejections(), 'client_id')))['client-fixture-a']);
+    }
+
+    /**
+     * Concurrent refusals all read the counter before any of them bumps it,
+     * so a check-then-hit limiter lets every one of them log. Modelled here by
+     * a limiter whose read never sees the other requests' hits: only the
+     * count returned by the increment itself may gate the line.
+     */
+    public function test_the_limit_holds_when_concurrent_refusals_read_a_stale_count(): void
+    {
+        RateLimiter::swap(new class(app('cache')->store()) extends CacheRateLimiter
+        {
+            public function tooManyAttempts($key, $maxAttempts): bool
+            {
+                return false;
+            }
+
+            public function attempts($key): int
+            {
+                return 0;
+            }
+        });
+        $expiredA = $this->handBuiltAccessToken('client-fixture-a', new DateTimeImmutable('-1 hour'));
+        $expiredB = $this->handBuiltAccessToken('client-fixture-b', new DateTimeImmutable('-1 hour'));
+
+        for ($attempt = 0; $attempt < 12; $attempt++) {
+            $this->restWith($expiredA)->assertUnauthorized();
+        }
+        $this->restWith($expiredB)->assertUnauthorized();
+
+        $this->assertSame(
+            ['client-fixture-a' => LogRejectedBearer::LINES_PER_MINUTE, 'client-fixture-b' => 1],
+            array_count_values(array_column($this->rejections(), 'client_id')),
+        );
     }
 
     public function test_no_log_line_ever_contains_a_full_token(): void

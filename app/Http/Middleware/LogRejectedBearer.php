@@ -100,10 +100,11 @@ final class LogRejectedBearer
         }
         $claims = $this->classifier->verifiedClaims($token);
         $limiterKey = 'agent-api:rejected-bearer:'.($claims !== null ? 'client:'.$claims->clientId : 'ip:'.$request->ip());
-        if (RateLimiter::tooManyAttempts($limiterKey, self::LINES_PER_MINUTE)) {
+        // Gate on the increment's own result: concurrent refusals that each
+        // read the count first would all see room and all log.
+        if (RateLimiter::hit($limiterKey, 60) > self::LINES_PER_MINUTE) {
             return;
         }
-        RateLimiter::hit($limiterKey, 60);
 
         $fingerprint = BearerFingerprint::of($token);
         Log::warning(self::MESSAGE, [
