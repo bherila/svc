@@ -47,6 +47,7 @@ class DeploymentSafetyTest extends TestCase
         $this->assertStringContainsString('retain-releases:', $workflow);
         $this->assertStringContainsString('failure-policy: maintenance', $workflow);
         $this->assertStringContainsString("operational-audit: 'true'", $workflow);
+        $this->assertStringContainsString("runtime-audit: 'true'", $workflow);
         $this->assertStringContainsString('initial-live-commit:', $workflow);
         $this->assertStringContainsString('env-source: .config/svc/deployment.env', $workflow);
         $this->assertStringContainsString('passport-key-directory: storage/app/private/oauth', $workflow);
@@ -89,7 +90,13 @@ class DeploymentSafetyTest extends TestCase
         $this->assertStringContainsString('"$remote_artisan --revoke"', $verifyLive);
         $this->assertStringContainsString('node scripts/mcp-smoke.mjs', $verifyLive);
         $this->assertStringContainsString('node scripts/deploy/verify-oauth-redirect.mjs', $verifyLive);
-        $this->assertStringContainsString('node --test tests/Deployment/verify-oauth-redirect.test.mjs', $workflow);
+        $this->assertStringContainsString('node --test tests/Deployment/verify-oauth-redirect.test.mjs tests/Deployment/verify-hashed-assets.test.mjs', $workflow);
+        $this->assertStringContainsString('node scripts/deploy/verify-hashed-assets.mjs', $verifyLive);
+        $this->assertLessThan(
+            strpos($verifyLive, 'credentials=$(ssh'),
+            strpos($verifyLive, 'node scripts/deploy/verify-hashed-assets.mjs'),
+            'Hashed asset proof must pass before smoke credential issuance.',
+        );
         $this->assertLessThan(
             strpos($verifyLive, 'credentials=$(ssh'),
             strpos($verifyLive, 'node scripts/deploy/verify-oauth-redirect.mjs'),

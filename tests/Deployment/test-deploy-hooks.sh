@@ -83,7 +83,13 @@ printf '%s\n' fixture-token
 MOCK
 cat >"$temporary/bin/node" <<'MOCK'
 #!/usr/bin/env bash
-printf '%s\n' smoke >>"$FIXTURE_NODE_LOG"
+case "$*" in
+    *verify-hashed-assets.mjs*)
+        printf '%s\n' assets >>"$FIXTURE_NODE_LOG"
+        [ -z "${FIXTURE_ASSET_FAIL:-}" ] || exit 1
+        ;;
+    *) printf '%s\n' smoke >>"$FIXTURE_NODE_LOG" ;;
+esac
 MOCK
 chmod +x "$temporary/bin/"{curl,ssh,jq,node}
 
@@ -106,6 +112,16 @@ for response in '500 text/html' '302 text/html' '200 application/json'; do
     [ ! -e "$temporary/ssh.log" ] || fail 'credentials were issued before home page verification passed'
     [ ! -e "$temporary/node.log" ] || fail 'API smoke hid a broken home page'
 done
+
+# A page that renders but whose hashed assets are missing, mistyped or stale must stop the
+# deployment before any credential is issued.
+rm -f "$temporary/ssh.log" "$temporary/node.log"
+if FIXTURE_ASSET_FAIL=1 run_live_verify '200 text/html' >/dev/null 2>&1; then
+    fail 'a failing hashed asset audit was accepted'
+fi
+[ ! -e "$temporary/ssh.log" ] || fail 'credentials were issued after the hashed asset audit failed'
+grep -qx assets "$temporary/node.log" || fail 'the hashed asset audit did not run'
+grep -qx smoke "$temporary/node.log" && fail 'API smoke ran after the hashed asset audit failed'
 
 run_live_verify '200 text/html; charset=utf-8' >/dev/null || fail 'rendered HTML home page was rejected'
 grep -Fq -- '--ttl=15' "$temporary/ssh.log" || fail 'successful home probe skipped credential issuance'

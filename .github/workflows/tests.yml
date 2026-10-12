@@ -112,7 +112,7 @@ jobs:
           for hook in scripts/deploy/*.sh tests/Deployment/*.sh; do bash -n "$hook"; done
           tests/Deployment/test-deploy-hooks.sh
           bash tests/Deployment/test-preflight.sh
-          node --test tests/Deployment/verify-oauth-redirect.test.mjs
+          node --test tests/Deployment/verify-oauth-redirect.test.mjs tests/Deployment/verify-hashed-assets.test.mjs
 
       - name: Run CI Checks
         run: composer ci:check
@@ -446,6 +446,7 @@ jobs:
           passport-key-directory: storage/app/private/oauth
           artisan-memory-limit: 1G
           operational-audit: 'true'
+          runtime-audit: 'true'
           preflight-script: scripts/deploy/preflight.sh
           quiesce-script: scripts/deploy/quiesce.sh
           pre-migrate-script: scripts/deploy/pre-migrate.sh
