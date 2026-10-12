@@ -61,6 +61,15 @@ final class SquareLinkService
                 if ($locked->status === InvoiceStatus::Void->value) {
                     throw new DomainException('A void invoice cannot be linked to Square.');
                 }
+                // Handing collection to Square while SVC's own is in flight
+                // would leave a live Stripe intent beside Square's request for
+                // the same money. The intent locks this invoice and advances
+                // its version when it reserves the balance, so a caller who read
+                // the invoice before it fails the version check above, and one
+                // who read it after sees the payment here.
+                if ($this->links->hasPendingStripePayment($locked)) {
+                    abort(409, sprintf('A Stripe payment is still pending on invoice %s. Let it settle or cancel it before Square collects this invoice.', (string) $locked->invoice_number));
+                }
                 if ($square->currency !== null && $square->currency !== strtoupper((string) $locked->currency)) {
                     throw new DomainException(sprintf(
                         'Square invoice %s is in %s and invoice %s is in %s; a link must be in one currency.',

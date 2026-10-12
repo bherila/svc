@@ -142,6 +142,10 @@ final class StripePaymentIntentService
             'provider_payment_identifier' => $intentId,
             'idempotency_key' => $idempotencyKey,
         ], $workspace);
+        // The reserved balance is a change to the invoice: advance its version
+        // so a writer that read it before - handing collection to Square, say
+        // (#438) - is refused rather than acting beside a live intent.
+        $invoice->advanceAgentRevision();
 
         return [
             'payment_intent_id' => $intentId,

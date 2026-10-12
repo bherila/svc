@@ -5,8 +5,10 @@ namespace App\Services\Square;
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
+use App\Models\ClientInvoicePayment;
 use App\Models\CompanySquareCustomer;
 use App\Models\InvoiceSquareLink;
+use App\Support\Billing\InvoicePaymentStatus;
 use Illuminate\Support\Collection;
 
 /**
@@ -70,6 +72,21 @@ final class SquareLinkRepository
             ->whereIn('active_company_slot', $companyIds)
             ->get()
             ->keyBy(fn (CompanySquareCustomer $mapping): int => (int) $mapping->active_company_slot);
+    }
+
+    /**
+     * Whether a Stripe payment the client started is still in flight on this
+     * invoice. Its intent and client secret are already out; nothing SVC
+     * decides now can take them back.
+     */
+    public function hasPendingStripePayment(ClientInvoice $invoice): bool
+    {
+        return ClientInvoicePayment::query()
+            ->where('workspace_id', $invoice->workspace_id)
+            ->where('client_invoice_id', $invoice->id)
+            ->where('provider', 'stripe')
+            ->where('status', InvoicePaymentStatus::Pending->value)
+            ->exists();
     }
 
     /** The agreement holding this series as its billed-in-Square marker, if any. */
