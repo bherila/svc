@@ -30,7 +30,8 @@ final class SquareReadService
 
     public const int MAX_PAYMENT_LIMIT = 50;
 
-    public const int MAX_LOCATIONS = 100;
+    /** Square's own ceiling on locations per seller; ListLocations is not paginated. */
+    public const int MAX_LOCATIONS = 300;
 
     public const string RFC3339 = '/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$/D';
 
@@ -236,8 +237,14 @@ final class SquareReadService
         if (! is_array($records) || ! array_is_list($records)) {
             throw SquareRequestFailed::unreadable();
         }
+        $records = array_values(array_filter($records, 'is_array'));
+        // A cursor resumes after Square's whole page, so records past the cap
+        // could never be reached: refuse the page rather than drop them.
+        if (count($records) > $max) {
+            throw SquareRequestFailed::unreadable();
+        }
 
-        return array_slice(array_values(array_filter($records, 'is_array')), 0, $max);
+        return $records;
     }
 
     /**

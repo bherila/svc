@@ -13547,6 +13547,7 @@
                                     "accepted_payment_methods",
                                     "primary_recipient",
                                     "payment_requests",
+                                    "payment_requests_truncated",
                                     "attachment_count"
                                 ],
                                 "properties": {
@@ -13805,7 +13806,8 @@
                                                 "automatic_payment_source",
                                                 "card_on_file",
                                                 "tipping_enabled",
-                                                "reminders"
+                                                "reminders",
+                                                "reminders_truncated"
                                             ],
                                             "properties": {
                                                 "uid": {
@@ -13908,9 +13910,17 @@
                                                             }
                                                         }
                                                     }
+                                                },
+                                                "reminders_truncated": {
+                                                    "type": "boolean",
+                                                    "description": "True when Square sent more reminders than are listed."
                                                 }
                                             }
                                         }
+                                    },
+                                    "payment_requests_truncated": {
+                                        "type": "boolean",
+                                        "description": "True when Square sent more payment requests than are listed."
                                     },
                                     "attachment_count": {
                                         "type": "integer",
@@ -14042,6 +14052,7 @@
                                     "accepted_payment_methods",
                                     "primary_recipient",
                                     "payment_requests",
+                                    "payment_requests_truncated",
                                     "attachment_count"
                                 ],
                                 "properties": {
@@ -14300,7 +14311,8 @@
                                                 "automatic_payment_source",
                                                 "card_on_file",
                                                 "tipping_enabled",
-                                                "reminders"
+                                                "reminders",
+                                                "reminders_truncated"
                                             ],
                                             "properties": {
                                                 "uid": {
@@ -14403,9 +14415,17 @@
                                                             }
                                                         }
                                                     }
+                                                },
+                                                "reminders_truncated": {
+                                                    "type": "boolean",
+                                                    "description": "True when Square sent more reminders than are listed."
                                                 }
                                             }
                                         }
+                                    },
+                                    "payment_requests_truncated": {
+                                        "type": "boolean",
+                                        "description": "True when Square sent more payment requests than are listed."
                                     },
                                     "attachment_count": {
                                         "type": "integer",
@@ -14555,6 +14575,7 @@
                                     "accepted_payment_methods",
                                     "primary_recipient",
                                     "payment_requests",
+                                    "payment_requests_truncated",
                                     "attachment_count"
                                 ],
                                 "properties": {
@@ -14813,7 +14834,8 @@
                                                 "automatic_payment_source",
                                                 "card_on_file",
                                                 "tipping_enabled",
-                                                "reminders"
+                                                "reminders",
+                                                "reminders_truncated"
                                             ],
                                             "properties": {
                                                 "uid": {
@@ -14916,9 +14938,17 @@
                                                             }
                                                         }
                                                     }
+                                                },
+                                                "reminders_truncated": {
+                                                    "type": "boolean",
+                                                    "description": "True when Square sent more reminders than are listed."
                                                 }
                                             }
                                         }
+                                    },
+                                    "payment_requests_truncated": {
+                                        "type": "boolean",
+                                        "description": "True when Square sent more payment requests than are listed."
                                     },
                                     "attachment_count": {
                                         "type": "integer",
@@ -14979,7 +15009,7 @@
                         "properties": {
                             "data": {
                                 "type": "array",
-                                "maxItems": 100,
+                                "maxItems": 300,
                                 "items": {
                                     "$ref": "#/$defs/SquareLocation"
                                 }
@@ -15150,7 +15180,8 @@
                                     "total_tip_money",
                                     "total_service_charge_money",
                                     "net_amount_due_money",
-                                    "tenders"
+                                    "tenders",
+                                    "tenders_truncated"
                                 ],
                                 "properties": {
                                     "id": {
@@ -15315,7 +15346,8 @@
                                         }
                                     },
                                     "line_items_truncated": {
-                                        "type": "boolean"
+                                        "type": "boolean",
+                                        "description": "True when Square sent more line items than are listed."
                                     },
                                     "total_money": {
                                         "oneOf": [
@@ -15423,6 +15455,10 @@
                                                 }
                                             }
                                         }
+                                    },
+                                    "tenders_truncated": {
+                                        "type": "boolean",
+                                        "description": "True when Square sent more tenders than are listed."
                                     }
                                 }
                             }
@@ -15509,7 +15545,9 @@
                                     "approved_money",
                                     "refunded_money",
                                     "processing_fee",
+                                    "processing_fee_truncated",
                                     "refund_ids",
+                                    "refund_ids_truncated",
                                     "card"
                                 ],
                                 "properties": {
@@ -15672,6 +15710,10 @@
                                             }
                                         }
                                     },
+                                    "processing_fee_truncated": {
+                                        "type": "boolean",
+                                        "description": "True when Square sent more processing fees than are listed."
+                                    },
                                     "refund_ids": {
                                         "type": "array",
                                         "maxItems": 50,
@@ -15679,6 +15721,10 @@
                                             "type": "string",
                                             "maxLength": 255
                                         }
+                                    },
+                                    "refund_ids_truncated": {
+                                        "type": "boolean",
+                                        "description": "True when Square sent more refund ids than are listed."
                                     },
                                     "card": {
                                         "type": [
@@ -15878,7 +15924,9 @@
                                     "approved_money",
                                     "refunded_money",
                                     "processing_fee",
+                                    "processing_fee_truncated",
                                     "refund_ids",
+                                    "refund_ids_truncated",
                                     "card"
                                 ],
                                 "properties": {
@@ -16041,6 +16089,10 @@
                                             }
                                         }
                                     },
+                                    "processing_fee_truncated": {
+                                        "type": "boolean",
+                                        "description": "True when Square sent more processing fees than are listed."
+                                    },
                                     "refund_ids": {
                                         "type": "array",
                                         "maxItems": 50,
@@ -16048,6 +16100,10 @@
                                             "type": "string",
                                             "maxLength": 255
                                         }
+                                    },
+                                    "refund_ids_truncated": {
+                                        "type": "boolean",
+                                        "description": "True when Square sent more refund ids than are listed."
                                     },
                                     "card": {
                                         "type": [
@@ -18106,13 +18162,13 @@
                 "square.customers.get": "8d7d9a7b89dbe75b",
                 "square.customers.list": "2d2d8c605018019f",
                 "square.customers.search": "6e6a017172e7402c",
-                "square.invoices.get": "cc58856e9fd35d3f",
-                "square.invoices.list": "1c3cbea6f947157e",
-                "square.invoices.search": "4974f90b3063b652",
-                "square.locations.list": "71a6940e0a50dad0",
-                "square.orders.get": "bb80317974cc5a4e",
-                "square.payments.get": "3507feb0bf7d71ca",
-                "square.payments.list": "2f88a74c0561490e",
+                "square.invoices.get": "6caff53717d5a4ed",
+                "square.invoices.list": "6bef20797ad7f8e2",
+                "square.invoices.search": "0bf3a7810f4da5f4",
+                "square.locations.list": "3d2ed25073bb7214",
+                "square.orders.get": "b771200ad7c9f57f",
+                "square.payments.get": "2ca42a3d1bb45cc8",
+                "square.payments.list": "b64361da80f37d8a",
                 "tasks.create": "bb5e6c39c20f5540",
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
@@ -18761,13 +18817,13 @@
                 "square.customers.get": "8d7d9a7b89dbe75b",
                 "square.customers.list": "2d2d8c605018019f",
                 "square.customers.search": "6e6a017172e7402c",
-                "square.invoices.get": "cc58856e9fd35d3f",
-                "square.invoices.list": "1c3cbea6f947157e",
-                "square.invoices.search": "4974f90b3063b652",
-                "square.locations.list": "71a6940e0a50dad0",
-                "square.orders.get": "bb80317974cc5a4e",
-                "square.payments.get": "3507feb0bf7d71ca",
-                "square.payments.list": "2f88a74c0561490e",
+                "square.invoices.get": "6caff53717d5a4ed",
+                "square.invoices.list": "6bef20797ad7f8e2",
+                "square.invoices.search": "0bf3a7810f4da5f4",
+                "square.locations.list": "3d2ed25073bb7214",
+                "square.orders.get": "b771200ad7c9f57f",
+                "square.payments.get": "2ca42a3d1bb45cc8",
+                "square.payments.list": "b64361da80f37d8a",
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
                 "time_entries.list": "30070d50d2bb043f"
@@ -18846,13 +18902,13 @@
                 "square.customers.get": "8d7d9a7b89dbe75b",
                 "square.customers.list": "2d2d8c605018019f",
                 "square.customers.search": "6e6a017172e7402c",
-                "square.invoices.get": "cc58856e9fd35d3f",
-                "square.invoices.list": "1c3cbea6f947157e",
-                "square.invoices.search": "4974f90b3063b652",
-                "square.locations.list": "71a6940e0a50dad0",
-                "square.orders.get": "bb80317974cc5a4e",
-                "square.payments.get": "3507feb0bf7d71ca",
-                "square.payments.list": "2f88a74c0561490e"
+                "square.invoices.get": "6caff53717d5a4ed",
+                "square.invoices.list": "6bef20797ad7f8e2",
+                "square.invoices.search": "0bf3a7810f4da5f4",
+                "square.locations.list": "3d2ed25073bb7214",
+                "square.orders.get": "b771200ad7c9f57f",
+                "square.payments.get": "2ca42a3d1bb45cc8",
+                "square.payments.list": "b64361da80f37d8a"
             },
             "resources": [],
             "resourceTemplates": {
@@ -20101,13 +20157,13 @@
                 "square.customers.get": "8d7d9a7b89dbe75b",
                 "square.customers.list": "2d2d8c605018019f",
                 "square.customers.search": "6e6a017172e7402c",
-                "square.invoices.get": "cc58856e9fd35d3f",
-                "square.invoices.list": "1c3cbea6f947157e",
-                "square.invoices.search": "4974f90b3063b652",
-                "square.locations.list": "71a6940e0a50dad0",
-                "square.orders.get": "bb80317974cc5a4e",
-                "square.payments.get": "3507feb0bf7d71ca",
-                "square.payments.list": "2f88a74c0561490e",
+                "square.invoices.get": "6caff53717d5a4ed",
+                "square.invoices.list": "6bef20797ad7f8e2",
+                "square.invoices.search": "0bf3a7810f4da5f4",
+                "square.locations.list": "3d2ed25073bb7214",
+                "square.orders.get": "b771200ad7c9f57f",
+                "square.payments.get": "2ca42a3d1bb45cc8",
+                "square.payments.list": "b64361da80f37d8a",
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
                 "time_entries.list": "30070d50d2bb043f"
@@ -20229,13 +20285,13 @@
                 "square.customers.get": "8d7d9a7b89dbe75b",
                 "square.customers.list": "2d2d8c605018019f",
                 "square.customers.search": "6e6a017172e7402c",
-                "square.invoices.get": "cc58856e9fd35d3f",
-                "square.invoices.list": "1c3cbea6f947157e",
-                "square.invoices.search": "4974f90b3063b652",
-                "square.locations.list": "71a6940e0a50dad0",
-                "square.orders.get": "bb80317974cc5a4e",
-                "square.payments.get": "3507feb0bf7d71ca",
-                "square.payments.list": "2f88a74c0561490e",
+                "square.invoices.get": "6caff53717d5a4ed",
+                "square.invoices.list": "6bef20797ad7f8e2",
+                "square.invoices.search": "0bf3a7810f4da5f4",
+                "square.locations.list": "3d2ed25073bb7214",
+                "square.orders.get": "b771200ad7c9f57f",
+                "square.payments.get": "2ca42a3d1bb45cc8",
+                "square.payments.list": "b64361da80f37d8a",
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
                 "time_entries.list": "30070d50d2bb043f"
@@ -20860,13 +20916,13 @@
                 "square.customers.get": "8d7d9a7b89dbe75b",
                 "square.customers.list": "2d2d8c605018019f",
                 "square.customers.search": "6e6a017172e7402c",
-                "square.invoices.get": "cc58856e9fd35d3f",
-                "square.invoices.list": "1c3cbea6f947157e",
-                "square.invoices.search": "4974f90b3063b652",
-                "square.locations.list": "71a6940e0a50dad0",
-                "square.orders.get": "bb80317974cc5a4e",
-                "square.payments.get": "3507feb0bf7d71ca",
-                "square.payments.list": "2f88a74c0561490e",
+                "square.invoices.get": "6caff53717d5a4ed",
+                "square.invoices.list": "6bef20797ad7f8e2",
+                "square.invoices.search": "0bf3a7810f4da5f4",
+                "square.locations.list": "3d2ed25073bb7214",
+                "square.orders.get": "b771200ad7c9f57f",
+                "square.payments.get": "2ca42a3d1bb45cc8",
+                "square.payments.list": "b64361da80f37d8a",
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
                 "time_entries.delete": "edcdfbb24759c4f5",
@@ -20990,13 +21046,13 @@
                 "square.customers.get": "8d7d9a7b89dbe75b",
                 "square.customers.list": "2d2d8c605018019f",
                 "square.customers.search": "6e6a017172e7402c",
-                "square.invoices.get": "cc58856e9fd35d3f",
-                "square.invoices.list": "1c3cbea6f947157e",
-                "square.invoices.search": "4974f90b3063b652",
-                "square.locations.list": "71a6940e0a50dad0",
-                "square.orders.get": "bb80317974cc5a4e",
-                "square.payments.get": "3507feb0bf7d71ca",
-                "square.payments.list": "2f88a74c0561490e",
+                "square.invoices.get": "6caff53717d5a4ed",
+                "square.invoices.list": "6bef20797ad7f8e2",
+                "square.invoices.search": "0bf3a7810f4da5f4",
+                "square.locations.list": "3d2ed25073bb7214",
+                "square.orders.get": "b771200ad7c9f57f",
+                "square.payments.get": "2ca42a3d1bb45cc8",
+                "square.payments.list": "b64361da80f37d8a",
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
                 "time_entries.delete": "edcdfbb24759c4f5",
@@ -21629,13 +21685,13 @@
                 "square.customers.get": "8d7d9a7b89dbe75b",
                 "square.customers.list": "2d2d8c605018019f",
                 "square.customers.search": "6e6a017172e7402c",
-                "square.invoices.get": "cc58856e9fd35d3f",
-                "square.invoices.list": "1c3cbea6f947157e",
-                "square.invoices.search": "4974f90b3063b652",
-                "square.locations.list": "71a6940e0a50dad0",
-                "square.orders.get": "bb80317974cc5a4e",
-                "square.payments.get": "3507feb0bf7d71ca",
-                "square.payments.list": "2f88a74c0561490e",
+                "square.invoices.get": "6caff53717d5a4ed",
+                "square.invoices.list": "6bef20797ad7f8e2",
+                "square.invoices.search": "0bf3a7810f4da5f4",
+                "square.locations.list": "3d2ed25073bb7214",
+                "square.orders.get": "b771200ad7c9f57f",
+                "square.payments.get": "2ca42a3d1bb45cc8",
+                "square.payments.list": "b64361da80f37d8a",
                 "tasks.create": "bb5e6c39c20f5540",
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
@@ -21759,13 +21815,13 @@
                 "square.customers.get": "8d7d9a7b89dbe75b",
                 "square.customers.list": "2d2d8c605018019f",
                 "square.customers.search": "6e6a017172e7402c",
-                "square.invoices.get": "cc58856e9fd35d3f",
-                "square.invoices.list": "1c3cbea6f947157e",
-                "square.invoices.search": "4974f90b3063b652",
-                "square.locations.list": "71a6940e0a50dad0",
-                "square.orders.get": "bb80317974cc5a4e",
-                "square.payments.get": "3507feb0bf7d71ca",
-                "square.payments.list": "2f88a74c0561490e",
+                "square.invoices.get": "6caff53717d5a4ed",
+                "square.invoices.list": "6bef20797ad7f8e2",
+                "square.invoices.search": "0bf3a7810f4da5f4",
+                "square.locations.list": "3d2ed25073bb7214",
+                "square.orders.get": "b771200ad7c9f57f",
+                "square.payments.get": "2ca42a3d1bb45cc8",
+                "square.payments.list": "b64361da80f37d8a",
                 "tasks.create": "bb5e6c39c20f5540",
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
@@ -22411,13 +22467,13 @@
                 "square.customers.get": "8d7d9a7b89dbe75b",
                 "square.customers.list": "2d2d8c605018019f",
                 "square.customers.search": "6e6a017172e7402c",
-                "square.invoices.get": "cc58856e9fd35d3f",
-                "square.invoices.list": "1c3cbea6f947157e",
-                "square.invoices.search": "4974f90b3063b652",
-                "square.locations.list": "71a6940e0a50dad0",
-                "square.orders.get": "bb80317974cc5a4e",
-                "square.payments.get": "3507feb0bf7d71ca",
-                "square.payments.list": "2f88a74c0561490e",
+                "square.invoices.get": "6caff53717d5a4ed",
+                "square.invoices.list": "6bef20797ad7f8e2",
+                "square.invoices.search": "0bf3a7810f4da5f4",
+                "square.locations.list": "3d2ed25073bb7214",
+                "square.orders.get": "b771200ad7c9f57f",
+                "square.payments.get": "2ca42a3d1bb45cc8",
+                "square.payments.list": "b64361da80f37d8a",
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
                 "time_entries.list": "30070d50d2bb043f"
@@ -22539,13 +22595,13 @@
                 "square.customers.get": "8d7d9a7b89dbe75b",
                 "square.customers.list": "2d2d8c605018019f",
                 "square.customers.search": "6e6a017172e7402c",
-                "square.invoices.get": "cc58856e9fd35d3f",
-                "square.invoices.list": "1c3cbea6f947157e",
-                "square.invoices.search": "4974f90b3063b652",
-                "square.locations.list": "71a6940e0a50dad0",
-                "square.orders.get": "bb80317974cc5a4e",
-                "square.payments.get": "3507feb0bf7d71ca",
-                "square.payments.list": "2f88a74c0561490e",
+                "square.invoices.get": "6caff53717d5a4ed",
+                "square.invoices.list": "6bef20797ad7f8e2",
+                "square.invoices.search": "0bf3a7810f4da5f4",
+                "square.locations.list": "3d2ed25073bb7214",
+                "square.orders.get": "b771200ad7c9f57f",
+                "square.payments.get": "2ca42a3d1bb45cc8",
+                "square.payments.list": "b64361da80f37d8a",
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
                 "time_entries.list": "30070d50d2bb043f"
@@ -23165,13 +23221,13 @@
                 "square.customers.get": "8d7d9a7b89dbe75b",
                 "square.customers.list": "2d2d8c605018019f",
                 "square.customers.search": "6e6a017172e7402c",
-                "square.invoices.get": "cc58856e9fd35d3f",
-                "square.invoices.list": "1c3cbea6f947157e",
-                "square.invoices.search": "4974f90b3063b652",
-                "square.locations.list": "71a6940e0a50dad0",
-                "square.orders.get": "bb80317974cc5a4e",
-                "square.payments.get": "3507feb0bf7d71ca",
-                "square.payments.list": "2f88a74c0561490e",
+                "square.invoices.get": "6caff53717d5a4ed",
+                "square.invoices.list": "6bef20797ad7f8e2",
+                "square.invoices.search": "0bf3a7810f4da5f4",
+                "square.locations.list": "3d2ed25073bb7214",
+                "square.orders.get": "b771200ad7c9f57f",
+                "square.payments.get": "2ca42a3d1bb45cc8",
+                "square.payments.list": "b64361da80f37d8a",
                 "tasks.create": "bb5e6c39c20f5540",
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
@@ -23294,13 +23350,13 @@
                 "square.customers.get": "8d7d9a7b89dbe75b",
                 "square.customers.list": "2d2d8c605018019f",
                 "square.customers.search": "6e6a017172e7402c",
-                "square.invoices.get": "cc58856e9fd35d3f",
-                "square.invoices.list": "1c3cbea6f947157e",
-                "square.invoices.search": "4974f90b3063b652",
-                "square.locations.list": "71a6940e0a50dad0",
-                "square.orders.get": "bb80317974cc5a4e",
-                "square.payments.get": "3507feb0bf7d71ca",
-                "square.payments.list": "2f88a74c0561490e",
+                "square.invoices.get": "6caff53717d5a4ed",
+                "square.invoices.list": "6bef20797ad7f8e2",
+                "square.invoices.search": "0bf3a7810f4da5f4",
+                "square.locations.list": "3d2ed25073bb7214",
+                "square.orders.get": "b771200ad7c9f57f",
+                "square.payments.get": "2ca42a3d1bb45cc8",
+                "square.payments.list": "b64361da80f37d8a",
                 "tasks.create": "bb5e6c39c20f5540",
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
@@ -23942,13 +23998,13 @@
                 "square.customers.get": "8d7d9a7b89dbe75b",
                 "square.customers.list": "2d2d8c605018019f",
                 "square.customers.search": "6e6a017172e7402c",
-                "square.invoices.get": "cc58856e9fd35d3f",
-                "square.invoices.list": "1c3cbea6f947157e",
-                "square.invoices.search": "4974f90b3063b652",
-                "square.locations.list": "71a6940e0a50dad0",
-                "square.orders.get": "bb80317974cc5a4e",
-                "square.payments.get": "3507feb0bf7d71ca",
-                "square.payments.list": "2f88a74c0561490e",
+                "square.invoices.get": "6caff53717d5a4ed",
+                "square.invoices.list": "6bef20797ad7f8e2",
+                "square.invoices.search": "0bf3a7810f4da5f4",
+                "square.locations.list": "3d2ed25073bb7214",
+                "square.orders.get": "b771200ad7c9f57f",
+                "square.payments.get": "2ca42a3d1bb45cc8",
+                "square.payments.list": "b64361da80f37d8a",
                 "tasks.create": "bb5e6c39c20f5540",
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
@@ -24070,13 +24126,13 @@
                 "square.customers.get": "8d7d9a7b89dbe75b",
                 "square.customers.list": "2d2d8c605018019f",
                 "square.customers.search": "6e6a017172e7402c",
-                "square.invoices.get": "cc58856e9fd35d3f",
-                "square.invoices.list": "1c3cbea6f947157e",
-                "square.invoices.search": "4974f90b3063b652",
-                "square.locations.list": "71a6940e0a50dad0",
-                "square.orders.get": "bb80317974cc5a4e",
-                "square.payments.get": "3507feb0bf7d71ca",
-                "square.payments.list": "2f88a74c0561490e",
+                "square.invoices.get": "6caff53717d5a4ed",
+                "square.invoices.list": "6bef20797ad7f8e2",
+                "square.invoices.search": "0bf3a7810f4da5f4",
+                "square.locations.list": "3d2ed25073bb7214",
+                "square.orders.get": "b771200ad7c9f57f",
+                "square.payments.get": "2ca42a3d1bb45cc8",
+                "square.payments.list": "b64361da80f37d8a",
                 "tasks.create": "bb5e6c39c20f5540",
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",

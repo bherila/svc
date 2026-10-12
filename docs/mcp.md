@@ -966,8 +966,12 @@ cancels, refunds or marks anything paid in Square.
   six-digit prefix every invoice of a recurring `NNNNNN-R-NNNN` series shares
   - and `series_occurrence` (the suffix); both are null for a one-off. Square
   carries no series id of its own.
-- **Bounds.** Page sizes are capped as listed. Square cursors pass through
-  opaquely as `meta.next_cursor`. Every workspace has a shared per-minute
+- **Bounds.** Page sizes are capped as listed, and all of an account's
+  locations (Square allows 300) come back in one answer. Nothing is cut
+  silently. A page larger than its cap is refused (502), since Square's cursor
+  would skip what was dropped. Each nested list (payment requests, reminders,
+  line items, tenders, processing fees, refund ids) has a `<list>_truncated`
+  flag beside it. Square cursors pass through opaquely as `meta.next_cursor`. Every workspace has a shared per-minute
   budget of Square reads across REST and MCP (`SQUARE_RATE_LIMIT_PER_MINUTE`,
   default 60); over it, the answer is 429 with `Retry-After`.
 - **Errors.** The client sends the pinned `Square-Version` on every call. It

@@ -10007,6 +10007,7 @@
                     "accepted_payment_methods",
                     "primary_recipient",
                     "payment_requests",
+                    "payment_requests_truncated",
                     "attachment_count"
                 ],
                 "properties": {
@@ -10265,7 +10266,8 @@
                                 "automatic_payment_source",
                                 "card_on_file",
                                 "tipping_enabled",
-                                "reminders"
+                                "reminders",
+                                "reminders_truncated"
                             ],
                             "properties": {
                                 "uid": {
@@ -10368,9 +10370,17 @@
                                             }
                                         }
                                     }
+                                },
+                                "reminders_truncated": {
+                                    "type": "boolean",
+                                    "description": "True when Square sent more reminders than are listed."
                                 }
                             }
                         }
+                    },
+                    "payment_requests_truncated": {
+                        "type": "boolean",
+                        "description": "True when Square sent more payment requests than are listed."
                     },
                     "attachment_count": {
                         "type": "integer",
@@ -10512,7 +10522,7 @@
                 "properties": {
                     "data": {
                         "type": "array",
-                        "maxItems": 100,
+                        "maxItems": 300,
                         "items": {
                             "$ref": "#/components/schemas/SquareLocation"
                         }
@@ -10558,7 +10568,8 @@
                     "total_tip_money",
                     "total_service_charge_money",
                     "net_amount_due_money",
-                    "tenders"
+                    "tenders",
+                    "tenders_truncated"
                 ],
                 "properties": {
                     "id": {
@@ -10723,7 +10734,8 @@
                         }
                     },
                     "line_items_truncated": {
-                        "type": "boolean"
+                        "type": "boolean",
+                        "description": "True when Square sent more line items than are listed."
                     },
                     "total_money": {
                         "oneOf": [
@@ -10831,6 +10843,10 @@
                                 }
                             }
                         }
+                    },
+                    "tenders_truncated": {
+                        "type": "boolean",
+                        "description": "True when Square sent more tenders than are listed."
                     }
                 }
             },
@@ -10866,7 +10882,9 @@
                     "approved_money",
                     "refunded_money",
                     "processing_fee",
+                    "processing_fee_truncated",
                     "refund_ids",
+                    "refund_ids_truncated",
                     "card"
                 ],
                 "properties": {
@@ -11029,6 +11047,10 @@
                             }
                         }
                     },
+                    "processing_fee_truncated": {
+                        "type": "boolean",
+                        "description": "True when Square sent more processing fees than are listed."
+                    },
                     "refund_ids": {
                         "type": "array",
                         "maxItems": 50,
@@ -11036,6 +11058,10 @@
                             "type": "string",
                             "maxLength": 255
                         }
+                    },
+                    "refund_ids_truncated": {
+                        "type": "boolean",
+                        "description": "True when Square sent more refund ids than are listed."
                     },
                     "card": {
                         "type": [

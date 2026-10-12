@@ -284,6 +284,34 @@ final class SquarePassThroughTest extends TestCase
         // tearDown asserts no log line carried it either.
     }
 
+    /**
+     * A page is never cut short: Square's cursor resumes after its whole page,
+     * so anything dropped could not be reached again. Every location Square
+     * allows (300, unpaginated) is returned; a page over the cap is refused.
+     */
+    public function test_a_page_is_returned_whole_or_refused(): void
+    {
+        $locations = static fn (int $count): array => array_map(static fn (int $i): array => self::squareLocation(sprintf('LOCFIXTURE%03d', $i)), range(1, $count));
+        $current = null;
+        Http::fake(static function () use (&$current) {
+            return Http::response($current);
+        });
+
+        $current = ['locations' => $locations(300)];
+        $this->assertCount(300, $this->getJson($this->url('locations', []))->assertOk()->json('data'));
+        $session = $this->initialize();
+        $this->assertCount(300, $this->callTool($session, 'square.locations.list', ['workspace_id' => $this->workspace->public_id])['result']['structuredContent']['data']);
+
+        $current = ['locations' => $locations(301)];
+        $this->getJson($this->url('locations', []))->assertStatus(502);
+
+        // Square's search limit is advisory; an oversized page is refused, not trimmed.
+        $current = ['customers' => array_map(static fn (int $i): array => self::squareCustomer('cust_fixture_'.$i), range(1, 101)), 'cursor' => 'next-customers'];
+        $this->getJson($this->url('customers/search', ['email' => 'avery@example.test']))->assertStatus(502);
+        $current = ['invoices' => array_map(static fn (int $i): array => self::squareInvoice('inv:0-fixture'.$i), range(1, 51))];
+        $this->getJson($this->url('invoices', ['location_id' => 'LOCFIXTURE01', 'limit' => 50]))->assertStatus(502);
+    }
+
     public function test_square_not_found_is_a_plain_not_found(): void
     {
         Http::fake([self::SQUARE_BASE.'/*' => Http::response(['errors' => [['category' => 'INVALID_REQUEST_ERROR', 'code' => 'NOT_FOUND']]], 404)]);

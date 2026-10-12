@@ -9,7 +9,9 @@ namespace App\Services\Square;
  * anything Square adds later stays out until it is chosen here. Card
  * fingerprints, BINs, expiry dates, stored-card ids, receipt links and version
  * tokens are never among them; a stored card shows only as `card_on_file`.
- * Every string is bounded, and every list is capped.
+ * Every string is bounded, and every list is capped - but never silently:
+ * each capped list has a `<list>_truncated` flag beside it, true when Square
+ * sent more than was kept.
  *
  * @phpstan-type Money array{amount: int, currency: string}|null
  */
@@ -102,7 +104,7 @@ final class SquarePresenter
                 'email_address' => self::text($recipient, 'email_address'),
                 'phone_number' => self::text($recipient, 'phone_number', 64),
             ],
-            'payment_requests' => array_map(static fn (array $request): array => [
+            ...self::capped('payment_requests', $invoice['payment_requests'] ?? null, 20, static fn (array $request): array => [
                 'uid' => self::text($request, 'uid'),
                 'request_type' => self::text($request, 'request_type', 32),
                 'due_date' => self::text($request, 'due_date', 32),
@@ -111,13 +113,13 @@ final class SquarePresenter
                 'automatic_payment_source' => self::text($request, 'automatic_payment_source', 32),
                 'card_on_file' => is_string($request['card_id'] ?? null) && $request['card_id'] !== '',
                 'tipping_enabled' => self::boolean($request, 'tipping_enabled'),
-                'reminders' => array_map(static fn (array $reminder): array => [
+                ...self::capped('reminders', $request['reminders'] ?? null, 10, static fn (array $reminder): array => [
                     'uid' => self::text($reminder, 'uid'),
                     'relative_scheduled_days' => self::integer($reminder, 'relative_scheduled_days'),
                     'status' => self::text($reminder, 'status', 32),
                     'sent_at' => self::text($reminder, 'sent_at', 64),
-                ], self::list($request['reminders'] ?? null, 10)),
-            ], self::list($invoice['payment_requests'] ?? null, 20)),
+                ]),
+            ]),
             'attachment_count' => count(is_array($invoice['attachments'] ?? null) ? $invoice['attachments'] : []),
         ];
     }
@@ -128,8 +130,6 @@ final class SquarePresenter
      */
     public function order(array $order): array
     {
-        $lines = is_array($order['line_items'] ?? null) ? $order['line_items'] : [];
-
         return [
             'id' => self::text($order, 'id'),
             'version' => self::integer($order, 'version'),
@@ -140,7 +140,7 @@ final class SquarePresenter
             'created_at' => self::text($order, 'created_at', 64),
             'updated_at' => self::text($order, 'updated_at', 64),
             'closed_at' => self::text($order, 'closed_at', 64),
-            'line_items' => array_map(static fn (array $line): array => [
+            ...self::capped('line_items', $order['line_items'] ?? null, 100, static fn (array $line): array => [
                 'uid' => self::text($line, 'uid'),
                 'name' => self::text($line, 'name'),
                 'variation_name' => self::text($line, 'variation_name'),
@@ -150,20 +150,19 @@ final class SquarePresenter
                 'total_discount_money' => self::money($line['total_discount_money'] ?? null),
                 'total_tax_money' => self::money($line['total_tax_money'] ?? null),
                 'total_money' => self::money($line['total_money'] ?? null),
-            ], self::list($lines, 100)),
-            'line_items_truncated' => count($lines) > 100,
+            ]),
             'total_money' => self::money($order['total_money'] ?? null),
             'total_tax_money' => self::money($order['total_tax_money'] ?? null),
             'total_discount_money' => self::money($order['total_discount_money'] ?? null),
             'total_tip_money' => self::money($order['total_tip_money'] ?? null),
             'total_service_charge_money' => self::money($order['total_service_charge_money'] ?? null),
             'net_amount_due_money' => self::money($order['net_amount_due_money'] ?? null),
-            'tenders' => array_map(static fn (array $tender): array => [
+            ...self::capped('tenders', $order['tenders'] ?? null, 50, static fn (array $tender): array => [
                 'id' => self::text($tender, 'id'),
                 'type' => self::text($tender, 'type', 32),
                 'amount_money' => self::money($tender['amount_money'] ?? null),
                 'payment_id' => self::text($tender, 'payment_id'),
-            ], self::list($order['tenders'] ?? null, 20)),
+            ]),
         ];
     }
 
@@ -192,15 +191,12 @@ final class SquarePresenter
             'total_money' => self::money($payment['total_money'] ?? null),
             'approved_money' => self::money($payment['approved_money'] ?? null),
             'refunded_money' => self::money($payment['refunded_money'] ?? null),
-            'processing_fee' => array_map(static fn (array $fee): array => [
+            ...self::capped('processing_fee', $payment['processing_fee'] ?? null, 10, static fn (array $fee): array => [
                 'type' => self::text($fee, 'type', 32),
                 'effective_at' => self::text($fee, 'effective_at', 64),
                 'amount_money' => self::money($fee['amount_money'] ?? null),
-            ], self::list($payment['processing_fee'] ?? null, 10)),
-            'refund_ids' => array_values(array_filter(
-                array_map(static fn (mixed $id): ?string => is_string($id) ? mb_substr($id, 0, 255) : null, array_slice(is_array($payment['refund_ids'] ?? null) ? $payment['refund_ids'] : [], 0, 50)),
-                static fn (?string $id): bool => $id !== null,
-            )),
+            ]),
+            ...self::capped('refund_ids', $payment['refund_ids'] ?? null, 50, static fn (string $id): string => mb_substr($id, 0, 255), strings: true),
             'card' => $details === null ? null : [
                 'status' => self::text($details, 'status', 32),
                 'entry_method' => self::text($details, 'entry_method', 32),
@@ -278,13 +274,21 @@ final class SquarePresenter
         return is_string($value) && preg_match('/^\d{4}$/D', $value) === 1 ? $value : null;
     }
 
-    /** @return list<array<mixed>> */
-    private static function list(mixed $items, int $max): array
+    /**
+     * The first `$max` items of a Square list (objects, or strings for an id
+     * list), presented, and a `<key>_truncated` flag that is true when Square
+     * sent more than that.
+     *
+     * @param  callable(mixed): mixed  $present
+     * @return array<string, list<mixed>|bool>
+     */
+    private static function capped(string $key, mixed $items, int $max, callable $present, bool $strings = false): array
     {
-        if (! is_array($items)) {
-            return [];
-        }
+        $usable = array_values(array_filter(is_array($items) ? $items : [], $strings ? 'is_string' : 'is_array'));
 
-        return array_slice(array_values(array_filter($items, 'is_array')), 0, $max);
+        return [
+            $key => array_map($present, array_slice($usable, 0, $max)),
+            $key.'_truncated' => count($usable) > $max,
+        ];
     }
 }

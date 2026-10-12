@@ -2466,7 +2466,11 @@ export interface components {
                     status: string | null;
                     sent_at: string | null;
                 }[];
+                /** @description True when Square sent more reminders than are listed. */
+                reminders_truncated: boolean;
             }[];
+            /** @description True when Square sent more payment requests than are listed. */
+            payment_requests_truncated: boolean;
             attachment_count: number;
         };
         SquareInvoiceListResponse: {
@@ -2519,6 +2523,7 @@ export interface components {
                 total_tax_money: components['schemas']['SquareMoney'] | null;
                 total_money: components['schemas']['SquareMoney'] | null;
             }[];
+            /** @description True when Square sent more line items than are listed. */
             line_items_truncated: boolean;
             total_money: components['schemas']['SquareMoney'] | null;
             total_tax_money: components['schemas']['SquareMoney'] | null;
@@ -2533,6 +2538,8 @@ export interface components {
                 amount_money: components['schemas']['SquareMoney'] | null;
                 payment_id: string | null;
             }[];
+            /** @description True when Square sent more tenders than are listed. */
+            tenders_truncated: boolean;
         };
         SquareOrderResponse: {
             data: components['schemas']['SquareOrder'];
@@ -2558,7 +2565,11 @@ export interface components {
                 effective_at: string | null;
                 amount_money: components['schemas']['SquareMoney'] | null;
             }[];
+            /** @description True when Square sent more processing fees than are listed. */
+            processing_fee_truncated: boolean;
             refund_ids: string[];
+            /** @description True when Square sent more refund ids than are listed. */
+            refund_ids_truncated: boolean;
             card: {
                 status: string | null;
                 entry_method: string | null;
