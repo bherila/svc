@@ -34,7 +34,9 @@ final class StripePaymentIntentService
         }
 
         return DB::transaction(function () use ($invoice, $workspace, $paymentMethodId, $idempotencyKey): array {
-            $invoice = ClientInvoice::query()->whereKey($invoice->id)->tap(Locks::forUpdate())->firstOrFail();
+            $workspaceId = $workspace->id ?? $invoice->workspace_id;
+            BillingMaintenance::share($workspaceId);
+            $invoice = ClientInvoice::query()->where('workspace_id', $workspaceId)->whereKey($invoice->id)->tap(Locks::forUpdate())->firstOrFail();
 
             return $this->createLocked($invoice, $workspace, $paymentMethodId, $idempotencyKey);
         });
