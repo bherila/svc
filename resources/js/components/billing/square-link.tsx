@@ -193,7 +193,7 @@ export function SquareInvoiceCard({ square }: { square: InvoiceSquareState }) {
                                 </dd>
                                 <dt className="text-muted-foreground">
                                     {statusLabel(
-                                        square.hosted_page.square_status,
+                                        square.hosted_page.square_status.toLowerCase(),
                                     )}
                                     {square.hosted_page.synced_at !== null &&
                                         ` · synced ${formatTimestamp(square.hosted_page.synced_at)}`}
