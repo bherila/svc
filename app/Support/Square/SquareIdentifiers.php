@@ -2,6 +2,8 @@
 
 namespace App\Support\Square;
 
+use App\Services\Square\SquareInvoiceSeries;
+
 /**
  * What SVC accepts as a Square identifier, before it has ever asked Square.
  *
@@ -28,8 +30,6 @@ final class SquareIdentifiers
     public const string INVOICE_NUMBER_PATTERN = '/^[!-~](?:[ -~]{0,189}[!-~])?$/D';
 
     public const string SERIES_KEY_PATTERN = '/^[0-9]{6}$/D';
-
-    private const string SERIES_NUMBER_PATTERN = '/^([0-9]{6})-R-[0-9]{4}$/D';
 
     public static function isInvoiceId(string $value): bool
     {
@@ -58,6 +58,8 @@ final class SquareIdentifiers
      */
     public static function seriesKey(string $invoiceNumber): ?string
     {
-        return preg_match(self::SERIES_NUMBER_PATTERN, $invoiceNumber, $matches) === 1 ? $matches[1] : null;
+        // One derivation for the whole application: the pass-through reads
+        // and the links must never disagree about which series an invoice is in.
+        return SquareInvoiceSeries::of($invoiceNumber)['series_key'];
     }
 }
