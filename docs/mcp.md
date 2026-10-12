@@ -721,6 +721,7 @@ manager, and both `AGENT_API_WRITES_ENABLED` and
 | `invoices.release_delivery` | `POST /invoices/{invoice}/automatic-delivery/release` | `billing:deliver`, `billing:read` |
 | `invoices.add_time` | `POST /invoices/{invoice}/time` | `billing:write`, `billing:read` |
 | `invoices.generate_period` | `POST /agreements/{agreement}/invoices` | `billing:write`, `billing:read` |
+| `invoices.preview_period` | `GET /agreements/{agreement}/invoices/preview?period_start=` | `billing:read` |
 | `invoices.pdf` | `GET /invoices/{invoice}/pdf-link` | `billing:read` |
 | `billing_audit.stale_and_missing` | `GET /billing-audits/stale-and-missing` | `billing:read` |
 
@@ -745,9 +746,28 @@ already begun. This is the **retainer cycle start**: the resulting invoice's
 cycle. Monthly agreements use calendar months; other cadences follow the
 agreement start date. Generation creates a draft and uses the canonical billing
 engine, including any interim reconciliation it requires. It does not issue or
-send. Repeating the same key replays the result; another key for a period with a
-non-void invoice is refused. No automatic cadence-draft generation job is
-deployed: inspect the missing-period audit and request a period deliberately.
+send. Repeating the same key replays the result and writes nothing; another key
+for a period with a non-void invoice is refused with 409.
+
+Nothing generates cadence period drafts automatically - there is no scheduled
+job, by decision (#377). A started period without a draft is therefore not
+late: it is waiting for an agent or operator to call `invoices.generate_period`.
+`billing_audit.stale_and_missing` lists every active recurring agreement whose
+started period has no non-void invoice, with the `agreement_id` and
+`period_start` these two tools take.
+
+`invoices.preview_period` (manager only, `billing:read`) answers what
+generation would write without writing it. It runs generation's own guard
+under the same locks, then the same `ClientInvoicingService` call, inside a
+transaction it always rolls back - the rehearsal command's method narrowed to
+one period - so it refuses exactly what generation refuses, with the same
+status, and its lines are the lines generation writes: `invoices.get` returns
+the generated draft's lines identically, less their ids. It also lists any
+other invoice the same generation would create, such as an interim overage
+draft it reconciles first, and returns `agreement_version`, the
+`expected_version` a following `invoices.generate_period` must present. It
+takes no idempotency key and leaves no receipt or audit row. It is a read, so
+it stays available when the invoice write cutover is off.
 
 `invoices.pdf` returns a URL and `expires_at`, valid for five minutes. The URL
 uses the configured service origin and still requires current authentication,

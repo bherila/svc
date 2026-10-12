@@ -615,7 +615,7 @@ final class AgentRestDocumentation
             'invoices.generate_period' => [
                 'method' => 'POST',
                 'scopes' => ['billing:write', 'billing:read'],
-                'description' => 'Manager only. period_start is a started retainer cadence cycle; service dates reconcile the preceding work cycle. Calls the existing cadence engine. A non-void invoice for this period is refused, while identical idempotent retries return the created draft. No automated cadence draft job is deployed. Requires confirmation and the agreement version.',
+                'description' => 'Manager only. period_start is a started retainer cadence cycle; service dates reconcile the preceding work cycle. Calls the existing cadence engine, the same path invoices.preview_period rolls back. A non-void invoice for this period is refused, while identical idempotent retries return the created draft. Nothing generates cadence period drafts automatically: a started period without one is waiting for this call, and billing_audit.stale_and_missing lists those periods. Requires confirmation and the agreement version.',
                 'parameters' => ['WorkspaceId', self::uuidPath('agreement'), 'IdempotencyKey'],
                 'request' => 'InvoiceGeneratePeriodRequest',
                 'response' => 'InvoiceMutationResponse',
@@ -697,6 +697,15 @@ final class AgentRestDocumentation
                 'response' => 'InvoiceListResponse',
                 'response_description' => 'Authorized invoices',
                 'extensions' => ['x-mcp-tool' => 'invoices.list', 'x-svc-flags' => []],
+            ],
+            'invoices.preview_period' => [
+                'method' => 'GET',
+                'scopes' => ['billing:read'],
+                'description' => 'Workspace managers only. Runs the checks and cadence engine of invoices.generate_period for one started retainer cycle inside a transaction that is always rolled back, and returns the draft it would write and any other invoice the same generation would create. Writes nothing and takes no idempotency key. Refuses what generation refuses, with the same status, including 409 for a period that already has a non-void invoice. agreement_version is the expected_version a following invoices.generate_period call must present. Nothing generates cadence period drafts automatically; billing_audit.stale_and_missing lists started periods with no non-void invoice.',
+                'parameters' => ['WorkspaceId', self::uuidPath('agreement'), ['name' => 'period_start', 'in' => 'query', 'required' => true, 'schema' => ['type' => 'string', 'format' => 'date']]],
+                'response' => 'InvoicePeriodPreviewResponse',
+                'response_description' => 'The draft generation would write; nothing is written',
+                'extensions' => ['x-svc-flags' => [], 'x-mcp-tool' => 'invoices.preview_period'],
             ],
             'invoices.pdf' => [
                 'method' => 'GET',

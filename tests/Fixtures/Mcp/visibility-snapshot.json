@@ -7428,7 +7428,7 @@
                             }
                         }
                     },
-                    "description": "Create a draft selling an explicit started retainer cycle on an active recurring agreement. period_start is the retainer cycle start; service dates cover the preceding work cycle. No automatic cadence generation job is deployed. A different key for an existing non-void invoice is refused. Explicit confirmation and current agreement version required.",
+                    "description": "Create the draft for an explicit started retainer cycle on an active recurring agreement, through the same cadence engine as invoices.preview_period. Nothing generates cadence period drafts automatically: a started period with no draft is waiting for this call, not for a scheduled job, and billing_audit.stale_and_missing lists started periods that have no non-void invoice. period_start is the retainer cycle start; service dates cover the preceding work cycle. Repeating the same idempotency key returns the same draft; a period that already has a non-void invoice is refused. Explicit confirmation and current agreement version required.",
                     "annotations": {
                         "readOnlyHint": false,
                         "destructiveHint": false,
@@ -8830,6 +8830,245 @@
                                         "format": "date-time"
                                     }
                                 }
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "invoices.preview_period",
+                    "title": "Preview cadence period draft",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "workspace_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "agreement_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "period_start": {
+                                "type": "string",
+                                "format": "date"
+                            }
+                        },
+                        "required": [
+                            "workspace_id",
+                            "agreement_id",
+                            "period_start"
+                        ],
+                        "additionalProperties": false
+                    },
+                    "description": "Workspace managers only. Return the lines, totals and service dates invoices.generate_period would write for an explicit started retainer cycle, and any other invoice that generation would also create, without writing anything: the same checks and cadence engine run and are rolled back. Refuses what generation refuses, including a period that already has a non-void invoice. Returns agreement_version to pass to invoices.generate_period as expected_version. Nothing generates cadence period drafts automatically; billing_audit.stale_and_missing lists started periods with no non-void invoice.",
+                    "annotations": {
+                        "readOnlyHint": true,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": false
+                    },
+                    "outputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "data"
+                        ],
+                        "properties": {
+                            "data": {
+                                "$ref": "#/$defs/InvoicePeriodPreview"
+                            }
+                        },
+                        "$defs": {
+                            "Currency": {
+                                "type": "string",
+                                "pattern": "^[A-Z]{3}$"
+                            },
+                            "InvoiceKind": {
+                                "type": "string",
+                                "enum": [
+                                    "cadence_period",
+                                    "interim_overage",
+                                    "terminal",
+                                    "ad_hoc"
+                                ]
+                            },
+                            "InvoicePeriodPreview": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "agreement_id",
+                                    "agreement_version",
+                                    "company_id",
+                                    "company_name",
+                                    "period_start",
+                                    "invoice_kind",
+                                    "service_period_start",
+                                    "service_period_end",
+                                    "currency",
+                                    "total_amount",
+                                    "issue_date",
+                                    "due_date",
+                                    "lines",
+                                    "other_invoices"
+                                ],
+                                "properties": {
+                                    "agreement_id": {
+                                        "$ref": "#/$defs/Uuid"
+                                    },
+                                    "agreement_version": {
+                                        "$ref": "#/$defs/Version",
+                                        "description": "The agreement version this preview was computed from; pass it to invoices.generate_period as expected_version."
+                                    },
+                                    "company_id": {
+                                        "$ref": "#/$defs/Uuid"
+                                    },
+                                    "company_name": {
+                                        "type": "string"
+                                    },
+                                    "period_start": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date",
+                                        "description": "The retainer cycle the draft sells."
+                                    },
+                                    "invoice_kind": {
+                                        "$ref": "#/$defs/InvoiceKind"
+                                    },
+                                    "service_period_start": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date"
+                                    },
+                                    "service_period_end": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date"
+                                    },
+                                    "currency": {
+                                        "$ref": "#/$defs/Currency"
+                                    },
+                                    "total_amount": {
+                                        "type": "integer"
+                                    },
+                                    "issue_date": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date"
+                                    },
+                                    "due_date": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date"
+                                    },
+                                    "lines": {
+                                        "type": "array",
+                                        "items": {
+                                            "$ref": "#/$defs/InvoicePreviewLine"
+                                        }
+                                    },
+                                    "other_invoices": {
+                                        "type": "array",
+                                        "items": {
+                                            "$ref": "#/$defs/InvoicePeriodPreviewOtherInvoice"
+                                        },
+                                        "description": "Other invoices the same generation would create, such as interim overage drafts it reconciles first."
+                                    }
+                                }
+                            },
+                            "InvoicePeriodPreviewOtherInvoice": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "invoice_kind",
+                                    "service_period_start",
+                                    "service_period_end",
+                                    "currency",
+                                    "total_amount"
+                                ],
+                                "properties": {
+                                    "invoice_kind": {
+                                        "$ref": "#/$defs/InvoiceKind"
+                                    },
+                                    "service_period_start": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date"
+                                    },
+                                    "service_period_end": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date"
+                                    },
+                                    "currency": {
+                                        "$ref": "#/$defs/Currency"
+                                    },
+                                    "total_amount": {
+                                        "type": "integer"
+                                    }
+                                }
+                            },
+                            "InvoicePreviewLine": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "project_id",
+                                    "type",
+                                    "description",
+                                    "quantity",
+                                    "unit_amount",
+                                    "tax_amount",
+                                    "total_amount"
+                                ],
+                                "properties": {
+                                    "project_id": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "uuid"
+                                    },
+                                    "type": {
+                                        "type": "string"
+                                    },
+                                    "description": {
+                                        "type": "string"
+                                    },
+                                    "quantity": {
+                                        "type": "string"
+                                    },
+                                    "unit_amount": {
+                                        "type": "integer"
+                                    },
+                                    "tax_amount": {
+                                        "type": "integer"
+                                    },
+                                    "total_amount": {
+                                        "type": "integer"
+                                    }
+                                },
+                                "description": "A line exactly as invoices.get returns it, without an id: nothing was written, so there is none."
+                            },
+                            "Uuid": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "Version": {
+                                "type": "string",
+                                "pattern": "^[a-f0-9]{64}$"
                             }
                         }
                     }
@@ -14664,12 +14903,13 @@
                 "invoices.corrections.get": "aa93da895756b80b",
                 "invoices.create_draft": "7f23d0f35560fb05",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.generate_period": "89231c301628e176",
+                "invoices.generate_period": "a736a25f33ed9607",
                 "invoices.get": "6ba6555d479ca4a0",
                 "invoices.hold_delivery": "5d5d70aa02fac988",
                 "invoices.issue": "cbf43ac9ed799c11",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
+                "invoices.preview_period": "d1471d81f3009a00",
                 "invoices.release_delivery": "f703c8eb40f1ed80",
                 "invoices.send": "3b2bc9ef256c4d18",
                 "invoices.update_details": "9c25cf205acf1a39",
@@ -14765,6 +15005,7 @@
                     "invoices.corrections.get role",
                     "invoices.generate_period role",
                     "invoices.hold_delivery role",
+                    "invoices.preview_period role",
                     "invoices.release_delivery role",
                     "payments.correct role",
                     "payments.record role",
@@ -14883,6 +15124,7 @@
                     "invoices.corrections.get role",
                     "invoices.generate_period role",
                     "invoices.hold_delivery role",
+                    "invoices.preview_period role",
                     "invoices.release_delivery role",
                     "payments.correct role",
                     "payments.record role",
@@ -15001,6 +15243,7 @@
                     "invoices.corrections.get role",
                     "invoices.generate_period role",
                     "invoices.hold_delivery role",
+                    "invoices.preview_period role",
                     "invoices.release_delivery role",
                     "payments.correct role",
                     "payments.record role",
@@ -15119,6 +15362,7 @@
                     "invoices.corrections.get role",
                     "invoices.generate_period role",
                     "invoices.hold_delivery role",
+                    "invoices.preview_period role",
                     "invoices.release_delivery role",
                     "payments.correct role",
                     "payments.record role",
@@ -15284,6 +15528,7 @@
                 "invoices.get": "6ba6555d479ca4a0",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
+                "invoices.preview_period": "d1471d81f3009a00",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
                 "projects.get": "c7ffe7930b196d4b",
@@ -15359,11 +15604,12 @@
                 "invoices.corrections.get": "aa93da895756b80b",
                 "invoices.create_draft": "7f23d0f35560fb05",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.generate_period": "89231c301628e176",
+                "invoices.generate_period": "a736a25f33ed9607",
                 "invoices.get": "6ba6555d479ca4a0",
                 "invoices.hold_delivery": "5d5d70aa02fac988",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
+                "invoices.preview_period": "d1471d81f3009a00",
                 "invoices.update_details": "9c25cf205acf1a39",
                 "invoices.update_draft": "2db06ccf7247d243"
             },
@@ -15427,6 +15673,7 @@
                     "invoices.generate_period scope_not_granted billing:write",
                     "invoices.hold_delivery scope_not_granted billing:write",
                     "invoices.issue scope_not_granted billing:deliver",
+                    "invoices.preview_period role",
                     "invoices.release_delivery scope_not_granted billing:deliver",
                     "invoices.send scope_not_granted billing:deliver",
                     "invoices.update_details scope_not_granted billing:write",
@@ -15594,6 +15841,7 @@
                     "invoices.generate_period scope_not_granted billing:write",
                     "invoices.hold_delivery scope_not_granted billing:write",
                     "invoices.issue scope_not_granted billing:deliver",
+                    "invoices.preview_period role",
                     "invoices.release_delivery scope_not_granted billing:deliver",
                     "invoices.send scope_not_granted billing:deliver",
                     "invoices.update_details scope_not_granted billing:write",
@@ -15803,6 +16051,7 @@
                 "invoices.get": "6ba6555d479ca4a0",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
+                "invoices.preview_period": "d1471d81f3009a00",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
                 "projects.get": "c7ffe7930b196d4b",
@@ -15922,6 +16171,7 @@
                 "invoices.get": "6ba6555d479ca4a0",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
+                "invoices.preview_period": "d1471d81f3009a00",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
                 "projects.get": "c7ffe7930b196d4b",
@@ -16001,6 +16251,7 @@
                     "invoices.generate_period deployment_disabled",
                     "invoices.hold_delivery deployment_disabled",
                     "invoices.issue deployment_disabled",
+                    "invoices.preview_period role",
                     "invoices.release_delivery deployment_disabled",
                     "invoices.send deployment_disabled",
                     "invoices.update_details deployment_disabled",
@@ -16118,6 +16369,7 @@
                     "invoices.generate_period deployment_disabled",
                     "invoices.hold_delivery deployment_disabled",
                     "invoices.issue deployment_disabled",
+                    "invoices.preview_period role",
                     "invoices.release_delivery deployment_disabled",
                     "invoices.send deployment_disabled",
                     "invoices.update_details deployment_disabled",
@@ -16235,6 +16487,7 @@
                     "invoices.generate_period deployment_disabled",
                     "invoices.hold_delivery deployment_disabled",
                     "invoices.issue deployment_disabled",
+                    "invoices.preview_period role",
                     "invoices.release_delivery deployment_disabled",
                     "invoices.send deployment_disabled",
                     "invoices.update_details deployment_disabled",
@@ -16352,6 +16605,7 @@
                     "invoices.generate_period deployment_disabled",
                     "invoices.hold_delivery deployment_disabled",
                     "invoices.issue deployment_disabled",
+                    "invoices.preview_period role",
                     "invoices.release_delivery deployment_disabled",
                     "invoices.send deployment_disabled",
                     "invoices.update_details deployment_disabled",
@@ -16514,6 +16768,7 @@
                 "invoices.get": "6ba6555d479ca4a0",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
+                "invoices.preview_period": "d1471d81f3009a00",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
                 "projects.get": "c7ffe7930b196d4b",
@@ -16631,6 +16886,7 @@
                 "invoices.get": "6ba6555d479ca4a0",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
+                "invoices.preview_period": "d1471d81f3009a00",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
                 "projects.get": "c7ffe7930b196d4b",
@@ -16705,6 +16961,7 @@
                     "invoices.generate_period deployment_disabled",
                     "invoices.hold_delivery deployment_disabled",
                     "invoices.issue deployment_disabled",
+                    "invoices.preview_period role",
                     "invoices.release_delivery deployment_disabled",
                     "invoices.send deployment_disabled",
                     "invoices.update_details deployment_disabled",
@@ -16820,6 +17077,7 @@
                     "invoices.generate_period deployment_disabled",
                     "invoices.hold_delivery deployment_disabled",
                     "invoices.issue deployment_disabled",
+                    "invoices.preview_period role",
                     "invoices.release_delivery deployment_disabled",
                     "invoices.send deployment_disabled",
                     "invoices.update_details deployment_disabled",
@@ -16935,6 +17193,7 @@
                     "invoices.generate_period deployment_disabled",
                     "invoices.hold_delivery deployment_disabled",
                     "invoices.issue deployment_disabled",
+                    "invoices.preview_period role",
                     "invoices.release_delivery deployment_disabled",
                     "invoices.send deployment_disabled",
                     "invoices.update_details deployment_disabled",
@@ -17050,6 +17309,7 @@
                     "invoices.generate_period deployment_disabled",
                     "invoices.hold_delivery deployment_disabled",
                     "invoices.issue deployment_disabled",
+                    "invoices.preview_period role",
                     "invoices.release_delivery deployment_disabled",
                     "invoices.send deployment_disabled",
                     "invoices.update_details deployment_disabled",
@@ -17207,6 +17467,7 @@
                 "invoices.get": "6ba6555d479ca4a0",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
+                "invoices.preview_period": "d1471d81f3009a00",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
                 "projects.get": "c7ffe7930b196d4b",
@@ -17326,6 +17587,7 @@
                 "invoices.get": "6ba6555d479ca4a0",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
+                "invoices.preview_period": "d1471d81f3009a00",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
                 "projects.get": "c7ffe7930b196d4b",
@@ -17405,6 +17667,7 @@
                     "invoices.generate_period deployment_disabled",
                     "invoices.hold_delivery deployment_disabled",
                     "invoices.issue deployment_disabled",
+                    "invoices.preview_period role",
                     "invoices.release_delivery deployment_disabled",
                     "invoices.send deployment_disabled",
                     "invoices.update_details deployment_disabled",
@@ -17522,6 +17785,7 @@
                     "invoices.generate_period deployment_disabled",
                     "invoices.hold_delivery deployment_disabled",
                     "invoices.issue deployment_disabled",
+                    "invoices.preview_period role",
                     "invoices.release_delivery deployment_disabled",
                     "invoices.send deployment_disabled",
                     "invoices.update_details deployment_disabled",
@@ -17639,6 +17903,7 @@
                     "invoices.generate_period deployment_disabled",
                     "invoices.hold_delivery deployment_disabled",
                     "invoices.issue deployment_disabled",
+                    "invoices.preview_period role",
                     "invoices.release_delivery deployment_disabled",
                     "invoices.send deployment_disabled",
                     "invoices.update_details deployment_disabled",
@@ -17756,6 +18021,7 @@
                     "invoices.generate_period deployment_disabled",
                     "invoices.hold_delivery deployment_disabled",
                     "invoices.issue deployment_disabled",
+                    "invoices.preview_period role",
                     "invoices.release_delivery deployment_disabled",
                     "invoices.send deployment_disabled",
                     "invoices.update_details deployment_disabled",
@@ -17901,6 +18167,7 @@
                 "invoices.get": "6ba6555d479ca4a0",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
+                "invoices.preview_period": "d1471d81f3009a00",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.correct": "a89e5531f853028c",
                 "payments.list": "5f9d6942bc64d245",
@@ -18020,6 +18287,7 @@
                 "invoices.get": "6ba6555d479ca4a0",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
+                "invoices.preview_period": "d1471d81f3009a00",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.correct": "a89e5531f853028c",
                 "payments.list": "5f9d6942bc64d245",
@@ -18113,6 +18381,7 @@
                     "invoices.generate_period deployment_disabled",
                     "invoices.hold_delivery deployment_disabled",
                     "invoices.issue deployment_disabled",
+                    "invoices.preview_period role",
                     "invoices.release_delivery deployment_disabled",
                     "invoices.send deployment_disabled",
                     "invoices.update_details deployment_disabled",
@@ -18230,6 +18499,7 @@
                     "invoices.generate_period deployment_disabled",
                     "invoices.hold_delivery deployment_disabled",
                     "invoices.issue deployment_disabled",
+                    "invoices.preview_period role",
                     "invoices.release_delivery deployment_disabled",
                     "invoices.send deployment_disabled",
                     "invoices.update_details deployment_disabled",
@@ -18347,6 +18617,7 @@
                     "invoices.generate_period deployment_disabled",
                     "invoices.hold_delivery deployment_disabled",
                     "invoices.issue deployment_disabled",
+                    "invoices.preview_period role",
                     "invoices.release_delivery deployment_disabled",
                     "invoices.send deployment_disabled",
                     "invoices.update_details deployment_disabled",
@@ -18464,6 +18735,7 @@
                     "invoices.generate_period deployment_disabled",
                     "invoices.hold_delivery deployment_disabled",
                     "invoices.issue deployment_disabled",
+                    "invoices.preview_period role",
                     "invoices.release_delivery deployment_disabled",
                     "invoices.send deployment_disabled",
                     "invoices.update_details deployment_disabled",
@@ -18626,6 +18898,7 @@
                 "invoices.get": "6ba6555d479ca4a0",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
+                "invoices.preview_period": "d1471d81f3009a00",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
                 "projects.get": "c7ffe7930b196d4b",
@@ -18743,6 +19016,7 @@
                 "invoices.get": "6ba6555d479ca4a0",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
+                "invoices.preview_period": "d1471d81f3009a00",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
                 "projects.get": "c7ffe7930b196d4b",
@@ -18817,6 +19091,7 @@
                     "invoices.generate_period deployment_disabled",
                     "invoices.hold_delivery deployment_disabled",
                     "invoices.issue deployment_disabled",
+                    "invoices.preview_period role",
                     "invoices.release_delivery deployment_disabled",
                     "invoices.send deployment_disabled",
                     "invoices.update_details deployment_disabled",
@@ -18932,6 +19207,7 @@
                     "invoices.generate_period deployment_disabled",
                     "invoices.hold_delivery deployment_disabled",
                     "invoices.issue deployment_disabled",
+                    "invoices.preview_period role",
                     "invoices.release_delivery deployment_disabled",
                     "invoices.send deployment_disabled",
                     "invoices.update_details deployment_disabled",
@@ -19047,6 +19323,7 @@
                     "invoices.generate_period deployment_disabled",
                     "invoices.hold_delivery deployment_disabled",
                     "invoices.issue deployment_disabled",
+                    "invoices.preview_period role",
                     "invoices.release_delivery deployment_disabled",
                     "invoices.send deployment_disabled",
                     "invoices.update_details deployment_disabled",
@@ -19162,6 +19439,7 @@
                     "invoices.generate_period deployment_disabled",
                     "invoices.hold_delivery deployment_disabled",
                     "invoices.issue deployment_disabled",
+                    "invoices.preview_period role",
                     "invoices.release_delivery deployment_disabled",
                     "invoices.send deployment_disabled",
                     "invoices.update_details deployment_disabled",
@@ -19294,12 +19572,13 @@
                 "invoices.corrections.get": "aa93da895756b80b",
                 "invoices.create_draft": "7f23d0f35560fb05",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.generate_period": "89231c301628e176",
+                "invoices.generate_period": "a736a25f33ed9607",
                 "invoices.get": "6ba6555d479ca4a0",
                 "invoices.hold_delivery": "5d5d70aa02fac988",
                 "invoices.issue": "cbf43ac9ed799c11",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
+                "invoices.preview_period": "d1471d81f3009a00",
                 "invoices.release_delivery": "f703c8eb40f1ed80",
                 "invoices.send": "3b2bc9ef256c4d18",
                 "invoices.update_details": "9c25cf205acf1a39",
@@ -19412,12 +19691,13 @@
                 "invoices.corrections.get": "aa93da895756b80b",
                 "invoices.create_draft": "7f23d0f35560fb05",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.generate_period": "89231c301628e176",
+                "invoices.generate_period": "a736a25f33ed9607",
                 "invoices.get": "6ba6555d479ca4a0",
                 "invoices.hold_delivery": "5d5d70aa02fac988",
                 "invoices.issue": "cbf43ac9ed799c11",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
+                "invoices.preview_period": "d1471d81f3009a00",
                 "invoices.release_delivery": "f703c8eb40f1ed80",
                 "invoices.send": "3b2bc9ef256c4d18",
                 "invoices.update_details": "9c25cf205acf1a39",
@@ -19511,6 +19791,7 @@
                     "invoices.corrections.get role",
                     "invoices.generate_period role",
                     "invoices.hold_delivery role",
+                    "invoices.preview_period role",
                     "invoices.release_delivery role",
                     "payments.correct role",
                     "payments.record role",
@@ -19629,6 +19910,7 @@
                     "invoices.corrections.get role",
                     "invoices.generate_period role",
                     "invoices.hold_delivery role",
+                    "invoices.preview_period role",
                     "invoices.release_delivery role",
                     "payments.correct role",
                     "payments.record role",
@@ -19747,6 +20029,7 @@
                     "invoices.corrections.get role",
                     "invoices.generate_period role",
                     "invoices.hold_delivery role",
+                    "invoices.preview_period role",
                     "invoices.release_delivery role",
                     "payments.correct role",
                     "payments.record role",
@@ -19865,6 +20148,7 @@
                     "invoices.corrections.get role",
                     "invoices.generate_period role",
                     "invoices.hold_delivery role",
+                    "invoices.preview_period role",
                     "invoices.release_delivery role",
                     "payments.correct role",
                     "payments.record role",
@@ -20006,11 +20290,12 @@
                 "invoices.corrections.get": "aa93da895756b80b",
                 "invoices.create_draft": "7f23d0f35560fb05",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.generate_period": "89231c301628e176",
+                "invoices.generate_period": "a736a25f33ed9607",
                 "invoices.hold_delivery": "5d5d70aa02fac988",
                 "invoices.issue": "cbf43ac9ed799c11",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
+                "invoices.preview_period": "d1471d81f3009a00",
                 "invoices.release_delivery": "f703c8eb40f1ed80",
                 "invoices.send": "3b2bc9ef256c4d18",
                 "invoices.update_details": "9c25cf205acf1a39",
@@ -20123,11 +20408,12 @@
                 "invoices.corrections.get": "aa93da895756b80b",
                 "invoices.create_draft": "7f23d0f35560fb05",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.generate_period": "89231c301628e176",
+                "invoices.generate_period": "a736a25f33ed9607",
                 "invoices.hold_delivery": "5d5d70aa02fac988",
                 "invoices.issue": "cbf43ac9ed799c11",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
+                "invoices.preview_period": "d1471d81f3009a00",
                 "invoices.release_delivery": "f703c8eb40f1ed80",
                 "invoices.send": "3b2bc9ef256c4d18",
                 "invoices.update_details": "9c25cf205acf1a39",
@@ -20221,6 +20507,7 @@
                     "invoices.generate_period role",
                     "invoices.get deployment_disabled",
                     "invoices.hold_delivery role",
+                    "invoices.preview_period role",
                     "invoices.release_delivery role",
                     "payments.correct role",
                     "payments.record role",
@@ -20336,6 +20623,7 @@
                     "invoices.generate_period role",
                     "invoices.get deployment_disabled",
                     "invoices.hold_delivery role",
+                    "invoices.preview_period role",
                     "invoices.release_delivery role",
                     "payments.correct role",
                     "payments.record role",
@@ -20451,6 +20739,7 @@
                     "invoices.generate_period role",
                     "invoices.get deployment_disabled",
                     "invoices.hold_delivery role",
+                    "invoices.preview_period role",
                     "invoices.release_delivery role",
                     "payments.correct role",
                     "payments.record role",
@@ -20566,6 +20855,7 @@
                     "invoices.generate_period role",
                     "invoices.get deployment_disabled",
                     "invoices.hold_delivery role",
+                    "invoices.preview_period role",
                     "invoices.release_delivery role",
                     "payments.correct role",
                     "payments.record role",
@@ -20690,6 +20980,7 @@
                     "invoices.issue deployment_disabled",
                     "invoices.list deployment_disabled",
                     "invoices.pdf deployment_disabled",
+                    "invoices.preview_period deployment_disabled",
                     "invoices.release_delivery deployment_disabled",
                     "invoices.send deployment_disabled",
                     "invoices.update_details deployment_disabled",
@@ -20786,6 +21077,7 @@
                     "invoices.issue deployment_disabled",
                     "invoices.list deployment_disabled",
                     "invoices.pdf deployment_disabled",
+                    "invoices.preview_period deployment_disabled",
                     "invoices.release_delivery deployment_disabled",
                     "invoices.send deployment_disabled",
                     "invoices.update_details deployment_disabled",
@@ -20882,6 +21174,7 @@
                     "invoices.issue deployment_disabled",
                     "invoices.list deployment_disabled",
                     "invoices.pdf deployment_disabled",
+                    "invoices.preview_period deployment_disabled",
                     "invoices.release_delivery deployment_disabled",
                     "invoices.send deployment_disabled",
                     "invoices.update_details deployment_disabled",
@@ -20978,6 +21271,7 @@
                     "invoices.issue deployment_disabled",
                     "invoices.list deployment_disabled",
                     "invoices.pdf deployment_disabled",
+                    "invoices.preview_period deployment_disabled",
                     "invoices.release_delivery deployment_disabled",
                     "invoices.send deployment_disabled",
                     "invoices.update_details deployment_disabled",
@@ -21074,6 +21368,7 @@
                     "invoices.issue deployment_disabled",
                     "invoices.list deployment_disabled",
                     "invoices.pdf deployment_disabled",
+                    "invoices.preview_period deployment_disabled",
                     "invoices.release_delivery deployment_disabled",
                     "invoices.send deployment_disabled",
                     "invoices.update_details deployment_disabled",
@@ -21170,6 +21465,7 @@
                     "invoices.issue deployment_disabled",
                     "invoices.list deployment_disabled",
                     "invoices.pdf deployment_disabled",
+                    "invoices.preview_period deployment_disabled",
                     "invoices.release_delivery deployment_disabled",
                     "invoices.send deployment_disabled",
                     "invoices.update_details deployment_disabled",

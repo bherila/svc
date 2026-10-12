@@ -670,6 +670,16 @@
             "mcp.switch:invoices.pdf"
         ]
     },
+    "invoices.preview_period": {
+        "scopes": [
+            "billing:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:invoices.preview_period"
+        ]
+    },
     "invoices.release_delivery": {
         "scopes": [
             "billing:deliver",

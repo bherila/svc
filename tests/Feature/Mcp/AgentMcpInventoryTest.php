@@ -77,6 +77,7 @@ final class AgentMcpInventoryTest extends TestCase
         'invoices.issue',
         'invoices.list',
         'invoices.pdf',
+        'invoices.preview_period',
         'invoices.release_delivery',
         'invoices.send',
         'invoices.update_details',
@@ -159,7 +160,7 @@ final class AgentMcpInventoryTest extends TestCase
             app(AgentWithheldTools::class)->for(fn (string $scope): bool => true, true));
     }
 
-    public function test_inventory_retains_all_89_tools_when_every_cutover_is_disabled(): void
+    public function test_inventory_retains_all_90_tools_when_every_cutover_is_disabled(): void
     {
         $this->enableAll();
         $disabled = ['time_entries.approve', 'tasks.create', 'tasks.update'];
@@ -170,14 +171,14 @@ final class AgentMcpInventoryTest extends TestCase
         config(['agent_api.writes_enabled' => false]);
         $disabled = array_values(array_unique($disabled));
         sort($disabled);
-        $this->assertCount(89, self::TOOLS);
+        $this->assertCount(90, self::TOOLS);
         $this->assertSame(self::TOOLS, $this->inventory());
         $this->assertSame(array_values(array_diff(self::TOOLS, $disabled)), $this->deployed());
         $this->assertSame(array_map(fn (string $name): array => ['name' => $name, 'reason' => 'deployment_disabled'], $disabled),
             app(AgentWithheldTools::class)->for(fn (string $scope): bool => true, true));
     }
 
-    public function test_actual_mcp_discovery_and_context_partition_all_89_tools_after_every_cutover_is_disabled(): void
+    public function test_actual_mcp_discovery_and_context_partition_all_90_tools_after_every_cutover_is_disabled(): void
     {
         $this->enableAll();
         $owner = User::factory()->create();
@@ -251,7 +252,7 @@ final class AgentMcpInventoryTest extends TestCase
         $this->enableAll();
         $withheld = collect(app(AgentWithheldTools::class)->for(fn (string $scope): bool => true, false))->keyBy('name');
         foreach (['clients.portal_access.list', 'clients.portal_access.grant', 'clients.portal_access.update', 'clients.portal_access.revoke', 'clients.list', 'clients.get', 'agreements.list', 'agreements.get',
-            'invoices.hold_delivery', 'invoices.release_delivery', 'invoices.add_time', 'invoices.generate_period',
+            'invoices.hold_delivery', 'invoices.release_delivery', 'invoices.add_time', 'invoices.generate_period', 'invoices.preview_period',
             'billing_audit.stale_and_missing', 'billing_schedules.list', 'billing_schedules.get', 'billing_schedules.create', 'billing_schedules.generate',
             'projects.create', 'projects.update', 'projects.archive', 'projects.members.list', 'projects.members.update',
             'proposals.create', 'proposals.send', 'time_entries.unapprove',

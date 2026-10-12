@@ -694,7 +694,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Manager only. period_start is a started retainer cadence cycle; service dates reconcile the preceding work cycle. Calls the existing cadence engine. A non-void invoice for this period is refused, while identical idempotent retries return the created draft. No automated cadence draft job is deployed. Requires confirmation and the agreement version. */
+        /** @description Manager only. period_start is a started retainer cadence cycle; service dates reconcile the preceding work cycle. Calls the existing cadence engine, the same path invoices.preview_period rolls back. A non-void invoice for this period is refused, while identical idempotent retries return the created draft. Nothing generates cadence period drafts automatically: a started period without one is waiting for this call, and billing_audit.stale_and_missing lists those periods. Requires confirmation and the agreement version. */
         post: operations['invoices.generate_period'];
         delete?: never;
         options?: never;
@@ -760,6 +760,23 @@ export interface paths {
         };
         /** @description Five-minute signed URL. Download still requires current API or browser authentication and current invoice visibility. */
         get: operations['invoices.pdf'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/agreements/{agreement}/invoices/preview': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Workspace managers only. Runs the checks and cadence engine of invoices.generate_period for one started retainer cycle inside a transaction that is always rolled back, and returns the draft it would write and any other invoice the same generation would create. Writes nothing and takes no idempotency key. Refuses what generation refuses, with the same status, including 409 for a period that already has a non-void invoice. agreement_version is the expected_version a following invoices.generate_period call must present. Nothing generates cadence period drafts automatically; billing_audit.stale_and_missing lists started periods with no non-void invoice. */
+        get: operations['invoices.preview_period'];
         put?: never;
         post?: never;
         delete?: never;
@@ -1825,6 +1842,55 @@ export interface components {
         };
         InvoicePdfLinkResponse: {
             data: components['schemas']['InvoicePdfLink'];
+        };
+        InvoicePeriodPreview: {
+            agreement_id: components['schemas']['Uuid'];
+            /** @description The agreement version this preview was computed from; pass it to invoices.generate_period as expected_version. */
+            agreement_version: components['schemas']['Version'];
+            company_id: components['schemas']['Uuid'];
+            company_name: string;
+            /**
+             * Format: date
+             * @description The retainer cycle the draft sells.
+             */
+            period_start: string | null;
+            invoice_kind: components['schemas']['InvoiceKind'];
+            /** Format: date */
+            service_period_start: string | null;
+            /** Format: date */
+            service_period_end: string | null;
+            currency: components['schemas']['Currency'];
+            total_amount: number;
+            /** Format: date */
+            issue_date: string | null;
+            /** Format: date */
+            due_date: string | null;
+            lines: components['schemas']['InvoicePreviewLine'][];
+            /** @description Other invoices the same generation would create, such as interim overage drafts it reconciles first. */
+            other_invoices: components['schemas']['InvoicePeriodPreviewOtherInvoice'][];
+        };
+        InvoicePeriodPreviewOtherInvoice: {
+            invoice_kind: components['schemas']['InvoiceKind'];
+            /** Format: date */
+            service_period_start: string | null;
+            /** Format: date */
+            service_period_end: string | null;
+            currency: components['schemas']['Currency'];
+            total_amount: number;
+        };
+        InvoicePeriodPreviewResponse: {
+            data: components['schemas']['InvoicePeriodPreview'];
+        };
+        /** @description A line exactly as invoices.get returns it, without an id: nothing was written, so there is none. */
+        InvoicePreviewLine: {
+            /** Format: uuid */
+            project_id: string | null;
+            type: string;
+            description: string;
+            quantity: string;
+            unit_amount: number;
+            tax_amount: number;
+            total_amount: number;
         };
         InvoiceSendRequest: {
             expected_version: components['schemas']['Version'];
@@ -4104,6 +4170,32 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['InvoicePdfLinkResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'invoices.preview_period': {
+        parameters: {
+            query: {
+                period_start: string;
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                agreement: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The draft generation would write; nothing is written */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['InvoicePeriodPreviewResponse'];
                 };
             };
             default: components['responses']['Error'];
