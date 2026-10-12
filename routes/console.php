@@ -12,3 +12,6 @@ Schedule::command('svc:oauth:prune-dynamic-clients')->daily()->withoutOverlappin
 // Expired delegated access assertion nonces and operation receipts past their 30 days.
 Schedule::command('bherila-auth:prune-delegated-nonces')->daily()->withoutOverlapping();
 Schedule::command('svc:billing:dispatch-invoice-emails --limit=50')->everyMinute()->withoutOverlapping();
+// The read-only Square mirror (#438): no more often than every 15 minutes.
+// The lock expires well before a day so a crashed run cannot stall the next.
+Schedule::command('svc:square:sync')->everyFifteenMinutes()->withoutOverlapping(30);
