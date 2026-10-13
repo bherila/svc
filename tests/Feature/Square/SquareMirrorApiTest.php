@@ -241,6 +241,30 @@ final class SquareMirrorApiTest extends TestCase
         $this->getJson($this->url('mirror/invoices'))->assertNotFound();
     }
 
+    public function test_large_series_details_keep_complete_summaries_while_bounding_members(): void
+    {
+        Date::setTestNow('2030-01-01');
+        $invoices = [];
+        for ($occurrence = 1; $occurrence <= 601; $occurrence++) {
+            $invoice = self::squareInvoice('inv_fixture_large_'.$occurrence, sprintf('000001-R-%04d', $occurrence));
+            $invoice['status'] = $occurrence === 601 ? 'UNPAID' : 'PAID';
+            $invoice['payment_requests'][0]['due_date'] = $occurrence === 601 ? '2030-01-01' : '2029-01-01';
+            $invoice['payment_requests'][0]['computed_amount_money'] = ['amount' => $occurrence === 601 ? 200 : 100, 'currency' => 'USD'];
+            $invoice['payment_requests'][0]['total_completed_amount_money'] = ['amount' => $occurrence === 601 ? 0 : 100, 'currency' => 'USD'];
+            $invoices[] = $invoice;
+        }
+        $this->serveSquareAccount(invoicePages: array_chunk($invoices, 200));
+        $this->syncOnce();
+        $this->actingAsMcp($this->owner, ['billing:read']);
+        $list = $this->getJson($this->url('series'))->assertOk()->json('data.0');
+        $detail = $this->getJson($this->url('series/000001'))->assertOk()->json('data');
+        $this->assertSame([601, 601, 200, 200, '2030-01-01'], [$detail['invoice_count'], $detail['last_occurrence'], $detail['amount'], $detail['open_amount'], $detail['next_due_on']]);
+        $this->assertCount(600, $detail['members']);
+        $this->assertTrue($detail['members_truncated']);
+        unset($detail['members'], $detail['members_truncated']);
+        $this->assertSame($list, $detail);
+    }
+
     private function syncOnce(): void
     {
         $sync = app(SquareMirrorSync::class);

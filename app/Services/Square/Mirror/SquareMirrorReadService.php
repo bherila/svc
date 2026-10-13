@@ -139,14 +139,15 @@ final class SquareMirrorReadService
     {
         $this->validate(['series_key' => $seriesKey], ['series_key' => ['required', 'string', 'regex:'.self::SERIES_KEY]]);
         $this->admit($actor, $workspace);
-        $members = $this->members($workspace, [$seriesKey], self::MAX_SERIES_MEMBERS + 1)[$seriesKey] ?? [];
+        $members = $this->members($workspace, [$seriesKey])[$seriesKey] ?? [];
         abort_if($members === [], 404, 'The Square mirror has no series with that key.');
+        $summary = $this->summary($workspace, $seriesKey, $members);
         $truncated = count($members) > self::MAX_SERIES_MEMBERS;
         $members = array_slice($members, 0, self::MAX_SERIES_MEMBERS);
 
         return [
             'data' => [
-                ...$this->summary($workspace, $seriesKey, $members),
+                ...$summary,
                 'members' => array_map($this->presenter->invoice(...), $members),
                 'members_truncated' => $truncated,
             ],
@@ -296,7 +297,7 @@ final class SquareMirrorReadService
      */
     public function summaries(Workspace $workspace, array $keys): array
     {
-        $members = $this->members($workspace, $keys, null);
+        $members = $this->members($workspace, $keys);
         $summaries = [];
         foreach ($keys as $key) {
             $summaries[] = $this->summary($workspace, $key, $members[$key] ?? []);
@@ -356,14 +357,13 @@ final class SquareMirrorReadService
      * @param  list<string>  $keys
      * @return array<string, list<SquareInvoiceSnapshot>>
      */
-    private function members(Workspace $workspace, array $keys, ?int $limit): array
+    private function members(Workspace $workspace, array $keys): array
     {
         if ($keys === []) {
             return [];
         }
         $rows = SquareInvoiceSnapshot::query()->where('workspace_id', $workspace->id)->whereIn('series_key', $keys)
             ->orderBy('series_key')->orderBy('series_occurrence')->orderBy('id')
-            ->when($limit !== null, static fn (Builder $query) => $query->limit((int) $limit))
             ->get();
         $members = [];
         foreach ($rows as $row) {
