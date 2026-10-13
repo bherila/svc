@@ -16,6 +16,7 @@ use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Square\SquareInvoiceReference;
 use App\Support\Square\SquareMatchMethod;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\Http;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\Concerns\FakesSquare;
@@ -48,6 +49,18 @@ final class SquareHostedInvoicePageTest extends TestCase
         $this->actingAs($client)->get($portalUrl)->assertOk()->assertInertia(fn (Assert $page) => $page->where('square_page_url', null));
         $snapshot->forceFill(['public_url' => null])->save();
         $this->assertNull(app(SquareInvoicePage::class)->forInvoice($workspace, $invoice), 'Never build a pay URL from a Square identifier.');
+    }
+
+    public function test_hosted_status_freshness_reports_the_latest_unchanged_observation(): void
+    {
+        Date::setTestNow('2030-01-01 12:00:00');
+        [$workspace, $owner, $company, $invoice] = $this->fixture();
+        Date::setTestNow('2030-01-02 12:00:00');
+        $sync = app(SquareMirrorSync::class);
+        $this->assertSame(SquareSyncRun::COMPLETED, $sync->perform($workspace, $sync->request($workspace, SquareSyncRun::TRIGGER_SCHEDULE))->status);
+        $snapshot = SquareInvoiceSnapshot::query()->where('workspace_id', $workspace->id)->where('square_invoice_id', 'inv:0-fixture1')->firstOrFail();
+        $this->assertSame('2030-01-01 12:00:00', $snapshot->synced_at->format('Y-m-d H:i:s'));
+        $this->actingAs($owner)->get(route('clients.invoice', [$workspace, $company, $invoice]))->assertOk()->assertInertia(fn (Assert $page) => $page->where('square.hosted_page.synced_at', '2030-01-02T12:00:00Z'));
     }
 
     public function test_a_client_cannot_see_a_linked_invoice_of_another_company_or_workspace(): void

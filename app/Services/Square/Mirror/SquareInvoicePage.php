@@ -42,7 +42,7 @@ final class SquareInvoicePage
             'url' => $url,
             'square_invoice_number' => $link->square_invoice_number,
             'square_status' => $snapshot->status,
-            'synced_at' => SquareMirrorPresenter::instant($snapshot->synced_at),
+            'synced_at' => SquareMirrorPresenter::instant($snapshot->last_seen_at),
         ];
     }
 }
