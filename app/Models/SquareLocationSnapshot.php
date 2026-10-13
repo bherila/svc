@@ -9,6 +9,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
  * A Square location as the last sync saw it (#438). Read-only mirror data:
@@ -25,18 +26,23 @@ use Illuminate\Database\Eloquent\Model;
  * @property string $fingerprint
  * @property CarbonImmutable $synced_at
  * @property CarbonImmutable $last_seen_at
+ * @property int|null $last_sync_run_id
+ * @property CarbonImmutable|null $deleted_at
  */
 #[Fillable(['workspace_id', 'square_location_id', 'name', 'business_name', 'status', 'currency', 'timezone', 'fingerprint', 'synced_at', 'last_seen_at'])]
-#[Hidden(['id', 'workspace_id', 'fingerprint'])]
+#[Hidden(['id', 'workspace_id', 'fingerprint', 'deleted_at', 'last_sync_run_id'])]
 class SquareLocationSnapshot extends Model implements WorkspaceOwned
 {
     use BelongsToWorkspace;
+    use SoftDeletes;
 
     protected function casts(): array
     {
         return [
             'synced_at' => 'immutable_datetime',
             'last_seen_at' => 'immutable_datetime',
+            'last_sync_run_id' => 'integer',
+            'deleted_at' => 'immutable_datetime',
         ];
     }
 

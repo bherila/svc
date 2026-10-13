@@ -67,6 +67,8 @@ return new class extends Migration
             $table->char('fingerprint', 64);
             $table->dateTime('synced_at');
             $table->dateTime('last_seen_at');
+            $table->unsignedBigInteger('last_sync_run_id')->nullable();
+            $table->dateTime('deleted_at')->nullable();
             $table->timestamps();
 
             $table->unique(['workspace_id', 'square_location_id'], 'sqls_ws_location_unique');
@@ -88,6 +90,8 @@ return new class extends Migration
             $table->char('fingerprint', 64);
             $table->dateTime('synced_at');
             $table->dateTime('last_seen_at');
+            $table->unsignedBigInteger('last_sync_run_id')->nullable();
+            $table->dateTime('deleted_at')->nullable();
             $table->timestamps();
 
             $table->unique(['workspace_id', 'square_customer_id'], 'sqcs_ws_customer_unique');
@@ -132,6 +136,8 @@ return new class extends Migration
             $table->char('fingerprint', 64);
             $table->dateTime('synced_at');
             $table->dateTime('last_seen_at');
+            $table->unsignedBigInteger('last_sync_run_id')->nullable();
+            $table->dateTime('deleted_at')->nullable();
             $table->timestamps();
 
             $table->unique(['workspace_id', 'square_invoice_id'], 'sqis_ws_invoice_unique');

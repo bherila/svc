@@ -9,6 +9,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
  * A Square customer as the last sync saw it (#438): the allow-listed fields
@@ -30,15 +31,18 @@ use Illuminate\Database\Eloquent\Model;
  * @property string $fingerprint
  * @property CarbonImmutable $synced_at
  * @property CarbonImmutable $last_seen_at
+ * @property int|null $last_sync_run_id
+ * @property CarbonImmutable|null $deleted_at
  */
 #[Fillable([
     'workspace_id', 'square_customer_id', 'square_version', 'given_name', 'family_name', 'company_name', 'email_address',
     'phone_number', 'reference_id', 'square_created_at', 'square_updated_at', 'fingerprint', 'synced_at', 'last_seen_at',
 ])]
-#[Hidden(['id', 'workspace_id', 'fingerprint'])]
+#[Hidden(['id', 'workspace_id', 'fingerprint', 'deleted_at', 'last_sync_run_id'])]
 class SquareCustomerSnapshot extends Model implements WorkspaceOwned
 {
     use BelongsToWorkspace;
+    use SoftDeletes;
 
     protected function casts(): array
     {
@@ -48,6 +52,8 @@ class SquareCustomerSnapshot extends Model implements WorkspaceOwned
             'square_updated_at' => 'immutable_datetime',
             'synced_at' => 'immutable_datetime',
             'last_seen_at' => 'immutable_datetime',
+            'last_sync_run_id' => 'integer',
+            'deleted_at' => 'immutable_datetime',
         ];
     }
 

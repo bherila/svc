@@ -102,6 +102,17 @@ final class SquareCandidateImportApiTest extends TestCase
         }
     }
 
+    public function test_customers_retired_by_a_complete_sync_are_not_offered_or_imported_from_invoice_history(): void
+    {
+        $this->squareAccount['customers'] = [];
+        $sync = app(SquareMirrorSync::class);
+        $run = $sync->perform($this->workspace, $sync->request($this->workspace, SquareSyncRun::TRIGGER_SCHEDULE));
+        $this->assertSame(SquareSyncRun::COMPLETED, $run->status);
+        $this->getJson($this->squareUrl('customers/unlinked'))->assertOk()->assertJsonCount(0, 'data');
+        $this->postJson($this->squareUrl('customers/cust_fixture_a/import'), ['confirm' => true, 'company_name' => 'Synthetic retired customer'], ['Idempotency-Key' => 'fixture-retired-customer'])->assertNotFound();
+        $this->assertSame(0, ClientCompany::query()->where('workspace_id', $this->workspace->id)->count());
+    }
+
     public function test_closed_history_does_not_change_the_currency_of_current_receivables(): void
     {
         $source = SquareInvoiceSnapshot::query()->where('workspace_id', $this->workspace->id)->where('square_invoice_id', 'inv_fixture_1')->firstOrFail();

@@ -10,6 +10,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
  * A Square invoice as the last sync saw it (#438). Square is the source of
@@ -47,6 +48,8 @@ use Illuminate\Database\Eloquent\Model;
  * @property string $fingerprint
  * @property CarbonImmutable $synced_at
  * @property CarbonImmutable $last_seen_at
+ * @property int|null $last_sync_run_id
+ * @property CarbonImmutable|null $deleted_at
  */
 #[Fillable([
     'workspace_id', 'square_invoice_id', 'square_version', 'square_location_id', 'square_order_id', 'square_customer_id',
@@ -55,10 +58,11 @@ use Illuminate\Database\Eloquent\Model;
     'square_created_at', 'square_updated_at', 'public_url', 'autopay', 'payment_requests', 'payment_ids',
     'payment_ids_basis', 'fingerprint', 'synced_at', 'last_seen_at',
 ])]
-#[Hidden(['id', 'workspace_id', 'fingerprint', 'payment_ids_basis'])]
+#[Hidden(['id', 'workspace_id', 'fingerprint', 'payment_ids_basis', 'deleted_at', 'last_sync_run_id'])]
 class SquareInvoiceSnapshot extends Model implements WorkspaceOwned
 {
     use BelongsToWorkspace;
+    use SoftDeletes;
 
     protected function casts(): array
     {
@@ -78,6 +82,8 @@ class SquareInvoiceSnapshot extends Model implements WorkspaceOwned
             'payment_ids' => 'array',
             'synced_at' => 'immutable_datetime',
             'last_seen_at' => 'immutable_datetime',
+            'last_sync_run_id' => 'integer',
+            'deleted_at' => 'immutable_datetime',
         ];
     }
 

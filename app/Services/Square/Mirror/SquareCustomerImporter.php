@@ -97,6 +97,7 @@ final class SquareCustomerImporter
      */
     private function importNow(User $user, Workspace $workspace, string $customerId, array $data): array
     {
+        abort_if(SquareCustomerSnapshot::onlyTrashed()->where('workspace_id', $workspace->id)->where('square_customer_id', $customerId)->exists(), 404, 'The Square customer is no longer present. Sync, then try again.');
         $customer = SquareCustomerSnapshot::query()->where('workspace_id', $workspace->id)->where('square_customer_id', $customerId)->first();
         $latest = SquareInvoiceSnapshot::query()->where('workspace_id', $workspace->id)->where('square_customer_id', $customerId)->orderByDesc('id')->first();
         abort_if($customer === null && $latest === null, 404, 'The Square mirror has no customer with that id. Sync, then try again.');

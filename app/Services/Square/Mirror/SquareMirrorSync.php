@@ -10,6 +10,7 @@ use App\Services\Square\SquareConfiguration;
 use App\Services\Square\SquareRequestFailed;
 use App\Support\WorkspaceClock;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -110,7 +111,13 @@ final class SquareMirrorSync
             throw $exception;
         }
 
-        return $this->finish($workspace, $run, $tally, null);
+        return DB::transaction(function () use ($workspace, $run, $tally): SquareSyncRun {
+            if (! $tally->truncated) {
+                $this->mirror->retireMissing($workspace, $run->id, $this->now());
+            }
+
+            return $this->finish($workspace, $run, $tally, null);
+        }, 3);
     }
 
     /**
@@ -141,7 +148,10 @@ final class SquareMirrorSync
         $records = self::records($response, 'locations', 300);
         $this->logBatch($workspace, $run, $configuration, 'locations', null, 1, count($records));
         $rows = array_values(array_filter(array_map($this->mapper->location(...), $records)));
-        $this->mirror->storeLocations($workspace, $rows, $this->now());
+        if (count($rows) !== count($records)) {
+            throw SquareRequestFailed::unreadable();
+        }
+        $this->mirror->storeLocations($workspace, $rows, $this->now(), $run->id);
         $tally->locationsSeen += count($rows);
 
         return array_column($rows, 'square_location_id');
@@ -157,8 +167,11 @@ final class SquareMirrorSync
             function (array $records, int $page) use ($workspace, $run, $configuration, $tally): void {
                 $this->logBatch($workspace, $run, $configuration, 'customers', null, $page, count($records));
                 $rows = array_values(array_filter(array_map($this->mapper->customer(...), $records)));
+                if (count($rows) !== count($records)) {
+                    throw SquareRequestFailed::unreadable();
+                }
                 $tally->customersSeen += count($rows);
-                $tally->customersChanged += $this->mirror->storeCustomers($workspace, $rows, $this->now());
+                $tally->customersChanged += $this->mirror->storeCustomers($workspace, $rows, $this->now(), $run->id);
                 $tally->observe(array_column($rows, 'square_updated_at'));
             },
         );
@@ -174,8 +187,11 @@ final class SquareMirrorSync
             function (array $records, int $page) use ($workspace, $run, $configuration, $tally, $locationId): void {
                 $this->logBatch($workspace, $run, $configuration, 'invoices', $locationId, $page, count($records));
                 $rows = array_values(array_filter(array_map($this->mapper->invoice(...), $records)));
+                if (count($rows) !== count($records)) {
+                    throw SquareRequestFailed::unreadable();
+                }
                 $tally->invoicesSeen += count($rows);
-                $tally->invoicesChanged += $this->mirror->storeInvoices($workspace, $rows, $this->now());
+                $tally->invoicesChanged += $this->mirror->storeInvoices($workspace, $rows, $this->now(), $run->id);
                 $tally->observe(array_column($rows, 'square_updated_at'));
             },
         );
@@ -234,7 +250,11 @@ final class SquareMirrorSync
             throw SquareRequestFailed::unreadable();
         }
 
-        return array_values(array_filter($records, 'is_array'));
+        if (count(array_filter($records, 'is_array')) !== count($records)) {
+            throw SquareRequestFailed::unreadable();
+        }
+
+        return $records;
     }
 
     private function finish(Workspace $workspace, SquareSyncRun $run, SquareSyncTally $tally, ?string $errorCode): SquareSyncRun
