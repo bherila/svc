@@ -15,6 +15,7 @@ use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Queries\Expenses\WorkspaceExpenses;
+use App\Services\Access\PortalInvitations;
 use App\Services\Access\WorkspaceAccess;
 use App\Services\AgentApi\AgentInvoiceOperations;
 use App\Services\AgentApi\TimeEntryMutationService;
@@ -39,6 +40,7 @@ use App\Support\Concurrency\LockMode;
 use App\Support\Concurrency\LockOrderRecorder;
 use App\Support\Concurrency\LockResource;
 use App\Support\Expenses\NewExpense;
+use BWH\Auth\Testing\FakeApplicationInvitations;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -188,7 +190,7 @@ final class LockOrderConformanceTest extends TestCase
         // each has to be reached through a real transaction here, or its
         // position in the registry is declared rather than recorded.
         $recorded = array_unique(array_map(static fn (LockResource $resource): string => $resource->name, array_merge(...$sequences)));
-        foreach ([LockResource::ClientProjectMembership, LockResource::ClientCompanyMembership, LockResource::ClientPortalProjectAccess] as $accessResource) {
+        foreach ([LockResource::ClientProjectMembership, LockResource::ClientPortalInvitation, LockResource::ClientCompanyMembership, LockResource::ClientPortalProjectAccess] as $accessResource) {
             $this->assertContains($accessResource->name, $recorded, $accessResource->name.' is registered but no driven transaction locked it.');
         }
 
@@ -338,6 +340,21 @@ final class LockOrderConformanceTest extends TestCase
         $access->changePortalScope($context, $this->company, $client, PortalAccessScope::Company);
         $access->changePortalScope($context, $this->company, $client, PortalAccessScope::Projects, [$this->project->public_id]);
         $access->revokePortal($context, $this->company, $client);
+
+        // Portal invitations: invite, supersede, resend, revoke, and apply at
+        // sign-in, which locks the invited projects, the inviter's staff
+        // membership and the invitation before the membership it creates.
+        FakeApplicationInvitations::swap();
+        config(['bherila-auth.oauth_client.provider' => 'lock-provider']);
+        $owner->forceFill(['oauth_provider' => 'lock-provider', 'oauth_subject' => '4242'])->save();
+        $invitations = app(PortalInvitations::class);
+        $invitations->invite($context, $this->company, 'invited@locks.example.test', PortalAccessScope::Projects, [$this->project->public_id]);
+        $superseding = $invitations->invite($context, $this->company, 'invited@locks.example.test', PortalAccessScope::Projects, [$this->project->public_id]);
+        $invitations->resend($context, $this->company, $superseding);
+        $revoked = $invitations->invite($context, $this->company, 'revoked@locks.example.test', PortalAccessScope::Company);
+        $invitations->revoke($context, $this->company, $revoked);
+        config(['svc.portal_invitations.enabled' => true]);
+        $invitations->applyAtSignIn(User::factory()->create(['email' => 'invited@locks.example.test']));
     }
 
     /**

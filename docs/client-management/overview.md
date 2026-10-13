@@ -134,6 +134,42 @@ owners, admins and the system. Each change is recorded in `access_audit_events`
 (ids, roles and scopes only) with its operation and request ids. The locking is
 described in [concurrency](concurrency.md#workspace-access-mutations).
 
+**Inviting someone who has never signed in.** With `SVC_PORTAL_INVITATIONS_ENABLED=true`,
+a manager can invite an address no account here uses (#430).
+`App\Services\Access\PortalInvitations` asks the identity provider, through the
+auth package's application invitation client, to admit that address to this
+application only (no roles), and records a `client_portal_invitations` row with
+the scope and projects. The provider emails the link and creates the account and
+this application's grant at acceptance; the portal access itself is given at the
+person's first sign-in here (`OAuthLoginController` after the sign-in succeeds,
+`WorkspaceAccess::applyPortalInvitation`):
+
+- only to an account signing in with the invited address, case-insensitive. A
+  different address gets nothing and the invitation stays pending;
+- under the workspace access lock, the inviter must still be an owner or admin,
+  and each invited project must still belong to the client. Moved or deleted
+  projects are dropped. If the inviter lost that authority, or a project-limited
+  invitation keeps no project, it ends `not_applied` with nothing granted, and
+  the settings page shows it to managers;
+- a pending invitation past its seven-day expiry gives nothing; sending it again
+  renews it. Inviting the same client and address again supersedes the pending
+  one, and revoking reaches the provider first so the link stops admitting.
+
+Statuses are `pending`, `accepted`, `not_applied`, `revoked` and `expired`.
+Audit actions are `portal.invited`, `portal.invitation_resent`,
+`portal.invitation_revoked`, `portal.invitation_not_applied` and the usual
+`portal.granted`, each naming the invitation by public id and never the address.
+The acceptance link is a bearer credential: it is stored encrypted only while the
+invitation is pending, shown only to managers on the client's settings page, and
+never returned to agents. An existing account still gets access immediately
+through **Add a contact**; invitations are only for addresses with none.
+
+Enabling it needs the provider side too: the application enabled for app-requested
+invitations there, the client credentials grant allowed on this application's
+sign-in client, and the actor-assertion key pair configured here
+(`BHERILA_AUTH_INVITATION_KEY_ID` and `BHERILA_AUTH_INVITATION_PRIVATE_KEY_PATH` or
+`BHERILA_AUTH_INVITATION_PRIVATE_KEY`, with the provider holding the public key).
+
 **Staff managed from the identity provider.** `App\Services\Access\DelegatedStaffAccess`
 answers the provider's delegated access requests (`bherila/auth-laravel`, contract
 version 3) at `POST /application-access`, so a workspace's owners and admins can

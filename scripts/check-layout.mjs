@@ -122,6 +122,9 @@ try {
         MAIL_MAILER: 'array',
         QUEUE_CONNECTION: 'sync',
         SVC_LAYOUT_RUNTIME: runtime,
+        // Shows the seeded portal invitations on client settings; nothing here asks a provider.
+        SVC_PORTAL_INVITATIONS_ENABLED: 'true',
+        SVC_LAYOUT_PORTAL_PAGES: portalOnly ? '1' : '0',
     };
     run('php', ['scripts/layout/seed.php'], env);
     const fixture = JSON.parse(
@@ -288,7 +291,9 @@ try {
                     'receipts',
                     'expense_schedules',
                 ]) {
-            const response = await page.goto(origin + fixture[screen]);
+            const response = await page.goto(
+                origin + fixture[portalOnly ? 'portal_settings' : screen],
+            );
             expect(response.status()).toBe(200);
             await expect(page.locator('main'))
                 .toBeVisible()
@@ -331,6 +336,15 @@ try {
                         exact: true,
                     }),
                 ).toHaveCount(2);
+                await expect(
+                    card.getByRole('link', { name: 'Newer invitations' }),
+                ).toBeVisible();
+                await expect(
+                    card.getByRole('button', {
+                        name: 'Retry withdrawal',
+                        exact: true,
+                    }),
+                ).toBeVisible();
                 await page
                     .getByRole('combobox', {
                         name: 'Portal access for the new contact',
@@ -344,6 +358,17 @@ try {
                     .click();
                 await expect(page.getByRole('alertdialog')).toBeVisible();
                 await capture(screen, 'portal-removal-confirmation', width);
+                await page
+                    .getByRole('button', { name: 'Cancel', exact: true })
+                    .click();
+                await expect(
+                    card.getByLabel('Invitation link', { exact: true }),
+                ).toHaveCount(1);
+                await card
+                    .getByRole('button', { name: 'Withdraw', exact: true })
+                    .click();
+                await expect(page.getByRole('alertdialog')).toBeVisible();
+                await capture(screen, 'portal-invitation-withdrawal', width);
                 await page
                     .getByRole('button', { name: 'Cancel', exact: true })
                     .click();
@@ -683,7 +708,7 @@ try {
             '# Browser layout evidence',
             '',
             portalOnly
-                ? 'Synthetic portal contacts on client settings; initial, project selection and removal confirmation states at every required width.'
+                ? 'Synthetic portal contacts and invitations on client settings; initial, project selection, removal and invitation withdrawal confirmation states at every required width.'
                 : 'Synthetic local fixtures only. Invoice review/settings/proposal/time/expenses are asserted; operations is a bounded measurement of known pre-existing layout problems.',
             '',
             '| Page/state | Viewport | Document width | Navbar height | Gate | Screenshot |',

@@ -97,6 +97,9 @@ enum LockResource: string
     // portal change locks the company membership before the project limits
     // hung off it.
     case ClientProjectMembership = 'client_project_memberships';
+    // A portal invitation is locked after the inviter's staff membership and
+    // before the company membership it becomes at sign-in.
+    case ClientPortalInvitation = 'client_portal_invitations';
     case ClientCompanyMembership = 'client_company_memberships';
     case ClientPortalProjectAccess = 'client_portal_project_access';
 

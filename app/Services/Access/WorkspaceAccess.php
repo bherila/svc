@@ -5,6 +5,7 @@ namespace App\Services\Access;
 use App\Exceptions\AccessMutationRefused;
 use App\Models\ClientCompany;
 use App\Models\ClientCompanyMembership;
+use App\Models\ClientPortalInvitation;
 use App\Models\ClientProject;
 use App\Models\ClientProjectMembership;
 use App\Models\User;
@@ -16,6 +17,8 @@ use App\Support\Access\AccessRefusal;
 use App\Support\Access\PortalAccessScope;
 use App\Support\Access\PortalAccessState;
 use App\Support\Access\PortalAccessVersion;
+use App\Support\Access\PortalInvitationNotApplied;
+use App\Support\Access\PortalInvitationStatus;
 use App\Support\Access\ProjectAssignment;
 use App\Support\Access\StaffAccess;
 use App\Support\Access\StaffAuthority;
@@ -292,6 +295,94 @@ final class WorkspaceAccess
             $this->audit->record($context, $workspace, AccessAuditAction::PortalRevoked, $user, $before->toArray(), null, $company->public_id);
 
             return $before;
+        });
+    }
+
+    /**
+     * Give the access a portal invitation carries to the person it invited, at
+     * their sign-in ({@see PortalInvitations::applyAtSignIn()}).
+     *
+     * Under the workspace access lock, from locking reads, it decides again
+     * everything the invitation was created on:
+     *
+     * - the invitation is still pending, unexpired, and to this person's
+     *   address (case-insensitive) - anything else gives nothing;
+     * - the manager who invited is still an owner or admin here. If not, or
+     *   their account is gone, the invitation ends `not_applied` and nothing
+     *   is given;
+     * - each invited project still belongs to the client. One that moved to
+     *   another client, or was deleted, is dropped; a project-limited
+     *   invitation left with none ends `not_applied`.
+     *
+     * Otherwise the person becomes a portal member with the invited scope, on
+     * the inviter's authority, and the invitation is accepted. Someone who is
+     * already a member keeps the access they have.
+     *
+     * Locks: the workspace, the invited projects, the inviter's staff
+     * membership, the invitation, then the portal membership.
+     */
+    public function applyPortalInvitation(ClientPortalInvitation $invitation, User $user): PortalInvitationStatus
+    {
+        $workspace = Workspace::query()->whereKey($invitation->workspace_id)->firstOrFail();
+
+        return $this->coordinator->locked($workspace, function (Workspace $locked) use ($invitation, $user): PortalInvitationStatus {
+            $projects = $this->coordinator->lockProjects($locked, $invitation->projectIds());
+            $staff = $this->coordinator->staff($locked, [$invitation->inviter_user_id], lock: true);
+            $current = ClientPortalInvitation::query()->where('workspace_id', $locked->id)->whereKey($invitation->id)->tap(Locks::forUpdate())->first();
+            if (! $current instanceof ClientPortalInvitation) {
+                return PortalInvitationStatus::Revoked;
+            }
+            $now = $this->clock->now();
+            $status = $current->currentStatus($now);
+            if ($status === PortalInvitationStatus::Expired && $current->status === PortalInvitationStatus::Pending->value) {
+                $current->finish(PortalInvitationStatus::Expired, $now);
+                $current->save();
+            }
+            if ($status !== PortalInvitationStatus::Pending || ! hash_equals($current->email, ClientPortalInvitation::normalize($user->email))) {
+                return $status;
+            }
+
+            $company = ClientCompany::query()->where('workspace_id', $locked->id)->whereKey($current->client_company_id)->firstOrFail();
+            $inviter = $current->inviter_user_id === null ? null : User::query()->whereKey($current->inviter_user_id)->first();
+            // Never the system context: an inviter whose account is gone has no authority left.
+            $context = $inviter instanceof User ? AccessMutationContext::user($inviter) : null;
+            $authorized = $context !== null && $this->authority->manage($context, $this->coordinator->actorRole($context, $staff)) === null;
+            $kept = $projects->filter(static fn (ClientProject $project): bool => $project->client_company_id === $company->id)->sortBy('public_id')->values();
+
+            $reason = match (true) {
+                ! $authorized => PortalInvitationNotApplied::InviterLostAuthority,
+                $current->scope() === PortalAccessScope::Projects && $kept->isEmpty() => PortalInvitationNotApplied::ProjectsMoved,
+                default => null,
+            };
+
+            if ($reason !== null) {
+                $current->finish(PortalInvitationStatus::NotApplied, $now);
+                $current->forceFill(['not_applied_reason' => $reason->value, 'accepted_user_id' => $user->id])->save();
+                $this->audit->record(AccessMutationContext::system(), $locked, AccessAuditAction::PortalInvitationNotApplied, $user,
+                    ['invitation' => $current->public_id, 'status' => PortalInvitationStatus::Pending->value],
+                    ['invitation' => $current->public_id, 'status' => PortalInvitationStatus::NotApplied->value, 'reason' => $reason->value],
+                    $company->public_id);
+
+                return PortalInvitationStatus::NotApplied;
+            }
+
+            if (! $this->lockedPortalMembership($locked, $company, $user) instanceof ClientCompanyMembership) {
+                $membership = new ClientCompanyMembership;
+                $membership->forceFill([
+                    'workspace_id' => $locked->id,
+                    'client_company_id' => $company->id,
+                    'user_id' => $user->id,
+                    'role' => self::PORTAL_ROLE,
+                    'access_scope' => $current->scope()->value,
+                ])->save();
+                $after = $this->replaceProjectLimits($locked, $membership, $current->scope(), $current->scope() === PortalAccessScope::Projects ? $kept : new Collection);
+                $this->audit->record($context, $locked, AccessAuditAction::PortalGranted, $user, null, [...$after->toArray(), 'invitation' => $current->public_id], $company->public_id);
+            }
+
+            $current->finish(PortalInvitationStatus::Accepted, $now);
+            $current->forceFill(['accepted_user_id' => $user->id])->save();
+
+            return PortalInvitationStatus::Accepted;
         });
     }
 

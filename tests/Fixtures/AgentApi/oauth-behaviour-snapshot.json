@@ -166,6 +166,11 @@
             "scope": "mcp:use identity:read"
         }
     },
+    "registration_secret_method": {
+        "status": 201,
+        "token_endpoint_auth_method": "none",
+        "has_secret": false
+    },
     "registration_refusals": {
         "confidential": {
             "status": 400,

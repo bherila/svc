@@ -292,6 +292,25 @@ describe('client screens under data that does not fit', () => {
                             url: '/workspaces/workspace-1/clients/company-1/portal-access/contact-1',
                         },
                     ],
+                    invite_url:
+                        '/workspaces/workspace-1/clients/company-1/portal-invitations',
+                    invitations: [
+                        {
+                            id: 'invitation-1',
+                            email: `${LONG_NAME}@example.test`,
+                            scope: 'projects',
+                            projects: ['project-1'],
+                            status: 'pending',
+                            reason: null,
+                            expires_at: '2026-10-19T12:00:00Z',
+                            email_sent: false,
+                            link: `https://identity.example.test/invitations/${LONG_NAME}`,
+                            resend_url:
+                                '/workspaces/workspace-1/clients/company-1/portal-invitations/invitation-1/resend',
+                            revoke_url:
+                                '/workspaces/workspace-1/clients/company-1/portal-invitations/invitation-1',
+                        },
+                    ],
                 }}
             />,
         );

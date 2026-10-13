@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
+use App\Services\Access\PortalInvitations;
 use App\Services\Navigation\WorkspaceReturnPoint;
 use App\Support\Concurrency\Locks;
 use BWH\Auth\Concerns\SignsOutThroughProvider;
@@ -36,7 +37,7 @@ class OAuthLoginController extends Controller
         return $redirect;
     }
 
-    public function callback(Request $request, OAuthClient $oauth, WorkspaceReturnPoint $returnPoint): RedirectResponse
+    public function callback(Request $request, OAuthClient $oauth, WorkspaceReturnPoint $returnPoint, PortalInvitations $invitations): RedirectResponse
     {
         $identity = $oauth->identityFromCallback($request);
 
@@ -66,6 +67,12 @@ class OAuthLoginController extends Controller
         // Keeping it server-side also keeps the list of the other applications out of the
         // JS bundle, so what exists is not readable by anyone who downloads it.
         ProviderApplications::remember($request, $identity->apps);
+
+        // Portal access promised to this address before the person had an
+        // account here. Applied only once the sign-in has fully succeeded,
+        // so a sign-in undone above applies nothing; a failure leaves the
+        // invitation pending and never blocks the sign-in.
+        $invitations->applyAtSignIn($user);
 
         // Back where they left off, when they may still go there. The
         // selector stays the default and stays reachable - the navbar's exit

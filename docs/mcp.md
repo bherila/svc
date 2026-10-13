@@ -415,6 +415,25 @@ exact project reach. Company scope takes no project selection; project scope
 requires projects belonging to that client in the same workspace. REST and MCP
 share receipts and the same `WorkspaceAccess` boundary as the web forms.
 
+Portal invitations (#430) use `clients.portal_invitations.list`,
+`clients.portal_invitations.create`, `clients.portal_invitations.resend` and
+`clients.portal_invitations.revoke`: GET/POST `/clients/{client}/portal-invitations`,
+POST `/clients/{client}/portal-invitations/{invitation}/resend` and DELETE
+`/clients/{client}/portal-invitations/{invitation}`. They invite an address nobody
+signs in with yet: the identity provider emails an admission link to this
+application only, and the invited scope is given when that person first signs in
+with a matching address, if the inviter is still an owner or admin and the projects
+still belong to the client. An address that already signs in is refused; grant it
+portal access instead. Owners and admins only; listing requires `clients:read`, and
+each write `clients:write`, `confirm: true` and an idempotency key. **The
+acceptance link is never returned to agents** - it is a bearer credential, shown
+only to managers on the client's settings page - and replays return the stored
+response without asking the provider again. All four are behind
+`SVC_PORTAL_INVITATIONS_ENABLED` (off by default); the writes also need the
+client-management cutovers. Provider refusals answer 429 with `Retry-After` when
+rate limited, 503 when invitations are unavailable or misconfigured, and 409 for an
+invitation that is no longer open.
+
 `clients.create`, `clients.update`, `clients.archive`, `clients.restore`,
 `agreements.create`, `agreements.update`, `agreements.activate` and
 `agreements.terminate` require `clients:write` and workspace owner/admin

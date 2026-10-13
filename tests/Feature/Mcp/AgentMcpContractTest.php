@@ -168,7 +168,9 @@ final class AgentMcpContractTest extends TestCase
                     continue;
                 }
                 $this->assertSame($operation['operationId'], $operation['x-mcp-tool']);
-                $this->assertSame($method === 'get' ? [] : ['AGENT_API_WRITES_ENABLED', 'AGENT_API_CLIENT_WRITES_ENABLED'], $operation['x-svc-flags']);
+                // Portal invitations also sit behind their product switch (#430).
+                $invitations = str_starts_with($operation['operationId'], 'clients.portal_invitations.') ? ['SVC_PORTAL_INVITATIONS_ENABLED'] : [];
+                $this->assertSame([...($method === 'get' ? [] : ['AGENT_API_WRITES_ENABLED', 'AGENT_API_CLIENT_WRITES_ENABLED']), ...$invitations], $operation['x-svc-flags']);
                 $this->assertSame([['oauth2' => $actual[$operation['operationId']]], ['apiToken' => []]], $operation['security']);
             }
         }
@@ -202,6 +204,10 @@ final class AgentMcpContractTest extends TestCase
             'clients.portal_access.list' => ['clients:read'],
             'clients.portal_access.revoke' => ['clients:write', 'clients:read'],
             'clients.portal_access.update' => ['clients:write', 'clients:read'],
+            'clients.portal_invitations.create' => ['clients:write'],
+            'clients.portal_invitations.list' => ['clients:read'],
+            'clients.portal_invitations.resend' => ['clients:write'],
+            'clients.portal_invitations.revoke' => ['clients:write'],
             'clients.restore' => ['clients:write', 'clients:read'],
             'clients.update' => ['clients:write', 'clients:read'],
             'companies.square_customer.clear' => ['billing:write', 'billing:read'],

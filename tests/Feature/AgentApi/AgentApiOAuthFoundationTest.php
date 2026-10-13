@@ -8,6 +8,7 @@ use App\Models\Workspace;
 use App\Models\WorkspaceMembership;
 use App\Support\AgentApi\AgentApiScopes;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Laravel\Passport\Passport;
 use Tests\TestCase;
 
@@ -125,7 +126,7 @@ class AgentApiOAuthFoundationTest extends TestCase
             ['grant_types' => ['authorization_code']],
             ['grant_types' => ['authorization_code', 'client_credentials']],
             ['response_types' => ['token']],
-            ['token_endpoint_auth_method' => 'client_secret_basic'],
+            ['token_endpoint_auth_method' => 'private_key_jwt'],
             ['client_name' => "Invalid\nname"],
             ['scope' => 'mcp:use unsupported:scope'],
             ['application_type' => 'web'],
@@ -136,6 +137,17 @@ class AgentApiOAuthFoundationTest extends TestCase
             $this->assertStringContainsString('no-store', (string) $response->headers->get('Cache-Control'));
         }
         $this->assertDatabaseCount('oauth_clients', 0);
+
+        // Auth package 0.24.4: a requested secret method still registers a
+        // public client, with no secret, answered as `none`.
+        foreach (['client_secret_post', 'client_secret_basic'] as $method) {
+            $this->postJson('/oauth/register', [...$base, 'token_endpoint_auth_method' => $method])
+                ->assertCreated()
+                ->assertJsonPath('token_endpoint_auth_method', 'none')
+                ->assertJsonMissingPath('client_secret');
+        }
+        $this->assertSame(2, DB::table('oauth_clients')->whereNull('secret')->count());
+        DB::table('oauth_clients')->delete();
 
         // RFC 7591 says unrecognized client metadata is ignored. Scope input is
         // normalized so harmless duplicates and whitespace do not break clients.

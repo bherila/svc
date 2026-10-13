@@ -1,4 +1,4 @@
-import { router } from '@inertiajs/react';
+import { Link, router } from '@inertiajs/react';
 import { useState } from 'react';
 import {
     AlertDialog,
@@ -13,6 +13,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { statusLabel } from '@/lib/labels';
 
 export type PortalScope = 'company' | 'projects';
 
@@ -27,9 +28,41 @@ export interface PortalMember {
     url: string;
 }
 
+/**
+ * An invitation to an address nobody signs in with yet. Applied at that
+ * person's first sign-in; `link` is the identity provider's acceptance link,
+ * sent only while it can still be accepted.
+ */
+export interface PortalInvitation {
+    id: string;
+    email: string;
+    scope: PortalScope;
+    projects: string[];
+    status: 'pending' | 'expired' | 'not_applied' | 'revoked';
+    /** Why a `not_applied` invitation gave nothing. */
+    reason: string | null;
+    expires_at: string | null;
+    email_sent: boolean;
+    link: string | null;
+    /** POST to send it again; null once it can no longer be sent. */
+    resend_url: string | null;
+    /** DELETE to withdraw it, or to dismiss one that was not applied. */
+    revoke_url: string;
+}
+
 export interface PortalAccessProps {
     clientName: string;
-    portal: { add_url: string; members: PortalMember[] };
+    portal: {
+        add_url: string;
+        members: PortalMember[];
+        /** Null while portal invitations are switched off. */
+        invite_url?: string | null;
+        invitations?: PortalInvitation[];
+        invitation_pagination?: {
+            next_url: string | null;
+            previous_url: string | null;
+        };
+    };
     projects: { id: string; name: string }[];
 }
 
@@ -69,8 +102,225 @@ export function PortalAccess({
                     ))}
                 </ul>
             )}
-            <AddContact addUrl={portal.add_url} projects={projects} />
+            {(portal.invitations ?? []).length > 0 && (
+                <div className="grid grid-cols-1 gap-3">
+                    <h3 className="text-sm font-medium">Invitations</h3>
+                    <ul className="grid grid-cols-1 gap-3">
+                        {(portal.invitations ?? []).map((invitation) => (
+                            <InvitationRow
+                                key={invitation.id}
+                                invitation={invitation}
+                                projects={projects}
+                            />
+                        ))}
+                    </ul>
+                </div>
+            )}
+            {(portal.invitation_pagination?.previous_url ||
+                portal.invitation_pagination?.next_url) && (
+                <nav
+                    aria-label="Invitation pages"
+                    className="flex flex-wrap gap-4 text-sm"
+                >
+                    {portal.invitation_pagination.previous_url && (
+                        <Link
+                            href={portal.invitation_pagination.previous_url}
+                            preserveScroll
+                            className="underline"
+                        >
+                            Newer invitations
+                        </Link>
+                    )}
+                    {portal.invitation_pagination.next_url && (
+                        <Link
+                            href={portal.invitation_pagination.next_url}
+                            preserveScroll
+                            className="underline"
+                        >
+                            Older invitations
+                        </Link>
+                    )}
+                </nav>
+            )}
+            <AddContact
+                addUrl={portal.add_url}
+                inviteUrl={portal.invite_url ?? null}
+                projects={projects}
+            />
         </div>
+    );
+}
+
+function InvitationRow({
+    invitation,
+    projects,
+}: {
+    invitation: PortalInvitation;
+    projects: { id: string; name: string }[];
+}) {
+    const [errors, setErrors] = useState<Errors>({});
+    const [busy, setBusy] = useState(false);
+    const [revoking, setRevoking] = useState(false);
+    const [copied, setCopied] = useState(false);
+    const message = errors[`invitation.${invitation.id}`];
+    const reach =
+        invitation.scope === 'company'
+            ? 'The whole client'
+            : projects
+                  .filter((project) => invitation.projects.includes(project.id))
+                  .map((project) => project.name)
+                  .join(', ');
+    const notApplied = invitation.status === 'not_applied';
+    const retryWithdrawal = invitation.status === 'revoked';
+
+    return (
+        <li className="grid grid-cols-1 gap-2 rounded-lg border p-3">
+            <div className="grid grid-cols-1 gap-0.5 text-sm">
+                <span className="font-medium wrap-anywhere">
+                    {invitation.email}
+                </span>
+                <span className="wrap-anywhere text-muted-foreground">
+                    {reach}
+                </span>
+                <span className="text-muted-foreground">
+                    {statusLabel(invitation.status)}
+                    {invitation.status === 'pending' &&
+                        invitation.expires_at !== null &&
+                        ` until ${new Date(invitation.expires_at).toLocaleDateString()}`}
+                    {invitation.status === 'pending' &&
+                        !invitation.email_sent &&
+                        '. The identity provider could not email it; send the link yourself.'}
+                </span>
+                {invitation.reason !== null && (
+                    <span className="wrap-anywhere text-muted-foreground">
+                        {invitation.reason}
+                    </span>
+                )}
+            </div>
+            {invitation.link !== null && (
+                <div className="grid grid-cols-1 gap-1">
+                    <Label htmlFor={`invitation-link-${invitation.id}`}>
+                        Invitation link
+                    </Label>
+                    <div className="flex min-w-0 gap-2">
+                        <Input
+                            id={`invitation-link-${invitation.id}`}
+                            readOnly
+                            value={invitation.link}
+                            className="min-w-0 flex-1"
+                            onFocus={(event) => event.target.select()}
+                        />
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                                void navigator.clipboard
+                                    ?.writeText(invitation.link ?? '')
+                                    .then(() => setCopied(true));
+                            }}
+                        >
+                            {copied ? 'Copied' : 'Copy link'}
+                        </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                        Only the invited address can accept it. Share it only
+                        with them.
+                    </p>
+                </div>
+            )}
+            {message !== undefined && (
+                <p
+                    role="alert"
+                    className="text-sm wrap-anywhere text-destructive"
+                >
+                    {message}
+                </p>
+            )}
+            <div className="flex flex-wrap gap-2">
+                {invitation.resend_url !== null && (
+                    <Button
+                        type="button"
+                        variant="outline"
+                        disabled={busy}
+                        onClick={() => {
+                            setBusy(true);
+                            router.post(
+                                invitation.resend_url ?? '',
+                                {},
+                                {
+                                    preserveScroll: true,
+                                    onSuccess: () => {
+                                        setErrors({});
+                                        setCopied(false);
+                                    },
+                                    onError: (next) => setErrors(next),
+                                    onFinish: () => setBusy(false),
+                                },
+                            );
+                        }}
+                    >
+                        Send again
+                    </Button>
+                )}
+                <Button
+                    type="button"
+                    variant="ghost"
+                    disabled={busy}
+                    onClick={() => setRevoking(true)}
+                >
+                    {notApplied
+                        ? 'Dismiss'
+                        : retryWithdrawal
+                          ? 'Retry withdrawal'
+                          : 'Withdraw'}
+                </Button>
+            </div>
+            <AlertDialog
+                open={revoking}
+                onOpenChange={(open) => {
+                    if (!open && !busy) {
+                        setRevoking(false);
+                    }
+                }}
+            >
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>
+                            {notApplied
+                                ? 'Dismiss this invitation?'
+                                : 'Withdraw this invitation?'}
+                        </AlertDialogTitle>
+                        <AlertDialogDescription className="wrap-anywhere">
+                            {notApplied
+                                ? `It gave ${invitation.email} nothing, and will no longer be listed.`
+                                : `The link stops working, and ${invitation.email} gets no portal access when they sign in.`}
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel disabled={busy}>
+                            Cancel
+                        </AlertDialogCancel>
+                        <AlertDialogAction
+                            disabled={busy}
+                            onClick={(event) => {
+                                event.preventDefault();
+                                setBusy(true);
+                                router.delete(invitation.revoke_url, {
+                                    preserveScroll: true,
+                                    onError: (next) => setErrors(next),
+                                    onFinish: () => {
+                                        setBusy(false);
+                                        setRevoking(false);
+                                    },
+                                });
+                            }}
+                        >
+                            {notApplied ? 'Dismiss' : 'Withdraw invitation'}
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+        </li>
     );
 }
 
@@ -198,9 +448,11 @@ function MemberRow({
 
 function AddContact({
     addUrl,
+    inviteUrl,
     projects,
 }: {
     addUrl: string;
+    inviteUrl: string | null;
     projects: { id: string; name: string }[];
 }) {
     const [email, setEmail] = useState('');
@@ -208,32 +460,37 @@ function AddContact({
     const [chosen, setChosen] = useState<string[]>([]);
     const [errors, setErrors] = useState<Errors>({});
     const [busy, setBusy] = useState(false);
+    // Offered only after adding was refused because nobody signs in with the address.
+    const offerInvitation = inviteUrl !== null && errors.invite !== undefined;
+    const submit = (url: string) => {
+        setBusy(true);
+        router.post(
+            url,
+            {
+                email,
+                scope,
+                projects: scope === 'projects' ? chosen : [],
+            },
+            {
+                preserveScroll: true,
+                onSuccess: () => {
+                    setEmail('');
+                    setScope('company');
+                    setChosen([]);
+                    setErrors({});
+                },
+                onError: (next) => setErrors(next),
+                onFinish: () => setBusy(false),
+            },
+        );
+    };
 
     return (
         <form
             className="grid grid-cols-1 gap-3 border-t pt-4"
             onSubmit={(event) => {
                 event.preventDefault();
-                setBusy(true);
-                router.post(
-                    addUrl,
-                    {
-                        email,
-                        scope,
-                        projects: scope === 'projects' ? chosen : [],
-                    },
-                    {
-                        preserveScroll: true,
-                        onSuccess: () => {
-                            setEmail('');
-                            setScope('company');
-                            setChosen([]);
-                            setErrors({});
-                        },
-                        onError: (next) => setErrors(next),
-                        onFinish: () => setBusy(false),
-                    },
-                );
+                submit(addUrl);
             }}
         >
             <div className="grid max-w-md grid-cols-1 gap-2">
@@ -242,12 +499,17 @@ function AddContact({
                     id="portal-add-email"
                     type="email"
                     value={email}
-                    onChange={(event) => setEmail(event.target.value)}
+                    onChange={(event) => {
+                        setEmail(event.target.value);
+                        setErrors({});
+                    }}
                     placeholder="The address they sign in with"
                     required
                 />
                 <p className="text-xs text-muted-foreground">
-                    They need to have signed in to this app once.
+                    {inviteUrl === null
+                        ? 'They need to have signed in to this app once.'
+                        : 'Someone who has never signed in can be sent an invitation instead.'}
                 </p>
             </div>
             <ScopeFields
@@ -259,7 +521,7 @@ function AddContact({
                 onScope={setScope}
                 onChosen={setChosen}
             />
-            {[errors.email, errors.projects, errors.scope]
+            {[errors.email, errors.invite, errors.projects, errors.scope]
                 .filter((message): message is string => message !== undefined)
                 .map((message) => (
                     <p
@@ -270,10 +532,20 @@ function AddContact({
                         {message}
                     </p>
                 ))}
-            <div>
+            <div className="flex flex-wrap gap-2">
                 <Button type="submit" disabled={busy}>
                     Give portal access
                 </Button>
+                {offerInvitation && inviteUrl !== null && (
+                    <Button
+                        type="button"
+                        variant="outline"
+                        disabled={busy}
+                        onClick={() => submit(inviteUrl)}
+                    >
+                        Send invitation
+                    </Button>
+                )}
             </div>
         </form>
     );

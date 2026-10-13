@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Support\AgentApi\AgentApiScopes;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
 use Tests\Concerns\CallsMcp;
 use Tests\TestCase;
@@ -41,6 +42,14 @@ final class AgentMcpVisibilitySnapshotTest extends TestCase
 
     /** @var array<string, User> */
     private array $principals = [];
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        config(['app.url' => 'https://svc.example.test']);
+        URL::forceRootUrl('https://svc.example.test');
+        URL::forceScheme('https');
+    }
 
     public function test_every_fixture_principal_sees_the_recorded_mcp_surface(): void
     {
@@ -82,9 +91,10 @@ final class AgentMcpVisibilitySnapshotTest extends TestCase
     private function states(): array
     {
         // Square connected (#438) everywhere but the install defaults, where
-        // it is unconfigured and its read-only tools are withheld.
+        // it is unconfigured and its read-only tools are withheld. Portal
+        // invitations (#430) are a product switch, likewise off on install.
         $on = ['agent_api.mcp_enabled' => true, 'agent_api.mcp_feature_flags' => [],
-            'services.square.access_token' => 'synthetic-square-token', 'services.square.workspace' => 'synthetic-square-workspace'];
+            'services.square.access_token' => 'synthetic-square-token', 'services.square.workspace' => 'synthetic-square-workspace', 'svc.portal_invitations.enabled' => true];
         foreach (self::WRITE_FLAGS as $flag) {
             $on['agent_api.'.$flag] = true;
         }
@@ -97,6 +107,7 @@ final class AgentMcpVisibilitySnapshotTest extends TestCase
             $installDefaults['agent_api.'.$flag] = $flag === 'time_entry_writes_enabled';
         }
         $installDefaults['services.square.access_token'] = null;
+        $installDefaults['svc.portal_invitations.enabled'] = false;
 
         return [
             'all_enabled' => $on,
@@ -108,6 +119,7 @@ final class AgentMcpVisibilitySnapshotTest extends TestCase
             'mcp_agreements_group_off' => ['agent_api.mcp_feature_flags' => ['mcp.read.agreements' => false]] + $on,
             'single_tools_off' => ['agent_api.mcp_feature_flags' => ['invoices.get' => false, 'time_entries.list' => false, 'context.get' => false]] + $on,
             'mcp_disabled' => ['agent_api.mcp_enabled' => false] + $on,
+            'portal_invitations_off' => ['svc.portal_invitations.enabled' => false] + $on,
         ];
     }
 
@@ -143,7 +155,7 @@ final class AgentMcpVisibilitySnapshotTest extends TestCase
         $observed['server_info'] = $initialize->json('result.serverInfo');
         $observed['instructions'] = $initialize->json('result.instructions');
 
-        $tools = (array) $this->mcp(['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/list', 'params' => []], $session)->json('result.tools');
+        $tools = $this->listTools($session);
         usort($tools, static fn (array $a, array $b): int => $a['name'] <=> $b['name']);
         $observed['tools'] = $full ? $tools : $this->digests($tools, 'name');
         foreach (['resources/list' => 'resources', 'resources/templates/list' => 'resourceTemplates', 'prompts/list' => 'prompts'] as $method => $key) {

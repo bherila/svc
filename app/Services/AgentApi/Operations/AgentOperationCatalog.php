@@ -11,6 +11,7 @@ use App\Services\Mcp\AgentMcpClientTools;
 use App\Services\Mcp\AgentMcpClientWriteTools;
 use App\Services\Mcp\AgentMcpContextResource;
 use App\Services\Mcp\AgentMcpPortalAccessTools;
+use App\Services\Mcp\AgentMcpPortalInvitationTools;
 use App\Services\Mcp\AgentMcpPrompts;
 use App\Services\Mcp\AgentMcpReadTools;
 use App\Services\Mcp\AgentMcpSquareLinkTools;
@@ -84,6 +85,10 @@ final class AgentOperationCatalog
         'clients.portal_access.grant' => ['clients.portal-access.store', '/workspaces/{workspace}/clients/{client}/portal-access', [201]],
         'clients.portal_access.update' => ['clients.portal-access.update', '/workspaces/{workspace}/clients/{client}/portal-access/{user}', [200]],
         'clients.portal_access.revoke' => ['clients.portal-access.destroy', '/workspaces/{workspace}/clients/{client}/portal-access/{user}', [200]],
+        'clients.portal_invitations.list' => ['clients.portal-invitations.index', '/workspaces/{workspace}/clients/{client}/portal-invitations', [200]],
+        'clients.portal_invitations.create' => ['clients.portal-invitations.store', '/workspaces/{workspace}/clients/{client}/portal-invitations', [201]],
+        'clients.portal_invitations.resend' => ['clients.portal-invitations.resend', '/workspaces/{workspace}/clients/{client}/portal-invitations/{invitation}/resend', [200]],
+        'clients.portal_invitations.revoke' => ['clients.portal-invitations.destroy', '/workspaces/{workspace}/clients/{client}/portal-invitations/{invitation}', [200]],
         'clients.restore' => ['clients.restore', '/workspaces/{workspace}/clients/{client}/restore', [200]],
         'clients.update' => ['clients.update', '/workspaces/{workspace}/clients/{client}', [200]],
         'companies.square_customer.clear' => ['clients.square-customer.destroy', '/workspaces/{workspace}/clients/{client}/square-customer', [200]],
@@ -1100,6 +1105,54 @@ final class AgentOperationCatalog
                 cutovers: [AgentDeploymentFlags::CLIENTS],
                 manager: true,
                 input: AgentInlineSchemas::clientInput('clients.portal_access.revoke', ['client_id' => ['type' => 'string', 'format' => 'uuid'], 'user_id' => ['type' => 'string', 'format' => 'uuid'], 'idempotency_key' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 255]], ['client_id', 'user_id', 'idempotency_key'], write: true),
+            ),
+            $this->tool(
+                'clients.portal_invitations.list',
+                'List portal invitations',
+                'List a client\'s open and not-applied portal invitations as a workspace owner/admin: address, scope, projects, status and expiry. Never includes the acceptance link.',
+                [AgentMcpPortalInvitationTools::class, 'list'],
+                Effect::Read,
+                true,
+                'mcp.read.clients',
+                cutovers: [AgentDeploymentFlags::PORTAL_INVITATIONS],
+                manager: true,
+                input: AgentInlineSchemas::clientInput('clients.portal_invitations.list', ['client_id' => ['type' => 'string', 'format' => 'uuid'], 'limit' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 100, 'default' => 25], 'cursor' => ['type' => ['string', 'null'], 'maxLength' => 2048]], ['client_id']),
+            ),
+            $this->tool(
+                'clients.portal_invitations.create',
+                'Invite a portal contact',
+                'Invite an address nobody signs in with yet to a client\'s portal. The identity provider emails an admission link to this application only; the access is given when that person first signs in with the address. Refused for an address that already signs in (grant portal access instead). Never returns the link. Requires explicit confirmation and an idempotency key.',
+                [AgentMcpPortalInvitationTools::class, 'create'],
+                Effect::ExternalWrite,
+                true,
+                'mcp.write.clients',
+                cutovers: [AgentDeploymentFlags::PORTAL_INVITATION_WRITES],
+                manager: true,
+                input: AgentInlineSchemas::clientInput('clients.portal_invitations.create', ['client_id' => ['type' => 'string', 'format' => 'uuid'], 'idempotency_key' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 255]], ['client_id', 'idempotency_key'], write: true),
+            ),
+            $this->tool(
+                'clients.portal_invitations.resend',
+                'Resend a portal invitation',
+                'Send a pending or expired portal invitation again with a new link and expiry; the previous link stops working. Never returns the link. Requires explicit confirmation and an idempotency key.',
+                [AgentMcpPortalInvitationTools::class, 'resend'],
+                Effect::ExternalWrite,
+                true,
+                'mcp.write.clients',
+                cutovers: [AgentDeploymentFlags::PORTAL_INVITATION_WRITES],
+                manager: true,
+                input: AgentInlineSchemas::clientInput('clients.portal_invitations.resend', ['client_id' => ['type' => 'string', 'format' => 'uuid'], 'invitation_id' => ['type' => 'string', 'format' => 'uuid'], 'idempotency_key' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 255]], ['client_id', 'invitation_id', 'idempotency_key'], write: true),
+            ),
+            $this->tool(
+                'clients.portal_invitations.revoke',
+                'Revoke a portal invitation',
+                'Withdraw a portal invitation, or dismiss one that was not applied. The link stops working at the identity provider and signing in gives nothing. Requires explicit confirmation and an idempotency key.',
+                [AgentMcpPortalInvitationTools::class, 'revoke'],
+                Effect::Destructive,
+                true,
+                'mcp.write.clients',
+                cutovers: [AgentDeploymentFlags::PORTAL_INVITATION_WRITES],
+                manager: true,
+                input: AgentInlineSchemas::clientInput('clients.portal_invitations.revoke', ['client_id' => ['type' => 'string', 'format' => 'uuid'], 'invitation_id' => ['type' => 'string', 'format' => 'uuid'], 'idempotency_key' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 255]], ['client_id', 'invitation_id', 'idempotency_key'], write: true),
             ),
             $this->tool(
                 'clients.restore',

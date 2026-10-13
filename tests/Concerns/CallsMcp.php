@@ -50,17 +50,29 @@ trait CallsMcp
     /** @return list<string> */
     protected function toolNames(string $session): array
     {
-        // Every page: discovery is paginated at 100 tools, and the inventory
-        // has outgrown one page.
-        $names = [];
+        return array_column($this->listTools($session), 'name');
+    }
+
+    /**
+     * Every tool `tools/list` offers, following `nextCursor` as a client does:
+     * discovery pages hold at most 100 tools, and there are more than that.
+     *
+     * @return list<array<string, mixed>>
+     */
+    protected function listTools(string $session): array
+    {
+        $tools = [];
         $cursor = null;
-        do {
+        for ($page = 0; $page < 20; $page++) {
             $result = $this->mcp(['jsonrpc' => '2.0', 'id' => 99, 'method' => 'tools/list', 'params' => $cursor === null ? [] : ['cursor' => $cursor]], $session)
                 ->assertOk()->json('result');
-            $names = [...$names, ...array_column($result['tools'], 'name')];
+            $tools = [...$tools, ...(array) ($result['tools'] ?? [])];
             $cursor = $result['nextCursor'] ?? null;
-        } while (is_string($cursor) && $cursor !== '');
+            if (! is_string($cursor) || $cursor === '') {
+                return $tools;
+            }
+        }
 
-        return $names;
+        throw new \LogicException('tools/list did not stop paginating.');
     }
 }

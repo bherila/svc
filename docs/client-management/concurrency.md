@@ -69,16 +69,17 @@ the majority order won and the minority is named as an inversion below.
 | 16 | `client_projects` | Never co-acquired with the billing rows above; access mutations lock it after the workspace access lock |
 | 17 | `workspace_memberships` | Project access locks the project before the target's staff membership; every access mutation re-checks the actor's authority here, under the workspace access lock |
 | 18 | `client_project_memberships` | A staff removal deletes the person's assignments explicitly after locking their projects and membership |
-| 19 | `client_company_memberships` | Portal access changes lock the company membership after the workspace access lock and the actor's staff membership |
-| 20 | `client_portal_project_access` | The project limits hung off a portal membership, read and replaced after that membership is locked |
-| 21 | `users` | Never co-acquired with anything above |
-| 22 | `client_attachments` | Prepared attachment publication locks its tenant parent before its recovery row; all byte I/O precedes these locks |
-| 23 | `client_invoice_email_deliveries` | A short post-commit client-email claim, or the result row after its invoice is locked so both sides of the result commit together |
-| 24 | `client_invoice_administrator_notifications` | A short post-commit administrator-email claim; never co-acquired with billing locks |
-| 25 | `oauth_access_tokens` | Agent disconnection, which takes no other lock; orders only against itself |
-| 26 | `stripe_payment_method_states` | Provider state, a family of its own |
-| 27 | `client_stripe_customers` |  |
-| 28 | `client_stripe_payment_methods` |  |
+| 19 | `client_portal_invitations` | Invitations for addresses with no account yet: created, resent and revoked after the actor's staff membership; applied at sign-in after the invited projects and the inviter's staff membership, and before the company membership it becomes |
+| 20 | `client_company_memberships` | Portal access changes lock the company membership after the workspace access lock and the actor's staff membership |
+| 21 | `client_portal_project_access` | The project limits hung off a portal membership, read and replaced after that membership is locked |
+| 22 | `users` | Never co-acquired with anything above |
+| 23 | `client_attachments` | Prepared attachment publication locks its tenant parent before its recovery row; all byte I/O precedes these locks |
+| 24 | `client_invoice_email_deliveries` | A short post-commit client-email claim, or the result row after its invoice is locked so both sides of the result commit together |
+| 25 | `client_invoice_administrator_notifications` | A short post-commit administrator-email claim; never co-acquired with billing locks |
+| 26 | `oauth_access_tokens` | Agent disconnection, which takes no other lock; orders only against itself |
+| 27 | `stripe_payment_method_states` | Provider state, a family of its own |
+| 28 | `client_stripe_customers` |  |
+| 29 | `client_stripe_payment_methods` |  |
 
 The company being *last* is the one entry that reads wrong and is right. It
 looks like a parent, so the intuitive order puts it first; the code puts it at
@@ -130,6 +131,11 @@ Workspace, ClientProject, WorkspaceMembership,
     ClientProjectMembership                                    staff removal
 Workspace, ClientProject, WorkspaceMembership,
     ClientCompanyMembership, ClientPortalProjectAccess         portal grant, scope change, revocation
+Workspace, ClientProject, WorkspaceMembership,
+    ClientPortalInvitation                                     portal invitation, superseding the pending one
+Workspace, WorkspaceMembership, ClientPortalInvitation         invitation resend, revocation
+Workspace, ClientProject, WorkspaceMembership,
+    ClientPortalInvitation, ClientCompanyMembership            invitation applied at sign-in
 ```
 
 ## The known inversions
@@ -585,6 +591,25 @@ commit still compares against the committed rows:
 `DelegatedStaffAccessRaceTest` (MariaDB) commits an assignment after the
 caller's snapshot and requires the removal to be refused rather than take an
 assignment it never disclosed.
+
+**Portal invitations** (`PortalInvitations`, #430) call the identity provider,
+and a network call never runs under the workspace access lock. Each operation
+refuses early from an unlocked read, asks the provider with no lock held, and
+then records the result in one access transaction that decides again: the
+workspace, the invited projects (in id order, this client's only), the actor's
+staff membership, then the invitation rows - the client's pending invitation to
+the same address is locked and superseded before the new one is written. If
+that decision refuses, or the write fails, the provider invitation just issued
+is revoked again, so nothing refused here can admit anyone. Revocation asks the
+provider first and records nothing if it cannot.
+
+At sign-in, `WorkspaceAccess::applyPortalInvitation` takes each pending
+invitation for the address in its own workspace's access transaction: the
+workspace, the invited projects, the inviter's staff membership, the invitation
+(re-read with a locking read: still pending, unexpired, same address), then the
+portal membership it creates. The inviter's authority and each project's client
+are decided from those locked rows, so an inviter demoted, or a project moved,
+after the invitation was sent leaves it `not_applied` or the project dropped.
 
 `LockOrderConformanceTest` drives every one of these writers. As elsewhere, the
 assertions run on one connection and prove ordering, not contention.
