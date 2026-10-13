@@ -4,10 +4,13 @@ namespace Tests\Unit\AgentApi;
 
 use App\Services\AgentApi\Operations\AgentDeploymentFlags;
 use App\Services\AgentApi\Operations\AgentOperationCatalog;
+use App\Services\Mcp\AgentMcpSquareMirrorTools;
 use App\Services\Mcp\AgentMcpSquareTools;
+use App\Services\Mcp\McpFeatureFlags;
 use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
 use Bherila\McpLaravelBridge\Capabilities\Effect;
 use Bherila\McpLaravelBridge\Capabilities\IdempotencyKey;
+use Illuminate\Config\Repository;
 use Illuminate\Container\Container;
 use Illuminate\Foundation\Application;
 use PHPUnit\Framework\TestCase;
@@ -19,6 +22,14 @@ use PHPUnit\Framework\TestCase;
  */
 final class SquareOperationContractTest extends TestCase
 {
+    public function test_undocumented_operations_fail_with_a_configuration_error(): void
+    {
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('Operation [square.fixture.undocumented] has no documented description.');
+        $method = new \ReflectionMethod(AgentOperationCatalog::class, 'documented');
+        $method->invoke(null, 'square.fixture.undocumented');
+    }
+
     private const string COMMON = ' Live, read-only Square data fetched on each call for finding Square records to link to svc records; svc never creates, changes or pays anything in Square, and linking is a separate svc operation. Workspace managers only, and only in the workspace Square is connected to; unavailable while Square is not configured. Square ids and cursors are opaque.';
 
     /** operation => [MCP handler method, route name suffix, path after /square, response component] */
@@ -35,6 +46,89 @@ final class SquareOperationContractTest extends TestCase
         'square.payments.get' => ['payment', 'payments.show', '/payments/{payment}', 'SquarePaymentResponse'],
     ];
 
+    /**
+     * svc's mirror of Square: operation => [MCP handler method, HTTP method,
+     * route name suffix, path after /square, scope, effect, response, request].
+     */
+    private const array MIRROR = [
+        'square.sync' => ['sync', 'POST', 'sync', '/sync', 'billing:write', Effect::LocalWrite, 'SquareSyncRunResponse', 'SquareSyncRequest'],
+        'square.mirror.invoices.list' => ['invoices', 'GET', 'mirror.invoices.index', '/mirror/invoices', 'billing:read', Effect::Read, 'SquareMirrorInvoiceListResponse', null],
+        'square.series.list' => ['series', 'GET', 'series.index', '/series', 'billing:read', Effect::Read, 'SquareSeriesListResponse', null],
+        'square.series.get' => ['seriesDetail', 'GET', 'series.show', '/series/{series}', 'billing:read', Effect::Read, 'SquareSeriesResponse', null],
+        'square.customers.unlinked' => ['unlinkedCustomers', 'GET', 'customers.unlinked', '/customers/unlinked', 'billing:read', Effect::Read, 'SquareUnlinkedCustomerListResponse', null],
+        'square.import_customer' => ['importCustomer', 'POST', 'customers.import', '/customers/{customer}/import', 'billing:write', Effect::LocalWrite, 'SquareCustomerImportResponse', 'SquareCustomerImportRequest'],
+    ];
+
+    public function test_every_square_operation_classifies_permission_and_availability_flags_separately(): void
+    {
+        $expected = [
+            'square.import_customer' => [[AgentDeploymentFlags::CLIENTS], [AgentDeploymentFlags::SQUARE]],
+            'square.sync' => [[AgentDeploymentFlags::WRITES], [AgentDeploymentFlags::SQUARE]],
+            'invoices.square_link' => [[AgentDeploymentFlags::INVOICES], []],
+            'invoices.square_unlink' => [[AgentDeploymentFlags::INVOICES], []],
+            'companies.square_customer.get' => [[], []],
+            'companies.square_customer.set' => [[AgentDeploymentFlags::CLIENTS], []],
+            'companies.square_customer.clear' => [[AgentDeploymentFlags::CLIENTS], []],
+            'agreements.square_series.set' => [[AgentDeploymentFlags::CLIENTS], []],
+            'agreements.square_series.clear' => [[AgentDeploymentFlags::CLIENTS], []],
+            'invoices.square_candidates' => [[], [AgentDeploymentFlags::SQUARE]],
+            'square.mirror.invoices.list' => [[], [AgentDeploymentFlags::SQUARE]],
+            'square.series.list' => [[], [AgentDeploymentFlags::SQUARE]],
+            'square.series.get' => [[], [AgentDeploymentFlags::SQUARE]],
+            'square.customers.unlinked' => [[], [AgentDeploymentFlags::SQUARE]],
+            'square.locations.list' => [[], [AgentDeploymentFlags::SQUARE]],
+            'square.customers.list' => [[], [AgentDeploymentFlags::SQUARE]],
+            'square.customers.search' => [[], [AgentDeploymentFlags::SQUARE]],
+            'square.customers.get' => [[], [AgentDeploymentFlags::SQUARE]],
+            'square.invoices.list' => [[], [AgentDeploymentFlags::SQUARE]],
+            'square.invoices.search' => [[], [AgentDeploymentFlags::SQUARE]],
+            'square.invoices.get' => [[], [AgentDeploymentFlags::SQUARE]],
+            'square.orders.get' => [[], [AgentDeploymentFlags::SQUARE]],
+            'square.payments.list' => [[], [AgentDeploymentFlags::SQUARE]],
+            'square.payments.get' => [[], [AgentDeploymentFlags::SQUARE]],
+        ];
+        $this->withCatalog(function (AgentOperationCatalog $catalog) use ($expected): void {
+            $observed = [];
+            foreach ($expected as $id => [$permissions, $availability]) {
+                $operation = $catalog->registry()->find($id);
+                $this->assertNotNull($operation, $id);
+                $flags = $operation->requirement->flags;
+                $actualPermissions = array_values(array_filter($flags, static fn (string $flag): bool => in_array($flag, AgentDeploymentFlags::cutovers(), true)));
+                $this->assertSame($permissions, $actualPermissions, $id);
+                $actualAvailability = array_values(array_filter($flags, AgentDeploymentFlags::isAvailabilityPrecondition(...)));
+                $this->assertSame($availability, $actualAvailability, $id);
+                $transport = array_values(array_filter($flags, AgentDeploymentFlags::isMcpSwitch(...)));
+                $this->assertSame([], array_values(array_diff($flags, [...$actualPermissions, ...$actualAvailability, ...$transport])), $id);
+                $observed[] = $id;
+            }
+            $declared = array_map(static fn ($operation): string => $operation->id, array_filter($catalog->registry()->all(), static fn ($operation): bool => str_contains($operation->id, 'square')));
+            sort($declared);
+            sort($observed);
+            $this->assertSame($declared, $observed);
+        });
+    }
+
+    public function test_customer_import_inherits_the_outer_write_cutoff_but_connection_availability_is_independent(): void
+    {
+        $this->withCatalog(function (): void {
+            $config = new Repository([
+                'agent_api' => ['writes_enabled' => false, 'client_writes_enabled' => true],
+                'services' => ['square' => ['access_token' => 'fixture-only-read-token', 'workspace' => 'fixture-workspace', 'version' => '2026-09-16']],
+            ]);
+            Container::getInstance()->instance('config', $config);
+            $flags = AgentDeploymentFlags::forAgents(new McpFeatureFlags);
+            $this->assertFalse($flags->enabled(AgentDeploymentFlags::CLIENTS));
+            $this->assertTrue($flags->enabled(AgentDeploymentFlags::SQUARE));
+            $config->set('agent_api.writes_enabled', true);
+            $this->assertTrue($flags->enabled(AgentDeploymentFlags::CLIENTS));
+            $config->set('agent_api.client_writes_enabled', false);
+            $this->assertFalse($flags->enabled(AgentDeploymentFlags::CLIENTS));
+            $this->assertTrue($flags->enabled(AgentDeploymentFlags::SQUARE));
+            $config->set('services.square.access_token', null);
+            $this->assertFalse($flags->enabled(AgentDeploymentFlags::SQUARE));
+        });
+    }
+
     public function test_square_operations_are_manager_only_open_world_reads_behind_the_square_switch(): void
     {
         $this->withCatalog(function (AgentOperationCatalog $catalog): void {
@@ -45,7 +139,7 @@ final class SquareOperationContractTest extends TestCase
                     $declared[] = $operation->id;
                 }
             }
-            $expected = array_keys(self::OPERATIONS);
+            $expected = [...array_keys(self::OPERATIONS), ...array_keys(self::MIRROR)];
             sort($declared);
             sort($expected);
             $this->assertSame($expected, $declared);
@@ -76,6 +170,84 @@ final class SquareOperationContractTest extends TestCase
             foreach (['invoices.list', 'payments.list', 'search', 'context.get'] as $local) {
                 $this->assertFalse($catalog->readsExternalSystem($local), $local);
             }
+        });
+    }
+
+    public function test_mirror_operations_are_manager_only_and_never_write_to_square(): void
+    {
+        $this->withCatalog(function (AgentOperationCatalog $catalog): void {
+            foreach (self::MIRROR as $id => [$handler, $method, $route, $path, $scope, $effect]) {
+                $operation = $catalog->registry()->find($id);
+                $this->assertNotNull($operation, $id);
+                $this->assertSame($effect, $operation->effect, $id);
+                $this->assertTrue($operation->isIdempotent(), $id);
+                $this->assertTrue($catalog->isManagerOnly($id), $id);
+                $this->assertSame([AgentMcpSquareMirrorTools::class, $handler], $operation->mcp?->handler, $id);
+                $this->assertSame([$scope], $operation->requirement->scopes, $id);
+                $this->assertSame($method, $operation->rest?->method, $id);
+                $this->assertSame('agent-api.v1.square.'.$route, $operation->rest->routeName, $id);
+                $this->assertSame('/workspaces/{workspace}/square'.$path, $operation->rest->path, $id);
+                $this->assertSame([200], $operation->rest->successStatuses, $id);
+                $this->assertSame($operation->rest->description, $operation->description, $id);
+                $this->assertStringContainsString('Workspace managers only', $operation->description, $id);
+                if ($effect === Effect::Read) {
+                    // Reads of the mirror never reach Square.
+                    $this->assertStringContainsString('it never reaches Square', $operation->description, $id);
+                    $this->assertFalse($catalog->readsExternalSystem($id), $id);
+                    $this->assertSame([AgentDeploymentFlags::SQUARE, 'mcp', 'mcp.switch:mcp.read.square', 'mcp.switch:'.$id], $operation->requirement->flags, $id);
+                    $this->assertSame(IdempotencyKey::None, $operation->safety->idempotencyKey, $id);
+                } else {
+                    // The sync reads Square, writes only svc's mirror, and the
+                    // outer agent write switch withholds it.
+                    $this->assertSame($id === 'square.sync', $catalog->readsExternalSystem($id), $id);
+                    $this->assertSame([$id === 'square.import_customer' ? AgentDeploymentFlags::CLIENTS : AgentDeploymentFlags::WRITES, AgentDeploymentFlags::SQUARE, 'mcp', 'mcp.switch:mcp.write', 'mcp.switch:'.$id], $operation->requirement->flags, $id);
+                    $this->assertSame(IdempotencyKey::HeaderAndArgument, $operation->safety->idempotencyKey, $id);
+                    $this->assertStringContainsString('nothing is created, changed or paid in Square', $operation->description, $id);
+                }
+            }
+        });
+    }
+
+    public function test_mirror_rest_bindings_match_the_checked_document(): void
+    {
+        $document = json_decode((string) file_get_contents(dirname(__DIR__, 3).'/public/openapi/svc-agent-v1.json'), true, flags: JSON_THROW_ON_ERROR);
+        $this->withCatalog(function (AgentOperationCatalog $catalog) use ($document): void {
+            foreach (self::MIRROR as $id => [, $method, , $path, $scope, , $response, $request]) {
+                $declared = $catalog->registry()->find($id);
+                $this->assertNotNull($declared?->rest, $id);
+                $operation = $document['paths']['/workspaces/{workspace}/square'.$path][strtolower($method)] ?? null;
+                $this->assertIsArray($operation, $id);
+                $this->assertSame($id, $operation['operationId'], $id);
+                $this->assertSame($declared->description, $operation['description'], $id);
+                $this->assertSame([['oauth2' => [$scope]], ['apiToken' => []]], $operation['security'], $id);
+                $this->assertSame(
+                    array_map(static fn (string|array $parameter): array => is_string($parameter) ? ['$ref' => '#/components/parameters/'.$parameter] : $parameter, $declared->rest->parameters),
+                    $operation['parameters'],
+                    $id,
+                );
+                $this->assertSame('#/components/schemas/'.$response, $operation['responses']['200']['content']['application/json']['schema']['$ref'], $id);
+                $this->assertSame($request === null ? null : '#/components/schemas/'.$request, $operation['requestBody']['content']['application/json']['schema']['$ref'] ?? null, $id);
+                $this->assertSame(array_intersect_key($operation, ['x-mcp-tool' => true, 'x-svc-flags' => true]), $declared->extensions, $id);
+            }
+        });
+    }
+
+    public function test_invoice_candidate_contract_keeps_its_path_parameters_and_validated_query_bounds(): void
+    {
+        $document = json_decode((string) file_get_contents(dirname(__DIR__, 3).'/public/openapi/svc-agent-v1.json'), true, flags: JSON_THROW_ON_ERROR);
+        $path = '/workspaces/{workspace}/invoices/{invoice}/square-candidates';
+        $published = $document['paths'][$path]['get'];
+        $this->withCatalog(function (AgentOperationCatalog $catalog) use ($path, $published): void {
+            $operation = $catalog->registry()->find('invoices.square_candidates');
+            $this->assertNotNull($operation);
+            $this->assertSame($path, $operation->rest->path);
+            $this->assertSame('agent-api.v1.invoices.square-candidates.index', $operation->rest->routeName);
+            $this->assertSame([AgentMcpSquareMirrorTools::class, 'candidates'], $operation->mcp->handler);
+            $this->assertFalse($catalog->readsExternalSystem($operation->id));
+            $this->assertSame(Effect::Read, $operation->effect);
+            $this->assertSame($operation->id, $published['operationId']);
+            $this->assertSame($published['parameters'], array_map(static fn (string|array $parameter): array => is_string($parameter) ? ['$ref' => '#/components/parameters/'.$parameter] : $parameter, $operation->rest->parameters));
+            $this->assertSame('SquareCandidateListResponse', AgentApiResponseSchemaCatalog::operationComponent($operation->id));
         });
     }
 

@@ -18,6 +18,10 @@ on:
         description: Run the invoice correction browser layout pass
         type: boolean
         default: false
+      square_layout:
+        description: Run the Square explore and linked invoice browser layout pass
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -28,8 +32,8 @@ concurrency:
 
 jobs:
   portal-layout:
-    name: ${{ inputs.correction_layout && 'Invoice correction browser layout' || 'Portal access browser layout' }}
-    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.portal_layout || inputs.correction_layout) }}
+    name: Portal access browser layout
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.portal_layout }}
     runs-on: ubuntu-24.04-arm
     steps:
       - name: Checkout code
@@ -60,13 +64,99 @@ jobs:
           pnpm install --frozen-lockfile
       - name: Prepare browser on the disposable runner
         run: pnpm exec playwright install --with-deps chromium
-      - name: Check portal access layout
-        run: node scripts/check-layout.mjs ${{ inputs.correction_layout && '--invoice-correction' || '--portal-access' }}
+      - name: Check browser layout
+        run: node scripts/check-layout.mjs --portal-access
       - name: Upload synthetic screenshots and measurements
         if: ${{ always() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: ${{ inputs.correction_layout && 'invoice-correction-layout' || 'portal-access-layout' }}
+          name: portal-access-layout
+          path: test-results/layout/
+          retention-days: 7
+
+  correction-layout:
+    name: Invoice correction browser layout
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.correction_layout }}
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Setup PHP
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+        with:
+          php-version: '8.5'
+          tools: composer:v2
+          coverage: none
+      - name: Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@12.11.2 --activate
+      - name: Authorize private MCP bridge dependency
+        uses: webfactory/ssh-agent@e83874834305fe9a4a2997156cb26c5de65a8555 # v0.10.0
+        with:
+          ssh-private-key: ${{ secrets.MCP_BRIDGE_DEPLOY_KEY }}
+      - name: Install dependencies
+        run: |
+          composer install --no-interaction
+          pnpm install --frozen-lockfile
+      - name: Prepare browser on the disposable runner
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Check browser layout
+        run: node scripts/check-layout.mjs --invoice-correction
+      - name: Upload synthetic screenshots and measurements
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: invoice-correction-layout
+          path: test-results/layout/
+          retention-days: 7
+
+  square-layout:
+    name: Square browser layout
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.square_layout }}
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Setup PHP
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+        with:
+          php-version: '8.5'
+          tools: composer:v2
+          coverage: none
+      - name: Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@12.11.2 --activate
+      - name: Authorize private MCP bridge dependency
+        uses: webfactory/ssh-agent@e83874834305fe9a4a2997156cb26c5de65a8555 # v0.10.0
+        with:
+          ssh-private-key: ${{ secrets.MCP_BRIDGE_DEPLOY_KEY }}
+      - name: Install dependencies
+        run: |
+          composer install --no-interaction
+          pnpm install --frozen-lockfile
+      - name: Prepare browser on the disposable runner
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Check browser layout
+        run: node scripts/check-layout.mjs --square
+      - name: Upload synthetic screenshots and measurements
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: square-layout
           path: test-results/layout/
           retention-days: 7
 

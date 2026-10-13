@@ -18,6 +18,7 @@ import { Label } from '@/components/ui/label';
 import { apiRequest } from '@/lib/api';
 import type { ApiSchema } from '@/lib/api';
 import { formatTimestamp } from '@/lib/datetime';
+import { statusLabel } from '@/lib/labels';
 
 /**
  * Who collects this invoice, and its Square link, as the operator sees it.
@@ -28,6 +29,12 @@ import { formatTimestamp } from '@/lib/datetime';
 export type InvoiceSquareState = ApiSchema<'InvoiceSquare'> & {
     link_href: string | null;
     unlink_href: string | null;
+    hosted_page?: {
+        url: string;
+        square_invoice_number: string;
+        square_status: string;
+        synced_at: string | null;
+    } | null;
 };
 
 /**
@@ -172,11 +179,27 @@ export function SquareInvoiceCard({ square }: { square: InvoiceSquareState }) {
                                     ` by ${link.linked_by}`}
                             </dd>
                         </div>
-                        {/*
-                            Slot for "View or pay in Square": the hosted page's
-                            address arrives with the Square mirror, from
-                            Square's own data, and is never built from an id.
-                        */}
+                        {square.hosted_page != null && (
+                            <div className="grid grid-cols-1 gap-1">
+                                <dd>
+                                    <a
+                                        href={square.hosted_page.url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="underline underline-offset-4"
+                                    >
+                                        View or pay in Square
+                                    </a>
+                                </dd>
+                                <dt className="text-muted-foreground">
+                                    {statusLabel(
+                                        square.hosted_page.square_status.toLowerCase(),
+                                    )}
+                                    {square.hosted_page.synced_at !== null &&
+                                        ` · synced ${formatTimestamp(square.hosted_page.synced_at)}`}
+                                </dt>
+                            </div>
+                        )}
                     </dl>
                 )}
 

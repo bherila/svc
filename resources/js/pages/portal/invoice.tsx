@@ -1,4 +1,4 @@
-import { Head, Link } from '@inertiajs/react';
+import { Head } from '@inertiajs/react';
 import { InvoiceLineRows } from '@/components/billing/invoice-line-detail';
 import type { InvoiceLineItem } from '@/components/billing/invoice-line-detail';
 import { Badge } from '@/components/ui/badge';
@@ -58,16 +58,16 @@ type PortalInvoice = {
  * apart for the person being billed.
  */
 export default function PortalInvoice({
-    company,
-    home_href: homeHref,
     invoice,
     lines,
     line_detail: lineDetail,
+    square_page_url: squarePageUrl = null,
 }: {
     company: { id: string; name: string };
     home_href: string;
     invoice: PortalInvoice;
     lines: PortalLine[];
+    square_page_url?: string | null;
     /**
      * The work behind each line, keyed by line id.
      *
@@ -89,15 +89,9 @@ export default function PortalInvoice({
             <main
                 className={cn(SHELL_CONTAINER, 'grid grid-cols-1 gap-6 py-8')}
             >
-                <header className="grid grid-cols-1 gap-1">
-                    <Link
-                        href={homeHref}
-                        className="text-sm text-muted-foreground underline-offset-4 hover:underline"
-                    >
-                        ← {company.name}
-                    </Link>
+                <div className="grid grid-cols-1 gap-1">
                     <div className="flex flex-wrap items-center gap-3">
-                        <h1 className="text-2xl font-semibold">
+                        <h1 className="min-w-0 text-2xl font-semibold wrap-anywhere">
                             {invoice.invoice_number ?? 'Invoice'}
                         </h1>
                         <Badge variant="outline">
@@ -120,7 +114,19 @@ export default function PortalInvoice({
                             Download PDF
                         </a>
                     </p>
-                </header>
+                    {squarePageUrl !== null && (
+                        <p className="text-sm">
+                            <a
+                                href={squarePageUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="underline underline-offset-4"
+                            >
+                                View or pay in Square
+                            </a>
+                        </p>
+                    )}
+                </div>
 
                 <Card>
                     <CardHeader>
@@ -194,7 +200,7 @@ export default function PortalInvoice({
                         <CardTitle>Totals</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <dl className="grid gap-2 text-sm sm:grid-cols-2">
+                        <dl className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
                             <div className="flex gap-2">
                                 <dt className="text-muted-foreground">
                                     Subtotal

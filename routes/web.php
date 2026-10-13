@@ -11,6 +11,7 @@ use App\Http\Controllers\McpSetupController;
 use App\Http\Controllers\OAuthLoginController;
 use App\Http\Controllers\OpenApiDocumentController;
 use App\Http\Controllers\SearchController;
+use App\Http\Controllers\SquareExploreController;
 use App\Http\Controllers\WorkspaceController;
 use App\Http\Controllers\WorkspaceEntryController;
 use App\Http\Controllers\WorkspaceOperationsController;
@@ -80,6 +81,7 @@ Route::middleware('auth')->group(function (): void {
 
     Route::middleware(ResolveWorkspaceNavigation::class)->group(function (): void {
         Route::get('/workspaces/{workspace}/mcp', McpSetupController::class)->name('mcp.setup');
+        Route::get('/workspaces/{workspace}/square', SquareExploreController::class)->name('square.explore');
         Route::get('/workspaces/{workspace}/clients', [ClientDirectoryController::class, 'index'])->name('clients.index');
         Route::get('/workspaces/{workspace}/clients/{clientCompany}', [ClientDirectoryController::class, 'show'])
             ->name('clients.show');

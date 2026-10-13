@@ -36,6 +36,7 @@ const artifacts = path.join(
 const widths = [390, 820, 1440, 1920];
 const portalOnly = process.argv.includes('--portal-access');
 const correctionOnly = process.argv.includes('--invoice-correction');
+const squareOnly = process.argv.includes('--square');
 const results = [];
 const failures = [];
 const serverLog = [];
@@ -276,21 +277,23 @@ try {
             ? ['settings']
             : correctionOnly
               ? ['invoice_review']
-              : [
-                    'mcp_setup',
-                    'invoice',
-                    'invoice_review',
-                    'settings',
-                    'draft_invoice',
-                    'draft_time',
-                    'proposal',
-                    'proposal_acceptance',
-                    'operations',
-                    'time',
-                    'expenses',
-                    'receipts',
-                    'expense_schedules',
-                ]) {
+              : squareOnly
+                ? ['square_explore', 'square_invoice', 'square_portal']
+                : [
+                      'mcp_setup',
+                      'invoice',
+                      'invoice_review',
+                      'settings',
+                      'draft_invoice',
+                      'draft_time',
+                      'proposal',
+                      'proposal_acceptance',
+                      'operations',
+                      'time',
+                      'expenses',
+                      'receipts',
+                      'expense_schedules',
+                  ]) {
             const response = await page.goto(
                 origin + fixture[portalOnly ? 'portal_settings' : screen],
             );
@@ -309,6 +312,22 @@ try {
 
                     throw error;
                 });
+
+            if (screen.startsWith('square_')) {
+                await expect(
+                    page
+                        .getByRole('link', {
+                            name:
+                                screen === 'square_explore'
+                                    ? 'Open'
+                                    : 'View or pay in Square',
+                        })
+                        .first(),
+                ).toHaveAttribute(
+                    'href',
+                    'https://squareupsandbox.com/pay-invoice/inv_fixture_layout',
+                );
+            }
 
             if (screen === 'proposal_acceptance') {
                 await expect(page.locator('#signer-name')).toBeVisible();
@@ -564,7 +583,7 @@ try {
         }
     }
 
-    if (!portalOnly && !correctionOnly) {
+    if (!portalOnly && !correctionOnly && !squareOnly) {
         // Full operator correction path, all writes confined to the seeded records.
         await page.setViewportSize({ width: 1440, height: 1000 });
         await page.goto(origin + fixture.draft_invoice);
@@ -709,7 +728,9 @@ try {
             '',
             portalOnly
                 ? 'Synthetic portal contacts and invitations on client settings; initial, project selection, removal and invitation withdrawal confirmation states at every required width.'
-                : 'Synthetic local fixtures only. Invoice review/settings/proposal/time/expenses are asserted; operations is a bounded measurement of known pre-existing layout problems.',
+                : squareOnly
+                  ? 'Synthetic Square explore, linked operator invoice and linked client portal invoice at every required width.'
+                  : 'Synthetic local fixtures only. Invoice review/settings/proposal/time/expenses are asserted; operations is a bounded measurement of known pre-existing layout problems.',
             '',
             '| Page/state | Viewport | Document width | Navbar height | Gate | Screenshot |',
             '| --- | --- | --- | --- | --- | --- |',

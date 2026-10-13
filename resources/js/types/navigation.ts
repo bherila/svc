@@ -59,4 +59,6 @@ export type WorkspaceNavigation = {
     };
     workspace_settings_href: string | null;
     mcp_setup_href: string | null;
+    /** The Square mirror's explore screen, for managers where Square is connected. */
+    square_href: string | null;
 };

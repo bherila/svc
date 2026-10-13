@@ -727,6 +727,30 @@ describe('the Square link on an invoice', () => {
         expect(container.innerHTML).not.toMatch(/squareup|square\.link/i);
     });
 
+    it('uses the server-provided hosted URL and labels the mirrored Square status', () => {
+        const url = 'https://squareupsandbox.com/pay-invoice/inv_fixture_1';
+        render(
+            <ClientInvoiceDetail
+                {...props({
+                    square: square({
+                        link: linked,
+                        hosted_page: {
+                            url,
+                            square_invoice_number: '000001-R-0001',
+                            square_status: 'PARTIALLY_PAID',
+                            synced_at: null,
+                        },
+                    }),
+                })}
+            />,
+        );
+
+        expect(
+            screen.getByRole('link', { name: 'View or pay in Square' }),
+        ).toHaveAttribute('href', url);
+        expect(screen.getByText('Partially paid')).toBeVisible();
+    });
+
     it('links through the API with the invoice version and reloads', async () => {
         const fetchMock = vi
             .fn()

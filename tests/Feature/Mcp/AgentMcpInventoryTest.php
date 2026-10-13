@@ -89,6 +89,7 @@ final class AgentMcpInventoryTest extends TestCase
         'invoices.preview_period',
         'invoices.release_delivery',
         'invoices.send',
+        'invoices.square_candidates',
         'invoices.square_link',
         'invoices.square_unlink',
         'invoices.update_details',
@@ -114,13 +115,19 @@ final class AgentMcpInventoryTest extends TestCase
         'square.customers.get',
         'square.customers.list',
         'square.customers.search',
+        'square.customers.unlinked',
+        'square.import_customer',
         'square.invoices.get',
         'square.invoices.list',
         'square.invoices.search',
         'square.locations.list',
+        'square.mirror.invoices.list',
         'square.orders.get',
         'square.payments.get',
         'square.payments.list',
+        'square.series.get',
+        'square.series.list',
+        'square.sync',
         'tasks.create',
         'tasks.get',
         'tasks.list',
@@ -143,7 +150,7 @@ final class AgentMcpInventoryTest extends TestCase
             'expense_writes_enabled' => ['expenses.log', 'expenses.update', 'expenses.delete', 'expenses.approve', 'expenses.unapprove', 'expense_schedules.create', 'expense_schedules.update', 'expense_schedules.generate', 'expenses.receipts.upload_url'],
             'payment_writes_enabled' => ['payments.record', 'payments.correct'],
             'client_writes_enabled' => ['clients.portal_access.grant', 'clients.portal_access.update', 'clients.portal_access.revoke',
-                'clients.portal_invitations.create', 'clients.portal_invitations.resend', 'clients.portal_invitations.revoke', 'clients.create', 'clients.update', 'clients.archive', 'clients.restore', 'agreements.create', 'agreements.update', 'agreements.activate', 'agreements.terminate', 'companies.square_customer.set', 'companies.square_customer.clear', 'agreements.square_series.set', 'agreements.square_series.clear'],
+                'clients.portal_invitations.create', 'clients.portal_invitations.resend', 'clients.portal_invitations.revoke', 'clients.create', 'clients.update', 'clients.archive', 'clients.restore', 'agreements.create', 'agreements.update', 'agreements.activate', 'agreements.terminate', 'companies.square_customer.set', 'companies.square_customer.clear', 'agreements.square_series.set', 'agreements.square_series.clear', 'square.import_customer'],
             'project_writes_enabled' => ['projects.create', 'projects.update', 'projects.archive', 'projects.members.update'],
             'proposal_writes_enabled' => ['proposals.create', 'proposals.send', 'proposals.accept'],
             'workspace_writes_enabled' => ['workspaces.create'],
@@ -157,7 +164,7 @@ final class AgentMcpInventoryTest extends TestCase
         foreach (self::gatedTools() as $flag => $names) {
             yield $flag => [$flag, $names];
         }
-        $outer = ['time_entries.approve', 'time_entries.unapprove', 'tasks.create', 'tasks.update'];
+        $outer = ['time_entries.approve', 'time_entries.unapprove', 'tasks.create', 'tasks.update', 'square.sync'];
         foreach (self::gatedTools() as $flag => $names) {
             if ($flag !== 'time_entry_writes_enabled') {
                 $outer = [...$outer, ...$names];
@@ -182,10 +189,10 @@ final class AgentMcpInventoryTest extends TestCase
             app(AgentWithheldTools::class)->for(fn (string $scope): bool => true, true));
     }
 
-    public function test_inventory_retains_all_111_tools_when_every_cutover_is_disabled(): void
+    public function test_inventory_retains_all_118_tools_when_every_cutover_is_disabled(): void
     {
         $this->enableAll();
-        $disabled = ['time_entries.approve', 'tasks.create', 'tasks.update'];
+        $disabled = ['time_entries.approve', 'tasks.create', 'tasks.update', 'square.sync'];
         foreach (self::gatedTools() as $flag => $names) {
             config(['agent_api.'.$flag => false]);
             $disabled = [...$disabled, ...$names];
@@ -193,14 +200,14 @@ final class AgentMcpInventoryTest extends TestCase
         config(['agent_api.writes_enabled' => false]);
         $disabled = array_values(array_unique($disabled));
         sort($disabled);
-        $this->assertCount(111, self::TOOLS);
+        $this->assertCount(118, self::TOOLS);
         $this->assertSame(self::TOOLS, $this->inventory());
         $this->assertSame(array_values(array_diff(self::TOOLS, $disabled)), $this->deployed());
         $this->assertSame(array_map(fn (string $name): array => ['name' => $name, 'reason' => 'deployment_disabled'], $disabled),
             app(AgentWithheldTools::class)->for(fn (string $scope): bool => true, true));
     }
 
-    public function test_actual_mcp_discovery_and_context_partition_all_111_tools_after_every_cutover_is_disabled(): void
+    public function test_actual_mcp_discovery_and_context_partition_all_118_tools_after_every_cutover_is_disabled(): void
     {
         $this->enableAll();
         $owner = User::factory()->create();
@@ -313,7 +320,7 @@ final class AgentMcpInventoryTest extends TestCase
             'attachments.list', 'attachments.get', 'attachments.download_url', 'attachments.upload_url', 'attachments.delete',
             'expense_schedules.list', 'expense_schedules.create', 'expense_schedules.update', 'expense_schedules.generate',
             'expenses.approve', 'expenses.unapprove', 'expenses.receipts.list', 'expenses.receipts.download', 'expenses.receipts.upload_url',
-            'square.customers.get', 'square.customers.list', 'square.customers.search', 'square.invoices.get', 'square.invoices.list', 'square.invoices.search', 'square.locations.list', 'square.orders.get', 'square.payments.get', 'square.payments.list'] as $name) {
+            'square.customers.get', 'square.customers.list', 'square.customers.search', 'square.invoices.get', 'square.invoices.list', 'square.invoices.search', 'square.locations.list', 'square.orders.get', 'square.payments.get', 'square.payments.list', 'square.sync', 'square.mirror.invoices.list', 'square.series.list', 'square.series.get'] as $name) {
             $this->assertSame(['name' => $name, 'reason' => 'role'], $withheld[$name], $name);
         }
         foreach (['context.get', 'projects.list', 'projects.get', 'tasks.list', 'tasks.get', 'time_entries.list', 'invoices.list', 'invoices.get', 'invoices.pdf', 'proposals.list', 'proposals.get', 'proposals.accept'] as $name) {

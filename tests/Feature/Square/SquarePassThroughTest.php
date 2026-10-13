@@ -7,6 +7,8 @@ use App\Models\ClientCompanyMembership;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Models\WorkspaceMembership;
+use App\Services\AgentApi\Operations\AgentOperationCatalog;
+use Bherila\McpLaravelBridge\Capabilities\Effect;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
@@ -73,7 +75,10 @@ final class SquarePassThroughTest extends TestCase
     {
         $this->fakeSquare();
         $session = $this->initialize();
-        $this->assertSame(self::TOOLS, array_values(array_filter($this->sortedToolNames($session), static fn (string $name): bool => str_starts_with($name, 'square.'))));
+        $catalog = app(AgentOperationCatalog::class);
+        $this->assertSame(self::TOOLS, array_values(array_filter($this->sortedToolNames($session), static fn (string $name): bool => str_starts_with($name, 'square.')
+            && $catalog->readsExternalSystem($name)
+            && $catalog->registry()->find($name)?->effect === Effect::Read)));
 
         $answers = [];
         foreach ($this->reads() as $tool => [$path, $query]) {

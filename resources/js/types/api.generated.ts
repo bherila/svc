@@ -906,6 +906,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    '/workspaces/{workspace}/invoices/{invoice}/square-candidates': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Rank possible counterparts for this invoice with explainable scores capped at 100. Suggest at 70 or more, never auto-link. Candidates require a confirmed customer or an explicitly marked agreement series. Canceled invoices are excluded unless requested; other currencies and invoices linked elsewhere are excluded. Reports ambiguous top scores and a truncated pool. Reads svc's mirror of the connected Square account, refreshed every 15 minutes and by square.sync; it never reaches Square, and meta.last_synced_at says how fresh it is. Workspace managers only, and only in the workspace Square is connected to; unavailable while Square is not configured. Amounts are in minor units. */
+        get: operations['invoices.square_candidates'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     '/workspaces/{workspace}/invoices/{invoice}/square-link': {
         parameters: {
             query?: never;
@@ -1209,6 +1226,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    '/workspaces/{workspace}/square/customers/unlinked': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description List mirrored Square customers with invoices and no confirmed client mapping, with open balances and series keys. Optionally select customers with or without open invoices. Returns at most 500 customers and explicitly reports truncation. Reads svc's mirror of the connected Square account, refreshed every 15 minutes and by square.sync; it never reaches Square, and meta.last_synced_at says how fresh it is. Workspace managers only, and only in the workspace Square is connected to; unavailable while Square is not configured. Amounts are in minor units. */
+        get: operations['square.customers.unlinked'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/square/customers/{customer}/import': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Workspace managers only. Explicitly import one mirrored Square customer as a client and confirm its mapping. Requires confirm: true and an idempotency key. Optionally mirror one of its series as a DRAFT agreement marked billed in Square; the series must have a supported cadence, one currency and an amount. Already mapped customers or assigned series return 409. Reads only the mirror and writes only svc; nothing is created, changed or paid in Square. No bulk or automatic import. A retry returns the same imported records. */
+        post: operations['square.import_customer'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     '/workspaces/{workspace}/square/invoices/{invoice}': {
         parameters: {
             query?: never;
@@ -1277,6 +1328,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    '/workspaces/{workspace}/square/mirror/invoices': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description List mirrored Square invoices, filtered by location, status, Square customer, series_key and due-date range, up to 100 per page with cursor pagination. Each carries its series_key and occurrence, status, total, paid and next amounts, due date, Square's own reminder schedule, public_url (Square's view-and-pay page) and, once paid, its Square payment ids. Reads svc's mirror of the connected Square account, refreshed every 15 minutes and by square.sync; it never reaches Square, and meta.last_synced_at says how fresh it is. Workspace managers only, and only in the workspace Square is connected to; unavailable while Square is not configured. Amounts are in minor units. */
+        get: operations['square.mirror.invoices.list'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     '/workspaces/{workspace}/square/orders/{order}': {
         parameters: {
             query?: never;
@@ -1322,6 +1390,57 @@ export interface paths {
         get: operations['square.payments.list'];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/square/series/{series}': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Get one recurring Square series by its six-digit series_key, with every mirrored member by occurrence. Reads svc's mirror of the connected Square account, refreshed every 15 minutes and by square.sync; it never reaches Square, and meta.last_synced_at says how fresh it is. Workspace managers only, and only in the workspace Square is connected to; unavailable while Square is not configured. Amounts are in minor units. */
+        get: operations['square.series.get'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/square/series': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description List recurring Square series (invoices numbered NNNNNN-R-NNNN share the six-digit series_key), optionally for one location or Square customer, up to 50 per page with cursor pagination. Each series reports its customer, cadence read from the spacing of its due dates (weekly, monthly, quarterly, semi_annual, annual, irregular or unknown), latest amount and whether amounts vary, missing occurrence numbers, next due date, open amount and status counts. Reads svc's mirror of the connected Square account, refreshed every 15 minutes and by square.sync; it never reaches Square, and meta.last_synced_at says how fresh it is. Workspace managers only, and only in the workspace Square is connected to; unavailable while Square is not configured. Amounts are in minor units. */
+        get: operations['square.series.list'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/square/sync': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Workspace managers only. Refresh svc's read-only mirror of the connected Square account now, rather than waiting for the scheduled sync every 15 minutes: locations, customers, every invoice with its series_key, status, amounts, due date, Square reminder schedule and public_url, and payment ids for paid invoices. Reads Square only; nothing is created, changed or paid in Square, and no svc invoice changes. Returns the run, which ends completed or failed with a reason; a few manual syncs are allowed per ten minutes. Repeating the same idempotency key returns the same run. */
+        post: operations['square.sync'];
         delete?: never;
         options?: never;
         head?: never;
@@ -1679,7 +1798,8 @@ export interface components {
             data: components['schemas']['ClientCompany'];
         };
         CompanySquareCustomer: {
-            square_customer_id: components['schemas']['SquareCustomerId'];
+            /** @description The confirmed opaque Square customer identifier. */
+            square_customer_id: string;
             /** Format: date-time */
             confirmed_at: string;
             /** @description Who confirmed the mapping, by name. */
@@ -2615,6 +2735,76 @@ export interface components {
             href: string;
             workspace: string;
         };
+        SquareCandidate: {
+            square_invoice_id: string;
+            invoice_number: string | null;
+            /** @description The six-digit prefix every invoice of a recurring NNNNNN-R-NNNN series shares; null for a one-off. */
+            series_key: string | null;
+            series_occurrence: number | null;
+            location_id: string | null;
+            customer_id: string | null;
+            recipient_name: string | null;
+            title: string | null;
+            /** @description Square's invoice status, e.g. DRAFT, UNPAID, SCHEDULED, PARTIALLY_PAID, PAID, PARTIALLY_REFUNDED, REFUNDED, CANCELED, FAILED, PAYMENT_PENDING. */
+            status: string;
+            currency: string | null;
+            total_amount: number | null;
+            paid_amount: number | null;
+            /** Format: date */
+            due_on: string | null;
+            /** Format: date-time */
+            scheduled_at: string | null;
+            /** Format: date */
+            sale_or_service_date: string | null;
+            /**
+             * Format: uri
+             * @description Square's hosted view-and-pay page; only ever HTTPS on a Square host.
+             */
+            public_url: string | null;
+            score: number;
+            suggested: boolean;
+            signals: {
+                /** @enum {string} */
+                amount: 'unknown' | 'exact' | 'within_1_percent' | 'different';
+                period_slot: boolean;
+                cadence: boolean;
+                due_within_7_days: boolean;
+                customer_mapped: boolean;
+            };
+            reasons: string[];
+            date_distance_days: number | null;
+            linked_to_this_invoice: boolean;
+        };
+        SquareCandidateListResponse: {
+            data: components['schemas']['SquareCandidate'][];
+            meta: {
+                /**
+                 * Format: date-time
+                 * @description When the last completed sync finished; null before the first.
+                 */
+                last_synced_at: string | null;
+                last_run: components['schemas']['SquareSyncRun'] | null;
+                customer_id: string | null;
+                series_key: string | null;
+                linked_square_invoice_id: string | null;
+                /** @constant */
+                suggest_at: 70;
+                ambiguous: boolean;
+                reason: string | null;
+                excluded: {
+                    canceled: number;
+                    other_currency: number;
+                    linked_elsewhere: {
+                        square_invoice_id: string;
+                        invoice_number: string | null;
+                        /** Format: uuid */
+                        linked_to_invoice_id: string | null;
+                        linked_to_invoice_number: string | null;
+                    }[];
+                };
+                pool_truncated: boolean;
+            };
+        };
         SquareCustomer: {
             id: string | null;
             version: number | null;
@@ -2631,6 +2821,26 @@ export interface components {
         };
         /** @description A Square customer id, held as an opaque string. SVC checks its shape only. */
         SquareCustomerId: string;
+        SquareCustomerImportRequest: {
+            /** @constant */
+            confirm: true;
+            company_name?: string | null;
+            /** Format: email */
+            billing_email?: string | null;
+            series_key?: string | null;
+            agreement_title?: string | null;
+        };
+        SquareCustomerImportResponse: {
+            data: {
+                /** Format: uuid */
+                company_id: string;
+                company_name: string;
+                company_href: string;
+                /** Format: uuid */
+                agreement_id: string | null;
+                agreement_href: string | null;
+            };
+        };
         SquareCustomerListResponse: {
             data: components['schemas']['SquareCustomer'][];
             meta: {
@@ -2754,6 +2964,65 @@ export interface components {
         SquareLocationListResponse: {
             data: components['schemas']['SquareLocation'][];
         };
+        /** @description A Square invoice as svc's mirror last saw it. */
+        SquareMirrorInvoice: {
+            square_invoice_id: string;
+            invoice_number: string | null;
+            /** @description The six-digit prefix every invoice of a recurring NNNNNN-R-NNNN series shares; null for a one-off. */
+            series_key: string | null;
+            series_occurrence: number | null;
+            subscription_id: string | null;
+            location_id: string | null;
+            order_id: string | null;
+            customer_id: string | null;
+            recipient_name: string | null;
+            title: string | null;
+            /** @description Square's invoice status, e.g. DRAFT, UNPAID, SCHEDULED, PARTIALLY_PAID, PAID, PARTIALLY_REFUNDED, REFUNDED, CANCELED, FAILED, PAYMENT_PENDING. */
+            status: string;
+            currency: string | null;
+            total_amount: number | null;
+            paid_amount: number | null;
+            next_payment_amount: number | null;
+            /** Format: date */
+            due_on: string | null;
+            /** Format: date-time */
+            scheduled_at: string | null;
+            /** Format: date */
+            sale_or_service_date: string | null;
+            /** Format: date-time */
+            created_at: string | null;
+            /** Format: date-time */
+            updated_at: string | null;
+            /**
+             * Format: uri
+             * @description Square's hosted view-and-pay page; only ever HTTPS on a Square host.
+             */
+            public_url: string | null;
+            /** @description A payment request charges a card on file automatically. */
+            autopay: boolean;
+            /** @description Square's own reminder schedule for the invoice. */
+            reminders: {
+                relative_scheduled_days: number | null;
+                status: string | null;
+                sent_at: string | null;
+            }[];
+            /** @description Square payment ids from the invoice's order; null until a sync has read them. */
+            payment_ids: string[] | null;
+            /** Format: date-time */
+            last_seen_at: string | null;
+        };
+        SquareMirrorInvoiceListResponse: {
+            data: components['schemas']['SquareMirrorInvoice'][];
+            meta: {
+                next_cursor: string | null;
+                /**
+                 * Format: date-time
+                 * @description When the last completed sync finished; null before the first.
+                 */
+                last_synced_at: string | null;
+                last_run: components['schemas']['SquareSyncRun'] | null;
+            };
+        };
         /** @description An amount in minor units of an ISO 4217 currency. */
         SquareMoney: {
             amount: number;
@@ -2845,8 +3114,180 @@ export interface components {
         SquarePaymentResponse: {
             data: components['schemas']['SquarePayment'];
         };
+        /** @description A recurring Square series, summarised from its mirrored invoices. */
+        SquareSeries: {
+            series_key: string;
+            customer_id: string | null;
+            customer_count: number;
+            recipient_name: string | null;
+            location_id: string | null;
+            currency: string | null;
+            invoice_count: number;
+            first_occurrence: number | null;
+            last_occurrence: number | null;
+            /** @description Occurrence numbers between the first and last that no mirrored invoice carries. */
+            missing_occurrences: number[];
+            missing_occurrences_truncated: boolean;
+            /** @enum {string} */
+            cadence:
+                | 'weekly'
+                | 'monthly'
+                | 'quarterly'
+                | 'semi_annual'
+                | 'annual'
+                | 'irregular'
+                | 'unknown';
+            cadence_days: number | null;
+            /** @description The latest billed member's total. */
+            amount: number | null;
+            amount_varies: boolean;
+            /** Format: date */
+            first_due_on: string | null;
+            /** Format: date */
+            last_due_on: string | null;
+            /** Format: date */
+            next_due_on: string | null;
+            /** @description Owed on unpaid and partially paid members; scheduled members are not issued yet. */
+            open_amount: number | null;
+            autopay: boolean;
+            /** @description Members per Square status. */
+            statuses: {
+                [key: string]: number;
+            };
+        };
+        /** @description A recurring Square series with every mirrored member, by occurrence. */
+        SquareSeriesDetail: {
+            series_key: string;
+            customer_id: string | null;
+            customer_count: number;
+            recipient_name: string | null;
+            location_id: string | null;
+            currency: string | null;
+            invoice_count: number;
+            first_occurrence: number | null;
+            last_occurrence: number | null;
+            /** @description Occurrence numbers between the first and last that no mirrored invoice carries. */
+            missing_occurrences: number[];
+            missing_occurrences_truncated: boolean;
+            /** @enum {string} */
+            cadence:
+                | 'weekly'
+                | 'monthly'
+                | 'quarterly'
+                | 'semi_annual'
+                | 'annual'
+                | 'irregular'
+                | 'unknown';
+            cadence_days: number | null;
+            /** @description The latest billed member's total. */
+            amount: number | null;
+            amount_varies: boolean;
+            /** Format: date */
+            first_due_on: string | null;
+            /** Format: date */
+            last_due_on: string | null;
+            /** Format: date */
+            next_due_on: string | null;
+            /** @description Owed on unpaid and partially paid members; scheduled members are not issued yet. */
+            open_amount: number | null;
+            autopay: boolean;
+            /** @description Members per Square status. */
+            statuses: {
+                [key: string]: number;
+            };
+            members: components['schemas']['SquareMirrorInvoice'][];
+            members_truncated: boolean;
+        };
         /** @description A Square recurring series: the six-digit prefix of its invoices' NNNNNN-R-NNNN numbers. */
         SquareSeriesKey: string;
+        SquareSeriesListResponse: {
+            data: components['schemas']['SquareSeries'][];
+            meta: {
+                next_cursor: string | null;
+                /**
+                 * Format: date-time
+                 * @description When the last completed sync finished; null before the first.
+                 */
+                last_synced_at: string | null;
+                last_run: components['schemas']['SquareSyncRun'] | null;
+            };
+        };
+        SquareSeriesResponse: {
+            data: components['schemas']['SquareSeriesDetail'];
+            meta: {
+                /**
+                 * Format: date-time
+                 * @description When the last completed sync finished; null before the first.
+                 */
+                last_synced_at: string | null;
+                last_run: components['schemas']['SquareSyncRun'] | null;
+            };
+        };
+        /** @description No fields: a sync always refreshes the whole mirror. */
+        SquareSyncRequest: Record<string, never>;
+        /** @description One pass of the Square mirror sync. */
+        SquareSyncRun: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            trigger: 'schedule' | 'request';
+            /** @enum {string} */
+            status: 'requested' | 'running' | 'completed' | 'failed';
+            /** @description The Square-Version every request of the run sent. */
+            square_version: string;
+            /** Format: date-time */
+            requested_at: string | null;
+            /** Format: date-time */
+            started_at: string | null;
+            /** Format: date-time */
+            finished_at: string | null;
+            locations_seen: number;
+            customers_seen: number;
+            customers_changed: number;
+            invoices_seen: number;
+            invoices_changed: number;
+            payments_resolved: number;
+            /**
+             * Format: date-time
+             * @description The newest Square updated_at the run saw.
+             */
+            high_water_mark: string | null;
+            /** @description True when a listing was longer than one run reads; the mirror is then incomplete. */
+            truncated: boolean;
+            error_code: string | null;
+            error: string | null;
+        };
+        SquareSyncRunResponse: {
+            data: components['schemas']['SquareSyncRun'];
+        };
+        SquareUnlinkedCustomer: {
+            customer_id: string;
+            display_name: string | null;
+            company_name: string | null;
+            given_name: string | null;
+            family_name: string | null;
+            email_address: string | null;
+            in_customer_directory: boolean;
+            invoice_count: number;
+            open_invoice_count: number;
+            open_amount: number | null;
+            currency: string | null;
+            /** Format: date */
+            last_due_on: string | null;
+            series_keys: string[];
+        };
+        SquareUnlinkedCustomerListResponse: {
+            data: components['schemas']['SquareUnlinkedCustomer'][];
+            meta: {
+                /**
+                 * Format: date-time
+                 * @description When the last completed sync finished; null before the first.
+                 */
+                last_synced_at: string | null;
+                last_run: components['schemas']['SquareSyncRun'] | null;
+                truncated: boolean;
+            };
+        };
         StaleAndMissingInvoiceAudit: {
             /** Format: date */
             as_of: string;
@@ -5185,6 +5626,33 @@ export interface operations {
             default: components['responses']['Error'];
         };
     };
+    'invoices.square_candidates': {
+        parameters: {
+            query?: {
+                include_canceled?: boolean;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                invoice: components['parameters']['InvoiceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['SquareCandidateListResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
     'invoices.square_link': {
         parameters: {
             query?: never;
@@ -5858,6 +6326,62 @@ export interface operations {
             default: components['responses']['Error'];
         };
     };
+    'square.customers.unlinked': {
+        parameters: {
+            query?: {
+                with_open_balance?: boolean;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['SquareUnlinkedCustomerListResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'square.import_customer': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                customer: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['SquareCustomerImportRequest'];
+            };
+        };
+        responses: {
+            /** @description Imported client and optional draft agreement */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['SquareCustomerImportResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
     'square.invoices.get': {
         parameters: {
             query?: never;
@@ -5961,6 +6485,48 @@ export interface operations {
             default: components['responses']['Error'];
         };
     };
+    'square.mirror.invoices.list': {
+        parameters: {
+            query?: {
+                location_id?: string;
+                status?:
+                    | 'DRAFT'
+                    | 'UNPAID'
+                    | 'SCHEDULED'
+                    | 'PARTIALLY_PAID'
+                    | 'PAID'
+                    | 'PARTIALLY_REFUNDED'
+                    | 'REFUNDED'
+                    | 'CANCELED'
+                    | 'FAILED'
+                    | 'PAYMENT_PENDING';
+                customer_id?: string;
+                series_key?: string;
+                due_from?: string;
+                due_to?: string;
+                limit?: number;
+                cursor?: components['parameters']['Cursor'];
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['SquareMirrorInvoiceListResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
     'square.orders.get': {
         parameters: {
             query?: never;
@@ -6034,6 +6600,87 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['SquarePaymentListResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'square.series.get': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                series: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['SquareSeriesResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'square.series.list': {
+        parameters: {
+            query?: {
+                location_id?: string;
+                customer_id?: string;
+                limit?: number;
+                cursor?: components['parameters']['Cursor'];
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['SquareSeriesListResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'square.sync': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['SquareSyncRequest'];
+            };
+        };
+        responses: {
+            /** @description The sync run, completed or failed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['SquareSyncRunResponse'];
                 };
             };
             default: components['responses']['Error'];

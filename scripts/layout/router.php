@@ -45,5 +45,5 @@ if ($file !== false && str_starts_with($file, $public.'/build/') && is_file($fil
 }
 
 $app = require __DIR__.'/bootstrap.php';
-Auth::onceUsingId($fixture['user_id']);
+Auth::onceUsingId($requestPath === $fixture['square_portal'] ? $fixture['square_portal_user_id'] : $fixture['user_id']);
 $app->handleRequest(Request::capture());

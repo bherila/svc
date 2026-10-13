@@ -15,7 +15,9 @@ use App\Models\User;
 use App\Queries\ClientHome\PortalClientHomeQuery;
 use App\Services\Authorization\PortalAccess;
 use App\Services\Authorization\PortalInvoiceQuery;
+use App\Services\Square\Mirror\SquareInvoicePage;
 use App\Support\Billing\InvoiceLineDetail;
+use App\Support\Billing\InvoiceStatus;
 use App\Support\Engagement\AgreementTermsPayload;
 use App\Support\Files\AttachmentListing;
 use Illuminate\Database\Eloquent\Builder;
@@ -114,6 +116,12 @@ class ClientPortalController extends Controller
                 'balance_amount' => (int) $invoice->balance_amount,
                 'pdf_url' => "/workspaces/{$clientCompany->workspace->public_id}/invoices/{$invoice->public_id}/pdf",
             ],
+            // A linked invoice is collected in Square (#438): the client views
+            // or pays it on Square's own page, whose address comes only from
+            // Square's data. The invoice was already narrowed to this
+            // client's company and to what the client may see.
+            'square_page_url' => $invoice->status === InvoiceStatus::Void->value ? null
+                : app(SquareInvoicePage::class)->forInvoice($clientCompany->workspace, $invoice)['url'] ?? null,
             // The same itemisation the operator sees, narrowed to what the
             // client may read: only entries carrying a client-safe description,
             // and that text rather than the internal note. Withheld rather than

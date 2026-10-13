@@ -1107,3 +1107,83 @@ Configuration (server environment only; nothing is stored in the database):
 | `SQUARE_TIMEOUT_SECONDS`, `SQUARE_CONNECT_TIMEOUT_SECONDS` | Request and connect timeouts (defaults 10 and 5, bounded) |
 | `SQUARE_MAX_ATTEMPTS`, `SQUARE_RETRY_BASE_MILLISECONDS` | Attempts for a retryable read (default 3, at most 5) and the first backoff (default 250 ms) |
 | `SQUARE_RATE_LIMIT_PER_MINUTE` | Per-workspace pass-through budget (default 60) |
+
+### Square mirror (#438)
+
+SVC keeps a read-only mirror of the connected Square account, so the explore
+screen, series and link suggestions never wait on Square. Square stays
+the source of truth; the mirror is a cache that a sync refreshes.
+
+| Operation | REST (`/api/v1/workspaces/{workspace}/square/…`) | Notes |
+| --- | --- | --- |
+| `square.sync` | `POST sync` | `billing:write`, `Idempotency-Key`; refresh the mirror now and return the run |
+| `square.mirror.invoices.list` | `GET mirror/invoices` | `location_id`, `status`, `customer_id`, `series_key`, `due_from`/`due_to`; up to 100 per page, opaque cursor |
+| `square.series.list` | `GET series` | Recurring series by `series_key`, optionally for one `location_id` or `customer_id`; up to 50 per page |
+| `square.series.get` | `GET series/{series}` | One series with every mirrored member by occurrence |
+| `square.customers.unlinked` | `GET customers/unlinked` | Customers with invoices and no confirmed mapping; balances, series keys, optional `with_open_balance`; up to 500, with explicit truncation |
+| `square.import_customer` | `POST customers/{customer}/import` | `billing:write`, `Idempotency-Key`, `confirm: true`; create one client and optionally a draft agreement for `series_key` |
+
+`invoices.square_candidates` is `GET /api/v1/workspaces/{workspace}/invoices/{invoice}/square-candidates`
+with `billing:read`. It ranks the confirmed customer's invoices and an agreement's
+explicit Square series, suggests at 70 points, and caps scores at 100. The amount,
+period, cadence, due date and customer signals explain the ranking. Suggestions
+never link anything; tied top suggestions are marked ambiguous. Canceled invoices
+are omitted unless `include_canceled=true`; other currencies and invoices linked
+elsewhere are excluded. `limit` is at most 25 and a bounded pool reports truncation.
+
+Import is explicit per customer and uses only the mirror. It creates a client,
+confirms the customer mapping and records provenance together. `series_key` may
+also create a draft agreement with the mirrored cadence, currency and amount,
+marked billed in Square. The agreement awaits human review and activation.
+Already mapped customers or assigned series return 409; retries with the same
+idempotency key return the same records. Optional `company_name`, `billing_email`
+and `agreement_title` override the defaults. No existing record is edited, so
+there is no `expected_version` to supply. Import requires both
+`AGENT_API_WRITES_ENABLED` and `AGENT_API_CLIENT_WRITES_ENABLED`.
+
+Operator and client invoice pages offer **View or pay in Square** only for an
+active link whose mirrored `public_url` is an absolute HTTPS address on an
+allowed Square host. SVC never constructs that address from an identifier.
+The client portal resolves the invoice through its existing company and
+workspace visibility checks before looking up the hosted page.
+
+The reads are `billing:read`, for workspace managers of the connected
+workspace, and never reach Square: each list's `meta` carries
+`last_synced_at` (the last completed run) and `last_run` (the latest run,
+however it ended), so a reader can tell how fresh the answer is. Workspace
+managers also get a **Square invoices** screen (account menu) with the same
+filters, the series, the sync status and a **Sync now** control that calls
+`square.sync`; it links each invoice to its Square `public_url`.
+
+- **What is mirrored.** Locations; customers (the allow-listed fields of
+  `square.customers.get`); and every location's invoices with their number,
+  `series_key` and occurrence, status, currency, total, paid and next amounts,
+  due, scheduled and service dates, Square's payment requests with their
+  reminder schedule, `public_url`, autopay, and - for paid invoices - the
+  Square payment ids from the invoice's order. Records pass through the same
+  allow-listed projection as the pass-through reads before anything is stored.
+- **When.** `svc:square:sync` runs every 15 minutes (never more often) without
+  overlapping, and does nothing while Square is not configured.
+  `square.sync` runs one now; a workspace gets a few manual syncs per ten
+  minutes, and repeating an idempotency key returns the same run without
+  reading Square again.
+- **How.** Square has no "changed since" filter on its invoice or customer
+  lists, so each run pages through them whole (bounded: a run that stops early
+  says `truncated`). A fingerprint of each record decides whether its row is
+  written, so an unchanged account costs reads and no writes; the run records
+  the newest Square `updated_at` it saw as its `high_water_mark`. Rows are
+  unique per Square id and an older Square version never replaces a newer
+  one, so two syncs at once leave one row per Square object. The
+  `Square-Version` sent is recorded on the run and logged with every page.
+- **Series.** A series is the invoices sharing a `series_key`. Its cadence
+  (`weekly`, `monthly`, `quarterly`, `semi_annual`, `annual`, `irregular` or
+  `unknown`) is the median spacing of due dates per occurrence, so a skipped
+  month does not change it; occurrence numbers no mirrored invoice carries are
+  listed as `missing_occurrences`; `amount` is the latest billed member's and
+  `amount_varies` flags a price change; `open_amount` sums unpaid and
+  partially paid members (scheduled ones are not issued yet). Canceled, draft
+  and failed members set neither amount nor cadence.
+- **Runs.** A run ends `completed`, or `failed` with an `error_code` and a
+  readable `error` (Square unavailable, rate limited, an unreadable response,
+  a refused credential, or a run a dead process abandoned). A failed run is a
+  200 answer, not an error: the mirror keeps what earlier runs stored.

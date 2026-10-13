@@ -810,6 +810,17 @@
             "mcp.switch:invoices.send"
         ]
     },
+    "invoices.square_candidates": {
+        "scopes": [
+            "billing:read"
+        ],
+        "flags": [
+            "square.connected",
+            "mcp",
+            "mcp.switch:mcp.read.square",
+            "mcp.switch:invoices.square_candidates"
+        ]
+    },
     "invoices.square_link": {
         "scopes": [
             "billing:write",
@@ -1156,6 +1167,29 @@
             "mcp.switch:square.customers.search"
         ]
     },
+    "square.customers.unlinked": {
+        "scopes": [
+            "billing:read"
+        ],
+        "flags": [
+            "square.connected",
+            "mcp",
+            "mcp.switch:mcp.read.square",
+            "mcp.switch:square.customers.unlinked"
+        ]
+    },
+    "square.import_customer": {
+        "scopes": [
+            "billing:write"
+        ],
+        "flags": [
+            "agent.writes.clients",
+            "square.connected",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:square.import_customer"
+        ]
+    },
     "square.invoices.get": {
         "scopes": [
             "billing:read"
@@ -1200,6 +1234,17 @@
             "mcp.switch:square.locations.list"
         ]
     },
+    "square.mirror.invoices.list": {
+        "scopes": [
+            "billing:read"
+        ],
+        "flags": [
+            "square.connected",
+            "mcp",
+            "mcp.switch:mcp.read.square",
+            "mcp.switch:square.mirror.invoices.list"
+        ]
+    },
     "square.orders.get": {
         "scopes": [
             "billing:read"
@@ -1231,6 +1276,40 @@
             "mcp",
             "mcp.switch:mcp.read.square",
             "mcp.switch:square.payments.list"
+        ]
+    },
+    "square.series.get": {
+        "scopes": [
+            "billing:read"
+        ],
+        "flags": [
+            "square.connected",
+            "mcp",
+            "mcp.switch:mcp.read.square",
+            "mcp.switch:square.series.get"
+        ]
+    },
+    "square.series.list": {
+        "scopes": [
+            "billing:read"
+        ],
+        "flags": [
+            "square.connected",
+            "mcp",
+            "mcp.switch:mcp.read.square",
+            "mcp.switch:square.series.list"
+        ]
+    },
+    "square.sync": {
+        "scopes": [
+            "billing:write"
+        ],
+        "flags": [
+            "agent.writes",
+            "square.connected",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:square.sync"
         ]
     },
     "tasks.create": {

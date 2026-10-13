@@ -15,6 +15,7 @@ use App\Services\Mcp\AgentMcpPortalInvitationTools;
 use App\Services\Mcp\AgentMcpPrompts;
 use App\Services\Mcp\AgentMcpReadTools;
 use App\Services\Mcp\AgentMcpSquareLinkTools;
+use App\Services\Mcp\AgentMcpSquareMirrorTools;
 use App\Services\Mcp\AgentMcpSquareTools;
 use App\Services\Mcp\AgentMcpWriteTools;
 use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
@@ -126,6 +127,7 @@ final class AgentOperationCatalog
         'invoices.preview_period' => ['invoices.preview_period', '/workspaces/{workspace}/agreements/{agreement}/invoices/preview', [200]],
         'invoices.release_delivery' => ['invoices.release_delivery', '/workspaces/{workspace}/invoices/{invoice}/automatic-delivery/release', [200]],
         'invoices.send' => ['invoices.send', '/workspaces/{workspace}/invoices/{invoice}/send', [200]],
+        'invoices.square_candidates' => ['invoices.square-candidates.index', '/workspaces/{workspace}/invoices/{invoice}/square-candidates', [200]],
         'invoices.square_link' => ['invoices.square-link.store', '/workspaces/{workspace}/invoices/{invoice}/square-link', [200]],
         'invoices.square_unlink' => ['invoices.square-link.destroy', '/workspaces/{workspace}/invoices/{invoice}/square-link', [200]],
         'invoices.update_details' => ['invoices.update_details', '/workspaces/{workspace}/invoices/{invoice}/details', [200]],
@@ -150,6 +152,8 @@ final class AgentOperationCatalog
         'search' => ['search', '/workspaces/{workspace}/search', [200]],
         'square.customers.get' => ['square.customers.show', '/workspaces/{workspace}/square/customers/{customer}', [200]],
         'square.customers.list' => ['square.customers.index', '/workspaces/{workspace}/square/customers', [200]],
+        'square.customers.unlinked' => ['square.customers.unlinked', '/workspaces/{workspace}/square/customers/unlinked', [200]],
+        'square.import_customer' => ['square.customers.import', '/workspaces/{workspace}/square/customers/{customer}/import', [200]],
         'square.customers.search' => ['square.customers.search', '/workspaces/{workspace}/square/customers/search', [200]],
         'square.invoices.get' => ['square.invoices.show', '/workspaces/{workspace}/square/invoices/{invoice}', [200]],
         'square.invoices.list' => ['square.invoices.index', '/workspaces/{workspace}/square/invoices', [200]],
@@ -157,7 +161,11 @@ final class AgentOperationCatalog
         'square.locations.list' => ['square.locations.index', '/workspaces/{workspace}/square/locations', [200]],
         'square.orders.get' => ['square.orders.show', '/workspaces/{workspace}/square/orders/{order}', [200]],
         'square.payments.get' => ['square.payments.show', '/workspaces/{workspace}/square/payments/{payment}', [200]],
+        'square.mirror.invoices.list' => ['square.mirror.invoices.index', '/workspaces/{workspace}/square/mirror/invoices', [200]],
         'square.payments.list' => ['square.payments.index', '/workspaces/{workspace}/square/payments', [200]],
+        'square.series.get' => ['square.series.show', '/workspaces/{workspace}/square/series/{series}', [200]],
+        'square.series.list' => ['square.series.index', '/workspaces/{workspace}/square/series', [200]],
+        'square.sync' => ['square.sync', '/workspaces/{workspace}/square/sync', [200]],
         'tasks.create' => ['tasks.store', '/workspaces/{workspace}/projects/{project}/tasks', [201]],
         'tasks.get' => ['tasks.show', '/workspaces/{workspace}/tasks/{task}', [200]],
         'tasks.list' => ['tasks.index', '/workspaces/{workspace}/tasks', [200]],
@@ -203,7 +211,7 @@ final class AgentOperationCatalog
     private function build(): OperationRegistry
     {
         $registry = new OperationRegistry;
-        $registry->register(...$this->tools(), ...$this->restOnly(), ...$this->resourcesAndPrompts(), ...$this->square());
+        $registry->register(...$this->tools(), ...$this->restOnly(), ...$this->resourcesAndPrompts(), ...$this->square(), ...$this->squareMirror());
         $documented = array_keys(AgentRestDocumentation::operations());
         $bound = array_keys(self::ROUTES);
         sort($documented);
@@ -1338,12 +1346,80 @@ final class AgentOperationCatalog
                 Effect::Read,
                 true,
                 'mcp.read.square',
-                cutovers: [AgentDeploymentFlags::SQUARE],
+                availability: [AgentDeploymentFlags::SQUARE],
                 manager: true,
             );
         }
 
         return $operations;
+    }
+
+    /**
+     * svc's read-only mirror of Square (#438): manager-only, offered only
+     * while Square is configured. The sync reads Square and writes only the
+     * mirror, so it is a local write in an open world, and the outer agent
+     * write switch withholds it like any other write.
+     *
+     * @return list<Operation>
+     */
+    private function squareMirror(): array
+    {
+        $this->external['square.sync'] = true;
+        $reads = [];
+        foreach ([
+            'square.mirror.invoices.list' => ['List mirrored Square invoices', 'invoices'],
+            'square.series.list' => ['List Square series', 'series'],
+            'square.series.get' => ['Get Square series', 'seriesDetail'],
+            'invoices.square_candidates' => ['Find Square invoice candidates', 'candidates'],
+            'square.customers.unlinked' => ['List unlinked Square customers', 'unlinkedCustomers'],
+        ] as $id => [$title, $method]) {
+            $reads[] = $this->tool(
+                $id,
+                $title,
+                self::documented($id),
+                [AgentMcpSquareMirrorTools::class, $method],
+                Effect::Read,
+                true,
+                'mcp.read.square',
+                availability: [AgentDeploymentFlags::SQUARE],
+                manager: true,
+            );
+        }
+
+        return [
+            ...$reads,
+            $this->tool(
+                'square.import_customer',
+                'Import one Square customer',
+                self::documented('square.import_customer'),
+                [AgentMcpSquareMirrorTools::class, 'importCustomer'],
+                Effect::LocalWrite,
+                true,
+                'mcp.write',
+                cutovers: [AgentDeploymentFlags::CLIENTS],
+                availability: [AgentDeploymentFlags::SQUARE],
+                manager: true,
+            ),
+            $this->tool(
+                'square.sync',
+                'Sync Square mirror',
+                self::documented('square.sync'),
+                [AgentMcpSquareMirrorTools::class, 'sync'],
+                Effect::LocalWrite,
+                true,
+                'mcp.write',
+                cutovers: [AgentDeploymentFlags::WRITES],
+                availability: [AgentDeploymentFlags::SQUARE],
+                manager: true,
+            ),
+        ];
+    }
+
+    private static function documented(string $id): string
+    {
+        $description = AgentRestDocumentation::operations()[$id]['description'] ?? null;
+
+        return is_string($description) ? $description : throw new LogicException("Operation [{$id}] has no documented description.");
     }
 
     /** @return list<Operation> */
@@ -1392,6 +1468,7 @@ final class AgentOperationCatalog
      * @param  array<string, mixed>|SchemaRef|null  $input
      * @param  array<string, mixed>|SchemaRef|null  $output
      * @param  list<string>|null  $scopes  only for a tool the document does not describe
+     * @param  list<string>  $availability  installation prerequisites, independent of write cutovers
      */
     private function tool(
         string $id,
@@ -1406,6 +1483,7 @@ final class AgentOperationCatalog
         array|SchemaRef|null $input = null,
         array|SchemaRef|null $output = null,
         ?array $scopes = null,
+        array $availability = [],
     ): Operation {
         $documented = isset(self::ROUTES[$id]);
         if ($documented === ($scopes !== null)) {
@@ -1423,7 +1501,7 @@ final class AgentOperationCatalog
             effect: $effect,
             requirement: new Requirement(
                 scopes: $scopes ?? AgentRestDocumentation::operations()[$id]['scopes'],
-                flags: [...$cutovers, ...self::mcpSwitches($group, $id)],
+                flags: [...$cutovers, ...$availability, ...self::mcpSwitches($group, $id)],
             ),
             idempotent: $idempotent,
             safety: $write ? new WriteSafety(IdempotencyKey::HeaderAndArgument, expectedVersion: $this->takesVersion($id)) : new WriteSafety,

@@ -84,6 +84,19 @@ export function AccountMenu({
                     </DropdownMenuGroup>
                 )}
 
+                {navigation?.square_href && (
+                    <DropdownMenuGroup>
+                        <DropdownMenuItem asChild>
+                            <Link
+                                href={navigation.square_href}
+                                data-test="account-square"
+                            >
+                                Square invoices
+                            </Link>
+                        </DropdownMenuItem>
+                    </DropdownMenuGroup>
+                )}
+
                 {typeof workspaceSettingsHref === 'string' && (
                     <DropdownMenuGroup>
                         <DropdownMenuItem asChild>

@@ -108,6 +108,11 @@ final class AgentDeploymentFlags implements DeploymentFlags
         return $flag === self::MCP || str_starts_with($flag, self::MCP_SWITCH);
     }
 
+    public static function isAvailabilityPrecondition(string $flag): bool
+    {
+        return $flag === self::SQUARE;
+    }
+
     public function enabled(string $flag): bool
     {
         if ($flag === self::SQUARE) {

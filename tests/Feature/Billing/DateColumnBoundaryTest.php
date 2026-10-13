@@ -217,6 +217,10 @@ final class DateColumnBoundaryTest extends TestCase
      */
     private const BORN_DATE_ONLY = [
         'client_invoices' => ['scheduled_issue_date' => '2026_10_12_120000_add_scheduled_issue_date_to_client_invoices'],
+        'square_invoice_snapshots' => [
+            'due_on' => '2026_10_12_210000_create_square_mirror',
+            'sale_or_service_date' => '2026_10_12_210000_create_square_mirror',
+        ],
     ];
 
     /**
@@ -276,6 +280,8 @@ final class DateColumnBoundaryTest extends TestCase
             'app/Console/Commands/Billing/ReplayInvoicesCommand.php' => ['$periodStart', '$periodEnd'],
             // `$upTo?->toDateString()`, taken before the query.
             'app/Services/Billing/DeferredBillingAllocator.php' => ['$upToDate'],
+            // filters() validates both bounds with date_format:Y-m-d.
+            'app/Services/Square/Mirror/SquareMirrorReadService.php' => ['$filters[\'due_from\']', '$filters[\'due_to\']'],
         ];
 
         $columns = implode('|', array_map(static fn (string $column): string => preg_quote($column, '/'), self::dateOnlyColumns()));

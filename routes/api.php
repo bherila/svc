@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\V1\AgentProposalController;
 use App\Http\Controllers\Api\V1\AgentReadController;
 use App\Http\Controllers\Api\V1\AgentSquareController;
 use App\Http\Controllers\Api\V1\AgentSquareLinkController;
+use App\Http\Controllers\Api\V1\AgentSquareMirrorController;
 use App\Http\Controllers\Api\V1\AgentTaskMutationController;
 use App\Http\Controllers\Api\V1\AgentTimeEntryMutationController;
 use App\Http\Controllers\Api\V1\AgentWorkspaceMiscController;
@@ -287,6 +288,24 @@ Route::prefix('v1')
         $operation('billing_audit.stale_and_missing', [AgentInvoiceOperationsController::class, 'audit'])
             ->middleware(EnsureAgentWorkspaceVisible::class)
             ->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']));
+        // svc's read-only mirror of Square (#438), refreshed by the scheduled
+        // sync or on request; reads of it never reach Square.
+        foreach ([
+            'invoices.square_candidates' => 'candidates',
+            'square.customers.unlinked' => 'unlinkedCustomers',
+            'square.import_customer' => 'importCustomer',
+            'square.sync' => 'sync',
+            'square.mirror.invoices.list' => 'invoices',
+            'square.series.list' => 'series',
+            'square.series.get' => 'seriesDetail',
+        ] as $operationId => $action) {
+            $operation($operationId, [AgentSquareMirrorController::class, $action])
+                ->where('series', '[0-9]{6}')
+                ->whereUuid('invoice')
+                ->where('customer', '[A-Za-z0-9][A-Za-z0-9:_\-]{0,191}')
+                ->middleware(EnsureAgentWorkspaceVisible::class)
+                ->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']));
+        }
         // Read-only Square pass-through (#438). Square ids are opaque; the
         // static `/search` paths are matched before the id routes beside them.
         foreach ([
