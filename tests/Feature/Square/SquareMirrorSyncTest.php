@@ -10,6 +10,7 @@ use App\Models\Workspace;
 use App\Services\Square\Mirror\SquareMirrorRepository;
 use App\Services\Square\Mirror\SquareMirrorSync;
 use App\Services\Square\Mirror\SquareSnapshotMapper;
+use Carbon\CarbonImmutable;
 use Illuminate\Console\Scheduling\Event as ScheduledEvent;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -60,6 +61,30 @@ final class SquareMirrorSyncTest extends TestCase
             $this->assertStringNotContainsString(self::SQUARE_TOKEN, $message.json_encode($context));
         }
         parent::tearDown();
+    }
+
+    public function test_snapshot_storage_accepts_the_full_square_id_contract(): void
+    {
+        $id = static fn (string $prefix): string => $prefix.str_repeat('x', 192 - strlen($prefix));
+        $locationId = $id('LOCFIXTURE');
+        $customerId = $id('cust_fixture_');
+        $invoiceId = $id('inv_fixture_');
+        $orderId = $id('order_fixture_');
+        $subscriptionId = $id('subscription_fixture_');
+        $mapper = app(SquareSnapshotMapper::class);
+        $repository = app(SquareMirrorRepository::class);
+        $now = CarbonImmutable::parse('2040-01-01');
+        $invoice = self::squareInvoice($invoiceId);
+        $invoice['location_id'] = $locationId;
+        $invoice['order_id'] = $orderId;
+        $invoice['primary_recipient']['customer_id'] = $customerId;
+        $invoice['subscription_id'] = $subscriptionId;
+        $this->assertSame(1, $repository->storeLocations($this->workspace, [$mapper->location(array_replace(self::squareLocation(), ['id' => $locationId]))], $now));
+        $this->assertSame(1, $repository->storeCustomers($this->workspace, [$mapper->customer(self::squareCustomer($customerId))], $now));
+        $this->assertSame(1, $repository->storeInvoices($this->workspace, [$mapper->invoice($invoice)], $now));
+        $this->assertSame($locationId, SquareLocationSnapshot::query()->where('workspace_id', $this->workspace->id)->sole()->square_location_id);
+        $this->assertSame($customerId, SquareCustomerSnapshot::query()->where('workspace_id', $this->workspace->id)->sole()->square_customer_id);
+        $this->assertSame([$invoiceId, $locationId, $orderId, $customerId, $subscriptionId], array_values(SquareInvoiceSnapshot::query()->where('workspace_id', $this->workspace->id)->sole()->only(['square_invoice_id', 'square_location_id', 'square_order_id', 'square_customer_id', 'square_subscription_id'])));
     }
 
     public function test_a_sync_mirrors_locations_customers_and_invoices_with_their_series_and_payment_ids(): void

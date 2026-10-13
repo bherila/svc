@@ -58,7 +58,7 @@ return new class extends Migration
         Schema::create('square_location_snapshots', function (Blueprint $table) use ($exact): void {
             $table->id();
             $table->foreignId('workspace_id')->constrained()->cascadeOnDelete();
-            $exact($table->string('square_location_id', 191));
+            $exact($table->string('square_location_id', 192));
             $table->string('name')->nullable();
             $table->string('business_name')->nullable();
             $table->string('status', 32)->nullable();
@@ -75,7 +75,7 @@ return new class extends Migration
         Schema::create('square_customer_snapshots', function (Blueprint $table) use ($exact): void {
             $table->id();
             $table->foreignId('workspace_id')->constrained()->cascadeOnDelete();
-            $exact($table->string('square_customer_id', 191));
+            $exact($table->string('square_customer_id', 192));
             $table->unsignedBigInteger('square_version')->nullable();
             $table->string('given_name')->nullable();
             $table->string('family_name')->nullable();
@@ -97,12 +97,12 @@ return new class extends Migration
         Schema::create('square_invoice_snapshots', function (Blueprint $table) use ($exact): void {
             $table->id();
             $table->foreignId('workspace_id')->constrained()->cascadeOnDelete();
-            $exact($table->string('square_invoice_id', 191));
+            $exact($table->string('square_invoice_id', 192));
             $table->unsignedBigInteger('square_version')->nullable();
-            $exact($table->string('square_location_id', 191)->nullable());
-            $exact($table->string('square_order_id', 191)->nullable());
-            $exact($table->string('square_customer_id', 191)->nullable());
-            $exact($table->string('square_subscription_id', 191)->nullable());
+            $exact($table->string('square_location_id', 192)->nullable());
+            $exact($table->string('square_order_id', 192)->nullable());
+            $exact($table->string('square_customer_id', 192)->nullable());
+            $exact($table->string('square_subscription_id', 192)->nullable());
             $table->string('invoice_number', 191)->nullable();
             // The six-digit prefix of a dashboard series' NNNNNN-R-NNNN numbers.
             $table->char('series_key', 6)->nullable();
