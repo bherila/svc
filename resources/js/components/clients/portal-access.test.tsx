@@ -279,6 +279,41 @@ describe('portal access', () => {
             expect(horizontalOverflowRisks(container)).toEqual([]);
         });
 
+        it('offers a provider withdrawal retry without exposing an admission link', async () => {
+            const page = invitationProps();
+            page.portal.invitations = [
+                {
+                    ...page.portal.invitations![0],
+                    status: 'revoked',
+                    link: null,
+                    resend_url: null,
+                    reason: 'Portal access is withdrawn. The identity provider withdrawal has not finished; try again.',
+                },
+            ];
+            const { container } = render(<PortalAccess {...page} />);
+            expect(screen.getByText('Revoked')).toBeInTheDocument();
+            expect(
+                screen.queryByLabelText('Invitation link'),
+            ).not.toBeInTheDocument();
+            expect(
+                screen.queryByRole('button', { name: 'Send again' }),
+            ).not.toBeInTheDocument();
+            await userEvent.click(
+                screen.getByRole('button', { name: 'Retry withdrawal' }),
+            );
+            expect(inertia.delete).not.toHaveBeenCalled();
+            await userEvent.click(
+                within(screen.getByRole('alertdialog')).getByRole('button', {
+                    name: 'Withdraw invitation',
+                }),
+            );
+            expect(inertia.delete).toHaveBeenCalledWith(
+                page.portal.invitations[0].revoke_url,
+                expect.any(Object),
+            );
+            expect(horizontalOverflowRisks(container)).toEqual([]);
+        });
+
         it('sends an invitation again and withdraws one only after confirming', async () => {
             inertia.post.mockImplementationOnce(
                 (

@@ -176,47 +176,65 @@ final class PortalInvitations
     }
 
     /**
-     * Withdraw an invitation, or dismiss one that was not applied.
-     *
-     * A pending or expired invitation is revoked at the provider first, so its
-     * link stops admitting anyone; if the provider cannot be reached nothing
-     * changes here. One the person has already accepted at the provider is
-     * still revoked here, so signing in gives them nothing.
+     * Withdraw portal access, then finish the provider withdrawal after commit.
+     * An unavailable provider leaves a visible, retryable withdrawal here;
+     * the invitation never becomes eligible to grant portal access again.
      */
     public function revoke(AccessMutationContext $context, ClientCompany $company, ClientPortalInvitation $invitation): ClientPortalInvitation
     {
         $workspace = Workspace::query()->whereKey($company->workspace_id)->firstOrFail();
         $this->refuseIf($this->authority->manage($context, $this->coordinator->actorRole($context, $this->coordinator->staff($workspace, [$context->actorId()], lock: false))));
-        $status = PortalInvitationStatus::from($invitation->status);
-        $this->refuseIf(in_array($status, [PortalInvitationStatus::Accepted, PortalInvitationStatus::Revoked], true) ? AccessRefusal::InvitationNotOpen : null);
-
-        if ($status->isOpen() && $invitation->provider_invitation_id !== null) {
-            $subject = $this->subject($context);
-            $this->ask(function (ApplicationInvitations $provider) use ($subject, $invitation): void {
-                try {
-                    $provider->revoke($subject, (int) $invitation->provider_invitation_id);
-                } catch (ApplicationInvitationNotFound) {
-                    // Nothing left to admit with.
-                } catch (ApplicationInvitationConflict $accepted) {
-                    // Accepted at the provider: the person can sign in, but is given nothing here.
-                    if ($accepted->error !== ApplicationInvitationError::InvitationAccepted) {
-                        throw $accepted;
-                    }
-                }
-            });
-        }
 
         return $this->coordinator->locked($workspace, function (Workspace $locked) use ($context, $company, $invitation): ClientPortalInvitation {
             $this->authorizeLocked($context, $locked);
             $current = $this->lockedInvitation($locked, $company, $invitation);
             $before = PortalInvitationStatus::from($current->status);
-            $this->refuseIf(in_array($before, [PortalInvitationStatus::Accepted, PortalInvitationStatus::Revoked], true) ? AccessRefusal::InvitationNotOpen : null);
+            $this->refuseIf($before === PortalInvitationStatus::Accepted || ($before === PortalInvitationStatus::Revoked && ! $current->provider_revocation_pending) ? AccessRefusal::InvitationNotOpen : null);
 
-            $current->finish(PortalInvitationStatus::Revoked, $this->clock->now());
-            $current->save();
-            $this->audit->record($context, $locked, AccessAuditAction::PortalInvitationRevoked, null, ['invitation' => $current->public_id, 'status' => $before->value], ['invitation' => $current->public_id, 'status' => PortalInvitationStatus::Revoked->value], $company->public_id);
+            if ($before !== PortalInvitationStatus::Revoked) {
+                $needsProvider = $before->isOpen() && $current->provider_invitation_id !== null;
+                if ($needsProvider) {
+                    $this->subject($context);
+                }
+                $current->finish(PortalInvitationStatus::Revoked, $this->clock->now());
+                $current->forceFill(['provider_revocation_pending' => $needsProvider])->save();
+                $this->audit->record($context, $locked, AccessAuditAction::PortalInvitationRevoked, null, ['invitation' => $current->public_id, 'status' => $before->value], ['invitation' => $current->public_id, 'status' => PortalInvitationStatus::Revoked->value], $company->public_id);
+            }
+            if ($current->provider_revocation_pending) {
+                DB::afterCommit(fn () => $this->completeWithdrawal($context, $company, $current));
+            }
 
             return $current;
+        });
+    }
+
+    /** Finish a committed withdrawal, including a retry of its completed receipt. */
+    public function completeWithdrawal(AccessMutationContext $context, ClientCompany $company, ClientPortalInvitation $invitation): void
+    {
+        $workspace = Workspace::query()->whereKey($company->workspace_id)->firstOrFail();
+        $this->refuseIf($this->authority->manage($context, $this->coordinator->actorRole($context, $this->coordinator->staff($workspace, [$context->actorId()], lock: false))));
+        $stored = ClientPortalInvitation::query()->where('workspace_id', $workspace->id)->where('client_company_id', $company->id)->whereKey($invitation->id)->firstOrFail();
+        if (! $stored->provider_revocation_pending || $stored->status !== PortalInvitationStatus::Revoked->value || $stored->provider_invitation_id === null) {
+            return;
+        }
+        $providerId = $stored->provider_invitation_id;
+        $subject = $this->subject($context);
+        $this->ask(function (ApplicationInvitations $provider) use ($subject, $providerId): void {
+            try {
+                $provider->revoke($subject, $providerId);
+            } catch (ApplicationInvitationNotFound) {
+                // No admission link remains.
+            } catch (ApplicationInvitationConflict $accepted) {
+                if ($accepted->error !== ApplicationInvitationError::InvitationAccepted) {
+                    throw $accepted;
+                }
+            }
+        });
+        $this->coordinator->locked($workspace, function (Workspace $locked) use ($company, $invitation, $providerId): void {
+            $current = $this->lockedInvitation($locked, $company, $invitation);
+            if ($current->status === PortalInvitationStatus::Revoked->value && $current->provider_invitation_id === $providerId && $current->provider_revocation_pending) {
+                $current->forceFill(['provider_revocation_pending' => false])->save();
+            }
         });
     }
 

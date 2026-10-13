@@ -372,7 +372,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description List a client's open and not-applied portal invitations as a workspace owner/admin: address, scope, projects, status and expiry. Never includes the acceptance link. Requires SVC_PORTAL_INVITATIONS_ENABLED. */
+        /** @description List a client's open and not-applied portal invitations and unfinished provider withdrawals as a workspace owner/admin: address, scope, projects, status, expiry and available retry URLs. Never includes the acceptance link. Requires SVC_PORTAL_INVITATIONS_ENABLED. */
         get: operations['clients.portal_invitations.list'];
         put?: never;
         /** @description Invite an address nobody signs in with yet to a client's portal. The identity provider emails an admission link to this application only; the access is given when that person first signs in with the address, if the inviter is still an owner or admin and the projects still belong to the client. Refused for an address that already signs in. Never returns the link. Requires explicit confirmation and an idempotency key. */
@@ -410,7 +410,7 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** @description Withdraw a portal invitation, or dismiss one that was not applied. The link stops working at the identity provider and signing in gives nothing. Requires explicit confirmation and an idempotency key. */
+        /** @description Withdraw portal access at commit, then finish the identity provider withdrawal within the request, or dismiss an invitation that was not applied. An unfinished provider withdrawal remains visible for retry; replaying its idempotency key finishes it without restoring access. Requires explicit confirmation and an idempotency key. */
         delete: operations['clients.portal_invitations.revoke'];
         options?: never;
         head?: never;

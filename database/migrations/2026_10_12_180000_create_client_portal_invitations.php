@@ -41,6 +41,7 @@ return new class extends Migration
             $table->json('project_ids');
             $table->foreignId('inviter_user_id')->nullable()->constrained('users')->nullOnDelete();
             $table->unsignedBigInteger('provider_invitation_id')->nullable();
+            $table->boolean('provider_revocation_pending')->default(false);
             $table->text('link')->nullable();
             $table->boolean('email_sent')->default(false);
             $table->timestamp('expires_at')->nullable();

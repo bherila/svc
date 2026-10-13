@@ -389,7 +389,7 @@ final class AgentRestDocumentation
             'clients.portal_invitations.list' => [
                 'method' => 'GET',
                 'scopes' => ['clients:read'],
-                'description' => 'List a client\'s open and not-applied portal invitations as a workspace owner/admin: address, scope, projects, status and expiry. Never includes the acceptance link. Requires SVC_PORTAL_INVITATIONS_ENABLED.',
+                'description' => 'List a client\'s open and not-applied portal invitations and unfinished provider withdrawals as a workspace owner/admin: address, scope, projects, status, expiry and available retry URLs. Never includes the acceptance link. Requires SVC_PORTAL_INVITATIONS_ENABLED.',
                 'parameters' => ['WorkspaceId', self::uuidPath('client'), 'Limit', 'Cursor'],
                 'response' => 'PortalInvitationListResponse',
                 'response_description' => 'Authorized result',
@@ -418,7 +418,7 @@ final class AgentRestDocumentation
             'clients.portal_invitations.revoke' => [
                 'method' => 'DELETE',
                 'scopes' => ['clients:write'],
-                'description' => 'Withdraw a portal invitation, or dismiss one that was not applied. The link stops working at the identity provider and signing in gives nothing. Requires explicit confirmation and an idempotency key.',
+                'description' => 'Withdraw portal access at commit, then finish the identity provider withdrawal within the request, or dismiss an invitation that was not applied. An unfinished provider withdrawal remains visible for retry; replaying its idempotency key finishes it without restoring access. Requires explicit confirmation and an idempotency key.',
                 'parameters' => ['WorkspaceId', self::uuidPath('client'), self::uuidPath('invitation'), 'IdempotencyKey'],
                 'request' => 'clients_portal_invitations_revokeRequest',
                 'response' => 'PortalInvitationResponse',

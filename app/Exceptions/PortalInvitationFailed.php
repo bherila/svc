@@ -14,7 +14,8 @@ use RuntimeException;
 
 /**
  * The identity provider would not issue, resend or withdraw an invitation, and
- * nothing was recorded here.
+ * a fixed failure is returned to the caller. A withdrawal can already be
+ * committed locally while its provider action remains available to retry.
  *
  * Carries the status a caller should answer with and a fixed message for the
  * person asking. Never the address, the link or the provider's own wording:

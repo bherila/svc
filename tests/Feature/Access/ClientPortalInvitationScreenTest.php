@@ -160,6 +160,29 @@ final class ClientPortalInvitationScreenTest extends TestCase
         $this->assertSame(0, AccessAuditEvent::query()->count());
     }
 
+    public function test_an_unfinished_provider_withdrawal_stays_manageable_without_an_admission_link(): void
+    {
+        $this->invite('withdrawal@client.example.test');
+        $invitation = ClientPortalInvitation::query()->where('workspace_id', $this->workspace->id)->sole();
+        $url = $this->base('portal-invitations').'/'.$invitation->public_id;
+        $this->provider->refuseNext('revoke', ApplicationInvitationError::Unavailable);
+
+        $this->actingAs($this->admin)->from($this->settings())->delete($url)->assertSessionHasErrors();
+        $this->assertSame('revoked', $invitation->fresh()->status);
+        $this->assertTrue($invitation->fresh()->provider_revocation_pending);
+        $this->get($this->settings())->assertInertia(fn (Assert $page) => $page
+            ->has('portal.invitations', 1)
+            ->where('portal.invitations.0.status', 'revoked')
+            ->where('portal.invitations.0.link', null)
+            ->where('portal.invitations.0.resend_url', null)
+            ->where('portal.invitations.0.revoke_url', $url)
+            ->where('portal.invitations.0.reason', 'Portal access is withdrawn. The identity provider withdrawal has not finished; try again.'));
+
+        $this->from($this->settings())->delete($url)->assertSessionHasNoErrors()->assertRedirect($this->settings());
+        $this->assertFalse($invitation->fresh()->provider_revocation_pending);
+        $this->get($this->settings())->assertInertia(fn (Assert $page) => $page->where('portal.invitations', []));
+    }
+
     public function test_an_address_that_signs_in_is_added_rather_than_invited(): void
     {
         User::factory()->create(['email' => 'known@client.example.test', 'oauth_provider' => 'example', 'oauth_subject' => '777']);

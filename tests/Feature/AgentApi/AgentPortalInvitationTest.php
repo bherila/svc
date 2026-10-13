@@ -161,6 +161,56 @@ final class AgentPortalInvitationTest extends TestCase
         $this->assertSame('pending', $this->provider->invitation($winner->provider_invitation_id)['status']);
     }
 
+    public function test_a_withdrawal_that_loses_its_receipt_never_revokes_the_provider_link(): void
+    {
+        [$workspace, $owner, $company] = $this->fixture();
+        $invitation = $this->seedInvitation($owner, $company);
+        $this->actingAsMcp($owner, self::SCOPES);
+        $failed = false;
+        DB::listen(function (QueryExecuted $query) use (&$failed): void {
+            if (! $failed && preg_match('/^update [`"]agent_mutation_receipts[`"]/i', $query->sql) === 1) {
+                $failed = true;
+                throw new \RuntimeException('Synthetic withdrawal receipt failure.');
+            }
+        });
+
+        $this->operation('rest', 'revoke', $workspace, $company, $this->body('revoke'), $invitation, 'fixture-withdrawal-rollback')->assertServerError();
+
+        $this->assertTrue($failed);
+        $this->assertCount(0, $this->provider->calls('revoke'));
+        $this->assertSame('pending', $this->provider->invitation(1)['status']);
+        $this->assertSame('pending', $invitation->fresh()->status);
+        $this->assertNotNull($invitation->fresh()->link);
+        $this->assertSame(0, AgentMutationReceipt::query()->where('workspace_id', $workspace->id)->count());
+
+        $this->operation('rest', 'revoke', $workspace, $company, $this->body('revoke'), $invitation, 'fixture-withdrawal-rollback')->assertOk();
+        $this->assertCount(1, $this->provider->calls('revoke'));
+        $this->assertSame('revoked', $invitation->fresh()->status);
+    }
+
+    public function test_a_failed_provider_withdrawal_is_finished_by_replaying_its_receipt(): void
+    {
+        [$workspace, $owner, $company] = $this->fixture();
+        $invitation = $this->seedInvitation($owner, $company);
+        $this->actingAsMcp($owner, self::SCOPES);
+        $this->provider->refuseNext('revoke', ApplicationInvitationError::Unavailable);
+
+        $this->operation('rest', 'revoke', $workspace, $company, $this->body('revoke'), $invitation, 'fixture-withdrawal-retry')->assertStatus(503);
+        $this->assertSame('revoked', $invitation->fresh()->status);
+        $this->assertTrue($invitation->fresh()->provider_revocation_pending);
+        $this->assertNull($invitation->fresh()->link);
+        $this->assertSame('completed', AgentMutationReceipt::query()->where('workspace_id', $workspace->id)->sole()->status);
+        $this->operation('rest', 'list', $workspace, $company)->assertOk()->assertJsonPath('data.0.revoke_href', route('agent-api.v1.clients.portal-invitations.destroy', ['workspace' => $workspace->public_id, 'client' => $company->public_id, 'invitation' => $invitation->public_id]));
+
+        $completed = $this->operation('rest', 'revoke', $workspace, $company, $this->body('revoke'), $invitation, 'fixture-withdrawal-retry')->assertOk()->assertJsonPath('data.revoke_href', null)->json();
+        $this->assertFalse($invitation->fresh()->provider_revocation_pending);
+        $this->assertSame('revoked', $this->provider->invitation(1)['status']);
+        $this->operation('rest', 'revoke', $workspace, $company, $this->body('revoke'), $invitation, 'fixture-withdrawal-retry')->assertOk()->assertExactJson($completed);
+        $this->assertCount(2, $this->provider->calls('revoke'));
+        $this->assertSame(1, AccessAuditEvent::query()->where('workspace_id', $workspace->id)->where('action', 'portal.invitation_revoked')->count());
+        $this->operation('rest', 'list', $workspace, $company)->assertOk()->assertJsonCount(0, 'data');
+    }
+
     /** Codex review on #444: a page loads its invitations' projects in one query, however long it is. */
     public function test_a_listing_page_costs_the_same_queries_for_one_invitation_or_many(): void
     {

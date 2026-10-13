@@ -17,7 +17,8 @@ use Illuminate\Validation\Rule;
  * boundary as the settings page, behind ordinary agent receipts.
  *
  * The stored response - what a replay returns - is the presented invitation,
- * which carries no link. A replay never asks the provider again.
+ * which carries no link. Completed provider actions are not repeated; a
+ * replay finishes an unfinished withdrawal after its receipt has committed.
  */
 final class AgentPortalInvitationMutationAction
 {
@@ -75,6 +76,13 @@ final class AgentPortalInvitationMutationAction
 
         $receipt = AgentMutationReceipt::query()->where('workspace_id', $workspace->id)->where('user_id', $actor->id)
             ->where('oauth_client_id', $clientId)->where('operation', $operation)->where('idempotency_key', $key)->firstOrFail();
+
+        if ($operation === self::REVOKE) {
+            $company = $this->reads->company($actor, $workspace, $companyId);
+            $current = $this->reads->find($workspace, $company, (string) $invitationId);
+            $this->invitations->completeWithdrawal($context, $company, $current);
+            $receipt->forceFill(['response_snapshot' => $this->reads->get($actor, $workspace, $companyId, $current->public_id)])->save();
+        }
 
         return $receipt->response_snapshot ?? throw new \LogicException('The portal invitation mutation has no stored response.');
     }

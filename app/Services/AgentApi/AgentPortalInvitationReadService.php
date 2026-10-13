@@ -39,7 +39,9 @@ final class AgentPortalInvitationReadService
     {
         $company = $this->company($actor, $workspace, $clientId);
         $query = $this->invitations($workspace, $company)
-            ->whereIn('status', [PortalInvitationStatus::Pending->value, PortalInvitationStatus::Expired->value, PortalInvitationStatus::NotApplied->value])
+            ->where(fn (Builder $rows): Builder => $rows
+                ->whereIn('status', [PortalInvitationStatus::Pending->value, PortalInvitationStatus::Expired->value, PortalInvitationStatus::NotApplied->value])
+                ->orWhere(fn (Builder $withdrawal): Builder => $withdrawal->where('status', PortalInvitationStatus::Revoked->value)->where('provider_revocation_pending', true)))
             ->orderBy('id');
 
         // The page's projects are loaded once, when the page is, not per row.
@@ -129,7 +131,7 @@ final class AgentPortalInvitationReadService
             'email_sent' => $invitation->email_sent,
             'created_at' => $invitation->created_at->utc()->toIso8601ZuluString(),
             'resend_href' => $status->isOpen() ? $base.route('agent-api.v1.clients.portal-invitations.resend', $parameters, false) : null,
-            'revoke_href' => in_array($status, [PortalInvitationStatus::Accepted, PortalInvitationStatus::Revoked], true) ? null : $base.route('agent-api.v1.clients.portal-invitations.destroy', $parameters, false),
+            'revoke_href' => $status === PortalInvitationStatus::Accepted || ($status === PortalInvitationStatus::Revoked && ! $invitation->provider_revocation_pending) ? null : $base.route('agent-api.v1.clients.portal-invitations.destroy', $parameters, false),
         ];
     }
 }

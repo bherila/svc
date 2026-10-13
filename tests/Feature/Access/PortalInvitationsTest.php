@@ -261,20 +261,28 @@ final class PortalInvitationsTest extends TestCase
         $this->assertSame(0, ClientCompanyMembership::query()->count());
     }
 
-    public function test_a_provider_that_cannot_revoke_changes_nothing_here(): void
+    public function test_a_failed_provider_withdrawal_keeps_access_revoked_and_can_be_retried(): void
     {
         $invitation = $this->invite($this->admin, 'kept@client.example.test', PortalAccessScope::Company);
         $this->provider->refuseNext('revoke', ApplicationInvitationError::Unavailable);
 
         try {
             app(PortalInvitations::class)->revoke(AccessMutationContext::user($this->admin), $this->company, $invitation);
-            $this->fail('A revoke the provider did not confirm must not be recorded.');
+            $this->fail('A failed provider withdrawal must be reported.');
         } catch (PortalInvitationFailed $failed) {
             $this->assertSame(503, $failed->status);
         }
 
-        $this->assertSame('pending', $invitation->fresh()->status);
-        $this->assertNotNull($invitation->fresh()->link);
+        $this->assertSame('revoked', $invitation->fresh()->status);
+        $this->assertTrue($invitation->fresh()->provider_revocation_pending);
+        $this->assertNull($invitation->fresh()->link);
+        $this->signIn('fixture-withdrawal-subject', 'kept@client.example.test');
+        $this->assertSame(0, ClientCompanyMembership::query()->where('workspace_id', $this->workspace->id)->count());
+
+        app(PortalInvitations::class)->revoke(AccessMutationContext::user($this->owner), $this->company, $invitation->fresh());
+        $this->assertFalse($invitation->fresh()->provider_revocation_pending);
+        $this->assertSame('revoked', $this->provider->invitation(1)['status']);
+        $this->assertSame(1, AccessAuditEvent::query()->where('workspace_id', $this->workspace->id)->where('action', 'portal.invitation_revoked')->count());
     }
 
     public function test_resend_reaches_the_provider_with_a_new_link_and_the_old_one_stops(): void

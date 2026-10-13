@@ -38,7 +38,7 @@ export interface PortalInvitation {
     email: string;
     scope: PortalScope;
     projects: string[];
-    status: 'pending' | 'expired' | 'not_applied';
+    status: 'pending' | 'expired' | 'not_applied' | 'revoked';
     /** Why a `not_applied` invitation gave nothing. */
     reason: string | null;
     expires_at: string | null;
@@ -171,6 +171,7 @@ function InvitationRow({
                   .map((project) => project.name)
                   .join(', ');
     const notApplied = invitation.status === 'not_applied';
+    const retryWithdrawal = invitation.status === 'revoked';
 
     return (
         <li className="grid grid-cols-1 gap-2 rounded-lg border p-3">
@@ -267,7 +268,11 @@ function InvitationRow({
                     disabled={busy}
                     onClick={() => setRevoking(true)}
                 >
-                    {notApplied ? 'Dismiss' : 'Withdraw'}
+                    {notApplied
+                        ? 'Dismiss'
+                        : retryWithdrawal
+                          ? 'Retry withdrawal'
+                          : 'Withdraw'}
                 </Button>
             </div>
             <AlertDialog

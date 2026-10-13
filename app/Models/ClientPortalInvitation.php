@@ -40,8 +40,9 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $resolved_at
  * @property Carbon $created_at
  * @property Carbon $updated_at
+ * @property bool $provider_revocation_pending
  */
-#[Hidden(['id', 'workspace_id', 'client_company_id', 'inviter_user_id', 'accepted_user_id', 'provider_invitation_id', 'link', 'pending_email'])]
+#[Hidden(['id', 'workspace_id', 'client_company_id', 'inviter_user_id', 'accepted_user_id', 'provider_invitation_id', 'provider_revocation_pending', 'link', 'pending_email'])]
 class ClientPortalInvitation extends Model implements WorkspaceOwned
 {
     use BelongsToWorkspace, HasPublicId;
@@ -57,6 +58,7 @@ class ClientPortalInvitation extends Model implements WorkspaceOwned
             'expires_at' => 'datetime',
             'resolved_at' => 'datetime',
             'provider_invitation_id' => 'integer',
+            'provider_revocation_pending' => 'boolean',
         ];
     }
 

@@ -879,7 +879,9 @@ class ClientDirectoryController extends Controller
         $invitations = ClientPortalInvitation::query()
             ->where('workspace_id', $workspace->id)
             ->where('client_company_id', $clientCompany->id)
-            ->whereIn('status', [PortalInvitationStatus::Pending->value, PortalInvitationStatus::Expired->value, PortalInvitationStatus::NotApplied->value])
+            ->where(fn (Builder $rows): Builder => $rows
+                ->whereIn('status', [PortalInvitationStatus::Pending->value, PortalInvitationStatus::Expired->value, PortalInvitationStatus::NotApplied->value])
+                ->orWhere(fn (Builder $withdrawal): Builder => $withdrawal->where('status', PortalInvitationStatus::Revoked->value)->where('provider_revocation_pending', true)))
             ->orderByDesc('id')
             ->simplePaginate(100, ['*'], 'invitation_page')
             ->withPath('/workspaces/'.$workspace->public_id.'/clients/'.$clientCompany->public_id.'/settings');
@@ -897,7 +899,9 @@ class ClientDirectoryController extends Controller
                 'scope' => $invitation->scope()->value,
                 'projects' => array_values(array_filter(array_map(static fn (int $id): ?string => $projects->get($id), $invitation->projectIds()))),
                 'status' => $status->value,
-                'reason' => $invitation->notAppliedReason()?->message(),
+                'reason' => $invitation->provider_revocation_pending
+                    ? 'Portal access is withdrawn. The identity provider withdrawal has not finished; try again.'
+                    : $invitation->notAppliedReason()?->message(),
                 'expires_at' => $invitation->expires_at?->toIso8601String(),
                 'email_sent' => $invitation->email_sent,
                 'link' => $status === PortalInvitationStatus::Pending ? $invitation->link : null,
