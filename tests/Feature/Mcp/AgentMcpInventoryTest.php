@@ -150,7 +150,7 @@ final class AgentMcpInventoryTest extends TestCase
             'expense_writes_enabled' => ['expenses.log', 'expenses.update', 'expenses.delete', 'expenses.approve', 'expenses.unapprove', 'expense_schedules.create', 'expense_schedules.update', 'expense_schedules.generate', 'expenses.receipts.upload_url'],
             'payment_writes_enabled' => ['payments.record', 'payments.correct'],
             'client_writes_enabled' => ['clients.portal_access.grant', 'clients.portal_access.update', 'clients.portal_access.revoke',
-                'clients.portal_invitations.create', 'clients.portal_invitations.resend', 'clients.portal_invitations.revoke', 'clients.create', 'clients.update', 'clients.archive', 'clients.restore', 'agreements.create', 'agreements.update', 'agreements.activate', 'agreements.terminate', 'companies.square_customer.set', 'companies.square_customer.clear', 'agreements.square_series.set', 'agreements.square_series.clear'],
+                'clients.portal_invitations.create', 'clients.portal_invitations.resend', 'clients.portal_invitations.revoke', 'clients.create', 'clients.update', 'clients.archive', 'clients.restore', 'agreements.create', 'agreements.update', 'agreements.activate', 'agreements.terminate', 'companies.square_customer.set', 'companies.square_customer.clear', 'agreements.square_series.set', 'agreements.square_series.clear', 'square.import_customer'],
             'project_writes_enabled' => ['projects.create', 'projects.update', 'projects.archive', 'projects.members.update'],
             'proposal_writes_enabled' => ['proposals.create', 'proposals.send', 'proposals.accept'],
             'workspace_writes_enabled' => ['workspaces.create'],
