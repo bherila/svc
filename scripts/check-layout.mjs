@@ -124,6 +124,7 @@ try {
         SVC_LAYOUT_RUNTIME: runtime,
         // Shows the seeded portal invitations on client settings; nothing here asks a provider.
         SVC_PORTAL_INVITATIONS_ENABLED: 'true',
+        SVC_LAYOUT_PORTAL_PAGES: portalOnly ? '1' : '0',
     };
     run('php', ['scripts/layout/seed.php'], env);
     const fixture = JSON.parse(
@@ -290,7 +291,9 @@ try {
                     'receipts',
                     'expense_schedules',
                 ]) {
-            const response = await page.goto(origin + fixture[screen]);
+            const response = await page.goto(
+                origin + fixture[portalOnly ? 'portal_settings' : screen],
+            );
             expect(response.status()).toBe(200);
             await expect(page.locator('main'))
                 .toBeVisible()
@@ -333,6 +336,15 @@ try {
                         exact: true,
                     }),
                 ).toHaveCount(2);
+                await expect(
+                    card.getByRole('link', { name: 'Newer invitations' }),
+                ).toBeVisible();
+                await expect(
+                    card.getByRole('button', {
+                        name: 'Retry withdrawal',
+                        exact: true,
+                    }),
+                ).toBeVisible();
                 await page
                     .getByRole('combobox', {
                         name: 'Portal access for the new contact',
