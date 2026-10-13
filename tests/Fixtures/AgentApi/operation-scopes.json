@@ -1183,7 +1183,6 @@
             "billing:write"
         ],
         "flags": [
-            "agent.writes",
             "agent.writes.clients",
             "square.connected",
             "mcp",
