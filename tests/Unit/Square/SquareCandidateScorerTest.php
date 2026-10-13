@@ -163,6 +163,18 @@ final class SquareCandidateScorerTest extends TestCase
         }
     }
 
+    public function test_a_period_slot_requires_both_bounds_and_includes_the_first_day(): void
+    {
+        foreach (['cycle', 'service'] as $kind) {
+            foreach ([[null, '2040-01-31', '2040-01-15', false], ['2040-01-01', null, '2040-01-15', false], ['2040-01-01', '2040-01-31', null, false], ['2040-01-01', '2040-01-31', '2040-01-01', true]] as [$start, $end, $date, $expected]) {
+                $invoice = $this->invoice(['cycle_start' => null, 'cycle_end' => null, $kind.'_start' => $start, $kind.'_end' => $end]);
+                $candidate = $this->candidate(['due_on' => $kind === 'cycle' ? $date : null, 'sale_or_service_date' => $kind === 'service' ? $date : null]);
+                $result = SquareCandidateScorer::rank($invoice, null, [$candidate])[0];
+                $this->assertSame($expected, $result['signals']['period_slot'], $kind);
+            }
+        }
+    }
+
     /** @param array<string, mixed> $overrides */
     private function invoice(array $overrides = []): array
     {

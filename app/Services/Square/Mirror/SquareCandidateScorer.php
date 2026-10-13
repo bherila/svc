@@ -62,7 +62,10 @@ final class SquareCandidateScorer
      */
     public static function ambiguous(array $ranked): bool
     {
-        return count($ranked) > 1 && $ranked[0]['suggested'] && $ranked[1]['suggested'] && $ranked[0]['score'] === $ranked[1]['score'];
+        $first = $ranked[0] ?? null;
+        $second = $ranked[1] ?? null;
+
+        return $first !== null && $second !== null && $first['suggested'] && $second['suggested'] && $first['score'] === $second['score'];
     }
 
     /**
@@ -85,10 +88,10 @@ final class SquareCandidateScorer
             };
         }
         if ($amount === 'exact') {
-            $points += 40;
+            $points = 40;
             $reasons[] = 'Amount matches exactly (+40)';
         } elseif ($amount === 'within_1_percent') {
-            $points += 15;
+            $points = 15;
             $reasons[] = 'Amount within 1% (+15)';
         }
 
@@ -105,7 +108,7 @@ final class SquareCandidateScorer
             && $candidate['series_cadence'] === $invoice['cadence'];
         if ($cadence) {
             $points += 20;
-            $reasons[] = sprintf('Series cadence is %s, as the agreement\'s (+20)', str_replace('_', '-', (string) $invoice['cadence']));
+            $reasons[] = sprintf('Series cadence is %s, as the agreement\'s (+20)', str_replace('_', '-', $invoice['cadence']));
         }
 
         $dueDistance = self::days($candidate['due_on'], $invoice['due_date']);
@@ -155,6 +158,10 @@ final class SquareCandidateScorer
             return null;
         }
 
-        return (int) abs(CarbonImmutable::parse($from)->diffInDays(CarbonImmutable::parse($to)));
+        $distance = abs(CarbonImmutable::parse($from)->diffInDays(CarbonImmutable::parse($to)));
+        // @infection-ignore-all The declared ?int return coerces this integral day distance identically; static analysis requires the cast.
+        $days = (int) $distance;
+
+        return $days;
     }
 }
