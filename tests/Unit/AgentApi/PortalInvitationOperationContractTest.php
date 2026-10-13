@@ -40,6 +40,7 @@ final class PortalInvitationOperationContractTest extends TestCase
                 $this->assertSame($method, $operation->rest->method);
                 $this->assertSame('agent-api.v1.clients.portal-invitations.'.$suffix, $operation->rest->routeName);
                 $this->assertSame($path, $operation->rest->path);
+                $this->assertContains('WorkspaceId', $operation->rest->parameters);
                 $this->assertSame($statuses, $operation->rest->successStatuses);
                 $this->assertSame($response, AgentApiResponseSchemaCatalog::operationComponent($id));
                 $this->assertSame($kind === 'list' ? ['clients:read'] : ['clients:write'], $operation->requirement->scopes);
