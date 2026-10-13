@@ -41,10 +41,10 @@ final class SquareCandidateScorer
     {
         $scored = [];
         foreach ($candidates as $candidate) {
-            $scored[] = self::score($invoice, $mappedCustomerId, $candidate) + ['_plausible' => self::plausible($invoice['settled'], $candidate['status']), '_number' => (string) $candidate['invoice_number']];
+            $scored[] = self::score($invoice, $mappedCustomerId, $candidate) + ['_plausible' => self::plausible($invoice['settled'], $candidate['status']), '_number' => $candidate['invoice_number'] ?? ''];
         }
-        usort($scored, static fn (array $a, array $b): int => [$b['score'], $a['date_distance_days'] ?? PHP_INT_MAX, $a['signals']['amount'] === 'exact' ? 0 : 1, $a['_plausible'] ? 0 : 1, $a['_number']]
-            <=> [$a['score'], $b['date_distance_days'] ?? PHP_INT_MAX, $b['signals']['amount'] === 'exact' ? 0 : 1, $b['_plausible'] ? 0 : 1, $b['_number']]);
+        usort($scored, static fn (array $a, array $b): int => [$b['score'], $a['date_distance_days'] ?? PHP_INT_MAX, $a['signals']['amount'] !== 'exact', ! $a['_plausible'], $a['_number']]
+            <=> [$a['score'], $b['date_distance_days'] ?? PHP_INT_MAX, $b['signals']['amount'] !== 'exact', ! $b['_plausible'], $b['_number']]);
 
         return array_map(static function (array $entry): array {
             unset($entry['_plausible'], $entry['_number']);
