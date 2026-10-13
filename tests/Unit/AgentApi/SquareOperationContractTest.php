@@ -219,7 +219,27 @@ final class SquareOperationContractTest extends TestCase
                 );
                 $this->assertSame('#/components/schemas/'.$response, $operation['responses']['200']['content']['application/json']['schema']['$ref'], $id);
                 $this->assertSame($request === null ? null : '#/components/schemas/'.$request, $operation['requestBody']['content']['application/json']['schema']['$ref'] ?? null, $id);
+                $this->assertSame(array_intersect_key($operation, ['x-mcp-tool' => true, 'x-svc-flags' => true]), $declared->extensions, $id);
             }
+        });
+    }
+
+    public function test_invoice_candidate_contract_keeps_its_path_parameters_and_validated_query_bounds(): void
+    {
+        $document = json_decode((string) file_get_contents(dirname(__DIR__, 3).'/public/openapi/svc-agent-v1.json'), true, flags: JSON_THROW_ON_ERROR);
+        $path = '/workspaces/{workspace}/invoices/{invoice}/square-candidates';
+        $published = $document['paths'][$path]['get'];
+        $this->withCatalog(function (AgentOperationCatalog $catalog) use ($path, $published): void {
+            $operation = $catalog->registry()->find('invoices.square_candidates');
+            $this->assertNotNull($operation);
+            $this->assertSame($path, $operation->rest->path);
+            $this->assertSame('agent-api.v1.invoices.square-candidates.index', $operation->rest->routeName);
+            $this->assertSame([AgentMcpSquareMirrorTools::class, 'candidates'], $operation->mcp->handler);
+            $this->assertFalse($catalog->readsExternalSystem($operation->id));
+            $this->assertSame(Effect::Read, $operation->effect);
+            $this->assertSame($operation->id, $published['operationId']);
+            $this->assertSame($published['parameters'], array_map(static fn (string|array $parameter): array => is_string($parameter) ? ['$ref' => '#/components/parameters/'.$parameter] : $parameter, $operation->rest->parameters));
+            $this->assertSame('SquareCandidateListResponse', AgentApiResponseSchemaCatalog::operationComponent($operation->id));
         });
     }
 
