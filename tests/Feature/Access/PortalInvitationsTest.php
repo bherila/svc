@@ -121,7 +121,7 @@ final class PortalInvitationsTest extends TestCase
         $invitation = $this->invite($this->admin, 'invitee@client.example.test', PortalAccessScope::Company);
 
         $this->signIn('2002', 'someone.else@client.example.test')->assertRedirect();
-        $this->signIn('2003', 'invitee@client.example.test.other')->assertRedirect();
+        $this->signIn('2003', 'invitee@other.example.test')->assertRedirect();
 
         $this->assertSame(0, ClientCompanyMembership::query()->count());
         $this->assertSame('pending', $invitation->fresh()->status);
