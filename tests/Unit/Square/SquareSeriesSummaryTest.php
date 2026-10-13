@@ -120,6 +120,104 @@ final class SquareSeriesSummaryTest extends TestCase
         ]);
     }
 
+    public function test_unknown_fields_do_not_become_occurrences_amounts_currencies_or_customers(): void
+    {
+        $members = [
+            array_replace(self::member(1, null, 'UNPAID', 100, 0), ['series_occurrence' => null, 'total_amount' => null, 'currency' => null, 'square_customer_id' => null]),
+            self::member(4, '2040-03-10', 'UNPAID', 100, 0),
+        ];
+        $summary = SquareSeriesSummary::of('000001', $members, CarbonImmutable::parse('2040-01-01'));
+        $this->assertSame([4, 4, [], 100, false, 'USD', 1, 'unknown', null, '2040-03-10', '2040-03-10'], [
+            $summary['first_occurrence'], $summary['last_occurrence'], $summary['missing_occurrences'], $summary['amount'], $summary['amount_varies'],
+            $summary['currency'], $summary['customer_count'], $summary['cadence'], $summary['cadence_days'], $summary['first_due_on'], $summary['last_due_on'],
+        ]);
+    }
+
+    public function test_due_dates_are_sorted_and_today_is_still_upcoming(): void
+    {
+        $members = [
+            self::member(1, '2040-03-01', 'UNPAID', 100, 0, scheduled: '2040-04-01'),
+            self::member(2, '2040-01-01', 'UNPAID', 100, 0),
+            self::member(3, '2040-02-01', 'UNPAID', 100, 0),
+        ];
+        $summary = SquareSeriesSummary::of('000001', $members, CarbonImmutable::parse('2040-01-01'));
+        $this->assertSame(['2040-01-01', '2040-03-01', '2040-01-01'], [$summary['first_due_on'], $summary['last_due_on'], $summary['next_due_on']]);
+    }
+
+    public function test_fully_covered_and_overpaid_open_members_have_zero_balance_and_unknown_payment_is_zero(): void
+    {
+        $members = [
+            self::member(1, '2040-01-01', 'PAYMENT_PENDING', 100, 100),
+            self::member(2, '2040-02-01', 'PARTIALLY_PAID', 100, 200),
+            array_replace(self::member(3, '2040-03-01', 'UNPAID', 100, 0), ['paid_amount' => null]),
+        ];
+        $summary = SquareSeriesSummary::of('000001', $members, CarbonImmutable::parse('2040-01-01'));
+        $this->assertSame(100, $summary['open_amount']);
+    }
+
+    public function test_the_latest_known_amount_wins_and_one_member_is_sufficient(): void
+    {
+        $today = CarbonImmutable::parse('2040-01-01');
+        $first = self::member(1, '2040-01-01', 'PAID', 100, 100);
+        $last = self::member(2, '2040-02-01', 'PAID', 200, 200);
+        $this->assertSame(100, SquareSeriesSummary::of('000001', [$first], $today)['amount']);
+        $this->assertSame(200, SquareSeriesSummary::of('000001', [$first, $last], $today)['amount']);
+        $unknown = array_replace($last, ['total_amount' => null]);
+        $this->assertSame(100, SquareSeriesSummary::of('000001', [$first, $unknown], $today)['amount']);
+        $this->assertFalse(SquareSeriesSummary::of('000001', [$first, $unknown], $today)['amount_varies']);
+    }
+
+    public function test_cadence_sorts_occurrences_and_ignores_incomplete_members(): void
+    {
+        $members = [
+            self::member(1, '2040-01-01', 'PAID', 100, 100),
+            self::member(3, '2040-03-03', 'PAID', 100, 100),
+            self::member(2, '2040-02-01', 'PAID', 100, 100),
+            self::member(4, null, 'PAID', 100, 100),
+            array_replace(self::member(5, '2040-12-01', 'PAID', 100, 100), ['series_occurrence' => null]),
+        ];
+        $summary = SquareSeriesSummary::of('000001', $members, CarbonImmutable::parse('2040-01-01'));
+        $this->assertSame(['monthly', 31], [$summary['cadence'], $summary['cadence_days']]);
+    }
+
+    /** @return iterable<string, array{int, string}> */
+    public static function cadenceBoundaries(): iterable
+    {
+        foreach (['weekly' => [6, 8], 'monthly' => [26, 35], 'quarterly' => [85, 96], 'semi_annual' => [175, 190], 'annual' => [355, 375]] as $name => $bounds) {
+            foreach ($bounds as $days) {
+                yield $name.' '.$days => [$days, $name];
+            }
+        }
+    }
+
+    #[DataProvider('cadenceBoundaries')]
+    public function test_cadence_boundaries_are_inclusive(int $days, string $cadence): void
+    {
+        $first = CarbonImmutable::parse('2040-01-01');
+        $members = [self::member(1, $first->toDateString(), 'PAID', 100, 100), self::member(2, $first->addDays($days)->toDateString(), 'PAID', 100, 100)];
+        $summary = SquareSeriesSummary::of('000001', $members, $first);
+        $this->assertSame([$cadence, $days], [$summary['cadence'], $summary['cadence_days']]);
+    }
+
+    public function test_fractional_spacing_is_rounded_to_the_nearest_day(): void
+    {
+        $first = CarbonImmutable::parse('2040-01-01');
+        $members = [self::member(1, $first->toDateString(), 'PAID', 100, 100), self::member(6, $first->addDays(36)->toDateString(), 'PAID', 100, 100)];
+        $summary = SquareSeriesSummary::of('000001', $members, $first);
+        $this->assertSame(['weekly', 7], [$summary['cadence'], $summary['cadence_days']]);
+    }
+
+    public function test_missing_occurrences_are_unique_sorted_and_bounded(): void
+    {
+        $members = [];
+        foreach ([6, 1, 3, 3] as $occurrence) {
+            $members[] = self::member($occurrence, null, 'PAID', 100, 100);
+        }
+        $summary = SquareSeriesSummary::of('000001', $members, CarbonImmutable::parse('2040-01-01'));
+        $this->assertSame([2, 4, 5], $summary['missing_occurrences']);
+        $this->assertFalse($summary['missing_occurrences_truncated']);
+    }
+
     /** @return array{series_occurrence: int|null, due_on: string|null, scheduled_on: string|null, status: string, currency: string|null, total_amount: int|null, paid_amount: int|null, autopay: bool, square_customer_id: string|null, recipient_name: string|null, square_location_id: string|null} */
     private static function member(int $occurrence, ?string $due, string $status, int $total, int $paid, ?string $scheduled = null, string $currency = 'USD'): array
     {

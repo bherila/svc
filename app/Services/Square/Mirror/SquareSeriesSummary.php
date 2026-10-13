@@ -41,20 +41,20 @@ final class SquareSeriesSummary
      */
     public static function of(string $seriesKey, array $members, CarbonImmutable $today): array
     {
-        $occurrences = array_values(array_filter(array_column($members, 'series_occurrence'), 'is_int'));
+        $occurrences = array_filter(array_column($members, 'series_occurrence'), 'is_int');
         $latest = $members === [] ? null : $members[array_key_last($members)];
         $billed = array_values(array_filter($members, static fn (array $member): bool => ! in_array($member['status'], self::INACTIVE_STATUSES, true)));
-        $amounts = array_values(array_unique(array_filter(array_column($billed, 'total_amount'), 'is_int')));
+        $amounts = array_unique(array_filter(array_column($billed, 'total_amount'), 'is_int'));
         $currencies = array_values(array_unique(array_filter(array_column($members, 'currency'), 'is_string')));
-        $customers = array_values(array_unique(array_filter(array_column($members, 'square_customer_id'), 'is_string')));
+        $customers = array_unique(array_filter(array_column($members, 'square_customer_id'), 'is_string'));
         [$cadence, $days] = self::cadence($billed);
         $todayString = $today->toDateString();
-        $upcoming = array_values(array_filter(
+        $upcoming = array_filter(
             array_map(static fn (array $member): ?string => in_array($member['status'], ['SCHEDULED', ...self::OPEN_STATUSES], true) ? self::date($member) : null, $members),
             static fn (?string $date): bool => $date !== null && $date >= $todayString,
-        ));
+        );
         sort($upcoming);
-        $dates = array_values(array_filter(array_map(self::date(...), $billed)));
+        $dates = array_filter(array_map(self::date(...), $billed));
         sort($dates);
         $statuses = [];
         foreach ($members as $member) {
@@ -155,7 +155,7 @@ final class SquareSeriesSummary
      * Occurrence numbers between the first and last that no mirrored invoice
      * carries.
      *
-     * @param  list<int>  $occurrences
+     * @param  array<int, int>  $occurrences
      * @return list<int>
      */
     private static function missing(array $occurrences): array
@@ -163,13 +163,17 @@ final class SquareSeriesSummary
         if ($occurrences === []) {
             return [];
         }
-        $present = array_flip($occurrences);
+        $ordered = array_unique($occurrences);
+        sort($ordered);
         $missing = [];
-        for ($occurrence = min($occurrences) + 1; $occurrence < max($occurrences); $occurrence++) {
-            if (! isset($present[$occurrence])) {
-                $missing[] = $occurrence;
+        foreach ($ordered as $index => $occurrence) {
+            if ($index === 0) {
+                continue;
+            }
+            for ($gap = $ordered[$index - 1] + 1; $gap < $occurrence; $gap++) {
+                $missing[] = $gap;
                 if (count($missing) > self::MAX_MISSING) {
-                    break;
+                    return $missing;
                 }
             }
         }
