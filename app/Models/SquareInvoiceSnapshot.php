@@ -56,7 +56,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
     'square_subscription_id', 'invoice_number', 'series_key', 'series_occurrence', 'title', 'recipient_name', 'status',
     'currency', 'total_amount', 'paid_amount', 'next_payment_amount', 'due_on', 'scheduled_at', 'sale_or_service_date',
     'square_created_at', 'square_updated_at', 'public_url', 'autopay', 'payment_requests', 'payment_ids',
-    'payment_ids_basis', 'fingerprint', 'synced_at', 'last_seen_at',
+    'payment_ids_basis', 'fingerprint', 'synced_at', 'last_seen_at', 'last_sync_run_id',
 ])]
 #[Hidden(['id', 'workspace_id', 'fingerprint', 'payment_ids_basis', 'deleted_at', 'last_sync_run_id'])]
 class SquareInvoiceSnapshot extends Model implements WorkspaceOwned

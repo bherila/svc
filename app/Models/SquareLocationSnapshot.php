@@ -29,7 +29,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property int|null $last_sync_run_id
  * @property CarbonImmutable|null $deleted_at
  */
-#[Fillable(['workspace_id', 'square_location_id', 'name', 'business_name', 'status', 'currency', 'timezone', 'fingerprint', 'synced_at', 'last_seen_at'])]
+#[Fillable(['workspace_id', 'square_location_id', 'name', 'business_name', 'status', 'currency', 'timezone', 'fingerprint', 'synced_at', 'last_seen_at', 'last_sync_run_id'])]
 #[Hidden(['id', 'workspace_id', 'fingerprint', 'deleted_at', 'last_sync_run_id'])]
 class SquareLocationSnapshot extends Model implements WorkspaceOwned
 {

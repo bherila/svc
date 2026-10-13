@@ -36,7 +36,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  */
 #[Fillable([
     'workspace_id', 'square_customer_id', 'square_version', 'given_name', 'family_name', 'company_name', 'email_address',
-    'phone_number', 'reference_id', 'square_created_at', 'square_updated_at', 'fingerprint', 'synced_at', 'last_seen_at',
+    'phone_number', 'reference_id', 'square_created_at', 'square_updated_at', 'fingerprint', 'synced_at', 'last_seen_at', 'last_sync_run_id',
 ])]
 #[Hidden(['id', 'workspace_id', 'fingerprint', 'deleted_at', 'last_sync_run_id'])]
 class SquareCustomerSnapshot extends Model implements WorkspaceOwned
