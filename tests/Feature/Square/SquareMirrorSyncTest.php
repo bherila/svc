@@ -127,6 +127,8 @@ final class SquareMirrorSyncTest extends TestCase
         $this->serveSquareAccount();
         $this->sync();
         $before = SquareInvoiceSnapshot::query()->orderBy('id')->get(['square_invoice_id', 'synced_at', 'updated_at'])->toArray();
+        $locationsBefore = SquareLocationSnapshot::query()->orderBy('id')->get(['square_location_id', 'synced_at', 'updated_at'])->toArray();
+        $customersBefore = SquareCustomerSnapshot::query()->orderBy('id')->get(['square_customer_id', 'synced_at', 'updated_at'])->toArray();
 
         Date::setTestNow('2026-10-12 18:15:00');
         $second = $this->sync();
@@ -134,6 +136,8 @@ final class SquareMirrorSyncTest extends TestCase
         $this->assertSame([0, 0, 0], [$second->invoices_changed, $second->customers_changed, $second->payments_resolved]);
         $this->assertSame(3, $second->invoices_seen);
         $this->assertSame($before, SquareInvoiceSnapshot::query()->orderBy('id')->get(['square_invoice_id', 'synced_at', 'updated_at'])->toArray());
+        $this->assertSame($locationsBefore, SquareLocationSnapshot::query()->orderBy('id')->get(['square_location_id', 'synced_at', 'updated_at'])->toArray());
+        $this->assertSame($customersBefore, SquareCustomerSnapshot::query()->orderBy('id')->get(['square_customer_id', 'synced_at', 'updated_at'])->toArray());
         $this->assertSame(['2026-10-12 18:15:00'], SquareInvoiceSnapshot::query()->pluck('last_seen_at')->map(static fn ($at): string => $at->format('Y-m-d H:i:s'))->unique()->values()->all());
         $this->assertSame(3, SquareInvoiceSnapshot::query()->count());
         $this->assertSame(2, SquareSyncRun::query()->where('status', SquareSyncRun::COMPLETED)->count());

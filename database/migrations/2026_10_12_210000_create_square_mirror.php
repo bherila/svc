@@ -65,8 +65,8 @@ return new class extends Migration
             $table->char('currency', 3)->nullable();
             $table->string('timezone', 64)->nullable();
             $table->char('fingerprint', 64);
-            $table->timestamp('synced_at');
-            $table->timestamp('last_seen_at');
+            $table->dateTime('synced_at');
+            $table->dateTime('last_seen_at');
             $table->timestamps();
 
             $table->unique(['workspace_id', 'square_location_id'], 'sqls_ws_location_unique');
@@ -86,8 +86,8 @@ return new class extends Migration
             $table->timestamp('square_created_at')->nullable();
             $table->timestamp('square_updated_at')->nullable();
             $table->char('fingerprint', 64);
-            $table->timestamp('synced_at');
-            $table->timestamp('last_seen_at');
+            $table->dateTime('synced_at');
+            $table->dateTime('last_seen_at');
             $table->timestamps();
 
             $table->unique(['workspace_id', 'square_customer_id'], 'sqcs_ws_customer_unique');
@@ -130,8 +130,8 @@ return new class extends Migration
             $table->json('payment_ids')->nullable();
             $table->string('payment_ids_basis', 64)->nullable();
             $table->char('fingerprint', 64);
-            $table->timestamp('synced_at');
-            $table->timestamp('last_seen_at');
+            $table->dateTime('synced_at');
+            $table->dateTime('last_seen_at');
             $table->timestamps();
 
             $table->unique(['workspace_id', 'square_invoice_id'], 'sqis_ws_invoice_unique');
