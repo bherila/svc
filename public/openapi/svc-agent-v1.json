@@ -7725,7 +7725,10 @@
                 ],
                 "properties": {
                     "square_customer_id": {
-                        "$ref": "#/components/schemas/SquareCustomerId"
+                        "type": "string",
+                        "maxLength": 192,
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9:_\\-]{0,191}$",
+                        "description": "The confirmed opaque Square customer identifier."
                     },
                     "confirmed_at": {
                         "type": "string",

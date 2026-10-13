@@ -1798,7 +1798,8 @@ export interface components {
             data: components['schemas']['ClientCompany'];
         };
         CompanySquareCustomer: {
-            square_customer_id: components['schemas']['SquareCustomerId'];
+            /** @description The confirmed opaque Square customer identifier. */
+            square_customer_id: string;
             /** Format: date-time */
             confirmed_at: string;
             /** @description Who confirmed the mapping, by name. */

@@ -3890,7 +3890,10 @@
                                 ],
                                 "properties": {
                                     "square_customer_id": {
-                                        "$ref": "#/$defs/SquareCustomerId"
+                                        "type": "string",
+                                        "maxLength": 192,
+                                        "pattern": "^[A-Za-z0-9][A-Za-z0-9:_\\-]{0,191}$",
+                                        "description": "The confirmed opaque Square customer identifier."
                                     },
                                     "confirmed_at": {
                                         "type": "string",
@@ -3904,12 +3907,6 @@
                                         "description": "Who confirmed the mapping, by name."
                                     }
                                 }
-                            },
-                            "SquareCustomerId": {
-                                "type": "string",
-                                "maxLength": 191,
-                                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,190}$",
-                                "description": "A Square customer id, held as an opaque string. SVC checks its shape only."
                             }
                         }
                     }
@@ -4040,7 +4037,10 @@
                                 ],
                                 "properties": {
                                     "square_customer_id": {
-                                        "$ref": "#/$defs/SquareCustomerId"
+                                        "type": "string",
+                                        "maxLength": 192,
+                                        "pattern": "^[A-Za-z0-9][A-Za-z0-9:_\\-]{0,191}$",
+                                        "description": "The confirmed opaque Square customer identifier."
                                     },
                                     "confirmed_at": {
                                         "type": "string",
@@ -4054,12 +4054,6 @@
                                         "description": "Who confirmed the mapping, by name."
                                     }
                                 }
-                            },
-                            "SquareCustomerId": {
-                                "type": "string",
-                                "maxLength": 191,
-                                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,190}$",
-                                "description": "A Square customer id, held as an opaque string. SVC checks its shape only."
                             }
                         }
                     }
@@ -4175,7 +4169,10 @@
                                 ],
                                 "properties": {
                                     "square_customer_id": {
-                                        "$ref": "#/$defs/SquareCustomerId"
+                                        "type": "string",
+                                        "maxLength": 192,
+                                        "pattern": "^[A-Za-z0-9][A-Za-z0-9:_\\-]{0,191}$",
+                                        "description": "The confirmed opaque Square customer identifier."
                                     },
                                     "confirmed_at": {
                                         "type": "string",
@@ -4189,12 +4186,6 @@
                                         "description": "Who confirmed the mapping, by name."
                                     }
                                 }
-                            },
-                            "SquareCustomerId": {
-                                "type": "string",
-                                "maxLength": 191,
-                                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,190}$",
-                                "description": "A Square customer id, held as an opaque string. SVC checks its shape only."
                             }
                         }
                     }
@@ -4336,7 +4327,10 @@
                                 ],
                                 "properties": {
                                     "square_customer_id": {
-                                        "$ref": "#/$defs/SquareCustomerId"
+                                        "type": "string",
+                                        "maxLength": 192,
+                                        "pattern": "^[A-Za-z0-9][A-Za-z0-9:_\\-]{0,191}$",
+                                        "description": "The confirmed opaque Square customer identifier."
                                     },
                                     "confirmed_at": {
                                         "type": "string",
@@ -4365,12 +4359,6 @@
                                         ]
                                     }
                                 }
-                            },
-                            "SquareCustomerId": {
-                                "type": "string",
-                                "maxLength": 191,
-                                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,190}$",
-                                "description": "A Square customer id, held as an opaque string. SVC checks its shape only."
                             }
                         }
                     }
@@ -5848,7 +5836,10 @@
                                 ],
                                 "properties": {
                                     "square_customer_id": {
-                                        "$ref": "#/$defs/SquareCustomerId"
+                                        "type": "string",
+                                        "maxLength": 192,
+                                        "pattern": "^[A-Za-z0-9][A-Za-z0-9:_\\-]{0,191}$",
+                                        "description": "The confirmed opaque Square customer identifier."
                                     },
                                     "confirmed_at": {
                                         "type": "string",
@@ -5862,12 +5853,6 @@
                                         "description": "Who confirmed the mapping, by name."
                                     }
                                 }
-                            },
-                            "SquareCustomerId": {
-                                "type": "string",
-                                "maxLength": 191,
-                                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,190}$",
-                                "description": "A Square customer id, held as an opaque string. SVC checks its shape only."
                             }
                         }
                     }
@@ -6046,7 +6031,10 @@
                                 ],
                                 "properties": {
                                     "square_customer_id": {
-                                        "$ref": "#/$defs/SquareCustomerId"
+                                        "type": "string",
+                                        "maxLength": 192,
+                                        "pattern": "^[A-Za-z0-9][A-Za-z0-9:_\\-]{0,191}$",
+                                        "description": "The confirmed opaque Square customer identifier."
                                     },
                                     "confirmed_at": {
                                         "type": "string",
@@ -6060,12 +6048,6 @@
                                         "description": "Who confirmed the mapping, by name."
                                     }
                                 }
-                            },
-                            "SquareCustomerId": {
-                                "type": "string",
-                                "maxLength": 191,
-                                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,190}$",
-                                "description": "A Square customer id, held as an opaque string. SVC checks its shape only."
                             }
                         }
                     }
@@ -6141,7 +6123,10 @@
                                 ],
                                 "properties": {
                                     "square_customer_id": {
-                                        "$ref": "#/$defs/SquareCustomerId"
+                                        "type": "string",
+                                        "maxLength": 192,
+                                        "pattern": "^[A-Za-z0-9][A-Za-z0-9:_\\-]{0,191}$",
+                                        "description": "The confirmed opaque Square customer identifier."
                                     },
                                     "confirmed_at": {
                                         "type": "string",
@@ -6183,12 +6168,6 @@
                                         "description": "The confirmed Square customer, or null."
                                     }
                                 }
-                            },
-                            "SquareCustomerId": {
-                                "type": "string",
-                                "maxLength": 191,
-                                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,190}$",
-                                "description": "A Square customer id, held as an opaque string. SVC checks its shape only."
                             },
                             "Uuid": {
                                 "type": "string",
@@ -6251,7 +6230,10 @@
                                 ],
                                 "properties": {
                                     "square_customer_id": {
-                                        "$ref": "#/$defs/SquareCustomerId"
+                                        "type": "string",
+                                        "maxLength": 192,
+                                        "pattern": "^[A-Za-z0-9][A-Za-z0-9:_\\-]{0,191}$",
+                                        "description": "The confirmed opaque Square customer identifier."
                                     },
                                     "confirmed_at": {
                                         "type": "string",
@@ -6293,12 +6275,6 @@
                                         "description": "The confirmed Square customer, or null."
                                     }
                                 }
-                            },
-                            "SquareCustomerId": {
-                                "type": "string",
-                                "maxLength": 191,
-                                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,190}$",
-                                "description": "A Square customer id, held as an opaque string. SVC checks its shape only."
                             },
                             "Uuid": {
                                 "type": "string",
@@ -6387,7 +6363,10 @@
                                 ],
                                 "properties": {
                                     "square_customer_id": {
-                                        "$ref": "#/$defs/SquareCustomerId"
+                                        "type": "string",
+                                        "maxLength": 192,
+                                        "pattern": "^[A-Za-z0-9][A-Za-z0-9:_\\-]{0,191}$",
+                                        "description": "The confirmed opaque Square customer identifier."
                                     },
                                     "confirmed_at": {
                                         "type": "string",
@@ -6429,12 +6408,6 @@
                                         "description": "The confirmed Square customer, or null."
                                     }
                                 }
-                            },
-                            "SquareCustomerId": {
-                                "type": "string",
-                                "maxLength": 191,
-                                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,190}$",
-                                "description": "A Square customer id, held as an opaque string. SVC checks its shape only."
                             },
                             "Uuid": {
                                 "type": "string",
@@ -23443,10 +23416,10 @@
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
                 "capacity_ledger.get": "d8a6997ba130cd5a",
-                "clients.archive": "edd72242715a5ddd",
-                "clients.create": "e5a6df4458f29923",
-                "clients.get": "90e145f3e17619b7",
-                "clients.list": "99df1879f8e8a8ae",
+                "clients.archive": "0dbc67edea386e9b",
+                "clients.create": "aaeb3ab215a43195",
+                "clients.get": "22dd0d0a447730cc",
+                "clients.list": "a98c31f58684fc11",
                 "clients.portal_access.grant": "bcee14d933b506f6",
                 "clients.portal_access.list": "629c5ea9b62c442a",
                 "clients.portal_access.revoke": "4c69c78734f42a65",
@@ -23455,11 +23428,11 @@
                 "clients.portal_invitations.list": "5eb8398574eb6f46",
                 "clients.portal_invitations.resend": "65ff566edda3ab94",
                 "clients.portal_invitations.revoke": "dd8e305a10f6bf51",
-                "clients.restore": "d9530d457b12e15f",
-                "clients.update": "6edda579ff32892b",
-                "companies.square_customer.clear": "4b1be9d505b445ed",
-                "companies.square_customer.get": "b0318b0d0ce49bb5",
-                "companies.square_customer.set": "ffd2a07487c71ee4",
+                "clients.restore": "277bdcb0ddc74d50",
+                "clients.update": "c7982671fe74ba3f",
+                "companies.square_customer.clear": "bb76e8e2174853af",
+                "companies.square_customer.get": "7368cf19c59ad6e7",
+                "companies.square_customer.set": "40ae25ef785d9bc2",
                 "context.get": "dc46b79ea530a869",
                 "expense_schedules.create": "834a8f44b0d1627b",
                 "expense_schedules.generate": "0ecf05f1b8467dd3",
@@ -24234,11 +24207,11 @@
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
                 "capacity_ledger.get": "d8a6997ba130cd5a",
-                "clients.get": "90e145f3e17619b7",
-                "clients.list": "99df1879f8e8a8ae",
+                "clients.get": "22dd0d0a447730cc",
+                "clients.list": "a98c31f58684fc11",
                 "clients.portal_access.list": "629c5ea9b62c442a",
                 "clients.portal_invitations.list": "5eb8398574eb6f46",
-                "companies.square_customer.get": "b0318b0d0ce49bb5",
+                "companies.square_customer.get": "7368cf19c59ad6e7",
                 "context.get": "dc46b79ea530a869",
                 "expense_schedules.list": "dd1832f42c8c0514",
                 "expenses.list": "444aff51ddc70e0d",
@@ -24337,9 +24310,9 @@
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
                 "capacity_ledger.get": "d8a6997ba130cd5a",
-                "companies.square_customer.clear": "4b1be9d505b445ed",
-                "companies.square_customer.get": "b0318b0d0ce49bb5",
-                "companies.square_customer.set": "ffd2a07487c71ee4",
+                "companies.square_customer.clear": "bb76e8e2174853af",
+                "companies.square_customer.get": "7368cf19c59ad6e7",
+                "companies.square_customer.set": "40ae25ef785d9bc2",
                 "invoices.add_time": "ee27431f3eebdb38",
                 "invoices.corrections.get": "aa93da895756b80b",
                 "invoices.create_draft": "7f23d0f35560fb05",
@@ -24881,10 +24854,10 @@
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
                 "capacity_ledger.get": "d8a6997ba130cd5a",
-                "clients.get": "90e145f3e17619b7",
-                "clients.list": "99df1879f8e8a8ae",
+                "clients.get": "22dd0d0a447730cc",
+                "clients.list": "a98c31f58684fc11",
                 "clients.portal_access.list": "629c5ea9b62c442a",
-                "companies.square_customer.get": "b0318b0d0ce49bb5",
+                "companies.square_customer.get": "7368cf19c59ad6e7",
                 "context.get": "dc46b79ea530a869",
                 "expense_schedules.list": "dd1832f42c8c0514",
                 "expenses.list": "444aff51ddc70e0d",
@@ -25029,10 +25002,10 @@
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
                 "capacity_ledger.get": "d8a6997ba130cd5a",
-                "clients.get": "90e145f3e17619b7",
-                "clients.list": "99df1879f8e8a8ae",
+                "clients.get": "22dd0d0a447730cc",
+                "clients.list": "a98c31f58684fc11",
                 "clients.portal_access.list": "629c5ea9b62c442a",
-                "companies.square_customer.get": "b0318b0d0ce49bb5",
+                "companies.square_customer.get": "7368cf19c59ad6e7",
                 "context.get": "dc46b79ea530a869",
                 "expense_schedules.list": "dd1832f42c8c0514",
                 "expenses.list": "444aff51ddc70e0d",
@@ -25750,11 +25723,11 @@
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
                 "capacity_ledger.get": "d8a6997ba130cd5a",
-                "clients.get": "90e145f3e17619b7",
-                "clients.list": "99df1879f8e8a8ae",
+                "clients.get": "22dd0d0a447730cc",
+                "clients.list": "a98c31f58684fc11",
                 "clients.portal_access.list": "629c5ea9b62c442a",
                 "clients.portal_invitations.list": "5eb8398574eb6f46",
-                "companies.square_customer.get": "b0318b0d0ce49bb5",
+                "companies.square_customer.get": "7368cf19c59ad6e7",
                 "context.get": "dc46b79ea530a869",
                 "expense_schedules.list": "dd1832f42c8c0514",
                 "expenses.list": "444aff51ddc70e0d",
@@ -25896,11 +25869,11 @@
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
                 "capacity_ledger.get": "d8a6997ba130cd5a",
-                "clients.get": "90e145f3e17619b7",
-                "clients.list": "99df1879f8e8a8ae",
+                "clients.get": "22dd0d0a447730cc",
+                "clients.list": "a98c31f58684fc11",
                 "clients.portal_access.list": "629c5ea9b62c442a",
                 "clients.portal_invitations.list": "5eb8398574eb6f46",
-                "companies.square_customer.get": "b0318b0d0ce49bb5",
+                "companies.square_customer.get": "7368cf19c59ad6e7",
                 "context.get": "dc46b79ea530a869",
                 "expense_schedules.list": "dd1832f42c8c0514",
                 "expenses.list": "444aff51ddc70e0d",
@@ -26617,11 +26590,11 @@
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
                 "capacity_ledger.get": "d8a6997ba130cd5a",
-                "clients.get": "90e145f3e17619b7",
-                "clients.list": "99df1879f8e8a8ae",
+                "clients.get": "22dd0d0a447730cc",
+                "clients.list": "a98c31f58684fc11",
                 "clients.portal_access.list": "629c5ea9b62c442a",
                 "clients.portal_invitations.list": "5eb8398574eb6f46",
-                "companies.square_customer.get": "b0318b0d0ce49bb5",
+                "companies.square_customer.get": "7368cf19c59ad6e7",
                 "context.get": "dc46b79ea530a869",
                 "expense_schedules.list": "dd1832f42c8c0514",
                 "expenses.list": "444aff51ddc70e0d",
@@ -26765,11 +26738,11 @@
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
                 "capacity_ledger.get": "d8a6997ba130cd5a",
-                "clients.get": "90e145f3e17619b7",
-                "clients.list": "99df1879f8e8a8ae",
+                "clients.get": "22dd0d0a447730cc",
+                "clients.list": "a98c31f58684fc11",
                 "clients.portal_access.list": "629c5ea9b62c442a",
                 "clients.portal_invitations.list": "5eb8398574eb6f46",
-                "companies.square_customer.get": "b0318b0d0ce49bb5",
+                "companies.square_customer.get": "7368cf19c59ad6e7",
                 "context.get": "dc46b79ea530a869",
                 "expense_schedules.list": "dd1832f42c8c0514",
                 "expenses.list": "444aff51ddc70e0d",
@@ -27462,10 +27435,10 @@
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
                 "capacity_ledger.get": "d8a6997ba130cd5a",
-                "clients.archive": "edd72242715a5ddd",
-                "clients.create": "e5a6df4458f29923",
-                "clients.get": "90e145f3e17619b7",
-                "clients.list": "99df1879f8e8a8ae",
+                "clients.archive": "0dbc67edea386e9b",
+                "clients.create": "aaeb3ab215a43195",
+                "clients.get": "22dd0d0a447730cc",
+                "clients.list": "a98c31f58684fc11",
                 "clients.portal_access.grant": "bcee14d933b506f6",
                 "clients.portal_access.list": "629c5ea9b62c442a",
                 "clients.portal_access.revoke": "4c69c78734f42a65",
@@ -27474,11 +27447,11 @@
                 "clients.portal_invitations.list": "5eb8398574eb6f46",
                 "clients.portal_invitations.resend": "65ff566edda3ab94",
                 "clients.portal_invitations.revoke": "dd8e305a10f6bf51",
-                "clients.restore": "d9530d457b12e15f",
-                "clients.update": "6edda579ff32892b",
-                "companies.square_customer.clear": "4b1be9d505b445ed",
-                "companies.square_customer.get": "b0318b0d0ce49bb5",
-                "companies.square_customer.set": "ffd2a07487c71ee4",
+                "clients.restore": "277bdcb0ddc74d50",
+                "clients.update": "c7982671fe74ba3f",
+                "companies.square_customer.clear": "bb76e8e2174853af",
+                "companies.square_customer.get": "7368cf19c59ad6e7",
+                "companies.square_customer.set": "40ae25ef785d9bc2",
                 "context.get": "dc46b79ea530a869",
                 "expense_schedules.create": "834a8f44b0d1627b",
                 "expense_schedules.generate": "0ecf05f1b8467dd3",
@@ -27610,10 +27583,10 @@
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
                 "capacity_ledger.get": "d8a6997ba130cd5a",
-                "clients.archive": "edd72242715a5ddd",
-                "clients.create": "e5a6df4458f29923",
-                "clients.get": "90e145f3e17619b7",
-                "clients.list": "99df1879f8e8a8ae",
+                "clients.archive": "0dbc67edea386e9b",
+                "clients.create": "aaeb3ab215a43195",
+                "clients.get": "22dd0d0a447730cc",
+                "clients.list": "a98c31f58684fc11",
                 "clients.portal_access.grant": "bcee14d933b506f6",
                 "clients.portal_access.list": "629c5ea9b62c442a",
                 "clients.portal_access.revoke": "4c69c78734f42a65",
@@ -27622,11 +27595,11 @@
                 "clients.portal_invitations.list": "5eb8398574eb6f46",
                 "clients.portal_invitations.resend": "65ff566edda3ab94",
                 "clients.portal_invitations.revoke": "dd8e305a10f6bf51",
-                "clients.restore": "d9530d457b12e15f",
-                "clients.update": "6edda579ff32892b",
-                "companies.square_customer.clear": "4b1be9d505b445ed",
-                "companies.square_customer.get": "b0318b0d0ce49bb5",
-                "companies.square_customer.set": "ffd2a07487c71ee4",
+                "clients.restore": "277bdcb0ddc74d50",
+                "clients.update": "c7982671fe74ba3f",
+                "companies.square_customer.clear": "bb76e8e2174853af",
+                "companies.square_customer.get": "7368cf19c59ad6e7",
+                "companies.square_customer.set": "40ae25ef785d9bc2",
                 "context.get": "dc46b79ea530a869",
                 "expense_schedules.create": "834a8f44b0d1627b",
                 "expense_schedules.generate": "0ecf05f1b8467dd3",
@@ -28371,10 +28344,10 @@
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
                 "capacity_ledger.get": "d8a6997ba130cd5a",
-                "clients.archive": "edd72242715a5ddd",
-                "clients.create": "e5a6df4458f29923",
-                "clients.get": "90e145f3e17619b7",
-                "clients.list": "99df1879f8e8a8ae",
+                "clients.archive": "0dbc67edea386e9b",
+                "clients.create": "aaeb3ab215a43195",
+                "clients.get": "22dd0d0a447730cc",
+                "clients.list": "a98c31f58684fc11",
                 "clients.portal_access.grant": "bcee14d933b506f6",
                 "clients.portal_access.list": "629c5ea9b62c442a",
                 "clients.portal_access.revoke": "4c69c78734f42a65",
@@ -28383,11 +28356,11 @@
                 "clients.portal_invitations.list": "5eb8398574eb6f46",
                 "clients.portal_invitations.resend": "65ff566edda3ab94",
                 "clients.portal_invitations.revoke": "dd8e305a10f6bf51",
-                "clients.restore": "d9530d457b12e15f",
-                "clients.update": "6edda579ff32892b",
-                "companies.square_customer.clear": "4b1be9d505b445ed",
-                "companies.square_customer.get": "b0318b0d0ce49bb5",
-                "companies.square_customer.set": "ffd2a07487c71ee4",
+                "clients.restore": "277bdcb0ddc74d50",
+                "clients.update": "c7982671fe74ba3f",
+                "companies.square_customer.clear": "bb76e8e2174853af",
+                "companies.square_customer.get": "7368cf19c59ad6e7",
+                "companies.square_customer.set": "40ae25ef785d9bc2",
                 "context.get": "dc46b79ea530a869",
                 "expense_schedules.list": "dd1832f42c8c0514",
                 "expenses.list": "444aff51ddc70e0d",
@@ -28517,10 +28490,10 @@
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
                 "capacity_ledger.get": "d8a6997ba130cd5a",
-                "clients.archive": "edd72242715a5ddd",
-                "clients.create": "e5a6df4458f29923",
-                "clients.get": "90e145f3e17619b7",
-                "clients.list": "99df1879f8e8a8ae",
+                "clients.archive": "0dbc67edea386e9b",
+                "clients.create": "aaeb3ab215a43195",
+                "clients.get": "22dd0d0a447730cc",
+                "clients.list": "a98c31f58684fc11",
                 "clients.portal_access.grant": "bcee14d933b506f6",
                 "clients.portal_access.list": "629c5ea9b62c442a",
                 "clients.portal_access.revoke": "4c69c78734f42a65",
@@ -28529,11 +28502,11 @@
                 "clients.portal_invitations.list": "5eb8398574eb6f46",
                 "clients.portal_invitations.resend": "65ff566edda3ab94",
                 "clients.portal_invitations.revoke": "dd8e305a10f6bf51",
-                "clients.restore": "d9530d457b12e15f",
-                "clients.update": "6edda579ff32892b",
-                "companies.square_customer.clear": "4b1be9d505b445ed",
-                "companies.square_customer.get": "b0318b0d0ce49bb5",
-                "companies.square_customer.set": "ffd2a07487c71ee4",
+                "clients.restore": "277bdcb0ddc74d50",
+                "clients.update": "c7982671fe74ba3f",
+                "companies.square_customer.clear": "bb76e8e2174853af",
+                "companies.square_customer.get": "7368cf19c59ad6e7",
+                "companies.square_customer.set": "40ae25ef785d9bc2",
                 "context.get": "dc46b79ea530a869",
                 "expense_schedules.list": "dd1832f42c8c0514",
                 "expenses.list": "444aff51ddc70e0d",
@@ -29200,10 +29173,10 @@
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
                 "capacity_ledger.get": "d8a6997ba130cd5a",
-                "clients.archive": "edd72242715a5ddd",
-                "clients.create": "e5a6df4458f29923",
-                "clients.get": "90e145f3e17619b7",
-                "clients.list": "99df1879f8e8a8ae",
+                "clients.archive": "0dbc67edea386e9b",
+                "clients.create": "aaeb3ab215a43195",
+                "clients.get": "22dd0d0a447730cc",
+                "clients.list": "a98c31f58684fc11",
                 "clients.portal_access.grant": "bcee14d933b506f6",
                 "clients.portal_access.list": "629c5ea9b62c442a",
                 "clients.portal_access.revoke": "4c69c78734f42a65",
@@ -29212,11 +29185,11 @@
                 "clients.portal_invitations.list": "5eb8398574eb6f46",
                 "clients.portal_invitations.resend": "65ff566edda3ab94",
                 "clients.portal_invitations.revoke": "dd8e305a10f6bf51",
-                "clients.restore": "d9530d457b12e15f",
-                "clients.update": "6edda579ff32892b",
-                "companies.square_customer.clear": "4b1be9d505b445ed",
-                "companies.square_customer.get": "b0318b0d0ce49bb5",
-                "companies.square_customer.set": "ffd2a07487c71ee4",
+                "clients.restore": "277bdcb0ddc74d50",
+                "clients.update": "c7982671fe74ba3f",
+                "companies.square_customer.clear": "bb76e8e2174853af",
+                "companies.square_customer.get": "7368cf19c59ad6e7",
+                "companies.square_customer.set": "40ae25ef785d9bc2",
                 "context.get": "dc46b79ea530a869",
                 "expense_schedules.create": "834a8f44b0d1627b",
                 "expense_schedules.generate": "0ecf05f1b8467dd3",
@@ -29347,10 +29320,10 @@
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
                 "capacity_ledger.get": "d8a6997ba130cd5a",
-                "clients.archive": "edd72242715a5ddd",
-                "clients.create": "e5a6df4458f29923",
-                "clients.get": "90e145f3e17619b7",
-                "clients.list": "99df1879f8e8a8ae",
+                "clients.archive": "0dbc67edea386e9b",
+                "clients.create": "aaeb3ab215a43195",
+                "clients.get": "22dd0d0a447730cc",
+                "clients.list": "a98c31f58684fc11",
                 "clients.portal_access.grant": "bcee14d933b506f6",
                 "clients.portal_access.list": "629c5ea9b62c442a",
                 "clients.portal_access.revoke": "4c69c78734f42a65",
@@ -29359,11 +29332,11 @@
                 "clients.portal_invitations.list": "5eb8398574eb6f46",
                 "clients.portal_invitations.resend": "65ff566edda3ab94",
                 "clients.portal_invitations.revoke": "dd8e305a10f6bf51",
-                "clients.restore": "d9530d457b12e15f",
-                "clients.update": "6edda579ff32892b",
-                "companies.square_customer.clear": "4b1be9d505b445ed",
-                "companies.square_customer.get": "b0318b0d0ce49bb5",
-                "companies.square_customer.set": "ffd2a07487c71ee4",
+                "clients.restore": "277bdcb0ddc74d50",
+                "clients.update": "c7982671fe74ba3f",
+                "companies.square_customer.clear": "bb76e8e2174853af",
+                "companies.square_customer.get": "7368cf19c59ad6e7",
+                "companies.square_customer.set": "40ae25ef785d9bc2",
                 "context.get": "dc46b79ea530a869",
                 "expense_schedules.create": "834a8f44b0d1627b",
                 "expense_schedules.generate": "0ecf05f1b8467dd3",
@@ -30087,10 +30060,10 @@
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
                 "capacity_ledger.get": "d8a6997ba130cd5a",
-                "clients.archive": "edd72242715a5ddd",
-                "clients.create": "e5a6df4458f29923",
-                "clients.get": "90e145f3e17619b7",
-                "clients.list": "99df1879f8e8a8ae",
+                "clients.archive": "0dbc67edea386e9b",
+                "clients.create": "aaeb3ab215a43195",
+                "clients.get": "22dd0d0a447730cc",
+                "clients.list": "a98c31f58684fc11",
                 "clients.portal_access.grant": "bcee14d933b506f6",
                 "clients.portal_access.list": "629c5ea9b62c442a",
                 "clients.portal_access.revoke": "4c69c78734f42a65",
@@ -30099,11 +30072,11 @@
                 "clients.portal_invitations.list": "5eb8398574eb6f46",
                 "clients.portal_invitations.resend": "65ff566edda3ab94",
                 "clients.portal_invitations.revoke": "dd8e305a10f6bf51",
-                "clients.restore": "d9530d457b12e15f",
-                "clients.update": "6edda579ff32892b",
-                "companies.square_customer.clear": "4b1be9d505b445ed",
-                "companies.square_customer.get": "b0318b0d0ce49bb5",
-                "companies.square_customer.set": "ffd2a07487c71ee4",
+                "clients.restore": "277bdcb0ddc74d50",
+                "clients.update": "c7982671fe74ba3f",
+                "companies.square_customer.clear": "bb76e8e2174853af",
+                "companies.square_customer.get": "7368cf19c59ad6e7",
+                "companies.square_customer.set": "40ae25ef785d9bc2",
                 "expense_schedules.create": "834a8f44b0d1627b",
                 "expense_schedules.generate": "0ecf05f1b8467dd3",
                 "expense_schedules.list": "dd1832f42c8c0514",
@@ -30233,10 +30206,10 @@
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
                 "capacity_ledger.get": "d8a6997ba130cd5a",
-                "clients.archive": "edd72242715a5ddd",
-                "clients.create": "e5a6df4458f29923",
-                "clients.get": "90e145f3e17619b7",
-                "clients.list": "99df1879f8e8a8ae",
+                "clients.archive": "0dbc67edea386e9b",
+                "clients.create": "aaeb3ab215a43195",
+                "clients.get": "22dd0d0a447730cc",
+                "clients.list": "a98c31f58684fc11",
                 "clients.portal_access.grant": "bcee14d933b506f6",
                 "clients.portal_access.list": "629c5ea9b62c442a",
                 "clients.portal_access.revoke": "4c69c78734f42a65",
@@ -30245,11 +30218,11 @@
                 "clients.portal_invitations.list": "5eb8398574eb6f46",
                 "clients.portal_invitations.resend": "65ff566edda3ab94",
                 "clients.portal_invitations.revoke": "dd8e305a10f6bf51",
-                "clients.restore": "d9530d457b12e15f",
-                "clients.update": "6edda579ff32892b",
-                "companies.square_customer.clear": "4b1be9d505b445ed",
-                "companies.square_customer.get": "b0318b0d0ce49bb5",
-                "companies.square_customer.set": "ffd2a07487c71ee4",
+                "clients.restore": "277bdcb0ddc74d50",
+                "clients.update": "c7982671fe74ba3f",
+                "companies.square_customer.clear": "bb76e8e2174853af",
+                "companies.square_customer.get": "7368cf19c59ad6e7",
+                "companies.square_customer.set": "40ae25ef785d9bc2",
                 "expense_schedules.create": "834a8f44b0d1627b",
                 "expense_schedules.generate": "0ecf05f1b8467dd3",
                 "expense_schedules.list": "dd1832f42c8c0514",
@@ -31710,19 +31683,19 @@
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
                 "capacity_ledger.get": "d8a6997ba130cd5a",
-                "clients.archive": "edd72242715a5ddd",
-                "clients.create": "e5a6df4458f29923",
-                "clients.get": "90e145f3e17619b7",
-                "clients.list": "99df1879f8e8a8ae",
+                "clients.archive": "0dbc67edea386e9b",
+                "clients.create": "aaeb3ab215a43195",
+                "clients.get": "22dd0d0a447730cc",
+                "clients.list": "a98c31f58684fc11",
                 "clients.portal_access.grant": "bcee14d933b506f6",
                 "clients.portal_access.list": "629c5ea9b62c442a",
                 "clients.portal_access.revoke": "4c69c78734f42a65",
                 "clients.portal_access.update": "7c94d6dd53da658d",
-                "clients.restore": "d9530d457b12e15f",
-                "clients.update": "6edda579ff32892b",
-                "companies.square_customer.clear": "4b1be9d505b445ed",
-                "companies.square_customer.get": "b0318b0d0ce49bb5",
-                "companies.square_customer.set": "ffd2a07487c71ee4",
+                "clients.restore": "277bdcb0ddc74d50",
+                "clients.update": "c7982671fe74ba3f",
+                "companies.square_customer.clear": "bb76e8e2174853af",
+                "companies.square_customer.get": "7368cf19c59ad6e7",
+                "companies.square_customer.set": "40ae25ef785d9bc2",
                 "context.get": "dc46b79ea530a869",
                 "expense_schedules.create": "834a8f44b0d1627b",
                 "expense_schedules.generate": "0ecf05f1b8467dd3",
@@ -31859,19 +31832,19 @@
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
                 "capacity_ledger.get": "d8a6997ba130cd5a",
-                "clients.archive": "edd72242715a5ddd",
-                "clients.create": "e5a6df4458f29923",
-                "clients.get": "90e145f3e17619b7",
-                "clients.list": "99df1879f8e8a8ae",
+                "clients.archive": "0dbc67edea386e9b",
+                "clients.create": "aaeb3ab215a43195",
+                "clients.get": "22dd0d0a447730cc",
+                "clients.list": "a98c31f58684fc11",
                 "clients.portal_access.grant": "bcee14d933b506f6",
                 "clients.portal_access.list": "629c5ea9b62c442a",
                 "clients.portal_access.revoke": "4c69c78734f42a65",
                 "clients.portal_access.update": "7c94d6dd53da658d",
-                "clients.restore": "d9530d457b12e15f",
-                "clients.update": "6edda579ff32892b",
-                "companies.square_customer.clear": "4b1be9d505b445ed",
-                "companies.square_customer.get": "b0318b0d0ce49bb5",
-                "companies.square_customer.set": "ffd2a07487c71ee4",
+                "clients.restore": "277bdcb0ddc74d50",
+                "clients.update": "c7982671fe74ba3f",
+                "companies.square_customer.clear": "bb76e8e2174853af",
+                "companies.square_customer.get": "7368cf19c59ad6e7",
+                "companies.square_customer.set": "40ae25ef785d9bc2",
                 "context.get": "dc46b79ea530a869",
                 "expense_schedules.create": "834a8f44b0d1627b",
                 "expense_schedules.generate": "0ecf05f1b8467dd3",

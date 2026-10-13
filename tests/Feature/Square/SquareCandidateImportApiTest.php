@@ -102,6 +102,29 @@ final class SquareCandidateImportApiTest extends TestCase
         }
     }
 
+    public function test_full_length_customer_ids_import_round_trip_and_remain_case_sensitive(): void
+    {
+        $prefix = 'cust_fixture_';
+        $upper = $prefix.str_repeat('x', 192 - strlen($prefix) - 1).'A';
+        $lower = substr($upper, 0, -1).'a';
+        $invoice = self::squareInvoice('inv_fixture_long_customer');
+        $invoice['primary_recipient']['customer_id'] = $upper;
+        $this->serveSquareAccount(invoices: [$invoice]);
+        $this->squareAccount['customers'] = [self::squareCustomer($upper), self::squareCustomer($lower)];
+        $sync = app(SquareMirrorSync::class);
+        $this->assertSame(SquareSyncRun::COMPLETED, $sync->perform($this->workspace, $sync->request($this->workspace, SquareSyncRun::TRIGGER_SCHEDULE))->status);
+        foreach ([$upper, $lower] as $index => $customerId) {
+            $result = $this->postJson($this->squareUrl('customers/'.$customerId.'/import'), ['confirm' => true, 'company_name' => 'Synthetic long customer '.$index], ['Idempotency-Key' => 'fixture-long-customer-'.$index])->assertOk()->json();
+            $company = ClientCompany::query()->where('workspace_id', $this->workspace->id)->where('public_id', $result['data']['company_id'])->firstOrFail();
+            $mapping = CompanySquareCustomer::query()->where('workspace_id', $this->workspace->id)->where('client_company_id', $company->id)->sole();
+            $this->assertSame([$customerId, $customerId], [$mapping->square_customer_id, $mapping->active_customer_slot]);
+            $read = $this->getJson('/api/v1/workspaces/'.$this->workspace->public_id.'/clients/'.$company->public_id.'/square-customer')->assertOk()->json();
+            $this->assertSame($customerId, $read['data']['square_customer']['square_customer_id']);
+            $this->assertSchema('companies.square_customer.get', $read);
+        }
+        $this->assertSame(2, CompanySquareCustomer::query()->where('workspace_id', $this->workspace->id)->count());
+    }
+
     public function test_customers_retired_by_a_complete_sync_are_not_offered_or_imported_from_invoice_history(): void
     {
         $this->squareAccount['customers'] = [];
