@@ -160,10 +160,7 @@ final class SquareSeriesSummary
      */
     private static function missing(array $occurrences): array
     {
-        if ($occurrences === []) {
-            return [];
-        }
-        $ordered = array_unique($occurrences);
+        $ordered = $occurrences;
         sort($ordered);
         $missing = [];
         foreach ($ordered as $index => $occurrence) {

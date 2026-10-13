@@ -218,6 +218,29 @@ final class SquareSeriesSummaryTest extends TestCase
         $this->assertFalse($summary['missing_occurrences_truncated']);
     }
 
+    public function test_exactly_the_display_limit_of_missing_occurrences_is_not_truncated(): void
+    {
+        $members = [self::member(1, null, 'PAID', 100, 100), self::member(52, null, 'PAID', 100, 100)];
+        $summary = SquareSeriesSummary::of('000001', $members, CarbonImmutable::parse('2040-01-01'));
+        $this->assertSame(range(2, 51), $summary['missing_occurrences']);
+        $this->assertFalse($summary['missing_occurrences_truncated']);
+    }
+
+    public function test_nonuniform_cadence_is_calculated_in_occurrence_order(): void
+    {
+        $members = [self::member(1, '2040-01-01', 'PAID', 100, 100), self::member(3, '2040-04-01', 'PAID', 100, 100), self::member(2, '2040-01-11', 'PAID', 100, 100)];
+        $summary = SquareSeriesSummary::of('000001', $members, CarbonImmutable::parse('2040-01-01'));
+        $this->assertSame(['irregular', 46], [$summary['cadence'], $summary['cadence_days']]);
+    }
+
+    public function test_gap_enumeration_stops_after_enough_entries_to_prove_truncation(): void
+    {
+        // The public summary slices the result, so check the bounded calculation
+        // itself: producing every absent occurrence would waste memory and work.
+        $missing = new \ReflectionMethod(SquareSeriesSummary::class, 'missing');
+        $this->assertSame(range(2, 52), $missing->invoke(null, [1, 80]));
+    }
+
     /** @return array{series_occurrence: int|null, due_on: string|null, scheduled_on: string|null, status: string, currency: string|null, total_amount: int|null, paid_amount: int|null, autopay: bool, square_customer_id: string|null, recipient_name: string|null, square_location_id: string|null} */
     private static function member(int $occurrence, ?string $due, string $status, int $total, int $paid, ?string $scheduled = null, string $currency = 'USD'): array
     {
