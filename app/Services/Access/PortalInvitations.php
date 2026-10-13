@@ -235,7 +235,7 @@ final class PortalInvitations
             ->where('email', ClientPortalInvitation::normalize($user->email))
             ->where('status', PortalInvitationStatus::Pending->value)
             ->orderBy('id')
-            ->get();
+            ->lazyById(100);
 
         foreach ($invitations as $invitation) {
             try {

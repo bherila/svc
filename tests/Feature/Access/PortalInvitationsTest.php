@@ -18,8 +18,10 @@ use App\Support\Access\AccessRefusal;
 use App\Support\Access\PortalAccessScope;
 use BWH\Auth\OAuth\Invitations\ApplicationInvitationError;
 use BWH\Auth\Testing\FakeApplicationInvitations;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
 use Tests\Concerns\BuildsAccessFixtures;
 use Tests\Concerns\FakesProviderIdentity;
@@ -124,6 +126,33 @@ final class PortalInvitationsTest extends TestCase
         $this->assertSame(0, ClientCompanyMembership::query()->count());
         $this->assertSame('pending', $invitation->fresh()->status);
         $this->assertSame(0, AccessAuditEvent::query()->where('action', '!=', 'portal.invited')->count());
+    }
+
+    public function test_sign_in_reads_invitations_in_bounded_batches_and_applies_every_batch(): void
+    {
+        $first = $this->invite($this->owner, 'batched@client.example.test', PortalAccessScope::Company);
+        for ($index = 0; $index < 100; $index++) {
+            $company = $this->company($this->workspace, 'fixture-batch-'.$index);
+            $first->replicate()->forceFill([
+                'public_id' => (string) Str::uuid(),
+                'client_company_id' => $company->id,
+            ])->save();
+        }
+        $reads = [];
+        DB::listen(function (QueryExecuted $query) use (&$reads): void {
+            if (preg_match('/from [`"]client_portal_invitations[`"] where [`"]email[`"]/i', $query->sql) === 1) {
+                $reads[] = $query->sql;
+            }
+        });
+
+        $this->signIn('fixture-batched-subject', 'batched@client.example.test')->assertRedirect();
+
+        $this->assertCount(2, $reads);
+        foreach ($reads as $sql) {
+            $this->assertMatchesRegularExpression('/limit 100\b/i', $sql);
+        }
+        $this->assertSame(101, ClientCompanyMembership::query()->where('workspace_id', $this->workspace->id)->count());
+        $this->assertSame(0, ClientPortalInvitation::query()->where('workspace_id', $this->workspace->id)->where('status', 'pending')->count());
     }
 
     public function test_an_inviter_who_lost_authority_leaves_it_not_applied_with_nothing_granted(): void
