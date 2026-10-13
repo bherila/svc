@@ -170,7 +170,7 @@ final class SquareMirrorReadService
             ->whereNotNull('square_customer_id')
             ->whereNotIn('square_customer_id', $mapped)
             ->groupBy('square_customer_id')
-            ->selectRaw("square_customer_id, count(*) as invoice_count, sum(case when status in ({$open}) then 1 else 0 end) as open_invoice_count, sum(case when status in ({$open}) then coalesce(total_amount, 0) - coalesce(paid_amount, 0) else 0 end) as open_amount, count(distinct currency) as currencies, max(currency) as currency, max(due_on) as last_due_on, max(recipient_name) as recipient_name")
+            ->selectRaw("square_customer_id, count(*) as invoice_count, sum(case when status in ({$open}) then 1 else 0 end) as open_invoice_count, sum(case when status in ({$open}) then coalesce(total_amount, 0) - coalesce(paid_amount, 0) else 0 end) as open_amount, count(distinct case when status in ({$open}) then currency end) as currencies, max(case when status in ({$open}) then currency end) as currency, max(due_on) as last_due_on, max(recipient_name) as recipient_name")
             ->get();
         $customers = [];
         foreach ($rows as $row) {

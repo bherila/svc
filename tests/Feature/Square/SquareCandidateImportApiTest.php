@@ -102,6 +102,19 @@ final class SquareCandidateImportApiTest extends TestCase
         }
     }
 
+    public function test_closed_history_does_not_change_the_currency_of_current_receivables(): void
+    {
+        $source = SquareInvoiceSnapshot::query()->where('workspace_id', $this->workspace->id)->where('square_invoice_id', 'inv_fixture_1')->firstOrFail();
+        $history = $source->replicate();
+        $history->forceFill(['square_invoice_id' => 'inv_fixture_closed_history', 'status' => 'PAID', 'currency' => 'EUR', 'total_amount' => 100, 'paid_amount' => 100])->save();
+        $facts = $this->getJson($this->squareUrl('customers/unlinked'))->assertOk()->json('data.0');
+        $this->assertSame([24_690, 'USD', 2], [$facts['open_amount'], $facts['currency'], $facts['open_invoice_count']]);
+        $history->forceFill(['status' => 'UNPAID', 'paid_amount' => 0])->save();
+        $mixed = $this->getJson($this->squareUrl('customers/unlinked'))->assertOk()->json('data.0');
+        $this->assertNull($mixed['open_amount']);
+        $this->assertNull($mixed['currency']);
+    }
+
     public function test_unlinked_customers_have_balances_and_disappear_after_an_explicit_idempotent_import(): void
     {
         $calls = count(Http::recorded());
