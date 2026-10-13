@@ -163,7 +163,7 @@ final class PortalInvitations
 
             $this->supersede($context, $locked, $company, $current->email, $current->public_id, except: $current);
             $this->issue($current, $issued);
-            $current->forceFill(['resolved_at' => null])->save();
+            $current->forceFill(['resolved_at' => null, 'inviter_user_id' => $context->actorId()])->save();
             $this->audit->record($context, $locked, AccessAuditAction::PortalInvitationResent, null, null, ['invitation' => $current->public_id], $company->public_id);
 
             return $current;

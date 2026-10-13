@@ -163,6 +163,24 @@ final class PortalInvitationsTest extends TestCase
         $this->assertSame(0, ClientCompanyMembership::query()->count());
     }
 
+    public function test_a_resending_manager_becomes_the_authority_for_the_renewed_invitation(): void
+    {
+        $invitation = $this->invite($this->admin, 'renewed@client.example.test', PortalAccessScope::Projects, [$this->alpha]);
+        WorkspaceMembership::query()->where('workspace_id', $this->workspace->id)->where('user_id', $this->admin->id)->update(['role' => 'member']);
+
+        app(PortalInvitations::class)->resend(AccessMutationContext::user($this->owner), $this->company, $invitation);
+        $this->provider->accept(1);
+        $this->signIn('fixture-renewed-subject', 'renewed@client.example.test')->assertRedirect();
+
+        $invitation->refresh();
+        $this->assertSame($this->owner->id, $invitation->inviter_user_id);
+        $this->assertSame('accepted', $invitation->status);
+        $membership = ClientCompanyMembership::query()->where('workspace_id', $this->workspace->id)->where('client_company_id', $this->company->id)->sole();
+        $this->assertSame('projects', $membership->access_scope);
+        $this->assertSame([$this->alpha->id], $this->limits($membership));
+        $this->assertSame($this->owner->id, AccessAuditEvent::query()->where('workspace_id', $this->workspace->id)->where('action', 'portal.granted')->sole()->actor_user_id);
+    }
+
     public function test_moved_projects_are_dropped_and_an_invitation_left_with_none_is_not_applied(): void
     {
         $elsewhere = $this->company($this->workspace, 'elsewhere-client');
