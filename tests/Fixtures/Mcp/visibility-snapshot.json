@@ -14,7 +14,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC data and safely use the write operations authorized for this connection.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before billing_schedules.generate: it issues invoices and may schedule automatic client delivery. Obtain explicit user confirmation before creating, updating, archiving projects or changing project member access; these decisions affect client visibility and access. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Obtain explicit user confirmation before deleting an attachment. When the user confirms issuing a draft for money already collected elsewhere, pass payment to invoices.issue so it is issued and paid in one step and the automatic client delivery is never sent; never infer a payment from an invoice balance. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; payments.record records money already received but never initiates a charge, and SVC does not expose card data or file uploads through MCP. Use the log-time-across-projects and prepare-invoice-safely prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": [
@@ -20791,7 +20791,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC data and safely use the write operations authorized for this connection.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before billing_schedules.generate: it issues invoices and may schedule automatic client delivery. Obtain explicit user confirmation before creating, updating, archiving projects or changing project member access; these decisions affect client visibility and access. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Obtain explicit user confirmation before deleting an attachment. When the user confirms issuing a draft for money already collected elsewhere, pass payment to invoices.issue so it is issued and paid in one step and the automatic client delivery is never sent; never infer a payment from an invoice balance. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; payments.record records money already received but never initiates a charge, and SVC does not expose card data or file uploads through MCP. Use the log-time-across-projects and prepare-invoice-safely prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
@@ -21013,7 +21013,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC data and safely use the write operations authorized for this connection.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects and prepare-invoice-safely prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
@@ -21153,7 +21153,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC data and safely use the write operations authorized for this connection.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects and prepare-invoice-safely prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
@@ -21293,7 +21293,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC data and safely use the write operations authorized for this connection.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects and prepare-invoice-safely prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
@@ -21433,7 +21433,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC data and safely use the write operations authorized for this connection.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects and prepare-invoice-safely prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
@@ -21555,7 +21555,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC projects, tasks, time, and invoices through the versioned REST API.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. This connection is read-only; use the SVC website for changes. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
@@ -21631,7 +21631,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC projects, tasks, time, and invoices through the versioned REST API.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. This connection is read-only; use the SVC website for changes. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": [],
@@ -21653,7 +21653,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC data and safely use the write operations authorized for this connection.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
@@ -21815,7 +21815,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC projects, tasks, time, and invoices through the versioned REST API.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. This connection is read-only; use the SVC website for changes. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
@@ -21855,7 +21855,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC projects, tasks, time, and invoices through the versioned REST API.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. This connection is read-only; use the SVC website for changes. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": [],
@@ -21877,7 +21877,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC data and safely use the write operations authorized for this connection.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
@@ -22004,7 +22004,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC projects, tasks, time, and invoices through the versioned REST API.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. This connection is read-only; use the SVC website for changes. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
@@ -22044,7 +22044,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC projects, tasks, time, and invoices through the versioned REST API.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. This connection is read-only; use the SVC website for changes. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": [],
@@ -22066,7 +22066,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC data and safely use the write operations authorized for this connection.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
@@ -22169,7 +22169,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC data and safely use the write operations authorized for this connection.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
@@ -22310,7 +22310,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC data and safely use the write operations authorized for this connection.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
@@ -22474,7 +22474,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC data and safely use the write operations authorized for this connection.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
@@ -22613,7 +22613,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC data and safely use the write operations authorized for this connection.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
@@ -22752,7 +22752,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC data and safely use the write operations authorized for this connection.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
@@ -22891,7 +22891,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC data and safely use the write operations authorized for this connection.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
@@ -23001,7 +23001,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC projects, tasks, time, and invoices through the versioned REST API.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. This connection is read-only; use the SVC website for changes. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
@@ -23140,7 +23140,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC projects, tasks, time, and invoices through the versioned REST API.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. This connection is read-only; use the SVC website for changes. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
@@ -23313,7 +23313,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC projects, tasks, time, and invoices through the versioned REST API.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. This connection is read-only; use the SVC website for changes. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
@@ -23450,7 +23450,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC projects, tasks, time, and invoices through the versioned REST API.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. This connection is read-only; use the SVC website for changes. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
@@ -23587,7 +23587,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC projects, tasks, time, and invoices through the versioned REST API.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. This connection is read-only; use the SVC website for changes. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
@@ -23724,7 +23724,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC projects, tasks, time, and invoices through the versioned REST API.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. This connection is read-only; use the SVC website for changes. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
@@ -23826,7 +23826,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC data and safely use the write operations authorized for this connection.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
@@ -23967,7 +23967,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC data and safely use the write operations authorized for this connection.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
@@ -24142,7 +24142,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC data and safely use the write operations authorized for this connection.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
@@ -24281,7 +24281,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC data and safely use the write operations authorized for this connection.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
@@ -24420,7 +24420,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC data and safely use the write operations authorized for this connection.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
@@ -24559,7 +24559,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC data and safely use the write operations authorized for this connection.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
@@ -24623,7 +24623,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC data and safely use the write operations authorized for this connection.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before creating, updating, archiving projects or changing project member access; these decisions affect client visibility and access. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Obtain explicit user confirmation before deleting an attachment. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; payments.record records money already received but never initiates a charge, and SVC does not expose card data or file uploads through MCP. Use the log-time-across-projects prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
@@ -24764,7 +24764,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC data and safely use the write operations authorized for this connection.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before creating, updating, archiving projects or changing project member access; these decisions affect client visibility and access. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Obtain explicit user confirmation before deleting an attachment. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; payments.record records money already received but never initiates a charge, and SVC does not expose card data or file uploads through MCP. Use the log-time-across-projects prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
@@ -24977,7 +24977,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC data and safely use the write operations authorized for this connection.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
@@ -25116,7 +25116,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC data and safely use the write operations authorized for this connection.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
@@ -25255,7 +25255,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC data and safely use the write operations authorized for this connection.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
@@ -25394,7 +25394,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC data and safely use the write operations authorized for this connection.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
@@ -25489,7 +25489,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC data and safely use the write operations authorized for this connection.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
@@ -25628,7 +25628,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC data and safely use the write operations authorized for this connection.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
@@ -25821,7 +25821,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC projects, tasks, time, and invoices through the versioned REST API.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. This connection is read-only; use the SVC website for changes. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
@@ -25958,7 +25958,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC projects, tasks, time, and invoices through the versioned REST API.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. This connection is read-only; use the SVC website for changes. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
@@ -26095,7 +26095,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC projects, tasks, time, and invoices through the versioned REST API.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. This connection is read-only; use the SVC website for changes. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
@@ -26232,7 +26232,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC projects, tasks, time, and invoices through the versioned REST API.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. This connection is read-only; use the SVC website for changes. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
@@ -26277,7 +26277,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC data and safely use the write operations authorized for this connection.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before billing_schedules.generate: it issues invoices and may schedule automatic client delivery. Obtain explicit user confirmation before creating, updating, archiving projects or changing project member access; these decisions affect client visibility and access. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Obtain explicit user confirmation before deleting an attachment. When the user confirms issuing a draft for money already collected elsewhere, pass payment to invoices.issue so it is issued and paid in one step and the automatic client delivery is never sent; never infer a payment from an invoice balance. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; payments.record records money already received but never initiates a charge, and SVC does not expose card data or file uploads through MCP. Use the log-time-across-projects and prepare-invoice-safely prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
@@ -26417,7 +26417,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC data and safely use the write operations authorized for this connection.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before billing_schedules.generate: it issues invoices and may schedule automatic client delivery. Obtain explicit user confirmation before creating, updating, archiving projects or changing project member access; these decisions affect client visibility and access. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Obtain explicit user confirmation before deleting an attachment. When the user confirms issuing a draft for money already collected elsewhere, pass payment to invoices.issue so it is issued and paid in one step and the automatic client delivery is never sent; never infer a payment from an invoice balance. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; payments.record records money already received but never initiates a charge, and SVC does not expose card data or file uploads through MCP. Use the log-time-across-projects and prepare-invoice-safely prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
@@ -26635,7 +26635,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC data and safely use the write operations authorized for this connection.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects and prepare-invoice-safely prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
@@ -26775,7 +26775,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC data and safely use the write operations authorized for this connection.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects and prepare-invoice-safely prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
@@ -26915,7 +26915,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC data and safely use the write operations authorized for this connection.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects and prepare-invoice-safely prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
@@ -27055,7 +27055,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC data and safely use the write operations authorized for this connection.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects and prepare-invoice-safely prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
@@ -27120,7 +27120,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC data and safely use the write operations authorized for this connection.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before billing_schedules.generate: it issues invoices and may schedule automatic client delivery. Obtain explicit user confirmation before creating, updating, archiving projects or changing project member access; these decisions affect client visibility and access. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Obtain explicit user confirmation before deleting an attachment. When the user confirms issuing a draft for money already collected elsewhere, pass payment to invoices.issue so it is issued and paid in one step and the automatic client delivery is never sent; never infer a payment from an invoice balance. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; payments.record records money already received but never initiates a charge, and SVC does not expose card data or file uploads through MCP.",
             "tools": {
@@ -27259,7 +27259,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC data and safely use the write operations authorized for this connection.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before billing_schedules.generate: it issues invoices and may schedule automatic client delivery. Obtain explicit user confirmation before creating, updating, archiving projects or changing project member access; these decisions affect client visibility and access. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Obtain explicit user confirmation before deleting an attachment. When the user confirms issuing a draft for money already collected elsewhere, pass payment to invoices.issue so it is issued and paid in one step and the automatic client delivery is never sent; never infer a payment from an invoice balance. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; payments.record records money already received but never initiates a charge, and SVC does not expose card data or file uploads through MCP.",
             "tools": {
@@ -27478,7 +27478,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC data and safely use the write operations authorized for this connection.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
@@ -27615,7 +27615,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC data and safely use the write operations authorized for this connection.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
@@ -27752,7 +27752,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC data and safely use the write operations authorized for this connection.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
@@ -27889,7 +27889,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC data and safely use the write operations authorized for this connection.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
@@ -28659,7 +28659,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC data and safely use the write operations authorized for this connection.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before billing_schedules.generate: it issues invoices and may schedule automatic client delivery. Obtain explicit user confirmation before creating, updating, archiving projects or changing project member access; these decisions affect client visibility and access. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Obtain explicit user confirmation before deleting an attachment. When the user confirms issuing a draft for money already collected elsewhere, pass payment to invoices.issue so it is issued and paid in one step and the automatic client delivery is never sent; never infer a payment from an invoice balance. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; payments.record records money already received but never initiates a charge, and SVC does not expose card data or file uploads through MCP. Use the log-time-across-projects and prepare-invoice-safely prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
@@ -28801,7 +28801,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC data and safely use the write operations authorized for this connection.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before billing_schedules.generate: it issues invoices and may schedule automatic client delivery. Obtain explicit user confirmation before creating, updating, archiving projects or changing project member access; these decisions affect client visibility and access. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Obtain explicit user confirmation before deleting an attachment. When the user confirms issuing a draft for money already collected elsewhere, pass payment to invoices.issue so it is issued and paid in one step and the automatic client delivery is never sent; never infer a payment from an invoice balance. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; payments.record records money already received but never initiates a charge, and SVC does not expose card data or file uploads through MCP. Use the log-time-across-projects and prepare-invoice-safely prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
@@ -29019,7 +29019,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC data and safely use the write operations authorized for this connection.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects and prepare-invoice-safely prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
@@ -29159,7 +29159,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC data and safely use the write operations authorized for this connection.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects and prepare-invoice-safely prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
@@ -29299,7 +29299,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC data and safely use the write operations authorized for this connection.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects and prepare-invoice-safely prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
@@ -29439,7 +29439,7 @@
                 "name": "SVC Agent API",
                 "version": "v1",
                 "description": "Read authorized SVC data and safely use the write operations authorized for this connection.",
-                "websiteUrl": "http://localhost:8000"
+                "websiteUrl": "https://svc.example.test"
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects and prepare-invoice-safely prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {

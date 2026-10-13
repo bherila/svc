@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Support\AgentApi\AgentApiScopes;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
 use Tests\Concerns\CallsMcp;
 use Tests\TestCase;
@@ -41,6 +42,14 @@ final class AgentMcpVisibilitySnapshotTest extends TestCase
 
     /** @var array<string, User> */
     private array $principals = [];
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        config(['app.url' => 'https://svc.example.test']);
+        URL::forceRootUrl('https://svc.example.test');
+        URL::forceScheme('https');
+    }
 
     public function test_every_fixture_principal_sees_the_recorded_mcp_surface(): void
     {
