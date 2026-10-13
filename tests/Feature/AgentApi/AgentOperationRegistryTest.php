@@ -123,7 +123,7 @@ final class AgentOperationRegistryTest extends TestCase
                 }
                 $operation = app(OperationRegistry::class)->find($documented['operationId']);
                 $this->assertNotNull($operation);
-                $declared = array_values(array_filter($operation->requirement->flags, static fn (string $flag): bool => ! AgentDeploymentFlags::isMcpSwitch($flag)));
+                $declared = array_values(array_filter($operation->requirement->flags, static fn (string $flag): bool => ! AgentDeploymentFlags::isMcpSwitch($flag) && ! AgentDeploymentFlags::isAvailabilityPrecondition($flag)));
                 // The document lists the outer cutover too; the declaration names
                 // the innermost one, which nests inside it.
                 $flags = $documented['x-svc-flags'];
@@ -140,7 +140,7 @@ final class AgentOperationRegistryTest extends TestCase
                 $checked++;
             }
         }
-        $this->assertSame(38, $checked);
+        $this->assertSame(39, $checked);
     }
 
     public function test_an_under_scoped_rest_call_is_refused_by_the_gate_with_its_reason(): void

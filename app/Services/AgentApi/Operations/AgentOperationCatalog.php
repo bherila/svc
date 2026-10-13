@@ -1346,7 +1346,7 @@ final class AgentOperationCatalog
                 Effect::Read,
                 true,
                 'mcp.read.square',
-                cutovers: [AgentDeploymentFlags::SQUARE],
+                availability: [AgentDeploymentFlags::SQUARE],
                 manager: true,
             );
         }
@@ -1381,7 +1381,7 @@ final class AgentOperationCatalog
                 Effect::Read,
                 true,
                 'mcp.read.square',
-                cutovers: [AgentDeploymentFlags::SQUARE],
+                availability: [AgentDeploymentFlags::SQUARE],
                 manager: true,
             );
         }
@@ -1396,7 +1396,8 @@ final class AgentOperationCatalog
                 Effect::LocalWrite,
                 true,
                 'mcp.write',
-                cutovers: [AgentDeploymentFlags::WRITES, AgentDeploymentFlags::CLIENTS, AgentDeploymentFlags::SQUARE],
+                cutovers: [AgentDeploymentFlags::CLIENTS],
+                availability: [AgentDeploymentFlags::SQUARE],
                 manager: true,
             ),
             $this->tool(
@@ -1407,7 +1408,8 @@ final class AgentOperationCatalog
                 Effect::LocalWrite,
                 true,
                 'mcp.write',
-                cutovers: [AgentDeploymentFlags::WRITES, AgentDeploymentFlags::SQUARE],
+                cutovers: [AgentDeploymentFlags::WRITES],
+                availability: [AgentDeploymentFlags::SQUARE],
                 manager: true,
             ),
         ];
@@ -1466,6 +1468,7 @@ final class AgentOperationCatalog
      * @param  array<string, mixed>|SchemaRef|null  $input
      * @param  array<string, mixed>|SchemaRef|null  $output
      * @param  list<string>|null  $scopes  only for a tool the document does not describe
+     * @param  list<string>  $availability  installation prerequisites, independent of write cutovers
      */
     private function tool(
         string $id,
@@ -1480,6 +1483,7 @@ final class AgentOperationCatalog
         array|SchemaRef|null $input = null,
         array|SchemaRef|null $output = null,
         ?array $scopes = null,
+        array $availability = [],
     ): Operation {
         $documented = isset(self::ROUTES[$id]);
         if ($documented === ($scopes !== null)) {
@@ -1497,7 +1501,7 @@ final class AgentOperationCatalog
             effect: $effect,
             requirement: new Requirement(
                 scopes: $scopes ?? AgentRestDocumentation::operations()[$id]['scopes'],
-                flags: [...$cutovers, ...self::mcpSwitches($group, $id)],
+                flags: [...$cutovers, ...$availability, ...self::mcpSwitches($group, $id)],
             ),
             idempotent: $idempotent,
             safety: $write ? new WriteSafety(IdempotencyKey::HeaderAndArgument, expectedVersion: $this->takesVersion($id)) : new WriteSafety,

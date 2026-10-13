@@ -6,9 +6,11 @@ use App\Services\AgentApi\Operations\AgentDeploymentFlags;
 use App\Services\AgentApi\Operations\AgentOperationCatalog;
 use App\Services\Mcp\AgentMcpSquareMirrorTools;
 use App\Services\Mcp\AgentMcpSquareTools;
+use App\Services\Mcp\McpFeatureFlags;
 use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
 use Bherila\McpLaravelBridge\Capabilities\Effect;
 use Bherila\McpLaravelBridge\Capabilities\IdempotencyKey;
+use Illuminate\Config\Repository;
 use Illuminate\Container\Container;
 use Illuminate\Foundation\Application;
 use PHPUnit\Framework\TestCase;
@@ -48,6 +50,76 @@ final class SquareOperationContractTest extends TestCase
         'square.customers.unlinked' => ['unlinkedCustomers', 'GET', 'customers.unlinked', '/customers/unlinked', 'billing:read', Effect::Read, 'SquareUnlinkedCustomerListResponse', null],
         'square.import_customer' => ['importCustomer', 'POST', 'customers.import', '/customers/{customer}/import', 'billing:write', Effect::LocalWrite, 'SquareCustomerImportResponse', 'SquareCustomerImportRequest'],
     ];
+
+    public function test_every_square_operation_classifies_permission_and_availability_flags_separately(): void
+    {
+        $expected = [
+            'square.import_customer' => [[AgentDeploymentFlags::CLIENTS], [AgentDeploymentFlags::SQUARE]],
+            'square.sync' => [[AgentDeploymentFlags::WRITES], [AgentDeploymentFlags::SQUARE]],
+            'invoices.square_link' => [[AgentDeploymentFlags::INVOICES], []],
+            'invoices.square_unlink' => [[AgentDeploymentFlags::INVOICES], []],
+            'companies.square_customer.get' => [[], []],
+            'companies.square_customer.set' => [[AgentDeploymentFlags::CLIENTS], []],
+            'companies.square_customer.clear' => [[AgentDeploymentFlags::CLIENTS], []],
+            'agreements.square_series.set' => [[AgentDeploymentFlags::CLIENTS], []],
+            'agreements.square_series.clear' => [[AgentDeploymentFlags::CLIENTS], []],
+            'invoices.square_candidates' => [[], [AgentDeploymentFlags::SQUARE]],
+            'square.mirror.invoices.list' => [[], [AgentDeploymentFlags::SQUARE]],
+            'square.series.list' => [[], [AgentDeploymentFlags::SQUARE]],
+            'square.series.get' => [[], [AgentDeploymentFlags::SQUARE]],
+            'square.customers.unlinked' => [[], [AgentDeploymentFlags::SQUARE]],
+            'square.locations.list' => [[], [AgentDeploymentFlags::SQUARE]],
+            'square.customers.list' => [[], [AgentDeploymentFlags::SQUARE]],
+            'square.customers.search' => [[], [AgentDeploymentFlags::SQUARE]],
+            'square.customers.get' => [[], [AgentDeploymentFlags::SQUARE]],
+            'square.invoices.list' => [[], [AgentDeploymentFlags::SQUARE]],
+            'square.invoices.search' => [[], [AgentDeploymentFlags::SQUARE]],
+            'square.invoices.get' => [[], [AgentDeploymentFlags::SQUARE]],
+            'square.orders.get' => [[], [AgentDeploymentFlags::SQUARE]],
+            'square.payments.list' => [[], [AgentDeploymentFlags::SQUARE]],
+            'square.payments.get' => [[], [AgentDeploymentFlags::SQUARE]],
+        ];
+        $this->withCatalog(function (AgentOperationCatalog $catalog) use ($expected): void {
+            $observed = [];
+            foreach ($expected as $id => [$permissions, $availability]) {
+                $operation = $catalog->registry()->find($id);
+                $this->assertNotNull($operation, $id);
+                $flags = $operation->requirement->flags;
+                $actualPermissions = array_values(array_filter($flags, static fn (string $flag): bool => in_array($flag, AgentDeploymentFlags::cutovers(), true)));
+                $this->assertSame($permissions, $actualPermissions, $id);
+                $actualAvailability = array_values(array_filter($flags, AgentDeploymentFlags::isAvailabilityPrecondition(...)));
+                $this->assertSame($availability, $actualAvailability, $id);
+                $transport = array_values(array_filter($flags, AgentDeploymentFlags::isMcpSwitch(...)));
+                $this->assertSame([], array_values(array_diff($flags, [...$actualPermissions, ...$actualAvailability, ...$transport])), $id);
+                $observed[] = $id;
+            }
+            $declared = array_map(static fn ($operation): string => $operation->id, array_filter($catalog->registry()->all(), static fn ($operation): bool => str_contains($operation->id, 'square')));
+            sort($declared);
+            sort($observed);
+            $this->assertSame($declared, $observed);
+        });
+    }
+
+    public function test_customer_import_inherits_the_outer_write_cutoff_but_connection_availability_is_independent(): void
+    {
+        $this->withCatalog(function (): void {
+            $config = new Repository([
+                'agent_api' => ['writes_enabled' => false, 'client_writes_enabled' => true],
+                'services' => ['square' => ['access_token' => 'fixture-only-read-token', 'workspace' => 'fixture-workspace', 'version' => '2026-09-16']],
+            ]);
+            Container::getInstance()->instance('config', $config);
+            $flags = AgentDeploymentFlags::forAgents(new McpFeatureFlags);
+            $this->assertFalse($flags->enabled(AgentDeploymentFlags::CLIENTS));
+            $this->assertTrue($flags->enabled(AgentDeploymentFlags::SQUARE));
+            $config->set('agent_api.writes_enabled', true);
+            $this->assertTrue($flags->enabled(AgentDeploymentFlags::CLIENTS));
+            $config->set('agent_api.client_writes_enabled', false);
+            $this->assertFalse($flags->enabled(AgentDeploymentFlags::CLIENTS));
+            $this->assertTrue($flags->enabled(AgentDeploymentFlags::SQUARE));
+            $config->set('services.square.access_token', null);
+            $this->assertFalse($flags->enabled(AgentDeploymentFlags::SQUARE));
+        });
+    }
 
     public function test_square_operations_are_manager_only_open_world_reads_behind_the_square_switch(): void
     {
@@ -120,7 +192,7 @@ final class SquareOperationContractTest extends TestCase
                     // The sync reads Square, writes only svc's mirror, and the
                     // outer agent write switch withholds it.
                     $this->assertSame($id === 'square.sync', $catalog->readsExternalSystem($id), $id);
-                    $this->assertSame([AgentDeploymentFlags::WRITES, ...($id === 'square.import_customer' ? [AgentDeploymentFlags::CLIENTS] : []), AgentDeploymentFlags::SQUARE, 'mcp', 'mcp.switch:mcp.write', 'mcp.switch:'.$id], $operation->requirement->flags, $id);
+                    $this->assertSame([$id === 'square.import_customer' ? AgentDeploymentFlags::CLIENTS : AgentDeploymentFlags::WRITES, AgentDeploymentFlags::SQUARE, 'mcp', 'mcp.switch:mcp.write', 'mcp.switch:'.$id], $operation->requirement->flags, $id);
                     $this->assertSame(IdempotencyKey::HeaderAndArgument, $operation->safety->idempotencyKey, $id);
                     $this->assertStringContainsString('nothing is created, changed or paid in Square', $operation->description, $id);
                 }
