@@ -158,6 +158,23 @@ class AgentApiOAuthFoundationTest extends TestCase
         ])->assertCreated()->assertJsonPath('scope', 'mcp:use identity:read');
     }
 
+    public function test_requested_secret_authentication_methods_are_normalized_to_public_clients(): void
+    {
+        foreach (['client_secret_basic', 'client_secret_post'] as $method) {
+            $response = $this->postJson('/oauth/register', [
+                'client_name' => 'Synthetic public '.$method,
+                'redirect_uris' => ['http://localhost:3210/callback'],
+                'token_endpoint_auth_method' => $method,
+            ])->assertCreated()
+                ->assertJsonPath('token_endpoint_auth_method', 'none')
+                ->assertJsonMissingPath('client_secret');
+
+            $client = Passport::client()->newQuery()->findOrFail($response->json('client_id'));
+            $this->assertNull($client->secret);
+            $this->assertSame(array_keys(AgentApiScopes::descriptions()), $client->scopes);
+        }
+    }
+
     public function test_registration_persists_distinct_omitted_and_explicit_empty_scope_ceilings(): void
     {
         $omitted = $this->postJson('/oauth/register', [
