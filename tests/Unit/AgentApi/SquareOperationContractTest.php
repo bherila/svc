@@ -22,6 +22,14 @@ use PHPUnit\Framework\TestCase;
  */
 final class SquareOperationContractTest extends TestCase
 {
+    public function test_undocumented_operations_fail_with_a_configuration_error(): void
+    {
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('Operation [square.fixture.undocumented] has no documented description.');
+        $method = new \ReflectionMethod(AgentOperationCatalog::class, 'documented');
+        $method->invoke(null, 'square.fixture.undocumented');
+    }
+
     private const string COMMON = ' Live, read-only Square data fetched on each call for finding Square records to link to svc records; svc never creates, changes or pays anything in Square, and linking is a separate svc operation. Workspace managers only, and only in the workspace Square is connected to; unavailable while Square is not configured. Square ids and cursors are opaque.';
 
     /** operation => [MCP handler method, route name suffix, path after /square, response component] */
