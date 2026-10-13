@@ -13,6 +13,7 @@ use App\Services\Square\Mirror\SquareSnapshotMapper;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Scheduling\Event as ScheduledEvent;
 use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Log\Events\MessageLogged;
@@ -61,6 +62,36 @@ final class SquareMirrorSyncTest extends TestCase
             $this->assertStringNotContainsString(self::SQUARE_TOKEN, $message.json_encode($context));
         }
         parent::tearDown();
+    }
+
+    public function test_payment_resolution_reads_bounded_pages_when_history_is_already_resolved(): void
+    {
+        $mapper = app(SquareSnapshotMapper::class);
+        $repository = app(SquareMirrorRepository::class);
+        $now = CarbonImmutable::parse('2030-01-01');
+        $rows = [];
+        for ($index = 0; $index < 12; $index++) {
+            $invoice = self::squareInvoice('inv_fixture_payment_history_'.$index);
+            $invoice['status'] = 'PAID';
+            $invoice['payment_requests'][0]['total_completed_amount_money'] = ['amount' => 12_345, 'currency' => 'USD'];
+            $rows[] = $mapper->invoice($invoice);
+        }
+        $repository->storeInvoices($this->workspace, $rows, $now);
+        foreach (array_slice($rows, 0, 10) as $row) {
+            $repository->storePaymentIds($this->workspace, $row['square_invoice_id'], SquareSnapshotMapper::paymentIdsBasis('PAID', 12_345), []);
+        }
+        $queries = [];
+        DB::listen(function (QueryExecuted $query) use (&$queries): void {
+            if (str_starts_with(strtolower($query->sql), 'select') && str_contains($query->sql, 'square_invoice_snapshots')) {
+                $queries[] = $query->sql;
+            }
+        });
+        $due = $repository->invoicesNeedingPaymentIds($this->workspace, 2);
+        $this->assertSame(['inv_fixture_payment_history_10', 'inv_fixture_payment_history_11'], array_column($due, 'square_invoice_id'));
+        $this->assertNotEmpty($queries);
+        foreach ($queries as $sql) {
+            $this->assertMatchesRegularExpression('/limit [1-2](?: offset [0-9]+)?$/i', $sql, 'The requested lookup budget also bounds each database page.');
+        }
     }
 
     public function test_snapshot_storage_accepts_the_full_square_id_contract(): void

@@ -58,6 +58,9 @@ final class SquareMirrorRepository
      */
     public function invoicesNeedingPaymentIds(Workspace $workspace, int $limit): array
     {
+        if ($limit < 1) {
+            return [];
+        }
         $rows = DB::table('square_invoice_snapshots')
             ->where('workspace_id', $workspace->id)
             ->whereNull('deleted_at')
@@ -65,7 +68,8 @@ final class SquareMirrorRepository
             ->where('paid_amount', '>', 0)
             ->orderBy('synced_at')
             ->orderBy('id')
-            ->get(['square_invoice_id', 'square_order_id', 'status', 'paid_amount', 'payment_ids_basis']);
+            ->select(['square_invoice_id', 'square_order_id', 'status', 'paid_amount', 'payment_ids_basis'])
+            ->lazy(min($limit, 100));
         $due = [];
         foreach ($rows as $row) {
             $basis = SquareSnapshotMapper::paymentIdsBasis((string) $row->status, $row->paid_amount === null ? null : (int) $row->paid_amount);
