@@ -49,6 +49,11 @@ final class PortalInvitationFailed extends RuntimeException
         };
     }
 
+    public static function busy(): self
+    {
+        return new self('Another invitation to this address is being changed. Try again in a moment.', 409, 1, [], 'invitation_busy');
+    }
+
     /** @return array<string, string> */
     public function headers(): array
     {

@@ -27,6 +27,7 @@ use Carbon\CarbonImmutable;
 use Closure;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -94,37 +95,39 @@ final class PortalInvitations
         $this->refuseIf($this->addressRefusal($email));
         $this->projects($workspace, $company, $scope, $projectPublicIds, lock: false);
 
-        $issued = $this->ask(fn (ApplicationInvitations $provider): IssuedInvitation => $provider->create($subject, $email));
+        return $this->serialized($company, $email, function () use ($context, $workspace, $company, $email, $scope, $projectPublicIds, $subject): ClientPortalInvitation {
+            $issued = $this->ask(fn (ApplicationInvitations $provider): IssuedInvitation => $provider->create($subject, $email));
 
-        return $this->recordOrWithdraw($subject, $issued, fn (): ClientPortalInvitation => $this->coordinator->locked($workspace, function (Workspace $locked) use ($context, $company, $email, $scope, $projectPublicIds, $issued): ClientPortalInvitation {
-            $stored = ClientCompany::query()->where('workspace_id', $locked->id)->whereKey($company->id)->firstOrFail();
-            $projects = $this->projects($locked, $stored, $scope, $projectPublicIds, lock: true);
-            $this->authorizeLocked($context, $locked);
-            $this->refuseIf($this->addressRefusal($email));
-            $this->refuseIf($scope === PortalAccessScope::Projects && $projects->count() !== count($projectPublicIds) ? AccessRefusal::ProjectOutsideCompany : null);
+            return $this->recordOrWithdraw($subject, $issued, fn (): ClientPortalInvitation => $this->coordinator->locked($workspace, function (Workspace $locked) use ($context, $company, $email, $scope, $projectPublicIds, $issued): ClientPortalInvitation {
+                $stored = ClientCompany::query()->where('workspace_id', $locked->id)->whereKey($company->id)->firstOrFail();
+                $projects = $this->projects($locked, $stored, $scope, $projectPublicIds, lock: true);
+                $this->authorizeLocked($context, $locked);
+                $this->refuseIf($this->addressRefusal($email));
+                $this->refuseIf($scope === PortalAccessScope::Projects && $projects->count() !== count($projectPublicIds) ? AccessRefusal::ProjectOutsideCompany : null);
 
-            $invitation = new ClientPortalInvitation;
-            $invitation->forceFill([
-                'public_id' => (string) Str::uuid(),
-                'workspace_id' => $locked->id,
-                'client_company_id' => $stored->id,
-                'email' => $email,
-                'access_scope' => $scope->value,
-                'project_ids' => array_values($projects->keys()->map(intval(...))->all()),
-                'inviter_user_id' => $context->actorId(),
-            ]);
-            $superseded = $this->supersede($context, $locked, $stored, $email, $invitation->public_id);
-            $this->issue($invitation, $issued);
-            $invitation->save();
+                $invitation = new ClientPortalInvitation;
+                $invitation->forceFill([
+                    'public_id' => (string) Str::uuid(),
+                    'workspace_id' => $locked->id,
+                    'client_company_id' => $stored->id,
+                    'email' => $email,
+                    'access_scope' => $scope->value,
+                    'project_ids' => array_values($projects->keys()->map(intval(...))->all()),
+                    'inviter_user_id' => $context->actorId(),
+                ]);
+                $superseded = $this->supersede($context, $locked, $stored, $email, $invitation->public_id);
+                $this->issue($invitation, $issued);
+                $invitation->save();
 
-            $this->audit->record($context, $locked, AccessAuditAction::PortalInvited, null, $superseded === null ? null : ['invitation' => $superseded], [
-                'invitation' => $invitation->public_id,
-                'scope' => $scope->value,
-                'projects' => array_values($projects->sortBy('public_id')->pluck('public_id')->map(strval(...))->all()),
-            ], $stored->public_id);
+                $this->audit->record($context, $locked, AccessAuditAction::PortalInvited, null, $superseded === null ? null : ['invitation' => $superseded], [
+                    'invitation' => $invitation->public_id,
+                    'scope' => $scope->value,
+                    'projects' => array_values($projects->sortBy('public_id')->pluck('public_id')->map(strval(...))->all()),
+                ], $stored->public_id);
 
-            return $invitation;
-        }));
+                return $invitation;
+            }));
+        });
     }
 
     /**
@@ -141,33 +144,35 @@ final class PortalInvitations
         $this->refuseIf($invitation->currentStatus()->isOpen() ? null : AccessRefusal::InvitationNotOpen);
         $subject = $this->subject($context);
 
-        $issued = $this->ask(function (ApplicationInvitations $provider) use ($subject, $invitation): IssuedInvitation {
-            if ($invitation->provider_invitation_id === null) {
-                return $provider->create($subject, $invitation->email);
-            }
-            try {
-                return $provider->resend($subject, $invitation->provider_invitation_id);
-            } catch (ApplicationInvitationNotFound|ApplicationInvitationConflict $gone) {
-                if ($gone instanceof ApplicationInvitationConflict && $gone->error !== ApplicationInvitationError::InvitationNotPending) {
-                    throw $gone;
+        return $this->serialized($company, $invitation->email, function () use ($context, $workspace, $company, $invitation, $subject): ClientPortalInvitation {
+            $issued = $this->ask(function (ApplicationInvitations $provider) use ($subject, $invitation): IssuedInvitation {
+                if ($invitation->provider_invitation_id === null) {
+                    return $provider->create($subject, $invitation->email);
                 }
+                try {
+                    return $provider->resend($subject, $invitation->provider_invitation_id);
+                } catch (ApplicationInvitationNotFound|ApplicationInvitationConflict $gone) {
+                    if ($gone instanceof ApplicationInvitationConflict && $gone->error !== ApplicationInvitationError::InvitationNotPending) {
+                        throw $gone;
+                    }
 
-                return $provider->create($subject, $invitation->email);
-            }
+                    return $provider->create($subject, $invitation->email);
+                }
+            });
+
+            return $this->recordOrWithdraw($subject, $issued, fn (): ClientPortalInvitation => $this->coordinator->locked($workspace, function (Workspace $locked) use ($context, $company, $invitation, $issued): ClientPortalInvitation {
+                $this->authorizeLocked($context, $locked);
+                $current = $this->lockedInvitation($locked, $company, $invitation);
+                $this->refuseIf(PortalInvitationStatus::from($current->status)->isOpen() ? null : AccessRefusal::InvitationNotOpen);
+
+                $this->supersede($context, $locked, $company, $current->email, $current->public_id, except: $current);
+                $this->issue($current, $issued);
+                $current->forceFill(['resolved_at' => null, 'inviter_user_id' => $context->actorId()])->save();
+                $this->audit->record($context, $locked, AccessAuditAction::PortalInvitationResent, null, null, ['invitation' => $current->public_id], $company->public_id);
+
+                return $current;
+            }));
         });
-
-        return $this->recordOrWithdraw($subject, $issued, fn (): ClientPortalInvitation => $this->coordinator->locked($workspace, function (Workspace $locked) use ($context, $company, $invitation, $issued): ClientPortalInvitation {
-            $this->authorizeLocked($context, $locked);
-            $current = $this->lockedInvitation($locked, $company, $invitation);
-            $this->refuseIf(PortalInvitationStatus::from($current->status)->isOpen() ? null : AccessRefusal::InvitationNotOpen);
-
-            $this->supersede($context, $locked, $company, $current->email, $current->public_id, except: $current);
-            $this->issue($current, $issued);
-            $current->forceFill(['resolved_at' => null, 'inviter_user_id' => $context->actorId()])->save();
-            $this->audit->record($context, $locked, AccessAuditAction::PortalInvitationResent, null, null, ['invitation' => $current->public_id], $company->public_id);
-
-            return $current;
-        }));
     }
 
     /**
@@ -436,6 +441,38 @@ final class PortalInvitations
             $withdraw();
 
             throw $failure;
+        }
+    }
+
+    /**
+     * Provider issuance and local supersession must choose the same winner.
+     * Keep this lease through an enclosing receipt's commit or rollback,
+     * including its provider compensation, without holding the workspace
+     * access lock during the network call. The key contains no address.
+     *
+     * @param  Closure(): ClientPortalInvitation  $work
+     */
+    private function serialized(ClientCompany $company, string $email, Closure $work): ClientPortalInvitation
+    {
+        $lock = Cache::lock('portal-invitation:'.hash('sha256', $company->workspace_id.':'.$company->id.':'.ClientPortalInvitation::normalize($email)), 300);
+        if (! $lock->get()) {
+            throw PortalInvitationFailed::busy();
+        }
+        $registered = false;
+        try {
+            return DB::transaction(function () use ($work, $lock, &$registered): ClientPortalInvitation {
+                try {
+                    return $work();
+                } finally {
+                    DB::afterCommit(fn () => $lock->release());
+                    DB::afterRollBack(fn () => $lock->release());
+                    $registered = true;
+                }
+            });
+        } finally {
+            if (! $registered) {
+                $lock->release();
+            }
         }
     }
 

@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\AgentApi;
 
+use App\Exceptions\PortalInvitationFailed;
 use App\Models\AccessAuditEvent;
 use App\Models\AgentMutationAudit;
 use App\Models\AgentMutationReceipt;
@@ -129,6 +130,35 @@ final class AgentPortalInvitationTest extends TestCase
         $this->provider->assertRevoked(1);
         $this->assertSame(0, ClientPortalInvitation::query()->count());
         $this->assertCount(1, $this->provider->calls('revoke'), 'Withdrawn once, not once per path.');
+    }
+
+    public function test_invitation_serialization_lasts_until_its_receipt_commits(): void
+    {
+        [$workspace, $owner, $company, $project] = $this->fixture();
+        $this->actingAsMcp($owner, self::SCOPES);
+        $attempted = false;
+        $refused = false;
+        DB::listen(function (QueryExecuted $query) use (&$attempted, &$refused, $owner, $company, $project): void {
+            if ($attempted || preg_match('/^update [`"]agent_mutation_receipts[`"]/i', $query->sql) !== 1) {
+                return;
+            }
+            $attempted = true;
+            try {
+                app(PortalInvitations::class)->invite(AccessMutationContext::user($owner), $company, 'invitee@client.example.test', PortalAccessScope::Projects, [$project->public_id]);
+            } catch (PortalInvitationFailed $failure) {
+                $this->assertSame(409, $failure->status);
+                $refused = true;
+            }
+        });
+
+        $this->operation('rest', 'create', $workspace, $company, $this->body('create'), key: 'fixture-serialized-receipt')->assertCreated();
+
+        $this->assertTrue($attempted);
+        $this->assertTrue($refused);
+        $this->assertCount(1, $this->provider->calls('create'));
+        $this->assertSame('pending', $this->provider->invitation(1)['status']);
+        $winner = app(PortalInvitations::class)->invite(AccessMutationContext::user($owner), $company, 'invitee@client.example.test', PortalAccessScope::Projects, [$project->public_id]);
+        $this->assertSame('pending', $this->provider->invitation($winner->provider_invitation_id)['status']);
     }
 
     /** Codex review on #444: a page loads its invitations' projects in one query, however long it is. */

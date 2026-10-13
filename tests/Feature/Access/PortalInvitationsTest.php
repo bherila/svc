@@ -311,6 +311,37 @@ final class PortalInvitationsTest extends TestCase
         $this->assertSame(['revoked', 'accepted'], [$first->fresh()->status, $second->fresh()->status]);
     }
 
+    public function test_competing_invites_cannot_reverse_provider_and_local_supersession(): void
+    {
+        $attempted = false;
+        $refused = false;
+        DB::listen(function (QueryExecuted $query) use (&$attempted, &$refused): void {
+            if ($attempted || count($this->provider->calls('create')) !== 1 || preg_match('/from [`"]workspaces[`"]/i', $query->sql) !== 1) {
+                return;
+            }
+            $attempted = true;
+            try {
+                $this->invite($this->owner, 'competing@client.example.test', PortalAccessScope::Projects, [$this->alpha]);
+            } catch (PortalInvitationFailed $failure) {
+                $this->assertSame(409, $failure->status);
+                $refused = true;
+            }
+        });
+
+        $first = $this->invite($this->admin, 'competing@client.example.test', PortalAccessScope::Company);
+
+        $this->assertTrue($attempted);
+        $this->assertTrue($refused);
+        $this->assertCount(1, $this->provider->calls('create'));
+        $this->assertSame('pending', $this->provider->invitation($first->provider_invitation_id)['status']);
+
+        $winner = $this->invite($this->owner, 'competing@client.example.test', PortalAccessScope::Projects, [$this->alpha]);
+        $this->assertSame('revoked', $first->fresh()->status);
+        $this->assertSame('pending', $this->provider->invitation($winner->provider_invitation_id)['status']);
+        $this->signIn('fixture-competing-subject', 'competing@client.example.test');
+        $this->assertSame([$this->alpha->id], $this->limits(ClientCompanyMembership::query()->where('workspace_id', $this->workspace->id)->sole()));
+    }
+
     public function test_resending_one_the_provider_superseded_elsewhere_issues_a_new_one(): void
     {
         $other = $this->company($this->workspace, 'second-client');
