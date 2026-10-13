@@ -1,5 +1,6 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PortalAccess } from '@/components/clients/portal-access';
 import type { PortalAccessProps } from '@/components/clients/portal-access';
@@ -11,7 +12,12 @@ const inertia = vi.hoisted(() => ({
     put: vi.fn(),
 }));
 
-vi.mock('@inertiajs/react', () => ({ router: inertia }));
+vi.mock('@inertiajs/react', () => ({
+    router: inertia,
+    Link: ({ href, children }: { href: string; children: ReactNode }) => (
+        <a href={href}>{children}</a>
+    ),
+}));
 
 beforeEach(() => {
     inertia.delete.mockReset();
@@ -241,6 +247,35 @@ describe('portal access', () => {
                 screen.getByText(/None of the invited projects/),
             ).toBeInTheDocument();
             expect(screen.getByText(/^Not applied/)).toBeInTheDocument();
+            expect(horizontalOverflowRisks(container)).toEqual([]);
+        });
+
+        it('follows server-provided invitation page links', () => {
+            const page = invitationProps();
+            page.portal.invitation_pagination = {
+                next_url: '/synthetic/settings?invitation_page=3',
+                previous_url: '/synthetic/settings?invitation_page=1',
+            };
+            const { container } = render(<PortalAccess {...page} />);
+            const navigation = screen.getByRole('navigation', {
+                name: 'Invitation pages',
+            });
+            expect(
+                within(navigation).getByRole('link', {
+                    name: 'Older invitations',
+                }),
+            ).toHaveAttribute(
+                'href',
+                page.portal.invitation_pagination.next_url,
+            );
+            expect(
+                within(navigation).getByRole('link', {
+                    name: 'Newer invitations',
+                }),
+            ).toHaveAttribute(
+                'href',
+                page.portal.invitation_pagination.previous_url,
+            );
             expect(horizontalOverflowRisks(container)).toEqual([]);
         });
 

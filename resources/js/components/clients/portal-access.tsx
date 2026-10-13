@@ -1,4 +1,4 @@
-import { router } from '@inertiajs/react';
+import { Link, router } from '@inertiajs/react';
 import { useState } from 'react';
 import {
     AlertDialog,
@@ -58,6 +58,10 @@ export interface PortalAccessProps {
         /** Null while portal invitations are switched off. */
         invite_url?: string | null;
         invitations?: PortalInvitation[];
+        invitation_pagination?: {
+            next_url: string | null;
+            previous_url: string | null;
+        };
     };
     projects: { id: string; name: string }[];
 }
@@ -111,6 +115,32 @@ export function PortalAccess({
                         ))}
                     </ul>
                 </div>
+            )}
+            {(portal.invitation_pagination?.previous_url ||
+                portal.invitation_pagination?.next_url) && (
+                <nav
+                    aria-label="Invitation pages"
+                    className="flex flex-wrap gap-4 text-sm"
+                >
+                    {portal.invitation_pagination.previous_url && (
+                        <Link
+                            href={portal.invitation_pagination.previous_url}
+                            preserveScroll
+                            className="underline"
+                        >
+                            Newer invitations
+                        </Link>
+                    )}
+                    {portal.invitation_pagination.next_url && (
+                        <Link
+                            href={portal.invitation_pagination.next_url}
+                            preserveScroll
+                            className="underline"
+                        >
+                            Older invitations
+                        </Link>
+                    )}
+                </nav>
             )}
             <AddContact
                 addUrl={portal.add_url}

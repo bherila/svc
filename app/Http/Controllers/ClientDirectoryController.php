@@ -819,7 +819,7 @@ class ClientDirectoryController extends Controller
      * memberships, their people, and every project limit at once - and, with
      * portal invitations on, one more for the open and not-applied ones.
      *
-     * @return array{add_url: string, members: list<array<string, mixed>>, invite_url: string|null, invitations: list<array<string, mixed>>}
+     * @return array{add_url: string, members: list<array<string, mixed>>, invite_url: string|null, invitations: list<array<string, mixed>>, invitation_pagination: array{next_url: string|null, previous_url: string|null}}
      */
     private function portalAccess(Workspace $workspace, ClientCompany $clientCompany): array
     {
@@ -857,7 +857,10 @@ class ClientDirectoryController extends Controller
                     'url' => $base.'/'.$membership->user->public_id,
                 ])->all()),
             'invite_url' => PortalInvitations::enabled() ? '/workspaces/'.$workspace->public_id.'/clients/'.$clientCompany->public_id.'/portal-invitations' : null,
-            'invitations' => PortalInvitations::enabled() ? $this->portalInvitations($workspace, $clientCompany) : [],
+            ...(PortalInvitations::enabled() ? $this->portalInvitations($workspace, $clientCompany) : [
+                'invitations' => [],
+                'invitation_pagination' => ['next_url' => null, 'previous_url' => null],
+            ]),
         ];
     }
 
@@ -868,7 +871,7 @@ class ClientDirectoryController extends Controller
      * the managers this page is for, and only while the invitation can still
      * be accepted. Agents never receive it.
      *
-     * @return list<array<string, mixed>>
+     * @return array{invitations: list<array<string, mixed>>, invitation_pagination: array{next_url: string|null, previous_url: string|null}}
      */
     private function portalInvitations(Workspace $workspace, ClientCompany $clientCompany): array
     {
@@ -878,14 +881,14 @@ class ClientDirectoryController extends Controller
             ->where('client_company_id', $clientCompany->id)
             ->whereIn('status', [PortalInvitationStatus::Pending->value, PortalInvitationStatus::Expired->value, PortalInvitationStatus::NotApplied->value])
             ->orderByDesc('id')
-            ->limit(100)
-            ->get();
+            ->simplePaginate(100, ['*'], 'invitation_page')
+            ->withPath('/workspaces/'.$workspace->public_id.'/clients/'.$clientCompany->public_id.'/settings');
         $projects = ClientProject::query()
             ->where('workspace_id', $workspace->id)
             ->whereIn('id', $invitations->flatMap(static fn (ClientPortalInvitation $invitation): array => $invitation->projectIds())->unique()->values()->all())
             ->pluck('public_id', 'id');
 
-        return array_values($invitations->map(static function (ClientPortalInvitation $invitation) use ($base, $projects): array {
+        $rows = array_values($invitations->getCollection()->map(static function (ClientPortalInvitation $invitation) use ($base, $projects): array {
             $status = $invitation->currentStatus();
 
             return [
@@ -902,6 +905,11 @@ class ClientDirectoryController extends Controller
                 'revoke_url' => $base.$invitation->public_id,
             ];
         })->all());
+
+        return ['invitations' => $rows, 'invitation_pagination' => [
+            'next_url' => $invitations->nextPageUrl(),
+            'previous_url' => $invitations->previousPageUrl(),
+        ]];
     }
 
     /**

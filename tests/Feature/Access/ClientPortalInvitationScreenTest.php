@@ -11,6 +11,7 @@ use App\Models\Workspace;
 use BWH\Auth\OAuth\Invitations\ApplicationInvitationError;
 use BWH\Auth\Testing\FakeApplicationInvitations;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\Concerns\BuildsAccessFixtures;
 use Tests\TestCase;
@@ -117,6 +118,35 @@ final class ClientPortalInvitationScreenTest extends TestCase
 
         $this->actingAs($this->admin)->from($this->settings())->delete($url)
             ->assertSessionHasErrors(['invitation.'.$invitation->public_id => 'That invitation was already accepted or withdrawn.']);
+    }
+
+    public function test_every_open_invitation_remains_manageable_beyond_the_first_page(): void
+    {
+        $this->invite('oldest@client.example.test');
+        $oldest = ClientPortalInvitation::query()->where('workspace_id', $this->workspace->id)->sole();
+        for ($index = 0; $index < 100; $index++) {
+            $oldest->replicate()->forceFill([
+                'public_id' => (string) Str::uuid(),
+                'email' => "fixture-{$index}@client.example.test",
+                'pending_email' => "fixture-{$index}@client.example.test",
+            ])->save();
+        }
+        $other = $this->company($this->workspace, 'other-client');
+        $oldest->replicate()->forceFill(['public_id' => (string) Str::uuid(), 'client_company_id' => $other->id])->save();
+
+        $this->actingAs($this->admin)->get($this->settings())->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('portal.invitations', 100)
+                ->where('portal.invitation_pagination.next_url', $this->settings().'?invitation_page=2')
+                ->where('portal.invitation_pagination.previous_url', null));
+        $this->get($this->settings().'?invitation_page=2')->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('portal.invitations', 1)
+                ->where('portal.invitations.0.id', $oldest->public_id)
+                ->where('portal.invitations.0.link', $this->provider->invitation(1)['link'])
+                ->where('portal.invitations.0.revoke_url', $this->base('portal-invitations').'/'.$oldest->public_id)
+                ->where('portal.invitation_pagination.next_url', null)
+                ->where('portal.invitation_pagination.previous_url', $this->settings().'?invitation_page=1'));
     }
 
     public function test_a_provider_refusal_is_shown_on_the_form_and_records_nothing(): void
