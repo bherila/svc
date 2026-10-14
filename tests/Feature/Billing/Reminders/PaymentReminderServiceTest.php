@@ -257,6 +257,28 @@ final class PaymentReminderServiceTest extends TestCase
         $this->assertSame('synthetic-oauth-client', $failed->oauth_client_id);
     }
 
+    public function test_deciding_reads_a_bounded_number_of_reminders_however_many_were_sent(): void
+    {
+        [$workspace, , , $invoice] = $this->reminderFixture();
+        foreach (range(1, 60) as $index) {
+            InvoiceReminderLog::query()->create([
+                'workspace_id' => $workspace->id, 'client_invoice_id' => $invoice->id, 'origin' => 'manual', 'channel' => 'email', 'pay_link' => 'none',
+                'recipients' => ['billing@reminders.example.test'], 'subject' => 'Synthetic '.$index, 'currency' => 'USD', 'amount_due' => 1, 'status' => 'sent',
+                'triggered_by' => 'website', 'queued_at' => now()->subDays(2), 'sent_at' => now()->subDays(2),
+            ]);
+        }
+        $loaded = 0;
+        InvoiceReminderLog::retrieved(function () use (&$loaded): void {
+            $loaded++;
+        });
+
+        $facts = app(PaymentReminderRepository::class)->facts($workspace, $invoice);
+
+        $this->assertSame(0, $loaded, 'A person\'s reminders are not loaded to decide the next one');
+        $this->assertFalse($facts->inFlight);
+        $this->assertSame([], $facts->claims);
+    }
+
     public function test_reminders_are_workspace_scoped(): void
     {
         [$workspace, $owner, , $invoice] = $this->reminderFixture('synthetic-reminders-a');

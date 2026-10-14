@@ -65,11 +65,17 @@ final class PaymentReminderRepository
             ->where('workspace_id', $workspace->id)
             ->whereKey($invoice->client_company_id)
             ->first();
-        $reminders = InvoiceReminderLog::query()
+        // Bounded whatever the history: the automatic claims are at most one
+        // per cadence step, and in flight is an existence check. A person may
+        // remind as often as they decide to, and none of that is loaded here.
+        $claims = InvoiceReminderLog::query()
             ->where('workspace_id', $workspace->id)
             ->where('client_invoice_id', $invoice->id)
+            ->where('origin', PaymentReminderOrigin::Automatic->value)
+            ->whereNotNull('cadence_step')
             ->when($excludingReminderId !== null, fn (Builder $query): Builder => $query->whereKeyNot($excludingReminderId))
-            ->get(['id', 'origin', 'cadence_step', 'status', 'attempt_number', 'next_attempt_at', 'queued_at', 'claimed_at']);
+            ->limit(count(PaymentReminderStep::cases()))
+            ->get(['id', 'origin', 'cadence_step', 'status', 'attempt_number', 'next_attempt_at']);
         $since = $now->utc()->subMinutes(self::IN_FLIGHT_MINUTES);
         $square = $this->squareFacts($workspace, $invoice);
         $enabledAt = $company?->payment_reminders_enabled_at;
@@ -84,9 +90,15 @@ final class PaymentReminderRepository
             square: $square,
             portalUrl: $square === null && $company !== null ? $this->portalUrl($company, $invoice) : null,
             cadenceEnabledAt: $enabledAt?->setTimezone($now->getTimezone()),
-            claims: $this->claims($reminders),
-            inFlight: $reminders->contains(static fn (InvoiceReminderLog $reminder): bool => in_array($reminder->status, [PaymentReminderStatus::Pending, PaymentReminderStatus::Sending], true)
-                && ($reminder->claimed_at ?? $reminder->queued_at)->greaterThanOrEqualTo($since)),
+            claims: $this->claims($claims),
+            inFlight: InvoiceReminderLog::query()
+                ->where('workspace_id', $workspace->id)
+                ->where('client_invoice_id', $invoice->id)
+                ->whereIn('status', [PaymentReminderStatus::Pending->value, PaymentReminderStatus::Sending->value])
+                ->where(fn (Builder $recent): Builder => $recent->where('claimed_at', '>=', $since)
+                    ->orWhere(fn (Builder $unclaimed): Builder => $unclaimed->whereNull('claimed_at')->where('queued_at', '>=', $since)))
+                ->when($excludingReminderId !== null, fn (Builder $query): Builder => $query->whereKeyNot($excludingReminderId))
+                ->exists(),
         );
     }
 
