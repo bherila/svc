@@ -46,6 +46,7 @@ trait FakesSquarePaymentSync
         $this->paymentOrder = self::squareOrder();
         $this->squarePayments['pay_fixture_1'] = self::squarePayment();
         $this->squarePayments['pay_fixture_1']['created_at'] = '2030-02-01T16:00:00Z';
+        $this->squarePayments['pay_fixture_1']['card_details']['card_payment_timeline'] = ['captured_at' => '2030-02-01T16:00:00Z'];
         Http::fake(function (Request $request) {
             $path = rawurldecode((string) parse_url($request->url(), PHP_URL_PATH));
             if ($path === '/v2/invoices/inv_fixture_1') {

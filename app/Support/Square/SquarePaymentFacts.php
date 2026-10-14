@@ -50,17 +50,21 @@ final readonly class SquarePaymentFacts
         if ($amount < 1 || $refund > $amount || $tip !== 0) {
             throw SquareRequestFailed::unreadable();
         }
-        $created = $payment['created_at'] ?? null;
+        // Creation is authorization/initiation; updates also include later refunds.
+        // Use the documented capture timeline, or refuse an unknown completion date.
+        $details = $payment['card_details'] ?? null;
+        $timeline = is_array($details) ? ($details['card_payment_timeline'] ?? null) : null;
+        $completed = ($payment['source_type'] ?? null) === 'CARD' && is_array($timeline) ? ($timeline['captured_at'] ?? null) : null;
         $matches = [];
-        if (! is_string($created) || preg_match('/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})/', $created, $matches) !== 1 || $matches[0] !== $created) {
+        if (! is_string($completed) || preg_match('/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})/', $completed, $matches) !== 1 || $matches[0] !== $completed) {
             throw SquareRequestFailed::unreadable();
         }
         try {
-            $received = CarbonImmutable::parse($created);
+            $received = CarbonImmutable::parse($completed);
         } catch (Throwable) {
             throw SquareRequestFailed::unreadable();
         }
-        if ($received->format('Y-m-d\TH:i:s') !== substr($created, 0, 19)) {
+        if ($received->format('Y-m-d\TH:i:s') !== substr($completed, 0, 19)) {
             throw SquareRequestFailed::unreadable();
         }
 

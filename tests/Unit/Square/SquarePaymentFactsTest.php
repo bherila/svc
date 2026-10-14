@@ -8,6 +8,18 @@ use PHPUnit\Framework\TestCase;
 
 final class SquarePaymentFactsTest extends TestCase
 {
+    public function test_received_date_is_capture_time_and_missing_completion_fails_closed(): void
+    {
+        $raw = $this->fixture();
+        $raw['created_at'] = '2030-01-31T23:00:00Z';
+        $raw['card_details'] = ['card_payment_timeline' => ['captured_at' => '2030-02-01T01:00:00Z']];
+        $this->assertSame('2030-02-01', SquarePaymentFacts::from($raw, 'pay_fixture_1')->receivedAt->toDateString());
+        unset($raw['card_details']);
+        $raw['source_type'] = 'BANK_ACCOUNT';
+        $this->expectException(SquareRequestFailed::class);
+        SquarePaymentFacts::from($raw, 'pay_fixture_1');
+    }
+
     public function test_completed_payment_uses_principal_and_cumulative_refund_only(): void
     {
         $raw = $this->fixture();
@@ -25,9 +37,9 @@ final class SquarePaymentFactsTest extends TestCase
         unset($raw['refunded_money']);
         $this->assertSame(0, SquarePaymentFacts::from($raw, 'pay_fixture_1')->refundedAmount);
         $raw['tip_money'] = ['amount' => 0, 'currency' => 'USD'];
-        $raw['created_at'] = '2030-02-01T16:00:00.123Z';
+        $raw['card_details']['card_payment_timeline']['captured_at'] = '2030-02-01T16:00:00.123Z';
         $this->assertSame('123000', SquarePaymentFacts::from($raw, 'pay_fixture_1')->receivedAt->format('u'));
-        $raw['created_at'] = '2030-02-01T16:00:00-05:00';
+        $raw['card_details']['card_payment_timeline']['captured_at'] = '2030-02-01T16:00:00-05:00';
         $this->assertSame('-05:00', SquarePaymentFacts::from($raw, 'pay_fixture_1')->receivedAt->format('P'));
         $raw = $this->fixture();
         $raw['amount_money']['amount'] = 1;
@@ -60,14 +72,18 @@ final class SquarePaymentFactsTest extends TestCase
             ['refunded_money', ['amount' => -1, 'currency' => 'USD']],
             ['refunded_money', ['amount' => 300, 'currency' => 'EUR']],
             ['tip_money', ['amount' => 1, 'currency' => 'USD']],
-            ['created_at', null], ['created_at', 'tomorrow'], ['created_at', '2030-02-30T16:00:00Z'],
-            ['created_at', '2030-02-01T99:00:00Z'],
-            ['created_at', '2030-02-01T16:00:00 UTC'],
-            ['created_at', ' 2030-02-01T16:00:00Z'],
-            ['created_at', "2030-02-01T16:00:00Z\n"],
+            ['captured_at', null], ['captured_at', 'tomorrow'], ['captured_at', '2030-02-30T16:00:00Z'],
+            ['captured_at', '2030-02-01T99:00:00Z'],
+            ['captured_at', '2030-02-01T16:00:00 UTC'],
+            ['captured_at', ' 2030-02-01T16:00:00Z'],
+            ['captured_at', "2030-02-01T16:00:00Z\n"],
         ] as [$field, $value]) {
             $raw = $this->fixture();
-            $raw[$field] = $value;
+            if ($field === 'captured_at') {
+                $raw['card_details']['card_payment_timeline']['captured_at'] = $value;
+            } else {
+                $raw[$field] = $value;
+            }
             try {
                 SquarePaymentFacts::from($raw, 'pay_fixture_1');
                 $this->fail('Invalid payment facts were accepted: '.$field);
@@ -80,6 +96,6 @@ final class SquarePaymentFactsTest extends TestCase
     /** @return array<string, mixed> */
     private function fixture(): array
     {
-        return ['id' => 'pay_fixture_1', 'status' => 'COMPLETED', 'order_id' => 'order_fixture_1', 'location_id' => 'LOCFIXTURE01', 'amount_money' => ['amount' => 1200, 'currency' => 'USD'], 'created_at' => '2030-02-01T16:00:00Z'];
+        return ['id' => 'pay_fixture_1', 'status' => 'COMPLETED', 'order_id' => 'order_fixture_1', 'location_id' => 'LOCFIXTURE01', 'amount_money' => ['amount' => 1200, 'currency' => 'USD'], 'created_at' => '2030-02-01T16:00:00Z', 'source_type' => 'CARD', 'card_details' => ['card_payment_timeline' => ['captured_at' => '2030-02-01T16:00:00Z']]];
     }
 }

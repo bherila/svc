@@ -27,6 +27,9 @@ slower response cannot restore refunded money. A draft, void invoice, currency
 mismatch, over-balance payment, invalid data or ambiguous tip allocation is
 refused instead of changing the ledger. Failed events release their durable
 claim and answer 503 for retry; successfully completed event IDs do no more work.
+The received date comes from the card capture timeline in the workspace's time
+zone. Payments without a trustworthy completion timestamp fail closed; creation
+and last-update times are not substituted for the day money was received.
 
 When an invoice paid through another source remains open in the Square mirror,
 the operator invoice and `billing_audit.stale_and_missing` show
