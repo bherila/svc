@@ -70,6 +70,8 @@ final class PaymentReminderServiceTest extends TestCase
         $this->assertSame(12_345, $sent->amount_due);
         $this->assertSame('2030-03-15', $sent->due_on?->toDateString());
         $this->assertSame('Payment reminder: invoice SYN-REM-1', $sent->subject);
+        // Every later write leaves when it was queued alone, on every engine.
+        $this->assertSame('2030-03-15 14:00:00', $sent->refresh()->queued_at->utc()->toDateTimeString());
         Mail::assertSent(InvoicePaymentReminderMail::class, function (InvoicePaymentReminderMail $mail): bool {
             $html = $mail->render();
 

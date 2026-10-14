@@ -49,7 +49,11 @@ return new class extends Migration
             $table->string('oauth_client_id', 100)->nullable();
             $table->string('provider_message_reference', 255)->nullable();
             $table->string('error_summary', 255)->nullable();
-            $table->timestamp('queued_at');
+            // A dateTime, not a timestamp: on MariaDB without explicit
+            // timestamp defaults the first required timestamp silently gains
+            // ON UPDATE CURRENT_TIMESTAMP, which would rewrite when a reminder
+            // was queued every time its outcome is written.
+            $table->dateTime('queued_at');
             $table->timestamp('claimed_at')->nullable();
             $table->timestamp('sent_at')->nullable();
             $table->timestamp('failed_at')->nullable();
