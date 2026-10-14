@@ -94,7 +94,9 @@ with `billing:read` on REST and MCP. Every evidence endpoint authorizes again.
 Earlier corrections remain recoverable after a later revision.
 
 Paid, partially paid, void, already sent, and in-flight invoices cannot use
-this path. Their accounting correction is void/reissue or the narrower payment
+this path, nor can an invoice the client has been sent, or is being sent, a
+payment reminder for: the reminder stated its balance and due date and may have
+carried the PDF. Their accounting correction is void/reissue or the narrower payment
 workflow, as applicable.
 
 ## Durability and retries

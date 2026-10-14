@@ -147,6 +147,12 @@ class ClientInvoice extends Model implements WorkspaceOwned
         return $this->hasMany(ClientInvoiceEmailDelivery::class);
     }
 
+    /** @return HasMany<InvoiceReminderLog, $this> */
+    public function reminderLogs(): HasMany
+    {
+        return $this->hasMany(InvoiceReminderLog::class);
+    }
+
     /** @return HasMany<ClientInvoiceAdministratorNotification, $this> */
     public function administratorNotifications(): HasMany
     {

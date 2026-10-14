@@ -265,6 +265,9 @@ class ClientDirectoryController extends Controller
             'emailDeliveries as correction_has_blocking_delivery' => fn (Builder $query): Builder => $query
                 ->where('workspace_id', $workspace->id)
                 ->whereIn('status', ['pending', 'sending', 'sent']),
+            'reminderLogs as correction_has_blocking_reminder' => fn (Builder $query): Builder => $query
+                ->where('workspace_id', $workspace->id)
+                ->whereIn('status', ['pending', 'sending', 'sent']),
             'administratorNotifications as correction_has_original_evidence' => fn (Builder $query): Builder => $query
                 ->where('workspace_id', $workspace->id)
                 ->where('invoice_revision', 1)
@@ -285,6 +288,7 @@ class ClientDirectoryController extends Controller
             && $clientInvoice->paid_amount === 0
             && $clientInvoice->payments->isEmpty()
             && ! (bool) $clientInvoice->getAttribute('correction_has_blocking_delivery')
+            && ! (bool) $clientInvoice->getAttribute('correction_has_blocking_reminder')
             && (bool) $clientInvoice->getAttribute('correction_has_original_evidence');
         $moneyCorrectable = $canCorrect
             ? $corrections->moneyCorrectableLineIds($clientInvoice, $workspace)

@@ -10,6 +10,7 @@ use App\Models\ClientCompanyActivity;
 use App\Models\InvoiceReminderLog;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Billing\InvoiceCorrectionService;
 use App\Services\Billing\RecordReceivedPayment;
 use App\Services\Billing\Reminders\PaymentReminderRepository;
 use App\Services\Billing\Reminders\PaymentReminderService;
@@ -239,6 +240,20 @@ final class PaymentReminderServiceTest extends TestCase
         $this->assertSame(PaymentReminderStatus::Cancelled, $result->status);
         $this->assertSame('Not sent: the client\'s recipients changed after the reminder was claimed.', $result->error_summary);
         Mail::assertNothingSent();
+    }
+
+    public function test_an_invoice_reminded_about_cannot_be_corrected_in_place(): void
+    {
+        [$workspace, $owner, , $invoice] = $this->reminderFixture();
+        $service = app(PaymentReminderService::class);
+        $service->sendRegistered($workspace, $invoice, $service->register($workspace, $invoice, $owner, PaymentReminderTrigger::Website)->public_id);
+
+        $this->assertThrows(
+            fn () => app(InvoiceCorrectionService::class)->correct($invoice->refresh(), $workspace, $invoice->document_revision, true, '2030-04-15', 'Synthetic correction', null),
+            \DomainException::class,
+            'An invoice the client has been sent a payment reminder for, or is being sent one, cannot be corrected in place.',
+        );
+        $this->assertSame('2030-03-15', $invoice->refresh()->due_date?->toDateString());
     }
 
     public function test_a_provider_refusal_is_logged_as_failed_with_the_class_only(): void
