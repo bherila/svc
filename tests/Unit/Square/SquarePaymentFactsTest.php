@@ -53,6 +53,20 @@ final class SquarePaymentFactsTest extends TestCase
         }
     }
 
+    public function test_capture_metadata_must_belong_to_a_card_payment_and_be_an_object_shape(): void
+    {
+        foreach ([['source_type', 'BANK_ACCOUNT'], ['source_type', null], ['card_details', 'invalid'], ['card_details', new \ArrayObject(['card_payment_timeline' => ['captured_at' => '2030-02-01T16:00:00Z']])], ['card_details', ['card_payment_timeline' => new \ArrayObject(['captured_at' => '2030-02-01T16:00:00Z'])]]] as [$field, $value]) {
+            $raw = $this->fixture();
+            $raw[$field] = $value;
+            try {
+                SquarePaymentFacts::from($raw, 'pay_fixture_1');
+                $this->fail('Invalid capture metadata was accepted.');
+            } catch (SquareRequestFailed $exception) {
+                $this->assertSame(502, $exception->getStatusCode());
+            }
+        }
+    }
+
     public function test_invalid_or_ambiguous_money_is_refused(): void
     {
         foreach ([
