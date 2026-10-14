@@ -26,7 +26,7 @@ final class PaymentReminderOperationContractTest extends TestCase
             $write = ['billing:write', 'billing:read'];
             foreach ([
                 'invoices.reminders.list' => ['list', Effect::Read, 'GET', 'invoices.reminders.index', '/workspaces/{workspace}/invoices/{invoice}/reminders', ['billing:read'], null, 'mcp.read', 'InvoiceRemindersResponse', ['WorkspaceId', 'InvoiceId']],
-                'invoices.send_reminder' => ['send', Effect::LocalWrite, 'POST', 'invoices.reminders.store', '/workspaces/{workspace}/invoices/{invoice}/reminders', $write, AgentDeploymentFlags::INVOICES, 'mcp.write', 'InvoiceReminderResponse', ['WorkspaceId', 'InvoiceId', 'IdempotencyKey']],
+                'invoices.send_reminder' => ['send', Effect::ExternalWrite, 'POST', 'invoices.reminders.store', '/workspaces/{workspace}/invoices/{invoice}/reminders', $write, AgentDeploymentFlags::INVOICES, 'mcp.write', 'InvoiceReminderResponse', ['WorkspaceId', 'InvoiceId', 'IdempotencyKey']],
                 'companies.payment_reminders.get' => ['company', Effect::Read, 'GET', 'clients.payment-reminders.show', '/workspaces/{workspace}/clients/{client}/payment-reminders', ['billing:read'], null, 'mcp.read.clients', 'CompanyPaymentRemindersResponse', ['WorkspaceId', 'client']],
                 'companies.payment_reminders.set' => ['setCompany', Effect::LocalWrite, 'PUT', 'clients.payment-reminders.update', '/workspaces/{workspace}/clients/{client}/payment-reminders', $write, AgentDeploymentFlags::CLIENTS, 'mcp.write.clients', 'CompanyPaymentRemindersResponse', ['WorkspaceId', 'client', 'IdempotencyKey']],
             ] as $id => [$handler, $effect, $method, $route, $path, $scopes, $cutover, $group, $response, $parameters]) {

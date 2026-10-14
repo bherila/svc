@@ -939,7 +939,8 @@ final class AgentOperationCatalog
                 'Send invoice payment reminder',
                 'Workspace managers only. Email the client a payment reminder for an open invoice now, only after the user explicitly confirms, from SVC\'s usual invoice sender to the client\'s billing address and portal users. An invoice Square collects carries Square\'s own payment page and is refused without one; SVC never sends its own payment link for it. Every reminder is logged; the response is the reminder with its result.',
                 [AgentMcpPaymentReminderTools::class, 'send'],
-                Effect::LocalWrite,
+                // An email to the client, which no rollback takes back.
+                Effect::ExternalWrite,
                 true,
                 'mcp.write',
                 cutovers: [AgentDeploymentFlags::INVOICES],
