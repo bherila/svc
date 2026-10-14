@@ -2,6 +2,7 @@
 
 namespace App\Services\Square;
 
+use App\Models\ClientInvoicePayment;
 use App\Models\InvoiceSquareLink;
 use App\Models\SquareInvoiceSnapshot;
 use App\Models\Workspace;
@@ -28,13 +29,14 @@ final class SquarePaymentReconciler
             throw SquareRequestFailed::notConnected();
         }
         $link = $this->links->activeLinkForSquareInvoice($workspace->id, $squareInvoiceId);
-        if ($link === null) {
+        $historical = $link ?? InvoiceSquareLink::query()->where('workspace_id', $workspace->id)->where('square_invoice_id', $squareInvoiceId)->orderByDesc('id')->first();
+        if ($historical === null) {
             return;
         }
         $invoice = $this->client->getInvoice($squareInvoiceId)['invoice'] ?? null;
         $row = is_array($invoice) ? $this->mapper->invoice($invoice) : null;
         if ($row === null || $row['square_invoice_id'] !== $squareInvoiceId || ! is_string($row['square_order_id'])
-            || ! is_string($row['square_location_id']) || $row['currency'] !== $link->currency) {
+            || ! is_string($row['square_location_id']) || $row['currency'] !== $historical->currency) {
             throw SquareRequestFailed::unreadable();
         }
         $order = $this->client->retrieveOrder($row['square_order_id'])['order'] ?? null;
@@ -57,7 +59,7 @@ final class SquarePaymentReconciler
             }
             $fact = SquarePaymentFacts::from($payment, $id);
             if ($fact !== null) {
-                if ($fact->orderId !== $row['square_order_id'] || $fact->locationId !== $row['square_location_id'] || $fact->currency !== $link->currency) {
+                if ($fact->orderId !== $row['square_order_id'] || $fact->locationId !== $row['square_location_id'] || $fact->currency !== $historical->currency) {
                     throw SquareRequestFailed::unreadable();
                 }
                 $facts[$id] = $fact;
@@ -65,7 +67,9 @@ final class SquarePaymentReconciler
         }
         $this->mirror->storeInvoices($workspace, [$row], $this->clock->now()->utc());
         foreach ($facts as $fact) {
-            $this->payments->record($workspace, $link, $fact);
+            if (! $this->payments->refundExisting($workspace, $fact) && $link !== null) {
+                $this->payments->record($workspace, $link, $fact);
+            }
         }
     }
 
@@ -79,6 +83,9 @@ final class SquarePaymentReconciler
         if ($facts === null) {
             return;
         }
+        if ($this->payments->refundExisting($workspace, $facts)) {
+            return;
+        }
         // Only trusted, refetched order identity selects a workspace's links.
         $snapshot = SquareInvoiceSnapshot::query()->where('workspace_id', $workspace->id)->where('square_order_id', $facts->orderId)->first();
         if ($snapshot !== null) {
@@ -90,5 +97,11 @@ final class SquarePaymentReconciler
     public function linkedInvoices(Workspace $workspace): iterable
     {
         return InvoiceSquareLink::query()->where('workspace_id', $workspace->id)->whereNotNull('active_invoice_slot')->orderBy('id')->lazyById(100);
+    }
+
+    /** @return iterable<ClientInvoicePayment> */
+    public function recordedPayments(Workspace $workspace): iterable
+    {
+        return ClientInvoicePayment::query()->where('workspace_id', $workspace->id)->where('provider', 'square')->whereNotNull('provider_payment_identifier')->orderBy('id')->lazyById(100);
     }
 }

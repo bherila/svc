@@ -3,8 +3,13 @@
 namespace Tests\Feature\Square;
 
 use App\Models\ClientInvoicePayment;
+use App\Models\InvoiceSquareLink;
+use App\Services\Square\SquareLinkService;
 use App\Services\Square\SquarePaymentReconciler;
 use App\Services\Square\SquareWebhookReceipts;
+use App\Support\AgentApi\AgentApiVersion;
+use App\Support\Square\SquareInvoiceReference;
+use App\Support\Square\SquareMatchMethod;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
@@ -77,6 +82,43 @@ final class SquareWebhookTest extends TestCase
         $this->squarePayments['pay_fixture_1']['amount_money']['currency'] = 'USD';
         $this->deliver($event)->assertOk();
         $this->assertSame('paid', $invoice->fresh()->status);
+    }
+
+    public function test_refund_hint_corrects_the_recorded_payment_after_unlinking(): void
+    {
+        [$workspace, , , $invoice] = $this->paymentFixture();
+        app(SquarePaymentReconciler::class)->invoice($workspace, 'inv_fixture_1');
+        InvoiceSquareLink::query()->where('workspace_id', $workspace->id)->update(['active_invoice_slot' => null, 'active_square_invoice_slot' => null]);
+        $this->squarePayments['pay_fixture_1']['refunded_money'] = ['amount' => 12_345, 'currency' => 'USD'];
+        $this->deliver(['event_id' => 'evt_fixture_retired_refund', 'type' => 'refund.updated', 'data' => ['object' => ['refund' => ['payment_id' => 'pay_fixture_1']]]])->assertOk();
+        $this->assertSame(12_345, $invoice->fresh()->balance_amount);
+        $this->assertSame('refunded', $invoice->payments()->firstOrFail()->status);
+    }
+
+    public function test_refund_after_repointing_stays_on_the_original_recorded_payment(): void
+    {
+        [$workspace, $owner, , $invoice] = $this->paymentFixture();
+        app(SquarePaymentReconciler::class)->invoice($workspace, 'inv_fixture_1');
+        app(SquareLinkService::class)->link($workspace, $invoice->fresh(), $owner, AgentApiVersion::for($invoice->fresh()), new SquareInvoiceReference('inv_fixture_other', '000002-R-0001', 'USD', SquareMatchMethod::Manual), true);
+        $this->squarePayments['pay_fixture_1']['refunded_money'] = ['amount' => 345, 'currency' => 'USD'];
+        $this->deliver(['event_id' => 'evt_fixture_repointed_refund', 'type' => 'refund.updated', 'data' => ['object' => ['refund' => ['payment_id' => 'pay_fixture_1']]]])->assertOk();
+        $this->assertSame(345, $invoice->fresh()->balance_amount);
+        $this->assertSame('inv_fixture_other', InvoiceSquareLink::query()->where('workspace_id', $workspace->id)->whereNotNull('active_invoice_slot')->firstOrFail()->square_invoice_id);
+        $this->assertSame(1, $invoice->payments()->count());
+    }
+
+    public function test_historical_invoice_hints_recover_refunds_without_importing_new_payments(): void
+    {
+        [$workspace, , , $invoice] = $this->paymentFixture();
+        app(SquarePaymentReconciler::class)->invoice($workspace, 'inv_fixture_1');
+        InvoiceSquareLink::query()->where('workspace_id', $workspace->id)->update(['active_invoice_slot' => null, 'active_square_invoice_slot' => null]);
+        $this->squarePayments['pay_fixture_2'] = $this->squarePayments['pay_fixture_1'];
+        $this->squarePayments['pay_fixture_2']['id'] = 'pay_fixture_2';
+        $this->paymentOrder['tenders'][] = ['id' => 'pay_fixture_2'];
+        $this->squarePayments['pay_fixture_1']['refunded_money'] = ['amount' => 12_345, 'currency' => 'USD'];
+        $this->deliver(['event_id' => 'evt_fixture_historical_invoice', 'type' => 'invoice.updated', 'data' => ['id' => 'inv_fixture_1']])->assertOk();
+        $this->assertSame(12_345, $invoice->fresh()->balance_amount);
+        $this->assertSame(1, $invoice->payments()->count());
     }
 
     public function test_machine_route_has_no_session_authentication_or_csrf_middleware(): void

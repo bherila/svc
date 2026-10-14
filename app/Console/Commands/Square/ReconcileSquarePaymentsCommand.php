@@ -38,6 +38,13 @@ final class ReconcileSquarePaymentsCommand extends Command
                 $failed++;
             }
         }
+        foreach ($reconciler->recordedPayments($workspace) as $payment) {
+            try {
+                $reconciler->payment($workspace, (string) $payment->provider_payment_identifier);
+            } catch (SquareRequestFailed|DomainException) {
+                $failed++;
+            }
+        }
         if ($failed > 0) {
             $this->components->warn('Some linked invoices could not be reconciled; the next sweep will retry.');
         }

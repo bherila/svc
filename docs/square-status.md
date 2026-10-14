@@ -20,6 +20,9 @@ It visits active links in bounded database batches, including paid invoices so
 refunds missed by webhooks are recovered. Both transports finish their work in
 the request or command; neither dispatches jobs. The sweep works without the
 webhook signature key, using the existing Square connection configuration.
+Recorded Square payments are also swept independently of current links, so a
+later refund still corrects the original invoice after unlinking or re-pointing.
+Historical links may recover existing refunds but never import new payments.
 
 Completed full and partial payments use the received-payment service, with
 provider `square` and the payment identifier as the existing unique provider key.

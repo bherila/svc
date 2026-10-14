@@ -43,14 +43,28 @@ final class SquarePaymentRecorder
             $this->received->recordProvider($workspace, $invoice, $data, new ReceivedPaymentProvider('square', $facts->id));
         });
 
-        DB::transaction(function () use ($workspace, $link, $facts): void {
+        $this->refundExisting($workspace, $facts);
+    }
+
+    /** A received payment belongs to its original invoice even after unlinking. */
+    public function refundExisting(Workspace $workspace, SquarePaymentFacts $facts): bool
+    {
+        return DB::transaction(function () use ($workspace, $facts): bool {
             BillingMaintenance::share($workspace->id);
-            $payment = ClientInvoicePayment::query()->where('workspace_id', $workspace->id)->where('client_invoice_id', $link->client_invoice_id)
-                ->where('provider', 'square')->where('provider_payment_identifier', $facts->id)->tap(Locks::forUpdate())->firstOrFail();
+            $payment = ClientInvoicePayment::query()->where('workspace_id', $workspace->id)
+                ->where('provider', 'square')->where('provider_payment_identifier', $facts->id)->tap(Locks::forUpdate())->first();
+            if ($payment === null) {
+                return false;
+            }
+            if ($payment->amount !== $facts->amount || $payment->currency !== $facts->currency) {
+                throw new DomainException('Square refund facts do not match the recorded payment.');
+            }
             // Completed refunds are cumulative. A slower fetch never undoes one.
             if ($facts->refundedAmount > $payment->refunded_amount) {
                 $this->invoices->setRefundedAmount($payment, $facts->refundedAmount, $workspace);
             }
+
+            return true;
         });
     }
 }

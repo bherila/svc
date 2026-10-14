@@ -3,10 +3,13 @@
 namespace Tests\Feature\Square;
 
 use App\Models\ClientInvoicePayment;
+use App\Models\InvoiceSquareLink;
 use App\Models\Workspace;
 use App\Services\Square\SquarePaymentReconciler;
+use App\Services\Square\SquarePaymentRecorder;
 use App\Services\Square\SquareRequestFailed;
 use App\Support\Concurrency\LockOrderRecorder;
+use App\Support\Square\SquarePaymentFacts;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
@@ -66,6 +69,29 @@ final class SquarePaymentSyncTest extends TestCase
         $this->squarePayments['pay_fixture_1']['refunded_money']['amount'] = 3000;
         app(SquarePaymentReconciler::class)->invoice($workspace, 'inv_fixture_1');
         $this->assertSame(6000, $invoice->fresh()->balance_amount);
+    }
+
+    public function test_sweep_recovers_refunds_after_the_invoice_link_has_been_retired(): void
+    {
+        [$workspace, , , $invoice] = $this->paymentFixture();
+        app(SquarePaymentReconciler::class)->invoice($workspace, 'inv_fixture_1');
+        InvoiceSquareLink::query()->where('workspace_id', $workspace->id)->update(['active_invoice_slot' => null, 'active_square_invoice_slot' => null]);
+        $this->squarePayments['pay_fixture_1']['refunded_money'] = ['amount' => 345, 'currency' => 'USD'];
+        $this->artisan('svc:square:reconcile-payments')->assertSuccessful();
+        $this->assertSame(345, $invoice->fresh()->balance_amount);
+        $this->assertSame(1, $invoice->payments()->count());
+    }
+
+    public function test_existing_refunds_cannot_cross_workspace_boundaries(): void
+    {
+        [$workspace, , , $invoice] = $this->paymentFixture();
+        app(SquarePaymentReconciler::class)->invoice($workspace, 'inv_fixture_1');
+        $other = Workspace::query()->create(['name' => 'Synthetic foreign refund', 'slug' => 'synthetic-foreign-refund']);
+        $this->squarePayments['pay_fixture_1']['refunded_money'] = ['amount' => 345, 'currency' => 'USD'];
+        $facts = SquarePaymentFacts::from($this->squarePayments['pay_fixture_1'], 'pay_fixture_1');
+        $this->assertFalse(app(SquarePaymentRecorder::class)->refundExisting($other, $facts));
+        $this->assertSame([], iterator_to_array(app(SquarePaymentReconciler::class)->recordedPayments($other)));
+        $this->assertSame(0, $invoice->fresh()->balance_amount);
     }
 
     public function test_an_unlinked_or_foreign_invoice_is_not_fetched_or_written(): void
