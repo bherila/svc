@@ -271,9 +271,15 @@ final class PaymentReminderService
     {
         // The last word, outside every lock: the claim has committed, so a
         // payment, void or Square link that landed since is current here.
-        $current = ClientInvoice::query()->where('workspace_id', $workspace->id)->whereKey($invoice->id)->first();
-        $facts = $current === null ? null : $this->repository->facts($workspace, $current, $reminder->id);
-        $decision = $facts === null ? null : $this->policy->lastWord($facts, $reminder->cadence_step);
+        // A failure here is before anything left: the claim must not stay
+        // `sending`, which reads as an ambiguous send and is never retried.
+        try {
+            $current = ClientInvoice::query()->where('workspace_id', $workspace->id)->whereKey($invoice->id)->first();
+            $facts = $current === null ? null : $this->repository->facts($workspace, $current, $reminder->id);
+            $decision = $facts === null ? null : $this->policy->lastWord($facts, $reminder->cadence_step);
+        } catch (Throwable $exception) {
+            return $this->failed($workspace, $invoice, $reminder, $exception, 'Not sent: the reminder could not be checked before sending');
+        }
         if ($current === null || $decision === null || $decision->refusal !== null
             || $decision->payLink !== $reminder->pay_link || $decision->squareInvoiceNumber !== $reminder->square_invoice_number) {
             return $this->resolve($workspace, $invoice, $reminder, PaymentReminderStatus::Cancelled, [
@@ -303,18 +309,7 @@ final class PaymentReminderService
                 $pdf,
             ));
         } catch (Throwable $exception) {
-            // The class name, not the message: a transport failure can quote
-            // recipient addresses or credentials.
-            Log::error('A payment reminder could not be sent.', ['reminder' => $reminder->public_id, 'exception' => class_basename($exception)]);
-            $now = $this->clock->now($workspace);
-
-            return $this->resolve($workspace, $invoice, $reminder, PaymentReminderStatus::Failed, [
-                'failed_at' => $now->utc(),
-                'error_summary' => 'Email delivery failed ('.class_basename($exception).').',
-                'next_attempt_at' => $reminder->origin === PaymentReminderOrigin::Automatic
-                    ? $this->policy->nextAttemptAt($reminder->attempt_number, $now)?->utc()
-                    : null,
-            ]);
+            return $this->failed($workspace, $invoice, $reminder, $exception, 'Email delivery failed');
         }
 
         try {
@@ -329,6 +324,26 @@ final class PaymentReminderService
 
             return $reminder;
         }
+    }
+
+    /**
+     * Nothing left: a definite failure, retried on the cadence's backoff when
+     * the reminder is automatic and by asking again when a person sent it.
+     */
+    private function failed(Workspace $workspace, ClientInvoice $invoice, InvoiceReminderLog $reminder, Throwable $exception, string $summary): InvoiceReminderLog
+    {
+        // The class name, not the message: a transport or rendering failure
+        // can quote recipient addresses or credentials.
+        Log::error('A payment reminder could not be sent.', ['reminder' => $reminder->public_id, 'exception' => class_basename($exception)]);
+        $now = $this->clock->now($workspace);
+
+        return $this->resolve($workspace, $invoice, $reminder, PaymentReminderStatus::Failed, [
+            'failed_at' => $now->utc(),
+            'error_summary' => $summary.' ('.class_basename($exception).').',
+            'next_attempt_at' => $reminder->origin === PaymentReminderOrigin::Automatic
+                ? $this->policy->nextAttemptAt($reminder->attempt_number, $now)?->utc()
+                : null,
+        ]);
     }
 
     /**

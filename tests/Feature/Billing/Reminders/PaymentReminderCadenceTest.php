@@ -3,6 +3,7 @@
 namespace Tests\Feature\Billing\Reminders;
 
 use App\Mail\InvoicePaymentReminderMail;
+use App\Models\ClientCompany;
 use App\Models\InvoiceReminderLog;
 use App\Models\SquareInvoiceSnapshot;
 use App\Services\Billing\RecordReceivedPayment;
@@ -103,6 +104,26 @@ final class PaymentReminderCadenceTest extends TestCase
         $this->assertSame(3, $row->attempt_number);
         $this->assertSame(PaymentReminderStatus::Failed, $row->status);
         $this->assertNull($row->next_attempt_at);
+    }
+
+    public function test_a_failure_before_the_mailer_is_a_retryable_failure_not_a_stuck_claim(): void
+    {
+        [$workspace] = $this->reminderFixture(cadence: true);
+        $this->at('2030-03-15 10:00');
+        // The claim commits; re-reading the facts then fails before anything is sent.
+        InvoiceReminderLog::saved(function (InvoiceReminderLog $reminder): void {
+            if ($reminder->status === PaymentReminderStatus::Sending && $reminder->wasRecentlyCreated) {
+                ClientCompany::retrieved(static fn () => throw new \RuntimeException('synthetic outage'));
+            }
+        });
+
+        $this->assertSame(1, app(PaymentReminderService::class)->dispatchAutomaticDue());
+
+        $row = InvoiceReminderLog::query()->where('workspace_id', $workspace->id)->sole();
+        $this->assertSame(PaymentReminderStatus::Failed, $row->status);
+        $this->assertSame('Not sent: the reminder could not be checked before sending (RuntimeException).', $row->error_summary);
+        $this->assertSame('2030-03-15 14:30:00', $row->next_attempt_at?->utc()->toDateTimeString());
+        Mail::assertNothingSent();
     }
 
     public function test_a_step_already_claimed_elsewhere_is_never_sent_twice(): void
