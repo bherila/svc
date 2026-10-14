@@ -24,6 +24,12 @@ use App\Models\ClientInvoice;
  *
  * Recording a payment is not collection. Neither is issuing, generating, or
  * reading - those stay open.
+ *
+ * A payment reminder is the one client-facing path that does not refuse
+ * outright: the owner decided (#438) that a reminder about an invoice Square
+ * collects carries Square's own payment page. So its site asks this guard to
+ * choose the pay link, and a Square-collected invoice gets Square's page or no
+ * reminder at all - never SVC's own collection.
  */
 final class SquareCollectionGuard
 {
@@ -42,6 +48,7 @@ final class SquareCollectionGuard
         'App\Services\Billing\InvoiceLifecycleService::issue' => 'scheduling automatic email delivery when an invoice is issued',
         'App\Services\Billing\InvoiceCorrectionService::setHold' => 'releasing a held automatic delivery back onto the schedule, on the website and invoices.release_delivery',
         'App\Services\Billing\StripePaymentIntentService::createLocked' => 'the Stripe payment intent behind the client\'s SVC payment link and charge',
+        'App\Services\Billing\Reminders\PaymentReminderRepository::squareFacts' => 'payment reminders, by hand on the website, invoices.send_reminder over REST and MCP, and svc:billing:send-payment-reminders: an invoice Square collects carries only Square\'s own payment page, and gets no reminder without one',
     ];
 
     public function __construct(private readonly SquareLinkRepository $links) {}
