@@ -9863,7 +9863,8 @@
                     "link",
                     "agreement_series_key",
                     "square_collects",
-                    "collection_refusal"
+                    "collection_refusal",
+                    "payment_mismatch"
                 ],
                 "properties": {
                     "invoice_id": {
@@ -9901,6 +9902,16 @@
                             "null"
                         ],
                         "description": "Why SVC will not collect this invoice, as the collection paths report it; null when SVC collects."
+                    },
+                    "payment_mismatch": {
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/SquarePaymentMismatch"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
                     }
                 }
             },
@@ -13570,6 +13581,80 @@
                     }
                 }
             },
+            "SquarePaymentMismatch": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "code",
+                    "dashboard_url"
+                ],
+                "properties": {
+                    "code": {
+                        "type": "string",
+                        "enum": [
+                            "paid_outside_square"
+                        ]
+                    },
+                    "dashboard_url": {
+                        "type": "string",
+                        "format": "uri"
+                    }
+                }
+            },
+            "SquarePaymentMismatchAudit": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "count",
+                    "invoices",
+                    "truncated"
+                ],
+                "properties": {
+                    "count": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "invoices": {
+                        "type": "array",
+                        "maxItems": 100,
+                        "items": {
+                            "$ref": "#/components/schemas/SquarePaymentMismatchInvoice"
+                        }
+                    },
+                    "truncated": {
+                        "type": "boolean"
+                    }
+                }
+            },
+            "SquarePaymentMismatchInvoice": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "invoice_id",
+                    "url",
+                    "code",
+                    "dashboard_url"
+                ],
+                "properties": {
+                    "invoice_id": {
+                        "$ref": "#/components/schemas/Uuid"
+                    },
+                    "url": {
+                        "type": "string",
+                        "format": "uri"
+                    },
+                    "code": {
+                        "type": "string",
+                        "enum": [
+                            "paid_outside_square"
+                        ]
+                    },
+                    "dashboard_url": {
+                        "type": "string",
+                        "format": "uri"
+                    }
+                }
+            },
             "SquarePaymentResponse": {
                 "type": "object",
                 "additionalProperties": false,
@@ -14314,7 +14399,8 @@
                     "stale_draft_ids_truncated",
                     "missing_period_count",
                     "missing_periods",
-                    "missing_periods_truncated"
+                    "missing_periods_truncated",
+                    "square_payment_mismatches"
                 ],
                 "properties": {
                     "as_of": {
@@ -14355,6 +14441,9 @@
                     },
                     "missing_periods_truncated": {
                         "type": "boolean"
+                    },
+                    "square_payment_mismatches": {
+                        "$ref": "#/components/schemas/SquarePaymentMismatchAudit"
                     }
                 }
             },

@@ -2360,6 +2360,8 @@ export interface components {
             square_collects: boolean;
             /** @description Why SVC will not collect this invoice, as the collection paths report it; null when SVC collects. */
             collection_refusal: string | null;
+            payment_mismatch:
+                components['schemas']['SquarePaymentMismatch'] | null;
         };
         InvoiceSquareLinkRequest: {
             expected_version: components['schemas']['Version'];
@@ -3111,6 +3113,26 @@ export interface components {
                 next_cursor: string | null;
             };
         };
+        SquarePaymentMismatch: {
+            /** @enum {string} */
+            code: 'paid_outside_square';
+            /** Format: uri */
+            dashboard_url: string;
+        };
+        SquarePaymentMismatchAudit: {
+            count: number;
+            invoices: components['schemas']['SquarePaymentMismatchInvoice'][];
+            truncated: boolean;
+        };
+        SquarePaymentMismatchInvoice: {
+            invoice_id: components['schemas']['Uuid'];
+            /** Format: uri */
+            url: string;
+            /** @enum {string} */
+            code: 'paid_outside_square';
+            /** Format: uri */
+            dashboard_url: string;
+        };
         SquarePaymentResponse: {
             data: components['schemas']['SquarePayment'];
         };
@@ -3299,6 +3321,7 @@ export interface components {
             missing_period_count: number;
             missing_periods: components['schemas']['InvoiceMissingPeriod'][];
             missing_periods_truncated: boolean;
+            square_payment_mismatches: components['schemas']['SquarePaymentMismatchAudit'];
         };
         StaleAndMissingInvoiceAuditResponse: {
             data: components['schemas']['StaleAndMissingInvoiceAudit'];

@@ -109,6 +109,24 @@ export function SquareInvoiceCard({ square }: { square: InvoiceSquareState }) {
                 <CardTitle>Square</CardTitle>
             </CardHeader>
             <CardContent className="grid grid-cols-1 gap-3 text-sm">
+                {square.payment_mismatch != null && (
+                    <p
+                        role="alert"
+                        className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 wrap-anywhere"
+                    >
+                        Paid in SVC while Square still has an open balance.
+                        Check for a duplicate payment and close the invoice in{' '}
+                        <a
+                            href={square.payment_mismatch.dashboard_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="underline"
+                        >
+                            the Square dashboard
+                        </a>
+                        .
+                    </p>
+                )}
                 {square.square_collects && (
                     <p
                         role="status"

@@ -23,6 +23,7 @@ use App\Http\Controllers\Api\V1\AgentTimeEntryMutationController;
 use App\Http\Controllers\Api\V1\AgentWorkspaceMiscController;
 use App\Http\Controllers\Api\V1\InvoicePaymentController;
 use App\Http\Controllers\Api\V1\PaymentReconciliationController;
+use App\Http\Controllers\SquareWebhookController;
 use App\Http\Middleware\AuthenticateFirstPartySession;
 use App\Http\Middleware\EnsureAgentWorkspaceVisible;
 use App\Http\Middleware\EnsureOperationDeployed;
@@ -36,6 +37,8 @@ use Illuminate\Routing\Route as RoutingRoute;
 use Illuminate\Support\Facades\Route;
 use Laravel\Passport\Http\Middleware\CheckToken;
 use Laravel\Sanctum\Http\Middleware\CheckAbilities;
+
+Route::post('/webhooks/square', SquareWebhookController::class)->name('svc.billing.square.webhook');
 
 Route::middleware(['auth:sanctum', 'throttle:60,1'])
     ->prefix('v1/workspaces/{workspace}')

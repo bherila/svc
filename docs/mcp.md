@@ -695,8 +695,12 @@ anywhere else.
 Reads: `invoices.get` carries `square` (link, agreement series, whether Square
 collects, and the refusal text) for managers and null otherwise;
 `clients.get` and `clients.list` carry `square_customer`; agreement reads carry
-`square_series_key`. No Square URL is returned or rendered yet: the hosted
-page's address will come only from Square's own data.
+`square_series_key`. The hosted payment address comes only from the linked
+invoice's mirrored `public_url`. Managers also receive `payment_mismatch` when
+SVC is paid outside Square while Square remains open, with a finished dashboard
+link. `billing_audit.stale_and_missing` includes the same flags in
+`square_payment_mismatches`, with a count and at most 100 invoices.
+See [payment status transport](square-status.md) for the signed receiver and sweep.
 
 ## Legacy REST receipt cutover
 

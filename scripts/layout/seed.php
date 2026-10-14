@@ -14,6 +14,7 @@ use App\Services\Billing\ExpenseInvoiceAllocations;
 use App\Services\Billing\InvoiceCorrectionService;
 use App\Services\Billing\InvoiceFromTimeService;
 use App\Services\Billing\InvoiceLifecycleService;
+use App\Services\Billing\RecordReceivedPayment;
 use App\Services\Files\AttachmentStorageService;
 use App\Services\Square\Mirror\SquareMirrorRepository;
 use App\Services\Square\Mirror\SquareSnapshotMapper;
@@ -22,6 +23,7 @@ use App\Support\Access\AccessMutationContext;
 use App\Support\Access\PortalAccessScope;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Billing\BillingCadence;
+use App\Support\Billing\ReceivedPaymentData;
 use App\Support\Expenses\NewExpense;
 use App\Support\Square\SquareInvoiceReference;
 use App\Support\Square\SquareMatchMethod;
@@ -217,6 +219,9 @@ $squareRow = app(SquareSnapshotMapper::class)->invoice([
 app(SquareMirrorRepository::class)->storeInvoices($workspace, [$squareRow], CarbonImmutable::now('UTC'));
 app(SquareLinkService::class)->link($workspace, $squareInvoice, $owner, AgentApiVersion::for($squareInvoice),
     new SquareInvoiceReference('inv_fixture_layout', '000001-R-0001', 'USD', SquareMatchMethod::Manual), false);
+app(RecordReceivedPayment::class)->record($workspace, $squareInvoice, ReceivedPaymentData::from([
+    'amount' => 12_345, 'currency' => 'USD', 'received_on' => $date, 'method' => 'cash',
+]));
 
 file_put_contents($runtime.'/fixture.json', json_encode([
     'square_explore' => route('square.explore', $workspace, absolute: false),

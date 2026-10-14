@@ -680,6 +680,7 @@ describe('the Square link on an invoice', () => {
         link: null,
         agreement_series_key: null,
         square_collects: false,
+        payment_mismatch: null,
         collection_refusal: null,
         link_href: linkUrl,
         unlink_href: null,
@@ -749,6 +750,30 @@ describe('the Square link on an invoice', () => {
             screen.getByRole('link', { name: 'View or pay in Square' }),
         ).toHaveAttribute('href', url);
         expect(screen.getByText('Partially paid')).toBeVisible();
+    });
+
+    it('shows the outside-payment warning with the finished dashboard URL', () => {
+        const dashboardUrl =
+            'https://squareupsandbox.com/dashboard/invoices/inv_fixture_1';
+        render(
+            <ClientInvoiceDetail
+                {...props({
+                    square: square({
+                        link: linked,
+                        payment_mismatch: {
+                            code: 'paid_outside_square',
+                            dashboard_url: dashboardUrl,
+                        },
+                    }),
+                })}
+            />,
+        );
+        expect(screen.getByRole('alert')).toHaveTextContent(
+            'Paid in SVC while Square still has an open balance',
+        );
+        expect(
+            screen.getByRole('link', { name: 'the Square dashboard' }),
+        ).toHaveAttribute('href', dashboardUrl);
     });
 
     it('links through the API with the invoice version and reloads', async () => {

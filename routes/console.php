@@ -15,3 +15,5 @@ Schedule::command('svc:billing:dispatch-invoice-emails --limit=50')->everyMinute
 // The read-only Square mirror (#438): no more often than every 15 minutes.
 // The lock expires well before a day so a crashed run cannot stall the next.
 Schedule::command('svc:square:sync')->everyFifteenMinutes()->withoutOverlapping(30);
+Schedule::command('svc:square:reconcile-payments')->everyFifteenMinutes()->withoutOverlapping(30);
+Schedule::command('svc:square:prune-webhook-receipts')->daily()->withoutOverlapping(30);

@@ -63,6 +63,7 @@ final class WebApiParityTest extends TestCase
         'svc.billing.schedules.generate' => 'operation:billing_schedules.generate',
         'svc.billing.schedules.store' => 'operation:billing_schedules.create',
         'svc.billing.stripe.webhook' => 'web-only:inbound webhook',
+        'svc.billing.square.webhook' => 'web-only:inbound webhook',
         'svc.engagement.agreements.activate' => 'operation:agreements.activate',
         'svc.engagement.agreements.sign' => 'deliberate:a signature is an interactive act by the signer',
         'svc.engagement.agreements.store' => 'operation:agreements.create',
@@ -160,7 +161,8 @@ final class WebApiParityTest extends TestCase
             /** @var Route $route */
             // The OAuth authorization server's own endpoints come from the
             // shared auth package and are protocol plumbing, not user actions.
-            if (! in_array('web', $route->gatherMiddleware(), true) || str_starts_with($route->uri(), 'oauth/')) {
+            // Machine webhooks intentionally omit the session-bearing web group.
+            if ((! in_array('web', $route->gatherMiddleware(), true) && ! str_starts_with($route->uri(), 'api/webhooks/')) || str_starts_with($route->uri(), 'oauth/')) {
                 continue;
             }
             if (array_intersect($route->methods(), ['POST', 'PUT', 'PATCH', 'DELETE']) === []) {

@@ -2989,6 +2989,60 @@
                                     }
                                 }
                             },
+                            "SquarePaymentMismatchAudit": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "count",
+                                    "invoices",
+                                    "truncated"
+                                ],
+                                "properties": {
+                                    "count": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                    },
+                                    "invoices": {
+                                        "type": "array",
+                                        "maxItems": 100,
+                                        "items": {
+                                            "$ref": "#/$defs/SquarePaymentMismatchInvoice"
+                                        }
+                                    },
+                                    "truncated": {
+                                        "type": "boolean"
+                                    }
+                                }
+                            },
+                            "SquarePaymentMismatchInvoice": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "invoice_id",
+                                    "url",
+                                    "code",
+                                    "dashboard_url"
+                                ],
+                                "properties": {
+                                    "invoice_id": {
+                                        "$ref": "#/$defs/Uuid"
+                                    },
+                                    "url": {
+                                        "type": "string",
+                                        "format": "uri"
+                                    },
+                                    "code": {
+                                        "type": "string",
+                                        "enum": [
+                                            "paid_outside_square"
+                                        ]
+                                    },
+                                    "dashboard_url": {
+                                        "type": "string",
+                                        "format": "uri"
+                                    }
+                                }
+                            },
                             "StaleAndMissingInvoiceAudit": {
                                 "type": "object",
                                 "additionalProperties": false,
@@ -3000,7 +3054,8 @@
                                     "stale_draft_ids_truncated",
                                     "missing_period_count",
                                     "missing_periods",
-                                    "missing_periods_truncated"
+                                    "missing_periods_truncated",
+                                    "square_payment_mismatches"
                                 ],
                                 "properties": {
                                     "as_of": {
@@ -3041,6 +3096,9 @@
                                     },
                                     "missing_periods_truncated": {
                                         "type": "boolean"
+                                    },
+                                    "square_payment_mismatches": {
+                                        "$ref": "#/$defs/SquarePaymentMismatchAudit"
                                     }
                                 }
                             },
@@ -9715,7 +9773,8 @@
                                     "link",
                                     "agreement_series_key",
                                     "square_collects",
-                                    "collection_refusal"
+                                    "collection_refusal",
+                                    "payment_mismatch"
                                 ],
                                 "properties": {
                                     "invoice_id": {
@@ -9753,6 +9812,16 @@
                                             "null"
                                         ],
                                         "description": "Why SVC will not collect this invoice, as the collection paths report it; null when SVC collects."
+                                    },
+                                    "payment_mismatch": {
+                                        "oneOf": [
+                                            {
+                                                "$ref": "#/$defs/SquarePaymentMismatch"
+                                            },
+                                            {
+                                                "type": "null"
+                                            }
+                                        ]
                                     }
                                 }
                             },
@@ -9860,6 +9929,26 @@
                                 "maxLength": 191,
                                 "pattern": "^[!-~](?:[ -~]{0,189}[!-~])?$",
                                 "description": "The Square invoice number as Square shows it. A recurring series occurrence is NNNNNN-R-NNNN, whose six-digit prefix is the series key."
+                            },
+                            "SquarePaymentMismatch": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "code",
+                                    "dashboard_url"
+                                ],
+                                "properties": {
+                                    "code": {
+                                        "type": "string",
+                                        "enum": [
+                                            "paid_outside_square"
+                                        ]
+                                    },
+                                    "dashboard_url": {
+                                        "type": "string",
+                                        "format": "uri"
+                                    }
+                                }
                             },
                             "Uuid": {
                                 "type": "string",
@@ -10448,7 +10537,8 @@
                                     "link",
                                     "agreement_series_key",
                                     "square_collects",
-                                    "collection_refusal"
+                                    "collection_refusal",
+                                    "payment_mismatch"
                                 ],
                                 "properties": {
                                     "invoice_id": {
@@ -10486,6 +10576,16 @@
                                             "null"
                                         ],
                                         "description": "Why SVC will not collect this invoice, as the collection paths report it; null when SVC collects."
+                                    },
+                                    "payment_mismatch": {
+                                        "oneOf": [
+                                            {
+                                                "$ref": "#/$defs/SquarePaymentMismatch"
+                                            },
+                                            {
+                                                "type": "null"
+                                            }
+                                        ]
                                     }
                                 }
                             },
@@ -10593,6 +10693,26 @@
                                 "maxLength": 191,
                                 "pattern": "^[!-~](?:[ -~]{0,189}[!-~])?$",
                                 "description": "The Square invoice number as Square shows it. A recurring series occurrence is NNNNNN-R-NNNN, whose six-digit prefix is the series key."
+                            },
+                            "SquarePaymentMismatch": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "code",
+                                    "dashboard_url"
+                                ],
+                                "properties": {
+                                    "code": {
+                                        "type": "string",
+                                        "enum": [
+                                            "paid_outside_square"
+                                        ]
+                                    },
+                                    "dashboard_url": {
+                                        "type": "string",
+                                        "format": "uri"
+                                    }
+                                }
                             },
                             "Uuid": {
                                 "type": "string",
@@ -12236,7 +12356,8 @@
                                     "link",
                                     "agreement_series_key",
                                     "square_collects",
-                                    "collection_refusal"
+                                    "collection_refusal",
+                                    "payment_mismatch"
                                 ],
                                 "properties": {
                                     "invoice_id": {
@@ -12274,6 +12395,16 @@
                                             "null"
                                         ],
                                         "description": "Why SVC will not collect this invoice, as the collection paths report it; null when SVC collects."
+                                    },
+                                    "payment_mismatch": {
+                                        "oneOf": [
+                                            {
+                                                "$ref": "#/$defs/SquarePaymentMismatch"
+                                            },
+                                            {
+                                                "type": "null"
+                                            }
+                                        ]
                                     }
                                 }
                             },
@@ -12363,6 +12494,26 @@
                                 "maxLength": 191,
                                 "pattern": "^[!-~](?:[ -~]{0,189}[!-~])?$",
                                 "description": "The Square invoice number as Square shows it. A recurring series occurrence is NNNNNN-R-NNNN, whose six-digit prefix is the series key."
+                            },
+                            "SquarePaymentMismatch": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "code",
+                                    "dashboard_url"
+                                ],
+                                "properties": {
+                                    "code": {
+                                        "type": "string",
+                                        "enum": [
+                                            "paid_outside_square"
+                                        ]
+                                    },
+                                    "dashboard_url": {
+                                        "type": "string",
+                                        "format": "uri"
+                                    }
+                                }
                             },
                             "Uuid": {
                                 "type": "string",
@@ -12449,7 +12600,8 @@
                                     "link",
                                     "agreement_series_key",
                                     "square_collects",
-                                    "collection_refusal"
+                                    "collection_refusal",
+                                    "payment_mismatch"
                                 ],
                                 "properties": {
                                     "invoice_id": {
@@ -12487,6 +12639,16 @@
                                             "null"
                                         ],
                                         "description": "Why SVC will not collect this invoice, as the collection paths report it; null when SVC collects."
+                                    },
+                                    "payment_mismatch": {
+                                        "oneOf": [
+                                            {
+                                                "$ref": "#/$defs/SquarePaymentMismatch"
+                                            },
+                                            {
+                                                "type": "null"
+                                            }
+                                        ]
                                     }
                                 }
                             },
@@ -12576,6 +12738,26 @@
                                 "maxLength": 191,
                                 "pattern": "^[!-~](?:[ -~]{0,189}[!-~])?$",
                                 "description": "The Square invoice number as Square shows it. A recurring series occurrence is NNNNNN-R-NNNN, whose six-digit prefix is the series key."
+                            },
+                            "SquarePaymentMismatch": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "code",
+                                    "dashboard_url"
+                                ],
+                                "properties": {
+                                    "code": {
+                                        "type": "string",
+                                        "enum": [
+                                            "paid_outside_square"
+                                        ]
+                                    },
+                                    "dashboard_url": {
+                                        "type": "string",
+                                        "format": "uri"
+                                    }
+                                }
                             },
                             "Uuid": {
                                 "type": "string",
@@ -23410,7 +23592,7 @@
                 "billing.audit_opening_rollover": "cb425f17e9208282",
                 "billing.audit_undated_collectible_invoices": "084b292db36f8292",
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
-                "billing_audit.stale_and_missing": "077504cc581225eb",
+                "billing_audit.stale_and_missing": "bc4d411827f77c27",
                 "billing_schedules.create": "ce808d037fdc2ee7",
                 "billing_schedules.generate": "b1849c503fd5dc21",
                 "billing_schedules.get": "fbb225cb7a29d6a7",
@@ -23453,17 +23635,17 @@
                 "invoices.create_draft": "7f23d0f35560fb05",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.generate_period": "a736a25f33ed9607",
-                "invoices.get": "823c857299f23cdd",
+                "invoices.get": "3acaac8a1c616fb0",
                 "invoices.hold_delivery": "5d5d70aa02fac988",
-                "invoices.issue": "c68b9d18d844f4af",
+                "invoices.issue": "abb054189f80e577",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
                 "invoices.release_delivery": "f703c8eb40f1ed80",
                 "invoices.send": "3b2bc9ef256c4d18",
                 "invoices.square_candidates": "09693c77227c6c63",
-                "invoices.square_link": "ada9370f7843994b",
-                "invoices.square_unlink": "8cf8da989ff01d40",
+                "invoices.square_link": "db9e316d78559f31",
+                "invoices.square_unlink": "91e0eb7deb5ad47f",
                 "invoices.update_details": "9c25cf205acf1a39",
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
@@ -23634,8 +23816,8 @@
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "7f23d0f35560fb05",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.get": "823c857299f23cdd",
-                "invoices.issue": "c68b9d18d844f4af",
+                "invoices.get": "3acaac8a1c616fb0",
+                "invoices.issue": "abb054189f80e577",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.send": "3b2bc9ef256c4d18",
@@ -23781,8 +23963,8 @@
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "7f23d0f35560fb05",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.get": "823c857299f23cdd",
-                "invoices.issue": "c68b9d18d844f4af",
+                "invoices.get": "3acaac8a1c616fb0",
+                "invoices.issue": "abb054189f80e577",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.send": "3b2bc9ef256c4d18",
@@ -23928,8 +24110,8 @@
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "7f23d0f35560fb05",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.get": "823c857299f23cdd",
-                "invoices.issue": "c68b9d18d844f4af",
+                "invoices.get": "3acaac8a1c616fb0",
+                "invoices.issue": "abb054189f80e577",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.send": "3b2bc9ef256c4d18",
@@ -24075,8 +24257,8 @@
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "7f23d0f35560fb05",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.get": "823c857299f23cdd",
-                "invoices.issue": "c68b9d18d844f4af",
+                "invoices.get": "3acaac8a1c616fb0",
+                "invoices.issue": "abb054189f80e577",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.send": "3b2bc9ef256c4d18",
@@ -24203,7 +24385,7 @@
                 "billing.audit_opening_rollover": "cb425f17e9208282",
                 "billing.audit_undated_collectible_invoices": "084b292db36f8292",
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
-                "billing_audit.stale_and_missing": "077504cc581225eb",
+                "billing_audit.stale_and_missing": "bc4d411827f77c27",
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
                 "capacity_ledger.get": "d8a6997ba130cd5a",
@@ -24218,7 +24400,7 @@
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
                 "invoices.corrections.get": "aa93da895756b80b",
-                "invoices.get": "823c857299f23cdd",
+                "invoices.get": "3acaac8a1c616fb0",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
@@ -24305,7 +24487,7 @@
                 "billing.audit_opening_rollover": "cb425f17e9208282",
                 "billing.audit_undated_collectible_invoices": "084b292db36f8292",
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
-                "billing_audit.stale_and_missing": "077504cc581225eb",
+                "billing_audit.stale_and_missing": "bc4d411827f77c27",
                 "billing_schedules.create": "ce808d037fdc2ee7",
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
@@ -24318,14 +24500,14 @@
                 "invoices.create_draft": "7f23d0f35560fb05",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.generate_period": "a736a25f33ed9607",
-                "invoices.get": "823c857299f23cdd",
+                "invoices.get": "3acaac8a1c616fb0",
                 "invoices.hold_delivery": "5d5d70aa02fac988",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
                 "invoices.square_candidates": "09693c77227c6c63",
-                "invoices.square_link": "ada9370f7843994b",
-                "invoices.square_unlink": "8cf8da989ff01d40",
+                "invoices.square_link": "db9e316d78559f31",
+                "invoices.square_unlink": "91e0eb7deb5ad47f",
                 "invoices.update_details": "9c25cf205acf1a39",
                 "invoices.update_draft": "2db06ccf7247d243",
                 "square.customers.get": "8d7d9a7b89dbe75b",
@@ -24475,7 +24657,7 @@
             "tools": {
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "823c857299f23cdd",
+                "invoices.get": "3acaac8a1c616fb0",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
@@ -24537,7 +24719,7 @@
             "tools": {
                 "invoices.create_draft": "7f23d0f35560fb05",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.get": "823c857299f23cdd",
+                "invoices.get": "3acaac8a1c616fb0",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.update_details": "9c25cf205acf1a39",
@@ -24671,7 +24853,7 @@
             "tools": {
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "823c857299f23cdd",
+                "invoices.get": "3acaac8a1c616fb0",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
@@ -24733,7 +24915,7 @@
             "tools": {
                 "invoices.create_draft": "7f23d0f35560fb05",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.get": "823c857299f23cdd",
+                "invoices.get": "3acaac8a1c616fb0",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.update_details": "9c25cf205acf1a39",
@@ -24850,7 +25032,7 @@
                 "billing.audit_opening_rollover": "cb425f17e9208282",
                 "billing.audit_undated_collectible_invoices": "084b292db36f8292",
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
-                "billing_audit.stale_and_missing": "077504cc581225eb",
+                "billing_audit.stale_and_missing": "bc4d411827f77c27",
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
                 "capacity_ledger.get": "d8a6997ba130cd5a",
@@ -24864,7 +25046,7 @@
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
                 "invoices.corrections.get": "aa93da895756b80b",
-                "invoices.get": "823c857299f23cdd",
+                "invoices.get": "3acaac8a1c616fb0",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
@@ -24998,7 +25180,7 @@
                 "billing.audit_opening_rollover": "cb425f17e9208282",
                 "billing.audit_undated_collectible_invoices": "084b292db36f8292",
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
-                "billing_audit.stale_and_missing": "077504cc581225eb",
+                "billing_audit.stale_and_missing": "bc4d411827f77c27",
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
                 "capacity_ledger.get": "d8a6997ba130cd5a",
@@ -25012,7 +25194,7 @@
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
                 "invoices.corrections.get": "aa93da895756b80b",
-                "invoices.get": "823c857299f23cdd",
+                "invoices.get": "3acaac8a1c616fb0",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
@@ -25162,7 +25344,7 @@
             "tools": {
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "823c857299f23cdd",
+                "invoices.get": "3acaac8a1c616fb0",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
@@ -25308,7 +25490,7 @@
             "tools": {
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "823c857299f23cdd",
+                "invoices.get": "3acaac8a1c616fb0",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
@@ -25454,7 +25636,7 @@
             "tools": {
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "823c857299f23cdd",
+                "invoices.get": "3acaac8a1c616fb0",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
@@ -25600,7 +25782,7 @@
             "tools": {
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "823c857299f23cdd",
+                "invoices.get": "3acaac8a1c616fb0",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
@@ -25719,7 +25901,7 @@
                 "billing.audit_opening_rollover": "cb425f17e9208282",
                 "billing.audit_undated_collectible_invoices": "084b292db36f8292",
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
-                "billing_audit.stale_and_missing": "077504cc581225eb",
+                "billing_audit.stale_and_missing": "bc4d411827f77c27",
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
                 "capacity_ledger.get": "d8a6997ba130cd5a",
@@ -25734,7 +25916,7 @@
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
                 "invoices.corrections.get": "aa93da895756b80b",
-                "invoices.get": "823c857299f23cdd",
+                "invoices.get": "3acaac8a1c616fb0",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
@@ -25865,7 +26047,7 @@
                 "billing.audit_opening_rollover": "cb425f17e9208282",
                 "billing.audit_undated_collectible_invoices": "084b292db36f8292",
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
-                "billing_audit.stale_and_missing": "077504cc581225eb",
+                "billing_audit.stale_and_missing": "bc4d411827f77c27",
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
                 "capacity_ledger.get": "d8a6997ba130cd5a",
@@ -25880,7 +26062,7 @@
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
                 "invoices.corrections.get": "aa93da895756b80b",
-                "invoices.get": "823c857299f23cdd",
+                "invoices.get": "3acaac8a1c616fb0",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
@@ -26043,7 +26225,7 @@
             "tools": {
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "823c857299f23cdd",
+                "invoices.get": "3acaac8a1c616fb0",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
@@ -26187,7 +26369,7 @@
             "tools": {
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "823c857299f23cdd",
+                "invoices.get": "3acaac8a1c616fb0",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
@@ -26331,7 +26513,7 @@
             "tools": {
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "823c857299f23cdd",
+                "invoices.get": "3acaac8a1c616fb0",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
@@ -26475,7 +26657,7 @@
             "tools": {
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "823c857299f23cdd",
+                "invoices.get": "3acaac8a1c616fb0",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
@@ -26586,7 +26768,7 @@
                 "billing.audit_opening_rollover": "cb425f17e9208282",
                 "billing.audit_undated_collectible_invoices": "084b292db36f8292",
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
-                "billing_audit.stale_and_missing": "077504cc581225eb",
+                "billing_audit.stale_and_missing": "bc4d411827f77c27",
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
                 "capacity_ledger.get": "d8a6997ba130cd5a",
@@ -26601,7 +26783,7 @@
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
                 "invoices.corrections.get": "aa93da895756b80b",
-                "invoices.get": "823c857299f23cdd",
+                "invoices.get": "3acaac8a1c616fb0",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
@@ -26734,7 +26916,7 @@
                 "billing.audit_opening_rollover": "cb425f17e9208282",
                 "billing.audit_undated_collectible_invoices": "084b292db36f8292",
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
-                "billing_audit.stale_and_missing": "077504cc581225eb",
+                "billing_audit.stale_and_missing": "bc4d411827f77c27",
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
                 "capacity_ledger.get": "d8a6997ba130cd5a",
@@ -26749,7 +26931,7 @@
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
                 "invoices.corrections.get": "aa93da895756b80b",
-                "invoices.get": "823c857299f23cdd",
+                "invoices.get": "3acaac8a1c616fb0",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
@@ -26914,7 +27096,7 @@
             "tools": {
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "823c857299f23cdd",
+                "invoices.get": "3acaac8a1c616fb0",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
@@ -27060,7 +27242,7 @@
             "tools": {
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "823c857299f23cdd",
+                "invoices.get": "3acaac8a1c616fb0",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
@@ -27206,7 +27388,7 @@
             "tools": {
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "823c857299f23cdd",
+                "invoices.get": "3acaac8a1c616fb0",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
@@ -27352,7 +27534,7 @@
             "tools": {
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "823c857299f23cdd",
+                "invoices.get": "3acaac8a1c616fb0",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
@@ -27431,7 +27613,7 @@
                 "billing.audit_opening_rollover": "cb425f17e9208282",
                 "billing.audit_undated_collectible_invoices": "084b292db36f8292",
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
-                "billing_audit.stale_and_missing": "077504cc581225eb",
+                "billing_audit.stale_and_missing": "bc4d411827f77c27",
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
                 "capacity_ledger.get": "d8a6997ba130cd5a",
@@ -27467,7 +27649,7 @@
                 "expenses.unapprove": "ae21aae8d227dc06",
                 "expenses.update": "1e517d25f792bde9",
                 "invoices.corrections.get": "aa93da895756b80b",
-                "invoices.get": "823c857299f23cdd",
+                "invoices.get": "3acaac8a1c616fb0",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
@@ -27579,7 +27761,7 @@
                 "billing.audit_opening_rollover": "cb425f17e9208282",
                 "billing.audit_undated_collectible_invoices": "084b292db36f8292",
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
-                "billing_audit.stale_and_missing": "077504cc581225eb",
+                "billing_audit.stale_and_missing": "bc4d411827f77c27",
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
                 "capacity_ledger.get": "d8a6997ba130cd5a",
@@ -27615,7 +27797,7 @@
                 "expenses.unapprove": "ae21aae8d227dc06",
                 "expenses.update": "1e517d25f792bde9",
                 "invoices.corrections.get": "aa93da895756b80b",
-                "invoices.get": "823c857299f23cdd",
+                "invoices.get": "3acaac8a1c616fb0",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
@@ -27791,7 +27973,7 @@
             "tools": {
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "823c857299f23cdd",
+                "invoices.get": "3acaac8a1c616fb0",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
@@ -27937,7 +28119,7 @@
             "tools": {
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "823c857299f23cdd",
+                "invoices.get": "3acaac8a1c616fb0",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
@@ -28083,7 +28265,7 @@
             "tools": {
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "823c857299f23cdd",
+                "invoices.get": "3acaac8a1c616fb0",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
@@ -28229,7 +28411,7 @@
             "tools": {
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "823c857299f23cdd",
+                "invoices.get": "3acaac8a1c616fb0",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
@@ -28340,7 +28522,7 @@
                 "billing.audit_opening_rollover": "cb425f17e9208282",
                 "billing.audit_undated_collectible_invoices": "084b292db36f8292",
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
-                "billing_audit.stale_and_missing": "077504cc581225eb",
+                "billing_audit.stale_and_missing": "bc4d411827f77c27",
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
                 "capacity_ledger.get": "d8a6997ba130cd5a",
@@ -28368,7 +28550,7 @@
                 "expenses.receipts.list": "3ed3185eeaba5793",
                 "expenses.receipts.upload_url": "780799092164184f",
                 "invoices.corrections.get": "aa93da895756b80b",
-                "invoices.get": "823c857299f23cdd",
+                "invoices.get": "3acaac8a1c616fb0",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
@@ -28486,7 +28668,7 @@
                 "billing.audit_opening_rollover": "cb425f17e9208282",
                 "billing.audit_undated_collectible_invoices": "084b292db36f8292",
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
-                "billing_audit.stale_and_missing": "077504cc581225eb",
+                "billing_audit.stale_and_missing": "bc4d411827f77c27",
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
                 "capacity_ledger.get": "d8a6997ba130cd5a",
@@ -28514,7 +28696,7 @@
                 "expenses.receipts.list": "3ed3185eeaba5793",
                 "expenses.receipts.upload_url": "780799092164184f",
                 "invoices.corrections.get": "aa93da895756b80b",
-                "invoices.get": "823c857299f23cdd",
+                "invoices.get": "3acaac8a1c616fb0",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
@@ -28677,7 +28859,7 @@
             "tools": {
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "823c857299f23cdd",
+                "invoices.get": "3acaac8a1c616fb0",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
@@ -28821,7 +29003,7 @@
             "tools": {
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "823c857299f23cdd",
+                "invoices.get": "3acaac8a1c616fb0",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
@@ -28965,7 +29147,7 @@
             "tools": {
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "823c857299f23cdd",
+                "invoices.get": "3acaac8a1c616fb0",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
@@ -29109,7 +29291,7 @@
             "tools": {
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "823c857299f23cdd",
+                "invoices.get": "3acaac8a1c616fb0",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
@@ -29167,7 +29349,7 @@
                 "billing.audit_opening_rollover": "cb425f17e9208282",
                 "billing.audit_undated_collectible_invoices": "084b292db36f8292",
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
-                "billing_audit.stale_and_missing": "077504cc581225eb",
+                "billing_audit.stale_and_missing": "bc4d411827f77c27",
                 "billing_schedules.create": "ce808d037fdc2ee7",
                 "billing_schedules.generate": "b1849c503fd5dc21",
                 "billing_schedules.get": "fbb225cb7a29d6a7",
@@ -29210,17 +29392,17 @@
                 "invoices.create_draft": "7f23d0f35560fb05",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.generate_period": "a736a25f33ed9607",
-                "invoices.get": "823c857299f23cdd",
+                "invoices.get": "3acaac8a1c616fb0",
                 "invoices.hold_delivery": "5d5d70aa02fac988",
-                "invoices.issue": "c68b9d18d844f4af",
+                "invoices.issue": "abb054189f80e577",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
                 "invoices.release_delivery": "f703c8eb40f1ed80",
                 "invoices.send": "3b2bc9ef256c4d18",
                 "invoices.square_candidates": "09693c77227c6c63",
-                "invoices.square_link": "ada9370f7843994b",
-                "invoices.square_unlink": "8cf8da989ff01d40",
+                "invoices.square_link": "db9e316d78559f31",
+                "invoices.square_unlink": "91e0eb7deb5ad47f",
                 "invoices.update_details": "9c25cf205acf1a39",
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
@@ -29314,7 +29496,7 @@
                 "billing.audit_opening_rollover": "cb425f17e9208282",
                 "billing.audit_undated_collectible_invoices": "084b292db36f8292",
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
-                "billing_audit.stale_and_missing": "077504cc581225eb",
+                "billing_audit.stale_and_missing": "bc4d411827f77c27",
                 "billing_schedules.create": "ce808d037fdc2ee7",
                 "billing_schedules.generate": "b1849c503fd5dc21",
                 "billing_schedules.get": "fbb225cb7a29d6a7",
@@ -29357,17 +29539,17 @@
                 "invoices.create_draft": "7f23d0f35560fb05",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.generate_period": "a736a25f33ed9607",
-                "invoices.get": "823c857299f23cdd",
+                "invoices.get": "3acaac8a1c616fb0",
                 "invoices.hold_delivery": "5d5d70aa02fac988",
-                "invoices.issue": "c68b9d18d844f4af",
+                "invoices.issue": "abb054189f80e577",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
                 "invoices.release_delivery": "f703c8eb40f1ed80",
                 "invoices.send": "3b2bc9ef256c4d18",
                 "invoices.square_candidates": "09693c77227c6c63",
-                "invoices.square_link": "ada9370f7843994b",
-                "invoices.square_unlink": "8cf8da989ff01d40",
+                "invoices.square_link": "db9e316d78559f31",
+                "invoices.square_unlink": "91e0eb7deb5ad47f",
                 "invoices.update_details": "9c25cf205acf1a39",
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
@@ -29536,8 +29718,8 @@
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "7f23d0f35560fb05",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.get": "823c857299f23cdd",
-                "invoices.issue": "c68b9d18d844f4af",
+                "invoices.get": "3acaac8a1c616fb0",
+                "invoices.issue": "abb054189f80e577",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.send": "3b2bc9ef256c4d18",
@@ -29683,8 +29865,8 @@
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "7f23d0f35560fb05",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.get": "823c857299f23cdd",
-                "invoices.issue": "c68b9d18d844f4af",
+                "invoices.get": "3acaac8a1c616fb0",
+                "invoices.issue": "abb054189f80e577",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.send": "3b2bc9ef256c4d18",
@@ -29830,8 +30012,8 @@
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "7f23d0f35560fb05",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.get": "823c857299f23cdd",
-                "invoices.issue": "c68b9d18d844f4af",
+                "invoices.get": "3acaac8a1c616fb0",
+                "invoices.issue": "abb054189f80e577",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.send": "3b2bc9ef256c4d18",
@@ -29977,8 +30159,8 @@
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "7f23d0f35560fb05",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.get": "823c857299f23cdd",
-                "invoices.issue": "c68b9d18d844f4af",
+                "invoices.get": "3acaac8a1c616fb0",
+                "invoices.issue": "abb054189f80e577",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.send": "3b2bc9ef256c4d18",
@@ -30054,7 +30236,7 @@
                 "billing.audit_opening_rollover": "cb425f17e9208282",
                 "billing.audit_undated_collectible_invoices": "084b292db36f8292",
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
-                "billing_audit.stale_and_missing": "077504cc581225eb",
+                "billing_audit.stale_and_missing": "bc4d411827f77c27",
                 "billing_schedules.create": "ce808d037fdc2ee7",
                 "billing_schedules.generate": "b1849c503fd5dc21",
                 "billing_schedules.get": "fbb225cb7a29d6a7",
@@ -30097,15 +30279,15 @@
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.generate_period": "a736a25f33ed9607",
                 "invoices.hold_delivery": "5d5d70aa02fac988",
-                "invoices.issue": "c68b9d18d844f4af",
+                "invoices.issue": "abb054189f80e577",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
                 "invoices.release_delivery": "f703c8eb40f1ed80",
                 "invoices.send": "3b2bc9ef256c4d18",
                 "invoices.square_candidates": "09693c77227c6c63",
-                "invoices.square_link": "ada9370f7843994b",
-                "invoices.square_unlink": "8cf8da989ff01d40",
+                "invoices.square_link": "db9e316d78559f31",
+                "invoices.square_unlink": "91e0eb7deb5ad47f",
                 "invoices.update_details": "9c25cf205acf1a39",
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
@@ -30200,7 +30382,7 @@
                 "billing.audit_opening_rollover": "cb425f17e9208282",
                 "billing.audit_undated_collectible_invoices": "084b292db36f8292",
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
-                "billing_audit.stale_and_missing": "077504cc581225eb",
+                "billing_audit.stale_and_missing": "bc4d411827f77c27",
                 "billing_schedules.create": "ce808d037fdc2ee7",
                 "billing_schedules.generate": "b1849c503fd5dc21",
                 "billing_schedules.get": "fbb225cb7a29d6a7",
@@ -30243,15 +30425,15 @@
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.generate_period": "a736a25f33ed9607",
                 "invoices.hold_delivery": "5d5d70aa02fac988",
-                "invoices.issue": "c68b9d18d844f4af",
+                "invoices.issue": "abb054189f80e577",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
                 "invoices.release_delivery": "f703c8eb40f1ed80",
                 "invoices.send": "3b2bc9ef256c4d18",
                 "invoices.square_candidates": "09693c77227c6c63",
-                "invoices.square_link": "ada9370f7843994b",
-                "invoices.square_unlink": "8cf8da989ff01d40",
+                "invoices.square_link": "db9e316d78559f31",
+                "invoices.square_unlink": "91e0eb7deb5ad47f",
                 "invoices.update_details": "9c25cf205acf1a39",
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
@@ -30420,7 +30602,7 @@
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "7f23d0f35560fb05",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.issue": "c68b9d18d844f4af",
+                "invoices.issue": "abb054189f80e577",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.send": "3b2bc9ef256c4d18",
@@ -30564,7 +30746,7 @@
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "7f23d0f35560fb05",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.issue": "c68b9d18d844f4af",
+                "invoices.issue": "abb054189f80e577",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.send": "3b2bc9ef256c4d18",
@@ -30708,7 +30890,7 @@
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "7f23d0f35560fb05",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.issue": "c68b9d18d844f4af",
+                "invoices.issue": "abb054189f80e577",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.send": "3b2bc9ef256c4d18",
@@ -30852,7 +31034,7 @@
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "7f23d0f35560fb05",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.issue": "c68b9d18d844f4af",
+                "invoices.issue": "abb054189f80e577",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.send": "3b2bc9ef256c4d18",
@@ -31677,7 +31859,7 @@
                 "billing.audit_opening_rollover": "cb425f17e9208282",
                 "billing.audit_undated_collectible_invoices": "084b292db36f8292",
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
-                "billing_audit.stale_and_missing": "077504cc581225eb",
+                "billing_audit.stale_and_missing": "bc4d411827f77c27",
                 "billing_schedules.create": "ce808d037fdc2ee7",
                 "billing_schedules.generate": "b1849c503fd5dc21",
                 "billing_schedules.get": "fbb225cb7a29d6a7",
@@ -31716,17 +31898,17 @@
                 "invoices.create_draft": "7f23d0f35560fb05",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.generate_period": "a736a25f33ed9607",
-                "invoices.get": "823c857299f23cdd",
+                "invoices.get": "3acaac8a1c616fb0",
                 "invoices.hold_delivery": "5d5d70aa02fac988",
-                "invoices.issue": "c68b9d18d844f4af",
+                "invoices.issue": "abb054189f80e577",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
                 "invoices.release_delivery": "f703c8eb40f1ed80",
                 "invoices.send": "3b2bc9ef256c4d18",
                 "invoices.square_candidates": "09693c77227c6c63",
-                "invoices.square_link": "ada9370f7843994b",
-                "invoices.square_unlink": "8cf8da989ff01d40",
+                "invoices.square_link": "db9e316d78559f31",
+                "invoices.square_unlink": "91e0eb7deb5ad47f",
                 "invoices.update_details": "9c25cf205acf1a39",
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
@@ -31826,7 +32008,7 @@
                 "billing.audit_opening_rollover": "cb425f17e9208282",
                 "billing.audit_undated_collectible_invoices": "084b292db36f8292",
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
-                "billing_audit.stale_and_missing": "077504cc581225eb",
+                "billing_audit.stale_and_missing": "bc4d411827f77c27",
                 "billing_schedules.create": "ce808d037fdc2ee7",
                 "billing_schedules.generate": "b1849c503fd5dc21",
                 "billing_schedules.get": "fbb225cb7a29d6a7",
@@ -31865,17 +32047,17 @@
                 "invoices.create_draft": "7f23d0f35560fb05",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.generate_period": "a736a25f33ed9607",
-                "invoices.get": "823c857299f23cdd",
+                "invoices.get": "3acaac8a1c616fb0",
                 "invoices.hold_delivery": "5d5d70aa02fac988",
-                "invoices.issue": "c68b9d18d844f4af",
+                "invoices.issue": "abb054189f80e577",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
                 "invoices.release_delivery": "f703c8eb40f1ed80",
                 "invoices.send": "3b2bc9ef256c4d18",
                 "invoices.square_candidates": "09693c77227c6c63",
-                "invoices.square_link": "ada9370f7843994b",
-                "invoices.square_unlink": "8cf8da989ff01d40",
+                "invoices.square_link": "db9e316d78559f31",
+                "invoices.square_unlink": "91e0eb7deb5ad47f",
                 "invoices.update_details": "9c25cf205acf1a39",
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
@@ -32046,8 +32228,8 @@
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "7f23d0f35560fb05",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.get": "823c857299f23cdd",
-                "invoices.issue": "c68b9d18d844f4af",
+                "invoices.get": "3acaac8a1c616fb0",
+                "invoices.issue": "abb054189f80e577",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.send": "3b2bc9ef256c4d18",
@@ -32193,8 +32375,8 @@
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "7f23d0f35560fb05",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.get": "823c857299f23cdd",
-                "invoices.issue": "c68b9d18d844f4af",
+                "invoices.get": "3acaac8a1c616fb0",
+                "invoices.issue": "abb054189f80e577",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.send": "3b2bc9ef256c4d18",
@@ -32340,8 +32522,8 @@
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "7f23d0f35560fb05",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.get": "823c857299f23cdd",
-                "invoices.issue": "c68b9d18d844f4af",
+                "invoices.get": "3acaac8a1c616fb0",
+                "invoices.issue": "abb054189f80e577",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.send": "3b2bc9ef256c4d18",
@@ -32487,8 +32669,8 @@
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "7f23d0f35560fb05",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.get": "823c857299f23cdd",
-                "invoices.issue": "c68b9d18d844f4af",
+                "invoices.get": "3acaac8a1c616fb0",
+                "invoices.issue": "abb054189f80e577",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.send": "3b2bc9ef256c4d18",
