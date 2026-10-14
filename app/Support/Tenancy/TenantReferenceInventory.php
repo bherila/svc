@@ -116,6 +116,7 @@ final class TenantReferenceInventory
             // Square (#438): SVC's links to records held in Square.
             TenantReference::enforcedBy('company_square_customers', 'client_company_id', 'client_companies', 'csqc_ws_company_fk'),
             TenantReference::enforcedBy('invoice_square_links', 'client_invoice_id', 'client_invoices', 'isql_ws_invoice_fk'),
+            TenantReference::enforcedBy('invoice_reminder_logs', 'client_invoice_id', 'client_invoices', 'irl_ws_invoice_fk'),
 
             // Stripe.
             TenantReference::enforcedBy('client_stripe_payment_methods', 'client_stripe_customer_id', 'client_stripe_customers', 'cspm_ws_customer_fk'),

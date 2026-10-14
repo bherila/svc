@@ -76,10 +76,11 @@ the majority order won and the minority is named as an inversion below.
 | 23 | `client_attachments` | Prepared attachment publication locks its tenant parent before its recovery row; all byte I/O precedes these locks |
 | 24 | `client_invoice_email_deliveries` | A short post-commit client-email claim, or the result row after its invoice is locked so both sides of the result commit together |
 | 25 | `client_invoice_administrator_notifications` | A short post-commit administrator-email claim; never co-acquired with billing locks |
-| 26 | `oauth_access_tokens` | Agent disconnection, which takes no other lock; orders only against itself |
-| 27 | `stripe_payment_method_states` | Provider state, a family of its own |
-| 28 | `client_stripe_customers` |  |
-| 29 | `client_stripe_payment_methods` |  |
+| 26 | `invoice_reminder_logs` | A payment reminder's claim, retry or result, always after its invoice is locked (#438) |
+| 27 | `oauth_access_tokens` | Agent disconnection, which takes no other lock; orders only against itself |
+| 28 | `stripe_payment_method_states` | Provider state, a family of its own |
+| 29 | `client_stripe_customers` |  |
+| 30 | `client_stripe_payment_methods` |  |
 
 The company being *last* is the one entry that reads wrong and is right. It
 looks like a parent, so the intuitive order puts it first; the code puts it at
@@ -117,6 +118,7 @@ ClientInvoice, ClientCompany                                   issuing, credit s
 ClientInvoice, ClientCompany                                   disabling automatic delivery after locking the affected invoices
 ClientInvoice, ClientInvoiceLine                               issued correction
 ClientInvoice, ClientInvoiceEmailDelivery                      atomic client-delivery result persistence
+ClientInvoice, InvoiceReminderLog                              payment reminder claim, retry and result
 ClientAgreement, ClientInvoice, Workspace,
     WorkspaceInvoiceCounter, ClientTimeEntry, ClientTask       cadence generation
 ClientAgreement, ClientInvoice, Workspace,
