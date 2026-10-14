@@ -34,6 +34,7 @@ use App\Support\Access\PortalAccessScope;
 use App\Support\Access\PortalInvitationStatus;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\AgentApi\Presenters\AgreementReadPresenter;
+use App\Support\AgentApi\Presenters\PaymentReminderPresenter;
 use App\Support\AgentApi\Presenters\SquareLinkPresenter;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceLineDetail;
@@ -365,6 +366,9 @@ class ClientDirectoryController extends Controller
                 : null,
             'invoice' => $this->invoicePayload($clientInvoice),
             // The link itself, through the API the website shares with agents.
+            // Payment reminders (#438): whether one may be sent now and with
+            // which link, the client's cadence, and every reminder sent.
+            'payment_reminders' => $manages ? $this->paymentRemindersOf($workspace, $clientInvoice) : null,
             'square' => $square === null ? null : $square + [
                 // "View or pay in Square", from the mirror's copy of Square's own page address.
                 'hosted_page' => app(SquareInvoicePage::class)->forInvoice($workspace, $clientInvoice),
@@ -813,7 +817,24 @@ class ClientDirectoryController extends Controller
                 'name' => $member->name,
             ])->values()->all(),
             'portal' => $this->portalAccess($workspace, $clientCompany),
+            // The automatic payment reminder cadence (#438), switched through
+            // the API the website shares with agents.
+            'payment_reminders' => app(PaymentReminderPresenter::class)->company($clientCompany) + [
+                'update_href' => route('agent-api.v1.clients.payment-reminders.update', [$workspace, $clientCompany->public_id], absolute: false),
+            ],
         ]);
+    }
+
+    /** @return array<string, mixed> */
+    private function paymentRemindersOf(Workspace $workspace, ClientInvoice $invoice): array
+    {
+        $reminders = app(PaymentReminderPresenter::class)->invoice($workspace, $invoice);
+
+        return $reminders + [
+            'send_href' => $reminders['manual']['available'] === true
+                ? route('agent-api.v1.invoices.reminders.store', [$workspace, $invoice->public_id], absolute: false)
+                : null,
+        ];
     }
 
     /**

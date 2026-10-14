@@ -11,7 +11,7 @@ final class LayoutWorkflowTest extends TestCase
     {
         $workflow = Yaml::parseFile(dirname(__DIR__, 3).'/.github/workflows/tests.yml');
         $selected = [];
-        foreach (['portal' => ['--portal-access', 'portal-access-layout'], 'correction' => ['--invoice-correction', 'invoice-correction-layout'], 'square' => ['--square', 'square-layout']] as $lane => [$mode, $artifact]) {
+        foreach (['portal' => ['--portal-access', 'portal-access-layout'], 'correction' => ['--invoice-correction', 'invoice-correction-layout'], 'square' => ['--square', 'square-layout'], 'reminder' => ['--reminders', 'reminder-layout']] as $lane => [$mode, $artifact]) {
             $matches = [];
             foreach ($workflow['jobs'] as $id => $job) {
                 if (! str_contains($job['if'] ?? '', 'inputs.'.$lane.'_layout')) {
@@ -23,7 +23,7 @@ final class LayoutWorkflowTest extends TestCase
             $selected[] = array_key_first($matches);
             $job = reset($matches);
             $this->assertSame([], $job['needs'] ?? [], 'Independent layout jobs must be concurrent.');
-            foreach (array_diff(['portal', 'correction', 'square'], [$lane]) as $other) {
+            foreach (array_diff(['portal', 'correction', 'square', 'reminder'], [$lane]) as $other) {
                 $this->assertStringNotContainsString('inputs.'.$other.'_layout', $job['if']);
             }
             $checks = array_values(array_filter($job['steps'], static fn (array $step): bool => str_contains($step['run'] ?? '', 'scripts/check-layout.mjs')));
@@ -33,6 +33,6 @@ final class LayoutWorkflowTest extends TestCase
             $this->assertCount(1, $uploads);
             $this->assertSame($artifact, $uploads[0]['with']['name']);
         }
-        $this->assertCount(3, array_unique($selected));
+        $this->assertCount(4, array_unique($selected));
     }
 }

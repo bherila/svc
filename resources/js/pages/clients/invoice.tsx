@@ -2,6 +2,8 @@ import { Head, Link, router } from '@inertiajs/react';
 import { useState } from 'react';
 import { InvoiceLineRows } from '@/components/billing/invoice-line-detail';
 import type { InvoiceLineItem } from '@/components/billing/invoice-line-detail';
+import { PaymentRemindersCard } from '@/components/billing/payment-reminders';
+import type { InvoiceRemindersState } from '@/components/billing/payment-reminders';
 import { SendInvoiceDialog } from '@/components/billing/send-invoice-dialog';
 import { SquareInvoiceCard } from '@/components/billing/square-link';
 import type { InvoiceSquareState } from '@/components/billing/square-link';
@@ -164,6 +166,7 @@ export default function ClientInvoiceDetail({
     payments,
     timezone,
     square = null,
+    payment_reminders: paymentReminders = null,
 }: {
     company: { id: string; name: string };
     invoices_href: string;
@@ -191,6 +194,8 @@ export default function ClientInvoiceDetail({
     payments: InvoicePayment[];
     /** Who collects this invoice and its Square link; null for a viewer who cannot manage it. */
     square?: InvoiceSquareState | null;
+    /** Payment reminders for this invoice; null for a viewer who cannot manage it. */
+    payment_reminders?: InvoiceRemindersState | null;
 }) {
     const [paying, setPaying] = useState(false);
     const [sending, setSending] = useState(false);
@@ -872,6 +877,10 @@ export default function ClientInvoiceDetail({
                 </header>
 
                 {square !== null && <SquareInvoiceCard square={square} />}
+
+                {paymentReminders !== null && (
+                    <PaymentRemindersCard reminders={paymentReminders} />
+                )}
 
                 {(invoice.automatic_delivery_status ?? null) !== null && (
                     <Card>

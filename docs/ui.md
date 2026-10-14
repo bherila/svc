@@ -196,6 +196,11 @@ For the Square explore and linked operator/portal invoice pages, dispatch the
 mirrored hosted payment URL. Download and inspect every screenshot. The same
 focused harness is `node scripts/check-layout.mjs --square`.
 
+For payment reminders, dispatch with `reminder_layout: true`: its
+`reminder-layout` artifact covers the operator invoice with a reminder log of
+oversized recipients and reasons, the send confirmation, and the client cadence
+switch on settings. Locally, `node scripts/check-layout.mjs --reminders`.
+
 Run from a checkout without an active Vite dev server. The command refuses an
 existing `public/hot` marker and leaves it untouched. It builds current assets,
 creates a fresh synthetic SQLite database,
