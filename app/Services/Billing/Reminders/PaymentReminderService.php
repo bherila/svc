@@ -205,7 +205,10 @@ final class PaymentReminderService
      * The scheduler's pass: every open invoice of a client with the cadence on
      * whose due date puts a step within reach, in id order, sending at most
      * `$limit` reminders. The policy decides each one exactly; this query only
-     * narrows the candidates, with a day of slack either side for time zones.
+     * narrows the candidates, with a day of slack for time zones. There is no
+     * lower bound on the due date: an invoice leaves the scan once its final
+     * step is settled, so a final reminder the scheduler missed while it was
+     * down is still sent when it comes back.
      */
     public function dispatchAutomaticDue(int $limit = 50): int
     {
@@ -216,8 +219,14 @@ final class PaymentReminderService
             ->whereIn('client_invoices.status', InvoiceStatus::collectible())
             ->where('client_invoices.balance_amount', '>', 0)
             ->whereNotNull('client_invoices.due_date')
-            ->where('client_invoices.due_date', '>=', $today->subDays(PaymentReminderStep::TwoWeeksOverdue->offsetDays() + 8)->toDateString())
             ->where('client_invoices.due_date', '<=', $today->addDays(1 - PaymentReminderStep::BeforeDue->offsetDays())->toDateString())
+            // The final step is sent, in flight, cancelled or out of retries:
+            // nothing more can fall due for this invoice.
+            ->whereNotExists(fn (QueryBuilder $final): QueryBuilder => $final->selectRaw('1')->from('invoice_reminder_logs')
+                ->whereColumn('invoice_reminder_logs.workspace_id', 'client_invoices.workspace_id')
+                ->whereColumn('invoice_reminder_logs.client_invoice_id', 'client_invoices.id')
+                ->where('invoice_reminder_logs.cadence_step', PaymentReminderStep::TwoWeeksOverdue->value)
+                ->whereNull('invoice_reminder_logs.next_attempt_at'))
             ->whereExists(fn (QueryBuilder $company): QueryBuilder => $company->selectRaw('1')->from('client_companies')
                 ->whereColumn('client_companies.id', 'client_invoices.client_company_id')
                 ->whereColumn('client_companies.workspace_id', 'client_invoices.workspace_id')

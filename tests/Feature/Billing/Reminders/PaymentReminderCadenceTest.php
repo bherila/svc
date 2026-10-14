@@ -126,6 +126,20 @@ final class PaymentReminderCadenceTest extends TestCase
         Mail::assertNothingSent();
     }
 
+    public function test_a_final_step_missed_while_the_scheduler_was_down_is_still_sent_once(): void
+    {
+        [$workspace, , , $invoice] = $this->reminderFixture(cadence: true);
+        $invoice->forceFill(['issue_date' => '2030-01-01', 'due_date' => '2030-01-15'])->save();
+        // Seven weeks overdue, with no step ever sent.
+        $this->at('2030-03-05 10:00');
+
+        $this->assertSame(1, app(PaymentReminderService::class)->dispatchAutomaticDue());
+        $this->assertSame(0, app(PaymentReminderService::class)->dispatchAutomaticDue());
+
+        $this->assertSame(PaymentReminderStep::TwoWeeksOverdue, InvoiceReminderLog::query()->where('workspace_id', $workspace->id)->sole()->cadence_step);
+        Mail::assertSentCount(1);
+    }
+
     public function test_a_step_already_claimed_elsewhere_is_never_sent_twice(): void
     {
         [$workspace, , , $invoice] = $this->reminderFixture(cadence: true);
