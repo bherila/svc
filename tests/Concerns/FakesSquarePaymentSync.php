@@ -27,6 +27,8 @@ trait FakesSquarePaymentSync
     /** @var array<string, array<string, mixed>> */
     private array $squarePayments = [];
 
+    private ?int $squareInvoiceFailureStatus = null;
+
     /** @return array{Workspace, User, ClientCompany, ClientInvoice} */
     private function paymentFixture(): array
     {
@@ -50,6 +52,10 @@ trait FakesSquarePaymentSync
         Http::fake(function (Request $request) {
             $path = rawurldecode((string) parse_url($request->url(), PHP_URL_PATH));
             if ($path === '/v2/invoices/inv_fixture_1') {
+                if ($this->squareInvoiceFailureStatus !== null) {
+                    return Http::response(['errors' => [['category' => 'AUTHENTICATION_ERROR', 'code' => 'UNAUTHORIZED']]], $this->squareInvoiceFailureStatus);
+                }
+
                 return Http::response(['invoice' => $this->paymentInvoice]);
             }
             if ($path === '/v2/orders/order_fixture_1') {

@@ -78,6 +78,19 @@ final class SquareRequestFailed extends HttpException
         return new self(502, 'Square returned a response svc cannot read.');
     }
 
+    /** Only record-specific failures let a reconciliation sweep keep reading. */
+    public function isRecordSpecific(): bool
+    {
+        return match ($this->getStatusCode()) {
+            404 => $this->squareCode === 'NOT_FOUND',
+            422 => true,
+            // Credential refusals always carry a sanitized category; malformed
+            // record responses carry none, even though both render as 502.
+            502 => $this->squareCategory === null,
+            default => false,
+        };
+    }
+
     /** Square's category and code are upper snake case; anything else is not repeated. */
     private static function token(?string $value): string
     {

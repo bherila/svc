@@ -5,10 +5,14 @@ namespace Tests\Feature\Square;
 use App\Models\ClientInvoicePayment;
 use App\Models\InvoiceSquareLink;
 use App\Models\Workspace;
+use App\Services\Square\SquareLinkService;
 use App\Services\Square\SquarePaymentReconciler;
 use App\Services\Square\SquarePaymentRecorder;
 use App\Services\Square\SquareRequestFailed;
+use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Concurrency\LockOrderRecorder;
+use App\Support\Square\SquareInvoiceReference;
+use App\Support\Square\SquareMatchMethod;
 use App\Support\Square\SquarePaymentFacts;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
@@ -92,6 +96,27 @@ final class SquarePaymentSyncTest extends TestCase
         $this->assertFalse(app(SquarePaymentRecorder::class)->refundExisting($other, $facts));
         $this->assertSame([], iterator_to_array(app(SquarePaymentReconciler::class)->recordedPayments($other)));
         $this->assertSame(0, $invoice->fresh()->balance_amount);
+    }
+
+    public function test_sweep_stops_on_shared_adapter_failure_but_continues_for_a_missing_record(): void
+    {
+        [$workspace, $owner, , $invoice] = $this->paymentFixture();
+        config(['services.square.max_attempts' => 1]);
+        foreach (['second', 'third'] as $suffix) {
+            $other = $invoice->replicate(['public_id']);
+            $other->forceFill(['invoice_number' => 'SYNTHETIC-'.$suffix])->save();
+            app(SquareLinkService::class)->link($workspace, $other, $owner, AgentApiVersion::for($other), new SquareInvoiceReference('inv_fixture_'.$suffix, '000002-R-0001', 'USD', SquareMatchMethod::Manual), false);
+        }
+        foreach ([401, 403, 429, 503] as $status) {
+            $this->squareInvoiceFailureStatus = $status;
+            $before = count(Http::recorded());
+            $this->artisan('svc:square:reconcile-payments')->assertFailed();
+            $this->assertSame(1, count(Http::recorded()) - $before, 'The shared failure must stop further adapter calls.');
+        }
+        $this->squareInvoiceFailureStatus = 404;
+        $before = count(Http::recorded());
+        $this->artisan('svc:square:reconcile-payments')->assertFailed();
+        $this->assertSame(3, count(Http::recorded()) - $before);
     }
 
     public function test_an_unlinked_or_foreign_invoice_is_not_fetched_or_written(): void

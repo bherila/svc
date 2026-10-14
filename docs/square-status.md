@@ -23,6 +23,8 @@ webhook signature key, using the existing Square connection configuration.
 Recorded Square payments are also swept independently of current links, so a
 later refund still corrects the original invoice after unlinking or re-pointing.
 Historical links may recover existing refunds but never import new payments.
+Connection, credential and rate-limit failures stop a sweep immediately; missing
+or unreadable individual records can be skipped so other records are reconciled.
 
 Completed full and partial payments use the received-payment service, with
 provider `square` and the payment identifier as the existing unique provider key.

@@ -34,14 +34,28 @@ final class ReconcileSquarePaymentsCommand extends Command
         foreach ($reconciler->linkedInvoices($workspace) as $link) {
             try {
                 $reconciler->invoice($workspace, $link->square_invoice_id);
-            } catch (SquareRequestFailed|DomainException) {
+            } catch (SquareRequestFailed $failure) {
+                if (! $failure->isRecordSpecific()) {
+                    $this->components->warn('The Square connection is unavailable; stopping the sweep until the next scheduled attempt.');
+
+                    return self::FAILURE;
+                }
+                $failed++;
+            } catch (DomainException) {
                 $failed++;
             }
         }
         foreach ($reconciler->recordedPayments($workspace) as $payment) {
             try {
                 $reconciler->payment($workspace, (string) $payment->provider_payment_identifier);
-            } catch (SquareRequestFailed|DomainException) {
+            } catch (SquareRequestFailed $failure) {
+                if (! $failure->isRecordSpecific()) {
+                    $this->components->warn('The Square connection is unavailable; stopping the sweep until the next scheduled attempt.');
+
+                    return self::FAILURE;
+                }
+                $failed++;
+            } catch (DomainException) {
                 $failed++;
             }
         }
