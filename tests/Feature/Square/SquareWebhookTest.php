@@ -31,6 +31,15 @@ final class SquareWebhookTest extends TestCase
         $this->assertSame(0, ClientInvoicePayment::query()->count());
     }
 
+    public function test_oversized_unsigned_payload_is_refused_before_signature_hashing_or_work(): void
+    {
+        $this->paymentFixture();
+        $this->call('POST', '/api/webhooks/square', server: ['CONTENT_TYPE' => 'application/json'], content: str_repeat('x', 1_048_577))->assertStatus(413);
+        Http::assertNothingSent();
+        $this->assertSame(0, DB::table('square_webhook_receipts')->count());
+        $this->assertSame(0, ClientInvoicePayment::query()->count());
+    }
+
     public function test_signed_invoice_hint_refetches_and_duplicate_event_does_no_work(): void
     {
         [$workspace, , , $invoice] = $this->paymentFixture();

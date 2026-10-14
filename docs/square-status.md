@@ -5,7 +5,8 @@ under the application's configured `APP_URL`, for example
 `https://svc.example.test/api/webhooks/square`, for `invoice.updated`,
 `invoice.payment_made`, `payment.updated` and `refund.updated`.
 The local operator installs `SQUARE_WEBHOOK_SIGNATURE_KEY`; an absent key refuses
-every request with 403 before decoding, database work or Square reads.
+requests with 403 before decoding, database work or Square reads. Oversized bodies
+are refused with 413 before hashing.
 
 The receiver checks the base64 HMAC-SHA256 signature over that configured URL
 followed by the exact raw request body. It has no session, authentication or CSRF

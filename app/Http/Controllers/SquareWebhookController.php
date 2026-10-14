@@ -21,12 +21,12 @@ final class SquareWebhookController
     {
         $key = config('services.square.webhook_signature_key');
         $raw = $request->getContent();
+        if (strlen($raw) > 1_048_576) {
+            return response()->json(['message' => 'Webhook body is too large.'], 413);
+        }
         $url = rtrim((string) config('app.url'), '/').'/api/webhooks/square';
         if (! is_string($key) || trim($key) === '' || ! hash_equals(base64_encode(hash_hmac('sha256', $url.$raw, $key, true)), (string) $request->header('x-square-hmacsha256-signature'))) {
             return response()->json(['message' => 'Webhook signature refused.'], 403);
-        }
-        if (strlen($raw) > 1_048_576) {
-            return response()->json(['message' => 'Webhook body is too large.'], 413);
         }
         try {
             $event = json_decode($raw, true, flags: JSON_THROW_ON_ERROR);
