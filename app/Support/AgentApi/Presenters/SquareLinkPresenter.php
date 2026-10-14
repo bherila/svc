@@ -8,6 +8,7 @@ use App\Models\InvoiceSquareLink;
 use App\Models\User;
 use App\Services\Square\SquareCollectionGuard;
 use App\Services\Square\SquareLinkRepository;
+use App\Services\Square\SquarePaymentMismatchAudit;
 use App\Support\AgentApi\AgentApiVersion;
 
 /**
@@ -39,6 +40,7 @@ final class SquareLinkPresenter
             'link' => $link === null ? null : $this->link($link),
             'agreement_series_key' => $this->links->agreementSeriesKey($invoice),
             'square_collects' => $refusal !== null,
+            'payment_mismatch' => app(SquarePaymentMismatchAudit::class)->invoice($invoice->workspace, $invoice),
             'collection_refusal' => $refusal,
         ];
     }

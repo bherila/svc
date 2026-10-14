@@ -442,6 +442,10 @@ describe('client screens under data that does not fit', () => {
                     },
                     agreement_series_key: '000001',
                     square_collects: true,
+                    payment_mismatch: {
+                        code: 'paid_outside_square',
+                        dashboard_url: `https://squareupsandbox.com/dashboard/invoices/${LONG_SQUARE_ID}`,
+                    },
                     collection_refusal: LONG_DESCRIPTION,
                     link_href:
                         '/api/v1/workspaces/workspace-1/invoices/invoice-1/square-link',

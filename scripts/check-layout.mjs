@@ -329,6 +329,18 @@ try {
                 );
             }
 
+            if (screen === 'square_invoice') {
+                await expect(page.getByRole('alert')).toContainText(
+                    'Paid in SVC while Square still has an open balance',
+                );
+                await expect(
+                    page.getByRole('link', { name: 'the Square dashboard' }),
+                ).toHaveAttribute(
+                    'href',
+                    'https://squareupsandbox.com/dashboard/invoices/inv_fixture_layout',
+                );
+            }
+
             if (screen === 'proposal_acceptance') {
                 await expect(page.locator('#signer-name')).toBeVisible();
                 await expect(page.locator('#signer-title')).toBeVisible();
