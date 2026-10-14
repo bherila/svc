@@ -111,6 +111,52 @@ describe('payment reminders on an invoice', () => {
         ).toBeVisible();
     });
 
+    it('retries a send whose answer was lost with the same idempotency key', async () => {
+        const fetchMock = vi
+            .fn()
+            .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+            .mockResolvedValueOnce(
+                new Response(
+                    JSON.stringify({
+                        data: {
+                            status: 'sent',
+                            recipients: ['billing@reminders.example.test'],
+                            error_summary: null,
+                        },
+                    }),
+                    { status: 200 },
+                ),
+            );
+        vi.stubGlobal('fetch', fetchMock);
+        render(<PaymentRemindersCard reminders={reminders()} />);
+        const send = async () => {
+            fireEvent.click(
+                screen.getAllByRole('button', { name: 'Send reminder' })[0],
+            );
+            fireEvent.click(
+                screen
+                    .getAllByRole('button', { name: 'Send reminder' })
+                    .at(-1)!,
+            );
+        };
+
+        await send();
+        expect(
+            await screen.findByText(/SVC could not be reached/),
+        ).toBeVisible();
+        await send();
+        await vi.waitFor(() => expect(inertia.reload).toHaveBeenCalled());
+
+        const keys = fetchMock.mock.calls.map(
+            ([, init]) =>
+                (init as RequestInit & { headers: Record<string, string> })
+                    .headers['Idempotency-Key'],
+        );
+        expect(keys).toHaveLength(2);
+        expect(keys[0]).toBeTruthy();
+        expect(keys[1]).toBe(keys[0]);
+    });
+
     it('says why a reminder cannot be sent and offers no button', () => {
         render(
             <PaymentRemindersCard

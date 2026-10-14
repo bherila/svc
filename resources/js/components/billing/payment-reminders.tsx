@@ -23,7 +23,7 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table';
-import { apiRequest } from '@/lib/api';
+import { apiRequest, newIdempotencyKey } from '@/lib/api';
 import type { ApiSchema } from '@/lib/api';
 import { formatDay, formatTimestamp } from '@/lib/datetime';
 import { statusLabel } from '@/lib/labels';
@@ -76,6 +76,11 @@ export function PaymentRemindersCard({
 }) {
     const [confirming, setConfirming] = useState(false);
     const [busy, setBusy] = useState(false);
+    // One key per logical send, kept across retries until one succeeds.
+    // Sending changes nothing the invoice version could refuse, so a send
+    // that reached the server but whose answer was lost must replay, not
+    // email the client a second time.
+    const [sendKey, setSendKey] = useState<string | null>(null);
     const [notice, setNotice] = useState<{
         tone: 'status' | 'alert';
         text: string;
@@ -92,15 +97,19 @@ export function PaymentRemindersCard({
             expected_version: reminders.invoice_version,
             confirm: true,
         };
+        const key = sendKey ?? newIdempotencyKey();
+        setSendKey(key);
         setBusy(true);
         const result = await apiRequest<ApiSchema<'InvoiceReminder'>>(
             'POST',
             reminders.send_href,
             body,
+            key,
         );
         setConfirming(false);
 
         if (result.ok) {
+            setSendKey(null);
             setNotice(
                 result.data.status === 'sent'
                     ? {
