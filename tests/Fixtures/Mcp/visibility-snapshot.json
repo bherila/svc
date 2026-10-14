@@ -6111,6 +6111,244 @@
                     }
                 },
                 {
+                    "name": "companies.payment_reminders.get",
+                    "title": "Get client reminder cadence",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "workspace_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "client_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            }
+                        },
+                        "required": [
+                            "workspace_id",
+                            "client_id"
+                        ],
+                        "additionalProperties": false
+                    },
+                    "description": "Workspace managers only. Whether the automatic payment reminder cadence is on for a client, since when, its steps, and the client version companies.payment_reminders.set requires.",
+                    "annotations": {
+                        "readOnlyHint": true,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": false
+                    },
+                    "outputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "data"
+                        ],
+                        "properties": {
+                            "data": {
+                                "$ref": "#/$defs/CompanyPaymentReminders"
+                            }
+                        },
+                        "$defs": {
+                            "CompanyPaymentReminders": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "client_id",
+                                    "version",
+                                    "enabled",
+                                    "enabled_at",
+                                    "steps"
+                                ],
+                                "properties": {
+                                    "client_id": {
+                                        "$ref": "#/$defs/Uuid"
+                                    },
+                                    "version": {
+                                        "$ref": "#/$defs/Version"
+                                    },
+                                    "enabled": {
+                                        "type": "boolean"
+                                    },
+                                    "enabled_at": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date-time"
+                                    },
+                                    "steps": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "additionalProperties": false,
+                                            "required": [
+                                                "step",
+                                                "label",
+                                                "offset_days"
+                                            ],
+                                            "properties": {
+                                                "step": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "due_minus_3",
+                                                        "due",
+                                                        "due_plus_7",
+                                                        "due_plus_14"
+                                                    ]
+                                                },
+                                                "label": {
+                                                    "type": "string"
+                                                },
+                                                "offset_days": {
+                                                    "type": "integer"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            "Uuid": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "Version": {
+                                "type": "string",
+                                "pattern": "^[a-f0-9]{64}$"
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "companies.payment_reminders.set",
+                    "title": "Set client reminder cadence",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "workspace_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "client_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "expected_version": {
+                                "$ref": "#/$defs/Version"
+                            },
+                            "enabled": {
+                                "type": "boolean"
+                            },
+                            "idempotency_key": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 255
+                            }
+                        },
+                        "required": [
+                            "workspace_id",
+                            "client_id",
+                            "expected_version",
+                            "enabled",
+                            "idempotency_key"
+                        ],
+                        "additionalProperties": false,
+                        "$defs": {
+                            "Version": {
+                                "type": "string",
+                                "pattern": "^[a-f0-9]{64}$"
+                            }
+                        }
+                    },
+                    "description": "Workspace managers only. Turn a client's automatic payment reminder cadence on or off (3 days before the due date, on it, then 7 and 14 days after). Off by default. Turning it on never sends a step that fell due before; turning it off stops every step not yet sent. Recorded in the client history.",
+                    "annotations": {
+                        "readOnlyHint": false,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": false
+                    },
+                    "outputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "data"
+                        ],
+                        "properties": {
+                            "data": {
+                                "$ref": "#/$defs/CompanyPaymentReminders"
+                            }
+                        },
+                        "$defs": {
+                            "CompanyPaymentReminders": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "client_id",
+                                    "version",
+                                    "enabled",
+                                    "enabled_at",
+                                    "steps"
+                                ],
+                                "properties": {
+                                    "client_id": {
+                                        "$ref": "#/$defs/Uuid"
+                                    },
+                                    "version": {
+                                        "$ref": "#/$defs/Version"
+                                    },
+                                    "enabled": {
+                                        "type": "boolean"
+                                    },
+                                    "enabled_at": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date-time"
+                                    },
+                                    "steps": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "additionalProperties": false,
+                                            "required": [
+                                                "step",
+                                                "label",
+                                                "offset_days"
+                                            ],
+                                            "properties": {
+                                                "step": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "due_minus_3",
+                                                        "due",
+                                                        "due_plus_7",
+                                                        "due_plus_14"
+                                                    ]
+                                                },
+                                                "label": {
+                                                    "type": "string"
+                                                },
+                                                "offset_days": {
+                                                    "type": "integer"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            "Uuid": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "Version": {
+                                "type": "string",
+                                "pattern": "^[a-f0-9]{64}$"
+                            }
+                        }
+                    }
+                },
+                {
                     "name": "companies.square_customer.clear",
                     "title": "Clear client Square customer",
                     "inputSchema": {
@@ -11548,6 +11786,406 @@
                     }
                 },
                 {
+                    "name": "invoices.reminders.list",
+                    "title": "List invoice payment reminders",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "workspace_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "invoice_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            }
+                        },
+                        "required": [
+                            "workspace_id",
+                            "invoice_id"
+                        ],
+                        "additionalProperties": false
+                    },
+                    "description": "Workspace managers only. Whether a payment reminder may be sent for an invoice now, to whom and with which pay link (Square's own payment page for an invoice Square collects, otherwise the client portal or the PDF), where the client's automatic cadence stands for it, and the latest 50 reminders sent, with who or what sent them and the result.",
+                    "annotations": {
+                        "readOnlyHint": true,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": false
+                    },
+                    "outputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "data"
+                        ],
+                        "properties": {
+                            "data": {
+                                "$ref": "#/$defs/InvoiceReminders"
+                            }
+                        },
+                        "$defs": {
+                            "InvoiceReminder": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "id",
+                                    "origin",
+                                    "step",
+                                    "channel",
+                                    "pay_link",
+                                    "square_invoice_number",
+                                    "recipients",
+                                    "subject",
+                                    "currency",
+                                    "amount_due",
+                                    "due_on",
+                                    "status",
+                                    "attempt_number",
+                                    "triggered_by",
+                                    "triggered_by_name",
+                                    "queued_at",
+                                    "sent_at",
+                                    "failed_at",
+                                    "next_attempt_at",
+                                    "error_summary"
+                                ],
+                                "properties": {
+                                    "id": {
+                                        "$ref": "#/$defs/Uuid"
+                                    },
+                                    "origin": {
+                                        "type": "string",
+                                        "enum": [
+                                            "manual",
+                                            "automatic"
+                                        ]
+                                    },
+                                    "step": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "enum": [
+                                            "due_minus_3",
+                                            "due",
+                                            "due_plus_7",
+                                            "due_plus_14",
+                                            null
+                                        ],
+                                        "description": "The cadence step of an automatic reminder; null for one a person sent."
+                                    },
+                                    "channel": {
+                                        "type": "string",
+                                        "enum": [
+                                            "email"
+                                        ]
+                                    },
+                                    "pay_link": {
+                                        "type": "string",
+                                        "enum": [
+                                            "square",
+                                            "svc_portal",
+                                            "none"
+                                        ],
+                                        "description": "square: Square's own payment page for an invoice Square collects. svc_portal: the invoice in the client portal, a sign-in page with no token. none: no link; the invoice PDF was attached."
+                                    },
+                                    "square_invoice_number": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 191
+                                    },
+                                    "recipients": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string",
+                                            "format": "email"
+                                        }
+                                    },
+                                    "subject": {
+                                        "type": "string",
+                                        "maxLength": 255
+                                    },
+                                    "currency": {
+                                        "type": "string",
+                                        "pattern": "^[A-Z]{3}$"
+                                    },
+                                    "amount_due": {
+                                        "type": "integer",
+                                        "description": "The balance the reminder stated, in minor units."
+                                    },
+                                    "due_on": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date"
+                                    },
+                                    "status": {
+                                        "type": "string",
+                                        "enum": [
+                                            "pending",
+                                            "sending",
+                                            "sent",
+                                            "failed",
+                                            "cancelled"
+                                        ],
+                                        "description": "sent and failed are the mail provider's answer; cancelled was stopped before anything left because the invoice or its Square link changed. A reminder left sending was accepted by the provider without its result being saved."
+                                    },
+                                    "attempt_number": {
+                                        "type": "integer",
+                                        "minimum": 1
+                                    },
+                                    "triggered_by": {
+                                        "type": "string",
+                                        "enum": [
+                                            "website",
+                                            "agent",
+                                            "scheduler"
+                                        ]
+                                    },
+                                    "triggered_by_name": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "description": "The person who sent it or on whose behalf an agent did; null for the cadence."
+                                    },
+                                    "queued_at": {
+                                        "type": "string",
+                                        "format": "date-time"
+                                    },
+                                    "sent_at": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date-time"
+                                    },
+                                    "failed_at": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date-time"
+                                    },
+                                    "next_attempt_at": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date-time",
+                                        "description": "When the cadence retries a failed step; null when it will not."
+                                    },
+                                    "error_summary": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ]
+                                    }
+                                }
+                            },
+                            "InvoiceReminders": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "invoice_id",
+                                    "invoice_version",
+                                    "manual",
+                                    "cadence",
+                                    "reminders"
+                                ],
+                                "properties": {
+                                    "invoice_id": {
+                                        "$ref": "#/$defs/Uuid"
+                                    },
+                                    "invoice_version": {
+                                        "$ref": "#/$defs/Version"
+                                    },
+                                    "manual": {
+                                        "type": "object",
+                                        "additionalProperties": false,
+                                        "required": [
+                                            "available",
+                                            "refusal",
+                                            "pay_link",
+                                            "recipients"
+                                        ],
+                                        "properties": {
+                                            "available": {
+                                                "type": "boolean",
+                                                "description": "Whether invoices.send_reminder would send now."
+                                            },
+                                            "refusal": {
+                                                "oneOf": [
+                                                    {
+                                                        "$ref": "#/$defs/PaymentReminderRefusal"
+                                                    },
+                                                    {
+                                                        "type": "null"
+                                                    }
+                                                ]
+                                            },
+                                            "pay_link": {
+                                                "type": [
+                                                    "string",
+                                                    "null"
+                                                ],
+                                                "enum": [
+                                                    "square",
+                                                    "svc_portal",
+                                                    "none",
+                                                    null
+                                                ]
+                                            },
+                                            "recipients": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "string",
+                                                    "format": "email"
+                                                }
+                                            }
+                                        }
+                                    },
+                                    "cadence": {
+                                        "type": "object",
+                                        "additionalProperties": false,
+                                        "required": [
+                                            "enabled",
+                                            "enabled_at",
+                                            "hold",
+                                            "schedule"
+                                        ],
+                                        "properties": {
+                                            "enabled": {
+                                                "type": "boolean"
+                                            },
+                                            "enabled_at": {
+                                                "type": [
+                                                    "string",
+                                                    "null"
+                                                ],
+                                                "format": "date-time"
+                                            },
+                                            "hold": {
+                                                "oneOf": [
+                                                    {
+                                                        "$ref": "#/$defs/PaymentReminderRefusal"
+                                                    },
+                                                    {
+                                                        "type": "null"
+                                                    }
+                                                ],
+                                                "description": "What stops the cadence for this invoice whatever the date; null when its steps are sent as they fall due."
+                                            },
+                                            "schedule": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "object",
+                                                    "additionalProperties": false,
+                                                    "required": [
+                                                        "step",
+                                                        "label",
+                                                        "scheduled_on",
+                                                        "state"
+                                                    ],
+                                                    "properties": {
+                                                        "step": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "due_minus_3",
+                                                                "due",
+                                                                "due_plus_7",
+                                                                "due_plus_14"
+                                                            ]
+                                                        },
+                                                        "label": {
+                                                            "type": "string"
+                                                        },
+                                                        "scheduled_on": {
+                                                            "type": [
+                                                                "string",
+                                                                "null"
+                                                            ],
+                                                            "format": "date"
+                                                        },
+                                                        "state": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "pending",
+                                                                "sending",
+                                                                "sent",
+                                                                "failed",
+                                                                "cancelled",
+                                                                "upcoming",
+                                                                "passed",
+                                                                "unscheduled"
+                                                            ]
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    },
+                                    "reminders": {
+                                        "type": "array",
+                                        "maxItems": 50,
+                                        "items": {
+                                            "$ref": "#/$defs/InvoiceReminder"
+                                        }
+                                    }
+                                }
+                            },
+                            "PaymentReminderRefusal": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "code",
+                                    "message"
+                                ],
+                                "properties": {
+                                    "code": {
+                                        "type": "string",
+                                        "enum": [
+                                            "not_open",
+                                            "nothing_due",
+                                            "no_recipients",
+                                            "in_flight",
+                                            "square_not_linked",
+                                            "square_page_missing",
+                                            "square_not_open",
+                                            "paid_outside_square",
+                                            "cadence_off",
+                                            "no_due_date",
+                                            "square_autopay",
+                                            "square_sends_reminders",
+                                            "not_yet_due",
+                                            "step_handled",
+                                            "before_cadence_enabled",
+                                            "before_issue",
+                                            "outside_sending_hours"
+                                        ]
+                                    },
+                                    "message": {
+                                        "type": "string"
+                                    }
+                                },
+                                "description": "Why a payment reminder is not sent: a stable code and a sentence for the operator."
+                            },
+                            "Uuid": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "Version": {
+                                "type": "string",
+                                "pattern": "^[a-f0-9]{64}$"
+                            }
+                        }
+                    }
+                },
+                {
                     "name": "invoices.send",
                     "title": "Send invoice",
                     "inputSchema": {
@@ -11708,6 +12346,236 @@
                             "Version": {
                                 "type": "string",
                                 "pattern": "^[a-f0-9]{64}$"
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "invoices.send_reminder",
+                    "title": "Send invoice payment reminder",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "workspace_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "invoice_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "expected_version": {
+                                "$ref": "#/$defs/Version"
+                            },
+                            "confirm": {
+                                "type": "boolean",
+                                "const": true
+                            },
+                            "idempotency_key": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 255
+                            }
+                        },
+                        "required": [
+                            "workspace_id",
+                            "invoice_id",
+                            "expected_version",
+                            "confirm",
+                            "idempotency_key"
+                        ],
+                        "additionalProperties": false,
+                        "$defs": {
+                            "Version": {
+                                "type": "string",
+                                "pattern": "^[a-f0-9]{64}$"
+                            }
+                        }
+                    },
+                    "description": "Workspace managers only. Email the client a payment reminder for an open invoice now, only after the user explicitly confirms, from SVC's usual invoice sender to the client's billing address and portal users. An invoice Square collects carries Square's own payment page and is refused without one; SVC never sends its own payment link for it. Every reminder is logged; the response is the reminder with its result.",
+                    "annotations": {
+                        "readOnlyHint": false,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": false
+                    },
+                    "outputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "data"
+                        ],
+                        "properties": {
+                            "data": {
+                                "$ref": "#/$defs/InvoiceReminder"
+                            }
+                        },
+                        "$defs": {
+                            "InvoiceReminder": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "id",
+                                    "origin",
+                                    "step",
+                                    "channel",
+                                    "pay_link",
+                                    "square_invoice_number",
+                                    "recipients",
+                                    "subject",
+                                    "currency",
+                                    "amount_due",
+                                    "due_on",
+                                    "status",
+                                    "attempt_number",
+                                    "triggered_by",
+                                    "triggered_by_name",
+                                    "queued_at",
+                                    "sent_at",
+                                    "failed_at",
+                                    "next_attempt_at",
+                                    "error_summary"
+                                ],
+                                "properties": {
+                                    "id": {
+                                        "$ref": "#/$defs/Uuid"
+                                    },
+                                    "origin": {
+                                        "type": "string",
+                                        "enum": [
+                                            "manual",
+                                            "automatic"
+                                        ]
+                                    },
+                                    "step": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "enum": [
+                                            "due_minus_3",
+                                            "due",
+                                            "due_plus_7",
+                                            "due_plus_14",
+                                            null
+                                        ],
+                                        "description": "The cadence step of an automatic reminder; null for one a person sent."
+                                    },
+                                    "channel": {
+                                        "type": "string",
+                                        "enum": [
+                                            "email"
+                                        ]
+                                    },
+                                    "pay_link": {
+                                        "type": "string",
+                                        "enum": [
+                                            "square",
+                                            "svc_portal",
+                                            "none"
+                                        ],
+                                        "description": "square: Square's own payment page for an invoice Square collects. svc_portal: the invoice in the client portal, a sign-in page with no token. none: no link; the invoice PDF was attached."
+                                    },
+                                    "square_invoice_number": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 191
+                                    },
+                                    "recipients": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string",
+                                            "format": "email"
+                                        }
+                                    },
+                                    "subject": {
+                                        "type": "string",
+                                        "maxLength": 255
+                                    },
+                                    "currency": {
+                                        "type": "string",
+                                        "pattern": "^[A-Z]{3}$"
+                                    },
+                                    "amount_due": {
+                                        "type": "integer",
+                                        "description": "The balance the reminder stated, in minor units."
+                                    },
+                                    "due_on": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date"
+                                    },
+                                    "status": {
+                                        "type": "string",
+                                        "enum": [
+                                            "pending",
+                                            "sending",
+                                            "sent",
+                                            "failed",
+                                            "cancelled"
+                                        ],
+                                        "description": "sent and failed are the mail provider's answer; cancelled was stopped before anything left because the invoice or its Square link changed. A reminder left sending was accepted by the provider without its result being saved."
+                                    },
+                                    "attempt_number": {
+                                        "type": "integer",
+                                        "minimum": 1
+                                    },
+                                    "triggered_by": {
+                                        "type": "string",
+                                        "enum": [
+                                            "website",
+                                            "agent",
+                                            "scheduler"
+                                        ]
+                                    },
+                                    "triggered_by_name": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "description": "The person who sent it or on whose behalf an agent did; null for the cadence."
+                                    },
+                                    "queued_at": {
+                                        "type": "string",
+                                        "format": "date-time"
+                                    },
+                                    "sent_at": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date-time"
+                                    },
+                                    "failed_at": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date-time"
+                                    },
+                                    "next_attempt_at": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date-time",
+                                        "description": "When the cadence retries a failed step; null when it will not."
+                                    },
+                                    "error_summary": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ]
+                                    }
+                                }
+                            },
+                            "Uuid": {
+                                "type": "string",
+                                "format": "uuid"
                             }
                         }
                     }
@@ -23612,6 +24480,8 @@
                 "clients.portal_invitations.revoke": "dd8e305a10f6bf51",
                 "clients.restore": "277bdcb0ddc74d50",
                 "clients.update": "c7982671fe74ba3f",
+                "companies.payment_reminders.get": "99a82139f0137f28",
+                "companies.payment_reminders.set": "28000c3cf407054d",
                 "companies.square_customer.clear": "bb76e8e2174853af",
                 "companies.square_customer.get": "7368cf19c59ad6e7",
                 "companies.square_customer.set": "40ae25ef785d9bc2",
@@ -23642,7 +24512,9 @@
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
                 "invoices.release_delivery": "f703c8eb40f1ed80",
+                "invoices.reminders.list": "86e53f8c46db44c6",
                 "invoices.send": "3b2bc9ef256c4d18",
+                "invoices.send_reminder": "8f62ca2de82c197b",
                 "invoices.square_candidates": "09693c77227c6c63",
                 "invoices.square_link": "db9e316d78559f31",
                 "invoices.square_unlink": "91e0eb7deb5ad47f",
@@ -23745,6 +24617,8 @@
                     "clients.portal_invitations.revoke role",
                     "clients.restore role",
                     "clients.update role",
+                    "companies.payment_reminders.get role",
+                    "companies.payment_reminders.set role",
                     "companies.square_customer.clear role",
                     "companies.square_customer.get role",
                     "companies.square_customer.set role",
@@ -23766,6 +24640,8 @@
                     "invoices.hold_delivery role",
                     "invoices.preview_period role",
                     "invoices.release_delivery role",
+                    "invoices.reminders.list role",
+                    "invoices.send_reminder role",
                     "invoices.square_candidates role",
                     "invoices.square_link role",
                     "invoices.square_unlink role",
@@ -23892,6 +24768,8 @@
                     "clients.portal_invitations.revoke role",
                     "clients.restore role",
                     "clients.update role",
+                    "companies.payment_reminders.get role",
+                    "companies.payment_reminders.set role",
                     "companies.square_customer.clear role",
                     "companies.square_customer.get role",
                     "companies.square_customer.set role",
@@ -23913,6 +24791,8 @@
                     "invoices.hold_delivery role",
                     "invoices.preview_period role",
                     "invoices.release_delivery role",
+                    "invoices.reminders.list role",
+                    "invoices.send_reminder role",
                     "invoices.square_candidates role",
                     "invoices.square_link role",
                     "invoices.square_unlink role",
@@ -24039,6 +24919,8 @@
                     "clients.portal_invitations.revoke role",
                     "clients.restore role",
                     "clients.update role",
+                    "companies.payment_reminders.get role",
+                    "companies.payment_reminders.set role",
                     "companies.square_customer.clear role",
                     "companies.square_customer.get role",
                     "companies.square_customer.set role",
@@ -24060,6 +24942,8 @@
                     "invoices.hold_delivery role",
                     "invoices.preview_period role",
                     "invoices.release_delivery role",
+                    "invoices.reminders.list role",
+                    "invoices.send_reminder role",
                     "invoices.square_candidates role",
                     "invoices.square_link role",
                     "invoices.square_unlink role",
@@ -24186,6 +25070,8 @@
                     "clients.portal_invitations.revoke role",
                     "clients.restore role",
                     "clients.update role",
+                    "companies.payment_reminders.get role",
+                    "companies.payment_reminders.set role",
                     "companies.square_customer.clear role",
                     "companies.square_customer.get role",
                     "companies.square_customer.set role",
@@ -24207,6 +25093,8 @@
                     "invoices.hold_delivery role",
                     "invoices.preview_period role",
                     "invoices.release_delivery role",
+                    "invoices.reminders.list role",
+                    "invoices.send_reminder role",
                     "invoices.square_candidates role",
                     "invoices.square_link role",
                     "invoices.square_unlink role",
@@ -24316,6 +25204,7 @@
                     "clients.portal_invitations.revoke scope_not_granted clients:write",
                     "clients.restore scope_not_granted clients:write",
                     "clients.update scope_not_granted clients:write",
+                    "companies.payment_reminders.set scope_not_granted billing:write",
                     "companies.square_customer.clear scope_not_granted billing:write",
                     "companies.square_customer.set scope_not_granted billing:write",
                     "expense_schedules.create scope_not_granted expenses:write",
@@ -24336,6 +25225,7 @@
                     "invoices.issue scope_not_granted billing:deliver",
                     "invoices.release_delivery scope_not_granted billing:deliver",
                     "invoices.send scope_not_granted billing:deliver",
+                    "invoices.send_reminder scope_not_granted billing:write",
                     "invoices.square_link scope_not_granted billing:write",
                     "invoices.square_unlink scope_not_granted billing:write",
                     "invoices.update_details scope_not_granted billing:write",
@@ -24393,6 +25283,7 @@
                 "clients.list": "a98c31f58684fc11",
                 "clients.portal_access.list": "629c5ea9b62c442a",
                 "clients.portal_invitations.list": "5eb8398574eb6f46",
+                "companies.payment_reminders.get": "99a82139f0137f28",
                 "companies.square_customer.get": "7368cf19c59ad6e7",
                 "context.get": "dc46b79ea530a869",
                 "expense_schedules.list": "dd1832f42c8c0514",
@@ -24404,6 +25295,7 @@
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
+                "invoices.reminders.list": "86e53f8c46db44c6",
                 "invoices.square_candidates": "09693c77227c6c63",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
@@ -24492,6 +25384,8 @@
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
                 "capacity_ledger.get": "d8a6997ba130cd5a",
+                "companies.payment_reminders.get": "99a82139f0137f28",
+                "companies.payment_reminders.set": "28000c3cf407054d",
                 "companies.square_customer.clear": "bb76e8e2174853af",
                 "companies.square_customer.get": "7368cf19c59ad6e7",
                 "companies.square_customer.set": "40ae25ef785d9bc2",
@@ -24505,6 +25399,8 @@
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
+                "invoices.reminders.list": "86e53f8c46db44c6",
+                "invoices.send_reminder": "8f62ca2de82c197b",
                 "invoices.square_candidates": "09693c77227c6c63",
                 "invoices.square_link": "db9e316d78559f31",
                 "invoices.square_unlink": "91e0eb7deb5ad47f",
@@ -24573,6 +25469,8 @@
                     "clients.portal_invitations.revoke scope_not_granted clients:write",
                     "clients.restore scope_not_granted clients:write",
                     "clients.update scope_not_granted clients:write",
+                    "companies.payment_reminders.get role",
+                    "companies.payment_reminders.set scope_not_granted billing:write",
                     "companies.square_customer.clear scope_not_granted billing:write",
                     "companies.square_customer.get role",
                     "companies.square_customer.set scope_not_granted billing:write",
@@ -24598,7 +25496,9 @@
                     "invoices.issue scope_not_granted billing:deliver",
                     "invoices.preview_period role",
                     "invoices.release_delivery scope_not_granted billing:deliver",
+                    "invoices.reminders.list role",
                     "invoices.send scope_not_granted billing:deliver",
+                    "invoices.send_reminder scope_not_granted billing:write",
                     "invoices.square_candidates role",
                     "invoices.square_link scope_not_granted billing:write",
                     "invoices.square_unlink scope_not_granted billing:write",
@@ -24769,6 +25669,8 @@
                     "clients.portal_invitations.revoke scope_not_granted clients:write",
                     "clients.restore scope_not_granted clients:write",
                     "clients.update scope_not_granted clients:write",
+                    "companies.payment_reminders.get role",
+                    "companies.payment_reminders.set scope_not_granted billing:write",
                     "companies.square_customer.clear scope_not_granted billing:write",
                     "companies.square_customer.get role",
                     "companies.square_customer.set scope_not_granted billing:write",
@@ -24794,7 +25696,9 @@
                     "invoices.issue scope_not_granted billing:deliver",
                     "invoices.preview_period role",
                     "invoices.release_delivery scope_not_granted billing:deliver",
+                    "invoices.reminders.list role",
                     "invoices.send scope_not_granted billing:deliver",
+                    "invoices.send_reminder scope_not_granted billing:write",
                     "invoices.square_candidates role",
                     "invoices.square_link scope_not_granted billing:write",
                     "invoices.square_unlink scope_not_granted billing:write",
@@ -24951,6 +25855,7 @@
                     "clients.portal_invitations.revoke deployment_disabled",
                     "clients.restore deployment_disabled",
                     "clients.update deployment_disabled",
+                    "companies.payment_reminders.set deployment_disabled",
                     "companies.square_customer.clear deployment_disabled",
                     "companies.square_customer.set deployment_disabled",
                     "expense_schedules.create deployment_disabled",
@@ -24971,6 +25876,7 @@
                     "invoices.issue deployment_disabled",
                     "invoices.release_delivery deployment_disabled",
                     "invoices.send deployment_disabled",
+                    "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates deployment_disabled",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
@@ -25039,6 +25945,7 @@
                 "clients.get": "22dd0d0a447730cc",
                 "clients.list": "a98c31f58684fc11",
                 "clients.portal_access.list": "629c5ea9b62c442a",
+                "companies.payment_reminders.get": "99a82139f0137f28",
                 "companies.square_customer.get": "7368cf19c59ad6e7",
                 "context.get": "dc46b79ea530a869",
                 "expense_schedules.list": "dd1832f42c8c0514",
@@ -25050,6 +25957,7 @@
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
+                "invoices.reminders.list": "86e53f8c46db44c6",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
                 "projects.get": "c7ffe7930b196d4b",
@@ -25099,6 +26007,7 @@
                     "clients.portal_invitations.revoke deployment_disabled",
                     "clients.restore deployment_disabled",
                     "clients.update deployment_disabled",
+                    "companies.payment_reminders.set deployment_disabled",
                     "companies.square_customer.clear deployment_disabled",
                     "companies.square_customer.set deployment_disabled",
                     "expense_schedules.create deployment_disabled",
@@ -25119,6 +26028,7 @@
                     "invoices.issue deployment_disabled",
                     "invoices.release_delivery deployment_disabled",
                     "invoices.send deployment_disabled",
+                    "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates deployment_disabled",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
@@ -25187,6 +26097,7 @@
                 "clients.get": "22dd0d0a447730cc",
                 "clients.list": "a98c31f58684fc11",
                 "clients.portal_access.list": "629c5ea9b62c442a",
+                "companies.payment_reminders.get": "99a82139f0137f28",
                 "companies.square_customer.get": "7368cf19c59ad6e7",
                 "context.get": "dc46b79ea530a869",
                 "expense_schedules.list": "dd1832f42c8c0514",
@@ -25198,6 +26109,7 @@
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
+                "invoices.reminders.list": "86e53f8c46db44c6",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
                 "projects.get": "c7ffe7930b196d4b",
@@ -25263,6 +26175,8 @@
                     "clients.portal_invitations.revoke deployment_disabled",
                     "clients.restore deployment_disabled",
                     "clients.update deployment_disabled",
+                    "companies.payment_reminders.get role",
+                    "companies.payment_reminders.set deployment_disabled",
                     "companies.square_customer.clear deployment_disabled",
                     "companies.square_customer.get role",
                     "companies.square_customer.set deployment_disabled",
@@ -25288,7 +26202,9 @@
                     "invoices.issue deployment_disabled",
                     "invoices.preview_period role",
                     "invoices.release_delivery deployment_disabled",
+                    "invoices.reminders.list role",
                     "invoices.send deployment_disabled",
+                    "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates deployment_disabled",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
@@ -25409,6 +26325,8 @@
                     "clients.portal_invitations.revoke deployment_disabled",
                     "clients.restore deployment_disabled",
                     "clients.update deployment_disabled",
+                    "companies.payment_reminders.get role",
+                    "companies.payment_reminders.set deployment_disabled",
                     "companies.square_customer.clear deployment_disabled",
                     "companies.square_customer.get role",
                     "companies.square_customer.set deployment_disabled",
@@ -25434,7 +26352,9 @@
                     "invoices.issue deployment_disabled",
                     "invoices.preview_period role",
                     "invoices.release_delivery deployment_disabled",
+                    "invoices.reminders.list role",
                     "invoices.send deployment_disabled",
+                    "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates deployment_disabled",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
@@ -25555,6 +26475,8 @@
                     "clients.portal_invitations.revoke deployment_disabled",
                     "clients.restore deployment_disabled",
                     "clients.update deployment_disabled",
+                    "companies.payment_reminders.get role",
+                    "companies.payment_reminders.set deployment_disabled",
                     "companies.square_customer.clear deployment_disabled",
                     "companies.square_customer.get role",
                     "companies.square_customer.set deployment_disabled",
@@ -25580,7 +26502,9 @@
                     "invoices.issue deployment_disabled",
                     "invoices.preview_period role",
                     "invoices.release_delivery deployment_disabled",
+                    "invoices.reminders.list role",
                     "invoices.send deployment_disabled",
+                    "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates deployment_disabled",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
@@ -25701,6 +26625,8 @@
                     "clients.portal_invitations.revoke deployment_disabled",
                     "clients.restore deployment_disabled",
                     "clients.update deployment_disabled",
+                    "companies.payment_reminders.get role",
+                    "companies.payment_reminders.set deployment_disabled",
                     "companies.square_customer.clear deployment_disabled",
                     "companies.square_customer.get role",
                     "companies.square_customer.set deployment_disabled",
@@ -25726,7 +26652,9 @@
                     "invoices.issue deployment_disabled",
                     "invoices.preview_period role",
                     "invoices.release_delivery deployment_disabled",
+                    "invoices.reminders.list role",
                     "invoices.send deployment_disabled",
+                    "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates deployment_disabled",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
@@ -25832,6 +26760,7 @@
                     "clients.portal_invitations.revoke deployment_disabled",
                     "clients.restore deployment_disabled",
                     "clients.update deployment_disabled",
+                    "companies.payment_reminders.set deployment_disabled",
                     "companies.square_customer.clear deployment_disabled",
                     "companies.square_customer.set deployment_disabled",
                     "expense_schedules.create deployment_disabled",
@@ -25852,6 +26781,7 @@
                     "invoices.issue deployment_disabled",
                     "invoices.release_delivery deployment_disabled",
                     "invoices.send deployment_disabled",
+                    "invoices.send_reminder deployment_disabled",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
@@ -25909,6 +26839,7 @@
                 "clients.list": "a98c31f58684fc11",
                 "clients.portal_access.list": "629c5ea9b62c442a",
                 "clients.portal_invitations.list": "5eb8398574eb6f46",
+                "companies.payment_reminders.get": "99a82139f0137f28",
                 "companies.square_customer.get": "7368cf19c59ad6e7",
                 "context.get": "dc46b79ea530a869",
                 "expense_schedules.list": "dd1832f42c8c0514",
@@ -25920,6 +26851,7 @@
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
+                "invoices.reminders.list": "86e53f8c46db44c6",
                 "invoices.square_candidates": "09693c77227c6c63",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
@@ -25978,6 +26910,7 @@
                     "clients.portal_invitations.revoke deployment_disabled",
                     "clients.restore deployment_disabled",
                     "clients.update deployment_disabled",
+                    "companies.payment_reminders.set deployment_disabled",
                     "companies.square_customer.clear deployment_disabled",
                     "companies.square_customer.set deployment_disabled",
                     "expense_schedules.create deployment_disabled",
@@ -25998,6 +26931,7 @@
                     "invoices.issue deployment_disabled",
                     "invoices.release_delivery deployment_disabled",
                     "invoices.send deployment_disabled",
+                    "invoices.send_reminder deployment_disabled",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
@@ -26055,6 +26989,7 @@
                 "clients.list": "a98c31f58684fc11",
                 "clients.portal_access.list": "629c5ea9b62c442a",
                 "clients.portal_invitations.list": "5eb8398574eb6f46",
+                "companies.payment_reminders.get": "99a82139f0137f28",
                 "companies.square_customer.get": "7368cf19c59ad6e7",
                 "context.get": "dc46b79ea530a869",
                 "expense_schedules.list": "dd1832f42c8c0514",
@@ -26066,6 +27001,7 @@
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
+                "invoices.reminders.list": "86e53f8c46db44c6",
                 "invoices.square_candidates": "09693c77227c6c63",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
@@ -26141,6 +27077,8 @@
                     "clients.portal_invitations.revoke deployment_disabled",
                     "clients.restore deployment_disabled",
                     "clients.update deployment_disabled",
+                    "companies.payment_reminders.get role",
+                    "companies.payment_reminders.set deployment_disabled",
                     "companies.square_customer.clear deployment_disabled",
                     "companies.square_customer.get role",
                     "companies.square_customer.set deployment_disabled",
@@ -26166,7 +27104,9 @@
                     "invoices.issue deployment_disabled",
                     "invoices.preview_period role",
                     "invoices.release_delivery deployment_disabled",
+                    "invoices.reminders.list role",
                     "invoices.send deployment_disabled",
+                    "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates role",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
@@ -26285,6 +27225,8 @@
                     "clients.portal_invitations.revoke deployment_disabled",
                     "clients.restore deployment_disabled",
                     "clients.update deployment_disabled",
+                    "companies.payment_reminders.get role",
+                    "companies.payment_reminders.set deployment_disabled",
                     "companies.square_customer.clear deployment_disabled",
                     "companies.square_customer.get role",
                     "companies.square_customer.set deployment_disabled",
@@ -26310,7 +27252,9 @@
                     "invoices.issue deployment_disabled",
                     "invoices.preview_period role",
                     "invoices.release_delivery deployment_disabled",
+                    "invoices.reminders.list role",
                     "invoices.send deployment_disabled",
+                    "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates role",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
@@ -26429,6 +27373,8 @@
                     "clients.portal_invitations.revoke deployment_disabled",
                     "clients.restore deployment_disabled",
                     "clients.update deployment_disabled",
+                    "companies.payment_reminders.get role",
+                    "companies.payment_reminders.set deployment_disabled",
                     "companies.square_customer.clear deployment_disabled",
                     "companies.square_customer.get role",
                     "companies.square_customer.set deployment_disabled",
@@ -26454,7 +27400,9 @@
                     "invoices.issue deployment_disabled",
                     "invoices.preview_period role",
                     "invoices.release_delivery deployment_disabled",
+                    "invoices.reminders.list role",
                     "invoices.send deployment_disabled",
+                    "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates role",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
@@ -26573,6 +27521,8 @@
                     "clients.portal_invitations.revoke deployment_disabled",
                     "clients.restore deployment_disabled",
                     "clients.update deployment_disabled",
+                    "companies.payment_reminders.get role",
+                    "companies.payment_reminders.set deployment_disabled",
                     "companies.square_customer.clear deployment_disabled",
                     "companies.square_customer.get role",
                     "companies.square_customer.set deployment_disabled",
@@ -26598,7 +27548,9 @@
                     "invoices.issue deployment_disabled",
                     "invoices.preview_period role",
                     "invoices.release_delivery deployment_disabled",
+                    "invoices.reminders.list role",
                     "invoices.send deployment_disabled",
+                    "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates role",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
@@ -26702,6 +27654,7 @@
                     "clients.portal_invitations.revoke deployment_disabled",
                     "clients.restore deployment_disabled",
                     "clients.update deployment_disabled",
+                    "companies.payment_reminders.set deployment_disabled",
                     "companies.square_customer.clear deployment_disabled",
                     "companies.square_customer.set deployment_disabled",
                     "expense_schedules.create deployment_disabled",
@@ -26722,6 +27675,7 @@
                     "invoices.issue deployment_disabled",
                     "invoices.release_delivery deployment_disabled",
                     "invoices.send deployment_disabled",
+                    "invoices.send_reminder deployment_disabled",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
@@ -26776,6 +27730,7 @@
                 "clients.list": "a98c31f58684fc11",
                 "clients.portal_access.list": "629c5ea9b62c442a",
                 "clients.portal_invitations.list": "5eb8398574eb6f46",
+                "companies.payment_reminders.get": "99a82139f0137f28",
                 "companies.square_customer.get": "7368cf19c59ad6e7",
                 "context.get": "dc46b79ea530a869",
                 "expense_schedules.list": "dd1832f42c8c0514",
@@ -26787,6 +27742,7 @@
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
+                "invoices.reminders.list": "86e53f8c46db44c6",
                 "invoices.square_candidates": "09693c77227c6c63",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
@@ -26850,6 +27806,7 @@
                     "clients.portal_invitations.revoke deployment_disabled",
                     "clients.restore deployment_disabled",
                     "clients.update deployment_disabled",
+                    "companies.payment_reminders.set deployment_disabled",
                     "companies.square_customer.clear deployment_disabled",
                     "companies.square_customer.set deployment_disabled",
                     "expense_schedules.create deployment_disabled",
@@ -26870,6 +27827,7 @@
                     "invoices.issue deployment_disabled",
                     "invoices.release_delivery deployment_disabled",
                     "invoices.send deployment_disabled",
+                    "invoices.send_reminder deployment_disabled",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
@@ -26924,6 +27882,7 @@
                 "clients.list": "a98c31f58684fc11",
                 "clients.portal_access.list": "629c5ea9b62c442a",
                 "clients.portal_invitations.list": "5eb8398574eb6f46",
+                "companies.payment_reminders.get": "99a82139f0137f28",
                 "companies.square_customer.get": "7368cf19c59ad6e7",
                 "context.get": "dc46b79ea530a869",
                 "expense_schedules.list": "dd1832f42c8c0514",
@@ -26935,6 +27894,7 @@
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
+                "invoices.reminders.list": "86e53f8c46db44c6",
                 "invoices.square_candidates": "09693c77227c6c63",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
@@ -27015,6 +27975,8 @@
                     "clients.portal_invitations.revoke deployment_disabled",
                     "clients.restore deployment_disabled",
                     "clients.update deployment_disabled",
+                    "companies.payment_reminders.get role",
+                    "companies.payment_reminders.set deployment_disabled",
                     "companies.square_customer.clear deployment_disabled",
                     "companies.square_customer.get role",
                     "companies.square_customer.set deployment_disabled",
@@ -27040,7 +28002,9 @@
                     "invoices.issue deployment_disabled",
                     "invoices.preview_period role",
                     "invoices.release_delivery deployment_disabled",
+                    "invoices.reminders.list role",
                     "invoices.send deployment_disabled",
+                    "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates role",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
@@ -27161,6 +28125,8 @@
                     "clients.portal_invitations.revoke deployment_disabled",
                     "clients.restore deployment_disabled",
                     "clients.update deployment_disabled",
+                    "companies.payment_reminders.get role",
+                    "companies.payment_reminders.set deployment_disabled",
                     "companies.square_customer.clear deployment_disabled",
                     "companies.square_customer.get role",
                     "companies.square_customer.set deployment_disabled",
@@ -27186,7 +28152,9 @@
                     "invoices.issue deployment_disabled",
                     "invoices.preview_period role",
                     "invoices.release_delivery deployment_disabled",
+                    "invoices.reminders.list role",
                     "invoices.send deployment_disabled",
+                    "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates role",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
@@ -27307,6 +28275,8 @@
                     "clients.portal_invitations.revoke deployment_disabled",
                     "clients.restore deployment_disabled",
                     "clients.update deployment_disabled",
+                    "companies.payment_reminders.get role",
+                    "companies.payment_reminders.set deployment_disabled",
                     "companies.square_customer.clear deployment_disabled",
                     "companies.square_customer.get role",
                     "companies.square_customer.set deployment_disabled",
@@ -27332,7 +28302,9 @@
                     "invoices.issue deployment_disabled",
                     "invoices.preview_period role",
                     "invoices.release_delivery deployment_disabled",
+                    "invoices.reminders.list role",
                     "invoices.send deployment_disabled",
+                    "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates role",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
@@ -27453,6 +28425,8 @@
                     "clients.portal_invitations.revoke deployment_disabled",
                     "clients.restore deployment_disabled",
                     "clients.update deployment_disabled",
+                    "companies.payment_reminders.get role",
+                    "companies.payment_reminders.set deployment_disabled",
                     "companies.square_customer.clear deployment_disabled",
                     "companies.square_customer.get role",
                     "companies.square_customer.set deployment_disabled",
@@ -27478,7 +28452,9 @@
                     "invoices.issue deployment_disabled",
                     "invoices.preview_period role",
                     "invoices.release_delivery deployment_disabled",
+                    "invoices.reminders.list role",
                     "invoices.send deployment_disabled",
+                    "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates role",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
@@ -27575,6 +28551,7 @@
                     "invoices.issue deployment_disabled",
                     "invoices.release_delivery deployment_disabled",
                     "invoices.send deployment_disabled",
+                    "invoices.send_reminder deployment_disabled",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
@@ -27631,6 +28608,8 @@
                 "clients.portal_invitations.revoke": "dd8e305a10f6bf51",
                 "clients.restore": "277bdcb0ddc74d50",
                 "clients.update": "c7982671fe74ba3f",
+                "companies.payment_reminders.get": "99a82139f0137f28",
+                "companies.payment_reminders.set": "28000c3cf407054d",
                 "companies.square_customer.clear": "bb76e8e2174853af",
                 "companies.square_customer.get": "7368cf19c59ad6e7",
                 "companies.square_customer.set": "40ae25ef785d9bc2",
@@ -27653,6 +28632,7 @@
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
+                "invoices.reminders.list": "86e53f8c46db44c6",
                 "invoices.square_candidates": "09693c77227c6c63",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.correct": "a89e5531f853028c",
@@ -27723,6 +28703,7 @@
                     "invoices.issue deployment_disabled",
                     "invoices.release_delivery deployment_disabled",
                     "invoices.send deployment_disabled",
+                    "invoices.send_reminder deployment_disabled",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
@@ -27779,6 +28760,8 @@
                 "clients.portal_invitations.revoke": "dd8e305a10f6bf51",
                 "clients.restore": "277bdcb0ddc74d50",
                 "clients.update": "c7982671fe74ba3f",
+                "companies.payment_reminders.get": "99a82139f0137f28",
+                "companies.payment_reminders.set": "28000c3cf407054d",
                 "companies.square_customer.clear": "bb76e8e2174853af",
                 "companies.square_customer.get": "7368cf19c59ad6e7",
                 "companies.square_customer.set": "40ae25ef785d9bc2",
@@ -27801,6 +28784,7 @@
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
+                "invoices.reminders.list": "86e53f8c46db44c6",
                 "invoices.square_candidates": "09693c77227c6c63",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.correct": "a89e5531f853028c",
@@ -27897,6 +28881,8 @@
                     "clients.portal_invitations.revoke role",
                     "clients.restore role",
                     "clients.update role",
+                    "companies.payment_reminders.get role",
+                    "companies.payment_reminders.set role",
                     "companies.square_customer.clear role",
                     "companies.square_customer.get role",
                     "companies.square_customer.set role",
@@ -27922,7 +28908,9 @@
                     "invoices.issue deployment_disabled",
                     "invoices.preview_period role",
                     "invoices.release_delivery deployment_disabled",
+                    "invoices.reminders.list role",
                     "invoices.send deployment_disabled",
+                    "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates role",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
@@ -28043,6 +29031,8 @@
                     "clients.portal_invitations.revoke role",
                     "clients.restore role",
                     "clients.update role",
+                    "companies.payment_reminders.get role",
+                    "companies.payment_reminders.set role",
                     "companies.square_customer.clear role",
                     "companies.square_customer.get role",
                     "companies.square_customer.set role",
@@ -28068,7 +29058,9 @@
                     "invoices.issue deployment_disabled",
                     "invoices.preview_period role",
                     "invoices.release_delivery deployment_disabled",
+                    "invoices.reminders.list role",
                     "invoices.send deployment_disabled",
+                    "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates role",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
@@ -28189,6 +29181,8 @@
                     "clients.portal_invitations.revoke role",
                     "clients.restore role",
                     "clients.update role",
+                    "companies.payment_reminders.get role",
+                    "companies.payment_reminders.set role",
                     "companies.square_customer.clear role",
                     "companies.square_customer.get role",
                     "companies.square_customer.set role",
@@ -28214,7 +29208,9 @@
                     "invoices.issue deployment_disabled",
                     "invoices.preview_period role",
                     "invoices.release_delivery deployment_disabled",
+                    "invoices.reminders.list role",
                     "invoices.send deployment_disabled",
+                    "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates role",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
@@ -28335,6 +29331,8 @@
                     "clients.portal_invitations.revoke role",
                     "clients.restore role",
                     "clients.update role",
+                    "companies.payment_reminders.get role",
+                    "companies.payment_reminders.set role",
                     "companies.square_customer.clear role",
                     "companies.square_customer.get role",
                     "companies.square_customer.set role",
@@ -28360,7 +29358,9 @@
                     "invoices.issue deployment_disabled",
                     "invoices.preview_period role",
                     "invoices.release_delivery deployment_disabled",
+                    "invoices.reminders.list role",
                     "invoices.send deployment_disabled",
+                    "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates role",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
@@ -28466,6 +29466,7 @@
                     "invoices.issue deployment_disabled",
                     "invoices.release_delivery deployment_disabled",
                     "invoices.send deployment_disabled",
+                    "invoices.send_reminder deployment_disabled",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
@@ -28540,6 +29541,8 @@
                 "clients.portal_invitations.revoke": "dd8e305a10f6bf51",
                 "clients.restore": "277bdcb0ddc74d50",
                 "clients.update": "c7982671fe74ba3f",
+                "companies.payment_reminders.get": "99a82139f0137f28",
+                "companies.payment_reminders.set": "28000c3cf407054d",
                 "companies.square_customer.clear": "bb76e8e2174853af",
                 "companies.square_customer.get": "7368cf19c59ad6e7",
                 "companies.square_customer.set": "40ae25ef785d9bc2",
@@ -28554,6 +29557,7 @@
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
+                "invoices.reminders.list": "86e53f8c46db44c6",
                 "invoices.square_candidates": "09693c77227c6c63",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
@@ -28612,6 +29616,7 @@
                     "invoices.issue deployment_disabled",
                     "invoices.release_delivery deployment_disabled",
                     "invoices.send deployment_disabled",
+                    "invoices.send_reminder deployment_disabled",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
@@ -28686,6 +29691,8 @@
                 "clients.portal_invitations.revoke": "dd8e305a10f6bf51",
                 "clients.restore": "277bdcb0ddc74d50",
                 "clients.update": "c7982671fe74ba3f",
+                "companies.payment_reminders.get": "99a82139f0137f28",
+                "companies.payment_reminders.set": "28000c3cf407054d",
                 "companies.square_customer.clear": "bb76e8e2174853af",
                 "companies.square_customer.get": "7368cf19c59ad6e7",
                 "companies.square_customer.set": "40ae25ef785d9bc2",
@@ -28700,6 +29707,7 @@
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
+                "invoices.reminders.list": "86e53f8c46db44c6",
                 "invoices.square_candidates": "09693c77227c6c63",
                 "operations.summary": "22771b7e7015c53f",
                 "payments.list": "5f9d6942bc64d245",
@@ -28775,6 +29783,8 @@
                     "clients.portal_invitations.revoke role",
                     "clients.restore role",
                     "clients.update role",
+                    "companies.payment_reminders.get role",
+                    "companies.payment_reminders.set role",
                     "companies.square_customer.clear role",
                     "companies.square_customer.get role",
                     "companies.square_customer.set role",
@@ -28800,7 +29810,9 @@
                     "invoices.issue deployment_disabled",
                     "invoices.preview_period role",
                     "invoices.release_delivery deployment_disabled",
+                    "invoices.reminders.list role",
                     "invoices.send deployment_disabled",
+                    "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates role",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
@@ -28919,6 +29931,8 @@
                     "clients.portal_invitations.revoke role",
                     "clients.restore role",
                     "clients.update role",
+                    "companies.payment_reminders.get role",
+                    "companies.payment_reminders.set role",
                     "companies.square_customer.clear role",
                     "companies.square_customer.get role",
                     "companies.square_customer.set role",
@@ -28944,7 +29958,9 @@
                     "invoices.issue deployment_disabled",
                     "invoices.preview_period role",
                     "invoices.release_delivery deployment_disabled",
+                    "invoices.reminders.list role",
                     "invoices.send deployment_disabled",
+                    "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates role",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
@@ -29063,6 +30079,8 @@
                     "clients.portal_invitations.revoke role",
                     "clients.restore role",
                     "clients.update role",
+                    "companies.payment_reminders.get role",
+                    "companies.payment_reminders.set role",
                     "companies.square_customer.clear role",
                     "companies.square_customer.get role",
                     "companies.square_customer.set role",
@@ -29088,7 +30106,9 @@
                     "invoices.issue deployment_disabled",
                     "invoices.preview_period role",
                     "invoices.release_delivery deployment_disabled",
+                    "invoices.reminders.list role",
                     "invoices.send deployment_disabled",
+                    "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates role",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
@@ -29207,6 +30227,8 @@
                     "clients.portal_invitations.revoke role",
                     "clients.restore role",
                     "clients.update role",
+                    "companies.payment_reminders.get role",
+                    "companies.payment_reminders.set role",
                     "companies.square_customer.clear role",
                     "companies.square_customer.get role",
                     "companies.square_customer.set role",
@@ -29232,7 +30254,9 @@
                     "invoices.issue deployment_disabled",
                     "invoices.preview_period role",
                     "invoices.release_delivery deployment_disabled",
+                    "invoices.reminders.list role",
                     "invoices.send deployment_disabled",
+                    "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates role",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
@@ -29369,6 +30393,8 @@
                 "clients.portal_invitations.revoke": "dd8e305a10f6bf51",
                 "clients.restore": "277bdcb0ddc74d50",
                 "clients.update": "c7982671fe74ba3f",
+                "companies.payment_reminders.get": "99a82139f0137f28",
+                "companies.payment_reminders.set": "28000c3cf407054d",
                 "companies.square_customer.clear": "bb76e8e2174853af",
                 "companies.square_customer.get": "7368cf19c59ad6e7",
                 "companies.square_customer.set": "40ae25ef785d9bc2",
@@ -29399,7 +30425,9 @@
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
                 "invoices.release_delivery": "f703c8eb40f1ed80",
+                "invoices.reminders.list": "86e53f8c46db44c6",
                 "invoices.send": "3b2bc9ef256c4d18",
+                "invoices.send_reminder": "8f62ca2de82c197b",
                 "invoices.square_candidates": "09693c77227c6c63",
                 "invoices.square_link": "db9e316d78559f31",
                 "invoices.square_unlink": "91e0eb7deb5ad47f",
@@ -29516,6 +30544,8 @@
                 "clients.portal_invitations.revoke": "dd8e305a10f6bf51",
                 "clients.restore": "277bdcb0ddc74d50",
                 "clients.update": "c7982671fe74ba3f",
+                "companies.payment_reminders.get": "99a82139f0137f28",
+                "companies.payment_reminders.set": "28000c3cf407054d",
                 "companies.square_customer.clear": "bb76e8e2174853af",
                 "companies.square_customer.get": "7368cf19c59ad6e7",
                 "companies.square_customer.set": "40ae25ef785d9bc2",
@@ -29546,7 +30576,9 @@
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
                 "invoices.release_delivery": "f703c8eb40f1ed80",
+                "invoices.reminders.list": "86e53f8c46db44c6",
                 "invoices.send": "3b2bc9ef256c4d18",
+                "invoices.send_reminder": "8f62ca2de82c197b",
                 "invoices.square_candidates": "09693c77227c6c63",
                 "invoices.square_link": "db9e316d78559f31",
                 "invoices.square_unlink": "91e0eb7deb5ad47f",
@@ -29647,6 +30679,8 @@
                     "clients.portal_invitations.revoke role",
                     "clients.restore role",
                     "clients.update role",
+                    "companies.payment_reminders.get role",
+                    "companies.payment_reminders.set role",
                     "companies.square_customer.clear role",
                     "companies.square_customer.get role",
                     "companies.square_customer.set role",
@@ -29668,6 +30702,8 @@
                     "invoices.hold_delivery role",
                     "invoices.preview_period role",
                     "invoices.release_delivery role",
+                    "invoices.reminders.list role",
+                    "invoices.send_reminder role",
                     "invoices.square_candidates role",
                     "invoices.square_link role",
                     "invoices.square_unlink role",
@@ -29794,6 +30830,8 @@
                     "clients.portal_invitations.revoke role",
                     "clients.restore role",
                     "clients.update role",
+                    "companies.payment_reminders.get role",
+                    "companies.payment_reminders.set role",
                     "companies.square_customer.clear role",
                     "companies.square_customer.get role",
                     "companies.square_customer.set role",
@@ -29815,6 +30853,8 @@
                     "invoices.hold_delivery role",
                     "invoices.preview_period role",
                     "invoices.release_delivery role",
+                    "invoices.reminders.list role",
+                    "invoices.send_reminder role",
                     "invoices.square_candidates role",
                     "invoices.square_link role",
                     "invoices.square_unlink role",
@@ -29941,6 +30981,8 @@
                     "clients.portal_invitations.revoke role",
                     "clients.restore role",
                     "clients.update role",
+                    "companies.payment_reminders.get role",
+                    "companies.payment_reminders.set role",
                     "companies.square_customer.clear role",
                     "companies.square_customer.get role",
                     "companies.square_customer.set role",
@@ -29962,6 +31004,8 @@
                     "invoices.hold_delivery role",
                     "invoices.preview_period role",
                     "invoices.release_delivery role",
+                    "invoices.reminders.list role",
+                    "invoices.send_reminder role",
                     "invoices.square_candidates role",
                     "invoices.square_link role",
                     "invoices.square_unlink role",
@@ -30088,6 +31132,8 @@
                     "clients.portal_invitations.revoke role",
                     "clients.restore role",
                     "clients.update role",
+                    "companies.payment_reminders.get role",
+                    "companies.payment_reminders.set role",
                     "companies.square_customer.clear role",
                     "companies.square_customer.get role",
                     "companies.square_customer.set role",
@@ -30109,6 +31155,8 @@
                     "invoices.hold_delivery role",
                     "invoices.preview_period role",
                     "invoices.release_delivery role",
+                    "invoices.reminders.list role",
+                    "invoices.send_reminder role",
                     "invoices.square_candidates role",
                     "invoices.square_link role",
                     "invoices.square_unlink role",
@@ -30256,6 +31304,8 @@
                 "clients.portal_invitations.revoke": "dd8e305a10f6bf51",
                 "clients.restore": "277bdcb0ddc74d50",
                 "clients.update": "c7982671fe74ba3f",
+                "companies.payment_reminders.get": "99a82139f0137f28",
+                "companies.payment_reminders.set": "28000c3cf407054d",
                 "companies.square_customer.clear": "bb76e8e2174853af",
                 "companies.square_customer.get": "7368cf19c59ad6e7",
                 "companies.square_customer.set": "40ae25ef785d9bc2",
@@ -30284,7 +31334,9 @@
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
                 "invoices.release_delivery": "f703c8eb40f1ed80",
+                "invoices.reminders.list": "86e53f8c46db44c6",
                 "invoices.send": "3b2bc9ef256c4d18",
+                "invoices.send_reminder": "8f62ca2de82c197b",
                 "invoices.square_candidates": "09693c77227c6c63",
                 "invoices.square_link": "db9e316d78559f31",
                 "invoices.square_unlink": "91e0eb7deb5ad47f",
@@ -30402,6 +31454,8 @@
                 "clients.portal_invitations.revoke": "dd8e305a10f6bf51",
                 "clients.restore": "277bdcb0ddc74d50",
                 "clients.update": "c7982671fe74ba3f",
+                "companies.payment_reminders.get": "99a82139f0137f28",
+                "companies.payment_reminders.set": "28000c3cf407054d",
                 "companies.square_customer.clear": "bb76e8e2174853af",
                 "companies.square_customer.get": "7368cf19c59ad6e7",
                 "companies.square_customer.set": "40ae25ef785d9bc2",
@@ -30430,7 +31484,9 @@
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
                 "invoices.release_delivery": "f703c8eb40f1ed80",
+                "invoices.reminders.list": "86e53f8c46db44c6",
                 "invoices.send": "3b2bc9ef256c4d18",
+                "invoices.send_reminder": "8f62ca2de82c197b",
                 "invoices.square_candidates": "09693c77227c6c63",
                 "invoices.square_link": "db9e316d78559f31",
                 "invoices.square_unlink": "91e0eb7deb5ad47f",
@@ -30529,6 +31585,8 @@
                     "clients.portal_invitations.revoke role",
                     "clients.restore role",
                     "clients.update role",
+                    "companies.payment_reminders.get role",
+                    "companies.payment_reminders.set role",
                     "companies.square_customer.clear role",
                     "companies.square_customer.get role",
                     "companies.square_customer.set role",
@@ -30552,6 +31610,8 @@
                     "invoices.hold_delivery role",
                     "invoices.preview_period role",
                     "invoices.release_delivery role",
+                    "invoices.reminders.list role",
+                    "invoices.send_reminder role",
                     "invoices.square_candidates role",
                     "invoices.square_link role",
                     "invoices.square_unlink role",
@@ -30673,6 +31733,8 @@
                     "clients.portal_invitations.revoke role",
                     "clients.restore role",
                     "clients.update role",
+                    "companies.payment_reminders.get role",
+                    "companies.payment_reminders.set role",
                     "companies.square_customer.clear role",
                     "companies.square_customer.get role",
                     "companies.square_customer.set role",
@@ -30696,6 +31758,8 @@
                     "invoices.hold_delivery role",
                     "invoices.preview_period role",
                     "invoices.release_delivery role",
+                    "invoices.reminders.list role",
+                    "invoices.send_reminder role",
                     "invoices.square_candidates role",
                     "invoices.square_link role",
                     "invoices.square_unlink role",
@@ -30817,6 +31881,8 @@
                     "clients.portal_invitations.revoke role",
                     "clients.restore role",
                     "clients.update role",
+                    "companies.payment_reminders.get role",
+                    "companies.payment_reminders.set role",
                     "companies.square_customer.clear role",
                     "companies.square_customer.get role",
                     "companies.square_customer.set role",
@@ -30840,6 +31906,8 @@
                     "invoices.hold_delivery role",
                     "invoices.preview_period role",
                     "invoices.release_delivery role",
+                    "invoices.reminders.list role",
+                    "invoices.send_reminder role",
                     "invoices.square_candidates role",
                     "invoices.square_link role",
                     "invoices.square_unlink role",
@@ -30961,6 +32029,8 @@
                     "clients.portal_invitations.revoke role",
                     "clients.restore role",
                     "clients.update role",
+                    "companies.payment_reminders.get role",
+                    "companies.payment_reminders.set role",
                     "companies.square_customer.clear role",
                     "companies.square_customer.get role",
                     "companies.square_customer.set role",
@@ -30984,6 +32054,8 @@
                     "invoices.hold_delivery role",
                     "invoices.preview_period role",
                     "invoices.release_delivery role",
+                    "invoices.reminders.list role",
+                    "invoices.send_reminder role",
                     "invoices.square_candidates role",
                     "invoices.square_link role",
                     "invoices.square_unlink role",
@@ -31107,6 +32179,8 @@
                     "clients.portal_invitations.revoke deployment_disabled",
                     "clients.restore deployment_disabled",
                     "clients.update deployment_disabled",
+                    "companies.payment_reminders.get deployment_disabled",
+                    "companies.payment_reminders.set deployment_disabled",
                     "companies.square_customer.clear deployment_disabled",
                     "companies.square_customer.get deployment_disabled",
                     "companies.square_customer.set deployment_disabled",
@@ -31137,7 +32211,9 @@
                     "invoices.pdf deployment_disabled",
                     "invoices.preview_period deployment_disabled",
                     "invoices.release_delivery deployment_disabled",
+                    "invoices.reminders.list deployment_disabled",
                     "invoices.send deployment_disabled",
+                    "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates deployment_disabled",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
@@ -31232,6 +32308,8 @@
                     "clients.portal_invitations.revoke deployment_disabled",
                     "clients.restore deployment_disabled",
                     "clients.update deployment_disabled",
+                    "companies.payment_reminders.get deployment_disabled",
+                    "companies.payment_reminders.set deployment_disabled",
                     "companies.square_customer.clear deployment_disabled",
                     "companies.square_customer.get deployment_disabled",
                     "companies.square_customer.set deployment_disabled",
@@ -31262,7 +32340,9 @@
                     "invoices.pdf deployment_disabled",
                     "invoices.preview_period deployment_disabled",
                     "invoices.release_delivery deployment_disabled",
+                    "invoices.reminders.list deployment_disabled",
                     "invoices.send deployment_disabled",
+                    "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates deployment_disabled",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
@@ -31357,6 +32437,8 @@
                     "clients.portal_invitations.revoke deployment_disabled",
                     "clients.restore deployment_disabled",
                     "clients.update deployment_disabled",
+                    "companies.payment_reminders.get deployment_disabled",
+                    "companies.payment_reminders.set deployment_disabled",
                     "companies.square_customer.clear deployment_disabled",
                     "companies.square_customer.get deployment_disabled",
                     "companies.square_customer.set deployment_disabled",
@@ -31387,7 +32469,9 @@
                     "invoices.pdf deployment_disabled",
                     "invoices.preview_period deployment_disabled",
                     "invoices.release_delivery deployment_disabled",
+                    "invoices.reminders.list deployment_disabled",
                     "invoices.send deployment_disabled",
+                    "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates deployment_disabled",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
@@ -31482,6 +32566,8 @@
                     "clients.portal_invitations.revoke deployment_disabled",
                     "clients.restore deployment_disabled",
                     "clients.update deployment_disabled",
+                    "companies.payment_reminders.get deployment_disabled",
+                    "companies.payment_reminders.set deployment_disabled",
                     "companies.square_customer.clear deployment_disabled",
                     "companies.square_customer.get deployment_disabled",
                     "companies.square_customer.set deployment_disabled",
@@ -31512,7 +32598,9 @@
                     "invoices.pdf deployment_disabled",
                     "invoices.preview_period deployment_disabled",
                     "invoices.release_delivery deployment_disabled",
+                    "invoices.reminders.list deployment_disabled",
                     "invoices.send deployment_disabled",
+                    "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates deployment_disabled",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
@@ -31607,6 +32695,8 @@
                     "clients.portal_invitations.revoke deployment_disabled",
                     "clients.restore deployment_disabled",
                     "clients.update deployment_disabled",
+                    "companies.payment_reminders.get deployment_disabled",
+                    "companies.payment_reminders.set deployment_disabled",
                     "companies.square_customer.clear deployment_disabled",
                     "companies.square_customer.get deployment_disabled",
                     "companies.square_customer.set deployment_disabled",
@@ -31637,7 +32727,9 @@
                     "invoices.pdf deployment_disabled",
                     "invoices.preview_period deployment_disabled",
                     "invoices.release_delivery deployment_disabled",
+                    "invoices.reminders.list deployment_disabled",
                     "invoices.send deployment_disabled",
+                    "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates deployment_disabled",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
@@ -31732,6 +32824,8 @@
                     "clients.portal_invitations.revoke deployment_disabled",
                     "clients.restore deployment_disabled",
                     "clients.update deployment_disabled",
+                    "companies.payment_reminders.get deployment_disabled",
+                    "companies.payment_reminders.set deployment_disabled",
                     "companies.square_customer.clear deployment_disabled",
                     "companies.square_customer.get deployment_disabled",
                     "companies.square_customer.set deployment_disabled",
@@ -31762,7 +32856,9 @@
                     "invoices.pdf deployment_disabled",
                     "invoices.preview_period deployment_disabled",
                     "invoices.release_delivery deployment_disabled",
+                    "invoices.reminders.list deployment_disabled",
                     "invoices.send deployment_disabled",
+                    "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates deployment_disabled",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
@@ -31875,6 +32971,8 @@
                 "clients.portal_access.update": "7c94d6dd53da658d",
                 "clients.restore": "277bdcb0ddc74d50",
                 "clients.update": "c7982671fe74ba3f",
+                "companies.payment_reminders.get": "99a82139f0137f28",
+                "companies.payment_reminders.set": "28000c3cf407054d",
                 "companies.square_customer.clear": "bb76e8e2174853af",
                 "companies.square_customer.get": "7368cf19c59ad6e7",
                 "companies.square_customer.set": "40ae25ef785d9bc2",
@@ -31905,7 +33003,9 @@
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
                 "invoices.release_delivery": "f703c8eb40f1ed80",
+                "invoices.reminders.list": "86e53f8c46db44c6",
                 "invoices.send": "3b2bc9ef256c4d18",
+                "invoices.send_reminder": "8f62ca2de82c197b",
                 "invoices.square_candidates": "09693c77227c6c63",
                 "invoices.square_link": "db9e316d78559f31",
                 "invoices.square_unlink": "91e0eb7deb5ad47f",
@@ -32024,6 +33124,8 @@
                 "clients.portal_access.update": "7c94d6dd53da658d",
                 "clients.restore": "277bdcb0ddc74d50",
                 "clients.update": "c7982671fe74ba3f",
+                "companies.payment_reminders.get": "99a82139f0137f28",
+                "companies.payment_reminders.set": "28000c3cf407054d",
                 "companies.square_customer.clear": "bb76e8e2174853af",
                 "companies.square_customer.get": "7368cf19c59ad6e7",
                 "companies.square_customer.set": "40ae25ef785d9bc2",
@@ -32054,7 +33156,9 @@
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
                 "invoices.release_delivery": "f703c8eb40f1ed80",
+                "invoices.reminders.list": "86e53f8c46db44c6",
                 "invoices.send": "3b2bc9ef256c4d18",
+                "invoices.send_reminder": "8f62ca2de82c197b",
                 "invoices.square_candidates": "09693c77227c6c63",
                 "invoices.square_link": "db9e316d78559f31",
                 "invoices.square_unlink": "91e0eb7deb5ad47f",
@@ -32157,6 +33261,8 @@
                     "clients.portal_invitations.revoke deployment_disabled",
                     "clients.restore role",
                     "clients.update role",
+                    "companies.payment_reminders.get role",
+                    "companies.payment_reminders.set role",
                     "companies.square_customer.clear role",
                     "companies.square_customer.get role",
                     "companies.square_customer.set role",
@@ -32178,6 +33284,8 @@
                     "invoices.hold_delivery role",
                     "invoices.preview_period role",
                     "invoices.release_delivery role",
+                    "invoices.reminders.list role",
+                    "invoices.send_reminder role",
                     "invoices.square_candidates role",
                     "invoices.square_link role",
                     "invoices.square_unlink role",
@@ -32304,6 +33412,8 @@
                     "clients.portal_invitations.revoke deployment_disabled",
                     "clients.restore role",
                     "clients.update role",
+                    "companies.payment_reminders.get role",
+                    "companies.payment_reminders.set role",
                     "companies.square_customer.clear role",
                     "companies.square_customer.get role",
                     "companies.square_customer.set role",
@@ -32325,6 +33435,8 @@
                     "invoices.hold_delivery role",
                     "invoices.preview_period role",
                     "invoices.release_delivery role",
+                    "invoices.reminders.list role",
+                    "invoices.send_reminder role",
                     "invoices.square_candidates role",
                     "invoices.square_link role",
                     "invoices.square_unlink role",
@@ -32451,6 +33563,8 @@
                     "clients.portal_invitations.revoke deployment_disabled",
                     "clients.restore role",
                     "clients.update role",
+                    "companies.payment_reminders.get role",
+                    "companies.payment_reminders.set role",
                     "companies.square_customer.clear role",
                     "companies.square_customer.get role",
                     "companies.square_customer.set role",
@@ -32472,6 +33586,8 @@
                     "invoices.hold_delivery role",
                     "invoices.preview_period role",
                     "invoices.release_delivery role",
+                    "invoices.reminders.list role",
+                    "invoices.send_reminder role",
                     "invoices.square_candidates role",
                     "invoices.square_link role",
                     "invoices.square_unlink role",
@@ -32598,6 +33714,8 @@
                     "clients.portal_invitations.revoke deployment_disabled",
                     "clients.restore role",
                     "clients.update role",
+                    "companies.payment_reminders.get role",
+                    "companies.payment_reminders.set role",
                     "companies.square_customer.clear role",
                     "companies.square_customer.get role",
                     "companies.square_customer.set role",
@@ -32619,6 +33737,8 @@
                     "invoices.hold_delivery role",
                     "invoices.preview_period role",
                     "invoices.release_delivery role",
+                    "invoices.reminders.list role",
+                    "invoices.send_reminder role",
                     "invoices.square_candidates role",
                     "invoices.square_link role",
                     "invoices.square_unlink role",

@@ -124,3 +124,50 @@ a database exception.
 
 Production rollout remains per-client opt-in. This feature does not enroll a
 client, migrate historical invoices into the schedule, or change agent access.
+
+## Payment reminders
+
+A payment reminder (#438) is a separate email about an open invoice: issued or
+partially paid, with a balance. It comes from the same sender address as
+invoice email and goes to the client's billing address and portal users. It
+never counts as a client delivery and never changes the invoice.
+
+What it carries is decided once, by a database-free policy, from facts read
+under the invoice lock:
+
+- An invoice Square collects - linked, or under an agreement billed in Square -
+  carries the linked Square invoice's own payment page from the mirror, already
+  checked to be HTTPS on a Square host. Without a usable page (not linked, not
+  mirrored, not unpaid or partially paid in Square, or money recorded outside
+  Square that Square's balance does not show) there is no reminder. SVC never
+  falls back to its own collection for such an invoice.
+- Any other invoice links to the client portal invoice when it is visible to
+  the client and the client has a portal user. That is a sign-in page with no
+  token; SVC has no hosted checkout. The client-audience PDF is attached.
+
+A person can send one at any time from the invoice page or with
+`invoices.send_reminder`. The reminder is registered first and sent after the
+registering transaction commits, so a rollback sends nothing and a replay of
+the same idempotency key sends nothing more. Another reminder for the invoice
+leaving in the last hour is a retryable conflict.
+
+The automatic cadence is off until it is turned on for a client, on the
+client's Manage page or with `companies.payment_reminders.set`. Its steps are
+3 days before the due date, the due date, and 7 and 14 days after, in the
+workspace's calendar. `svc:billing:send-payment-reminders` runs every fifteen
+minutes in process without overlapping and sends between 09:00 and 17:00 in the
+workspace's time zone. It sends only the latest step that has fallen due, and
+only if that step fell due after the cadence was turned on and after the
+invoice was issued, so turning the cadence on never emails a backlog. Each step
+is claimed once per invoice by a unique `(invoice, step)` row; a failed attempt
+is retried after 30 minutes and then 4 hours, three attempts in all. The
+cadence skips an invoice Square charges by card on file or reminds about with
+its own schedule, and stops once the invoice is paid.
+
+Just before any reminder leaves, the facts are read again outside every lock;
+a payment, void or Square link that landed since its claim cancels it with the
+reason. `invoice_reminder_logs` records every reminder: who or what asked
+(website, agent, scheduler), the recipients, the step, the pay link, the amount
+and due date stated, and the result. A reminder accepted by the provider whose
+result could not be saved stays `sending` and is not sent again.
+

@@ -3,7 +3,7 @@
 namespace App\Services\Billing\Reminders;
 
 use App\Exceptions\PaymentReminderRefused;
-use App\Exceptions\PaymentReminderSettingsChanged;
+use App\Exceptions\PaymentReminderVersionConflict;
 use App\Mail\InvoicePaymentReminderMail;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
@@ -70,9 +70,13 @@ final class PaymentReminderService
         User $actor,
         PaymentReminderTrigger $trigger,
         ?string $oauthClientId = null,
+        ?string $expectedVersion = null,
     ): InvoiceReminderLog {
-        return DB::transaction(function () use ($workspace, $invoice, $actor, $trigger, $oauthClientId): InvoiceReminderLog {
+        return DB::transaction(function () use ($workspace, $invoice, $actor, $trigger, $oauthClientId, $expectedVersion): InvoiceReminderLog {
             $locked = $this->lockInvoice($workspace, $invoice);
+            if ($expectedVersion !== null && ! AgentApiVersion::matches($locked, $expectedVersion)) {
+                throw new PaymentReminderVersionConflict('The invoice has changed; read it and retry.');
+            }
             $facts = $this->repository->facts($workspace, $locked);
             $decision = $this->policy->manual($facts);
             if ($decision->refusal !== null) {
@@ -245,7 +249,7 @@ final class PaymentReminderService
                 ->tap(Locks::forUpdate())
                 ->firstOrFail();
             if ($expectedVersion !== null && ! AgentApiVersion::matches($locked, $expectedVersion)) {
-                throw new PaymentReminderSettingsChanged('The client has changed; read it and retry.');
+                throw new PaymentReminderVersionConflict('The client has changed; read it and retry.');
             }
             $before = $locked->payment_reminders_enabled_at !== null;
             if ($enabled === $before) {

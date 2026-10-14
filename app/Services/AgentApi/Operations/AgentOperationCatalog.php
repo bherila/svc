@@ -10,6 +10,7 @@ use App\Services\Mcp\AgentMcpCapacityLedgerTools;
 use App\Services\Mcp\AgentMcpClientTools;
 use App\Services\Mcp\AgentMcpClientWriteTools;
 use App\Services\Mcp\AgentMcpContextResource;
+use App\Services\Mcp\AgentMcpPaymentReminderTools;
 use App\Services\Mcp\AgentMcpPortalAccessTools;
 use App\Services\Mcp\AgentMcpPortalInvitationTools;
 use App\Services\Mcp\AgentMcpPrompts;
@@ -92,6 +93,8 @@ final class AgentOperationCatalog
         'clients.portal_invitations.revoke' => ['clients.portal-invitations.destroy', '/workspaces/{workspace}/clients/{client}/portal-invitations/{invitation}', [200]],
         'clients.restore' => ['clients.restore', '/workspaces/{workspace}/clients/{client}/restore', [200]],
         'clients.update' => ['clients.update', '/workspaces/{workspace}/clients/{client}', [200]],
+        'companies.payment_reminders.get' => ['clients.payment-reminders.show', '/workspaces/{workspace}/clients/{client}/payment-reminders', [200]],
+        'companies.payment_reminders.set' => ['clients.payment-reminders.update', '/workspaces/{workspace}/clients/{client}/payment-reminders', [200]],
         'companies.square_customer.clear' => ['clients.square-customer.destroy', '/workspaces/{workspace}/clients/{client}/square-customer', [200]],
         'companies.square_customer.get' => ['clients.square-customer.show', '/workspaces/{workspace}/clients/{client}/square-customer', [200]],
         'companies.square_customer.set' => ['clients.square-customer.update', '/workspaces/{workspace}/clients/{client}/square-customer', [200]],
@@ -125,6 +128,8 @@ final class AgentOperationCatalog
         'invoices.list' => ['invoices.index', '/workspaces/{workspace}/invoices', [200]],
         'invoices.pdf' => ['invoices.pdf', '/workspaces/{workspace}/invoices/{invoice}/pdf-link', [200]],
         'invoices.preview_period' => ['invoices.preview_period', '/workspaces/{workspace}/agreements/{agreement}/invoices/preview', [200]],
+        'invoices.reminders.list' => ['invoices.reminders.index', '/workspaces/{workspace}/invoices/{invoice}/reminders', [200]],
+        'invoices.send_reminder' => ['invoices.reminders.store', '/workspaces/{workspace}/invoices/{invoice}/reminders', [200]],
         'invoices.release_delivery' => ['invoices.release_delivery', '/workspaces/{workspace}/invoices/{invoice}/automatic-delivery/release', [200]],
         'invoices.send' => ['invoices.send', '/workspaces/{workspace}/invoices/{invoice}/send', [200]],
         'invoices.square_candidates' => ['invoices.square-candidates.index', '/workspaces/{workspace}/invoices/{invoice}/square-candidates', [200]],
@@ -914,6 +919,48 @@ final class AgentOperationCatalog
                 'Workspace managers only. Clear an agreement\'s billed-in-Square marker only after explicit confirmation, so SVC collects its invoices again.',
                 [AgentMcpSquareLinkTools::class, 'clearAgreement'],
                 Effect::Destructive,
+                true,
+                'mcp.write.clients',
+                cutovers: [AgentDeploymentFlags::CLIENTS],
+                manager: true,
+            ),
+            $this->tool(
+                'invoices.reminders.list',
+                'List invoice payment reminders',
+                'Workspace managers only. Whether a payment reminder may be sent for an invoice now, to whom and with which pay link (Square\'s own payment page for an invoice Square collects, otherwise the client portal or the PDF), where the client\'s automatic cadence stands for it, and the latest 50 reminders sent, with who or what sent them and the result.',
+                [AgentMcpPaymentReminderTools::class, 'list'],
+                Effect::Read,
+                true,
+                'mcp.read',
+                manager: true,
+            ),
+            $this->tool(
+                'invoices.send_reminder',
+                'Send invoice payment reminder',
+                'Workspace managers only. Email the client a payment reminder for an open invoice now, only after the user explicitly confirms, from SVC\'s usual invoice sender to the client\'s billing address and portal users. An invoice Square collects carries Square\'s own payment page and is refused without one; SVC never sends its own payment link for it. Every reminder is logged; the response is the reminder with its result.',
+                [AgentMcpPaymentReminderTools::class, 'send'],
+                Effect::LocalWrite,
+                true,
+                'mcp.write',
+                cutovers: [AgentDeploymentFlags::INVOICES],
+                manager: true,
+            ),
+            $this->tool(
+                'companies.payment_reminders.get',
+                'Get client reminder cadence',
+                'Workspace managers only. Whether the automatic payment reminder cadence is on for a client, since when, its steps, and the client version companies.payment_reminders.set requires.',
+                [AgentMcpPaymentReminderTools::class, 'company'],
+                Effect::Read,
+                true,
+                'mcp.read.clients',
+                manager: true,
+            ),
+            $this->tool(
+                'companies.payment_reminders.set',
+                'Set client reminder cadence',
+                'Workspace managers only. Turn a client\'s automatic payment reminder cadence on or off (3 days before the due date, on it, then 7 and 14 days after). Off by default. Turning it on never sends a step that fell due before; turning it off stops every step not yet sent. Recorded in the client history.',
+                [AgentMcpPaymentReminderTools::class, 'setCompany'],
+                Effect::LocalWrite,
                 true,
                 'mcp.write.clients',
                 cutovers: [AgentDeploymentFlags::CLIENTS],

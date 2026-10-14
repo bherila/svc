@@ -50,4 +50,5 @@ invoice there; svc does not write to Square. Other phase-two audit flags are a
 separate slice: missing series periods, unmatched payments, unlinked open balances
 and amount or cadence drift.
 
-Portal invitations and automatic reminder settings are unaffected by this slice.
+Payment reminders for linked invoices carry the mirrored Square payment page;
+see [payment reminders](client-management/invoice-delivery.md#payment-reminders).

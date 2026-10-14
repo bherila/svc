@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\V1\AgentInvoiceMutationController;
 use App\Http\Controllers\Api\V1\AgentInvoiceOperationsController;
 use App\Http\Controllers\Api\V1\AgentMcpController;
 use App\Http\Controllers\Api\V1\AgentPaymentController;
+use App\Http\Controllers\Api\V1\AgentPaymentReminderController;
 use App\Http\Controllers\Api\V1\AgentPortalAccessController;
 use App\Http\Controllers\Api\V1\AgentPortalInvitationController;
 use App\Http\Controllers\Api\V1\AgentProjectController;
@@ -371,6 +372,15 @@ Route::prefix('v1')
         $operation('companies.square_customer.set', [AgentSquareLinkController::class, 'setCustomer'])->whereUuid('client')->middleware(EnsureAgentWorkspaceVisible::class)->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']));
         $operation('companies.square_customer.clear', [AgentSquareLinkController::class, 'clearCustomer'])->whereUuid('client')->middleware(EnsureAgentWorkspaceVisible::class)->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']));
         $operation('agreements.square_series.set', [AgentSquareLinkController::class, 'markAgreement'])->whereUuid('agreement')->middleware(EnsureAgentWorkspaceVisible::class)->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']));
+        // Payment reminders (#438): sent by hand here, or by the per-client cadence.
+        foreach ([
+            'invoices.reminders.list' => ['index', 'invoice'],
+            'invoices.send_reminder' => ['send', 'invoice'],
+            'companies.payment_reminders.get' => ['company', 'client'],
+            'companies.payment_reminders.set' => ['setCompany', 'client'],
+        ] as $operationId => [$action, $id]) {
+            $operation($operationId, [AgentPaymentReminderController::class, $action])->whereUuid($id)->middleware(EnsureAgentWorkspaceVisible::class)->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']));
+        }
         $operation('agreements.square_series.clear', [AgentSquareLinkController::class, 'clearAgreement'])->whereUuid('agreement')->middleware(EnsureAgentWorkspaceVisible::class)->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']));
     });
 

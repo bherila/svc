@@ -4,7 +4,7 @@ namespace Tests\Feature\Billing\Reminders;
 
 use App\Exceptions\PaymentReminderInFlight;
 use App\Exceptions\PaymentReminderRefused;
-use App\Exceptions\PaymentReminderSettingsChanged;
+use App\Exceptions\PaymentReminderVersionConflict;
 use App\Mail\InvoicePaymentReminderMail;
 use App\Models\ClientCompanyActivity;
 use App\Models\InvoiceReminderLog;
@@ -272,7 +272,7 @@ final class PaymentReminderServiceTest extends TestCase
         try {
             $service->setCadence($workspace, $company, false, $owner, $stale);
             $this->fail('A stale version switched the cadence.');
-        } catch (PaymentReminderSettingsChanged) {
+        } catch (PaymentReminderVersionConflict) {
             $this->assertNotNull($company->refresh()->payment_reminders_enabled_at);
         }
         $this->assertNull($service->setCadence($workspace, $company, false, $owner, AgentApiVersion::for($company->refresh()))->payment_reminders_enabled_at);

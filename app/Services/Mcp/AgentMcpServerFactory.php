@@ -108,6 +108,7 @@ final class AgentMcpServerFactory
             AgentMcpClientWriteTools::class => $clientWrites,
             AgentMcpPortalAccessTools::class => new AgentMcpPortalAccessTools(app(InternalAgentApiTransport::class), $this->requestArguments),
             AgentMcpSquareLinkTools::class => new AgentMcpSquareLinkTools(app(InternalAgentApiTransport::class), $this->requestArguments),
+            AgentMcpPaymentReminderTools::class => new AgentMcpPaymentReminderTools(app(InternalAgentApiTransport::class)),
             AgentMcpPortalInvitationTools::class => new AgentMcpPortalInvitationTools(app(InternalAgentApiTransport::class), $this->requestArguments),
             AgentMcpWriteTools::class => $writes,
             AgentMcpPrompts::class => $this->prompts,

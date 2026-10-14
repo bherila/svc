@@ -431,6 +431,29 @@
             "mcp.switch:clients.update"
         ]
     },
+    "companies.payment_reminders.get": {
+        "scopes": [
+            "billing:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read.clients",
+            "mcp.switch:companies.payment_reminders.get"
+        ]
+    },
+    "companies.payment_reminders.set": {
+        "scopes": [
+            "billing:write",
+            "billing:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.clients",
+            "mcp",
+            "mcp.switch:mcp.write.clients",
+            "mcp.switch:companies.payment_reminders.set"
+        ]
+    },
     "companies.square_customer.clear": {
         "scopes": [
             "billing:write",
@@ -799,6 +822,16 @@
             "mcp.switch:invoices.release_delivery"
         ]
     },
+    "invoices.reminders.list": {
+        "scopes": [
+            "billing:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:invoices.reminders.list"
+        ]
+    },
     "invoices.send": {
         "scopes": [
             "billing:deliver"
@@ -808,6 +841,19 @@
             "mcp",
             "mcp.switch:mcp.write",
             "mcp.switch:invoices.send"
+        ]
+    },
+    "invoices.send_reminder": {
+        "scopes": [
+            "billing:write",
+            "billing:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.invoices",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:invoices.send_reminder"
         ]
     },
     "invoices.square_candidates": {
