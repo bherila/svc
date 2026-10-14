@@ -14,7 +14,7 @@ final class ReceivedPaymentProviderTest extends TestCase
         $this->assertSame('square', $provider->name);
         $this->assertSame('pay_fixture_1', $provider->paymentIdentifier);
         $this->assertSame(255, strlen((new ReceivedPaymentProvider(str_repeat('a', 50), str_repeat('p', 255)))->paymentIdentifier));
-        foreach ([['', 'p'], ['Square', 'p'], ['square\n', 'p'], [str_repeat('a', 51), 'p'], ['square', ''], ['square', str_repeat('p', 256)]] as [$name, $identifier]) {
+        foreach ([['', 'p'], ['Square', 'p'], ["square\n", 'p'], [str_repeat('a', 51), 'p'], ['square', ''], ['square', str_repeat('p', 256)]] as [$name, $identifier]) {
             try {
                 new ReceivedPaymentProvider($name, $identifier);
                 $this->fail('Invalid provider identity was accepted.');

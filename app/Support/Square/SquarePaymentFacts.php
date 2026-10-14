@@ -51,7 +51,8 @@ final readonly class SquarePaymentFacts
             throw SquareRequestFailed::unreadable();
         }
         $created = $payment['created_at'] ?? null;
-        if (! is_string($created) || preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/D', $created) !== 1) {
+        $matches = [];
+        if (! is_string($created) || preg_match('/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})/', $created, $matches) !== 1 || $matches[0] !== $created) {
             throw SquareRequestFailed::unreadable();
         }
         try {

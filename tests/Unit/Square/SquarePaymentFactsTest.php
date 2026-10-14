@@ -29,6 +29,9 @@ final class SquarePaymentFactsTest extends TestCase
         $this->assertSame('123000', SquarePaymentFacts::from($raw, 'pay_fixture_1')->receivedAt->format('u'));
         $raw['created_at'] = '2030-02-01T16:00:00-05:00';
         $this->assertSame('-05:00', SquarePaymentFacts::from($raw, 'pay_fixture_1')->receivedAt->format('P'));
+        $raw = $this->fixture();
+        $raw['amount_money']['amount'] = 1;
+        $this->assertSame(1, SquarePaymentFacts::from($raw, 'pay_fixture_1')->amount);
     }
 
     public function test_non_completed_payment_does_not_record_money(): void
@@ -50,12 +53,18 @@ final class SquarePaymentFactsTest extends TestCase
             ['amount_money', ['amount' => 1200, 'currency' => null]],
             ['amount_money', ['amount' => 1200, 'currency' => 'usd']],
             ['amount_money', ['amount' => 1200, 'currency' => 'US']],
+            ['amount_money', ['amount' => 1200, 'currency' => 'xUSD']],
+            ['amount_money', ['amount' => 1200, 'currency' => 'USDx']],
+            ['amount_money', ['amount' => 1200, 'currency' => "USD\n"]],
             ['refunded_money', ['amount' => 1201, 'currency' => 'USD']],
             ['refunded_money', ['amount' => -1, 'currency' => 'USD']],
             ['refunded_money', ['amount' => 300, 'currency' => 'EUR']],
             ['tip_money', ['amount' => 1, 'currency' => 'USD']],
             ['created_at', null], ['created_at', 'tomorrow'], ['created_at', '2030-02-30T16:00:00Z'],
             ['created_at', '2030-02-01T99:00:00Z'],
+            ['created_at', '2030-02-01T16:00:00 UTC'],
+            ['created_at', ' 2030-02-01T16:00:00Z'],
+            ['created_at', "2030-02-01T16:00:00Z\n"],
         ] as [$field, $value]) {
             $raw = $this->fixture();
             $raw[$field] = $value;
