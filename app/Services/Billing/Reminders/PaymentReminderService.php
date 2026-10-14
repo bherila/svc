@@ -303,6 +303,15 @@ final class PaymentReminderService
                 'error_summary' => 'Not sent: the client\'s recipients changed after the reminder was claimed.',
             ]);
         }
+        // And so is what it says: the log records the balance and due date
+        // the email states, so a payment or new due date since the claim
+        // would leave the record saying something the client was never told.
+        if ((int) $current->balance_amount !== $reminder->amount_due
+            || $current->due_date?->toDateString() !== $reminder->due_on?->toDateString()) {
+            return $this->resolve($workspace, $invoice, $reminder, PaymentReminderStatus::Cancelled, [
+                'error_summary' => 'Not sent: the invoice\'s balance or due date changed after the reminder was claimed.',
+            ]);
+        }
 
         try {
             $pdf = $decision->payLink === PaymentReminderPayLink::Square ? null

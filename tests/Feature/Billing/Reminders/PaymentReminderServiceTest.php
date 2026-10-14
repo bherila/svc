@@ -242,6 +242,25 @@ final class PaymentReminderServiceTest extends TestCase
         Mail::assertNothingSent();
     }
 
+    public function test_a_partial_payment_between_claim_and_send_stops_a_reminder_stating_the_old_balance(): void
+    {
+        [$workspace, $owner, , $invoice] = $this->reminderFixture();
+        $service = app(PaymentReminderService::class);
+        $registered = $service->register($workspace, $invoice, $owner, PaymentReminderTrigger::Website);
+        InvoiceReminderLog::saved(function (InvoiceReminderLog $reminder) use ($workspace, $invoice): void {
+            if ($reminder->status === PaymentReminderStatus::Sending && $reminder->wasChanged('status')) {
+                app(RecordReceivedPayment::class)->record($workspace, $invoice->refresh(), ReceivedPaymentData::from(['amount' => 1_000, 'currency' => 'USD', 'received_on' => '2030-03-15', 'method' => 'check']));
+            }
+        });
+
+        $result = $service->sendRegistered($workspace, $invoice, $registered->public_id);
+
+        $this->assertSame(PaymentReminderStatus::Cancelled, $result->status);
+        $this->assertSame(12_345, $result->amount_due);
+        $this->assertSame('Not sent: the invoice\'s balance or due date changed after the reminder was claimed.', $result->error_summary);
+        Mail::assertNothingSent();
+    }
+
     public function test_an_invoice_reminded_about_cannot_be_corrected_in_place(): void
     {
         [$workspace, $owner, , $invoice] = $this->reminderFixture();
