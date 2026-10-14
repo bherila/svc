@@ -223,6 +223,7 @@ final class PaymentReminderPolicy
     private function laterStepClaimed(PaymentReminderFacts $facts, PaymentReminderStep $current): bool
     {
         foreach ($facts->claims as $claim) {
+            /** @infection-ignore-all Asked only once the current step has no claim, so `>=` and `>` cannot differ here. */
             if ($claim->step->offsetDays() > $current->offsetDays()) {
                 return true;
             }

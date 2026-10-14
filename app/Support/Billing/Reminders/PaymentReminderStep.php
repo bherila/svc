@@ -44,15 +44,13 @@ enum PaymentReminderStep: string
     }
 
     /**
-     * The cadence in the order its steps fall due.
+     * The cadence in the order its steps fall due, which is the order the
+     * cases are declared in; `PaymentReminderPolicyTest` pins it.
      *
      * @return list<self>
      */
     public static function cadence(): array
     {
-        $steps = self::cases();
-        usort($steps, static fn (self $a, self $b): int => $a->offsetDays() <=> $b->offsetDays());
-
-        return $steps;
+        return self::cases();
     }
 }

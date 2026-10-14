@@ -62,6 +62,17 @@ final class PaymentReminderPolicyTest extends TestCase
         $this->assertSame($refusal, $decision->refusal);
         $this->assertFalse($decision->sends());
         $this->assertNull($decision->payUrl);
+        $this->assertFalse($decision->retry);
+    }
+
+    public function test_the_invoice_itself_is_asked_about_before_a_reminder_in_flight(): void
+    {
+        $this->assertSame(PaymentReminderRefusal::NotOpen, (new PaymentReminderPolicy)->manual($this->facts(status: 'paid', inFlight: true))->refusal);
+    }
+
+    public function test_a_page_without_a_mirrored_square_status_is_not_trusted(): void
+    {
+        $this->assertSame(PaymentReminderRefusal::SquarePageMissing, (new PaymentReminderPolicy)->manual($this->facts(square: self::square(status: null)))->refusal);
     }
 
     public function test_an_invoice_square_collects_carries_only_squares_page(): void
@@ -259,6 +270,7 @@ final class PaymentReminderPolicyTest extends TestCase
         $this->assertSame($payLink, $decision->payLink);
         $this->assertSame($url, $decision->payUrl);
         $this->assertNull($decision->step);
+        $this->assertFalse($decision->retry);
     }
 
     private static function square(
