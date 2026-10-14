@@ -210,15 +210,14 @@ final class PaymentReminderService
     public function dispatchAutomaticDue(int $limit = 50): int
     {
         $today = $this->clock->now()->utc()->startOfDay();
-        $earliest = $today->subDays(PaymentReminderStep::TwoWeeksOverdue->offsetDays() + 8)->toDateString();
-        $latest = $today->addDays(-PaymentReminderStep::BeforeDue->offsetDays() + 1)->toDateString();
         $sent = 0;
         $candidates = ClientInvoice::query()
             ->select(['client_invoices.id', 'client_invoices.workspace_id'])
             ->whereIn('client_invoices.status', InvoiceStatus::collectible())
             ->where('client_invoices.balance_amount', '>', 0)
             ->whereNotNull('client_invoices.due_date')
-            ->whereBetween('client_invoices.due_date', [$earliest, $latest])
+            ->where('client_invoices.due_date', '>=', $today->subDays(PaymentReminderStep::TwoWeeksOverdue->offsetDays() + 8)->toDateString())
+            ->where('client_invoices.due_date', '<=', $today->addDays(1 - PaymentReminderStep::BeforeDue->offsetDays())->toDateString())
             ->whereExists(fn (QueryBuilder $company): QueryBuilder => $company->selectRaw('1')->from('client_companies')
                 ->whereColumn('client_companies.id', 'client_invoices.client_company_id')
                 ->whereColumn('client_companies.workspace_id', 'client_invoices.workspace_id')
