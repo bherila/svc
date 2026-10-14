@@ -48,6 +48,7 @@ return [
     // database, logged, returned, or placed in an exception.
     'square' => [
         'access_token' => env('SQUARE_ACCESS_TOKEN'),
+        'webhook_signature_key' => env('SQUARE_WEBHOOK_SIGNATURE_KEY'),
         // production | sandbox; anything else leaves the feature off.
         'environment' => env('SQUARE_ENVIRONMENT', 'production'),
         'application_id' => env('SQUARE_APPLICATION_ID'),
