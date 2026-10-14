@@ -4,7 +4,9 @@ namespace Tests\Feature\Square;
 
 use App\Models\ClientInvoicePayment;
 use App\Services\Square\SquarePaymentReconciler;
+use App\Services\Square\SquareWebhookReceipts;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
@@ -79,6 +81,22 @@ final class SquareWebhookTest extends TestCase
             $this->assertStringNotContainsString('Csrf', $item);
         }
         $this->deliver(['event_id' => 'evt_fixture_no_auth', 'type' => 'invoice.updated', 'data' => ['id' => 'inv_fixture_1']])->assertOk();
+    }
+
+    public function test_an_inflight_claim_requests_retry_and_an_expired_claim_can_be_recovered(): void
+    {
+        [$workspace] = $this->paymentFixture();
+        $receipts = app(SquareWebhookReceipts::class);
+        $claim = $receipts->claim($workspace, 'evt_fixture_lease', 'invoice.updated');
+        $this->assertIsString($claim);
+        $event = ['event_id' => 'evt_fixture_lease', 'type' => 'invoice.updated', 'data' => ['id' => 'inv_fixture_1']];
+        $this->deliver($event)->assertStatus(409);
+        Http::assertNothingSent();
+        Date::setTestNow('2030-02-02 12:06:00');
+        $this->deliver($event)->assertOk();
+        // A slow predecessor cannot clear the successor's completed receipt.
+        $receipts->finish($workspace, 'evt_fixture_lease', $claim, false);
+        $this->assertSame(1, DB::table('square_webhook_receipts')->where('workspace_id', $workspace->id)->whereNotNull('completed_at')->count());
     }
 
     /** @param array<string, mixed> $event */

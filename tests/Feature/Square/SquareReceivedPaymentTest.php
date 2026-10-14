@@ -9,6 +9,7 @@ use App\Services\Billing\InvoiceLifecycleService;
 use App\Services\Billing\RecordReceivedPayment;
 use App\Support\Billing\ReceivedPaymentData;
 use App\Support\Billing\ReceivedPaymentProvider;
+use DomainException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Date;
 use Tests\TestCase;
@@ -36,5 +37,26 @@ final class SquareReceivedPaymentTest extends TestCase
         $this->assertSame(300, $second->refunded_amount);
         $this->assertSame(1, $invoice->payments()->count());
         $this->assertSame(300, $invoice->fresh()->balance_amount);
+
+        $other = $invoice->replicate(['public_id']);
+        $other->forceFill(['invoice_number' => 'SYNTHETIC-002', 'status' => 'issued'])->save();
+        foreach ([[$other, $facts], [$invoice, ReceivedPaymentData::from(['amount' => 1199, 'currency' => 'USD', 'received_on' => '2030-02-01', 'method' => 'square'])]] as [$target, $changed]) {
+            try {
+                $service->recordProvider($workspace, $target, $changed, $provider);
+                $this->fail('A provider identity was reused for different money.');
+            } catch (DomainException $exception) {
+                $this->assertSame('The provider identity is already bound to a different payment.', $exception->getMessage());
+            }
+        }
+        $foreign = Workspace::query()->create(['name' => 'Synthetic foreign provider workspace', 'slug' => 'synthetic-foreign-provider-workspace']);
+        try {
+            $service->recordProvider($foreign, $invoice, $facts, $provider);
+            $this->fail('A foreign invoice was paid.');
+        } catch (DomainException $exception) {
+            $this->assertSame('The invoice does not belong to this workspace.', $exception->getMessage());
+        }
+        $manual = ReceivedPaymentData::from(['amount' => 1, 'currency' => 'USD', 'received_on' => '2030-02-01', 'method' => 'cash', 'provider' => 'square', 'provider_payment_identifier' => 'pay_fixture_spoof']);
+        $this->assertArrayNotHasKey('provider', $manual->attributes());
+        $this->assertArrayNotHasKey('provider_payment_identifier', $manual->attributes());
     }
 }
