@@ -31,6 +31,12 @@ claim and answer 503 for retry; successfully completed event IDs do no more work
 The received date comes from the card capture timeline in the workspace's time
 zone. Payments without a trustworthy completion timestamp fail closed; creation
 and last-update times are not substituted for the day money was received.
+Webhook receipts retain their first arrival time and expire after thirty days,
+beyond the delivery retry window. The daily
+`svc:square:prune-webhook-receipts` command removes expired completed and failed
+receipts in bounded batches, while retaining live claims in the configured
+workspace. Payment-identifier uniqueness continues to guard the ledger after a
+receipt expires.
 
 When an invoice paid through another source remains open in the Square mirror,
 the operator invoice and `billing_audit.stale_and_missing` show

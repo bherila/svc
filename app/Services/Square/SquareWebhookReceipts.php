@@ -16,12 +16,12 @@ final class SquareWebhookReceipts
     public function claim(Workspace $workspace, string $eventId, string $type): string|false|null
     {
         $hash = hash('sha256', $eventId);
-        DB::table('square_webhook_receipts')->insertOrIgnore(['workspace_id' => $workspace->id, 'event_hash' => $hash, 'event_type' => $type]);
+        $now = $this->clock->now()->utc();
+        DB::table('square_webhook_receipts')->insertOrIgnore(['workspace_id' => $workspace->id, 'event_hash' => $hash, 'event_type' => $type, 'received_at' => $now]);
         $query = DB::table('square_webhook_receipts')->where('workspace_id', $workspace->id)->where('event_hash', $hash);
         if ((clone $query)->whereNotNull('completed_at')->exists()) {
             return null;
         }
-        $now = $this->clock->now()->utc();
         $token = (string) Str::uuid();
         $claimed = (clone $query)->whereNull('completed_at')
             ->where(fn ($lease) => $lease->whereNull('lease_expires_at')->orWhere('lease_expires_at', '<=', $now))
@@ -34,5 +34,17 @@ final class SquareWebhookReceipts
     {
         DB::table('square_webhook_receipts')->where('workspace_id', $workspace->id)->where('event_hash', hash('sha256', $eventId))->where('claim_token', $claim)
             ->update(['claim_token' => null, 'lease_expires_at' => null, 'completed_at' => $succeeded ? $this->clock->now()->utc() : null]);
+    }
+
+    /** Thirty days exceeds the delivery retry window; an active lease is retained. */
+    public function prune(Workspace $workspace): int
+    {
+        $now = $this->clock->now()->utc();
+        $expired = DB::table('square_webhook_receipts')->where('workspace_id', $workspace->id)->where('received_at', '<', $now->subDays(30))
+            ->where(fn ($lease) => $lease->whereNull('lease_expires_at')->orWhere('lease_expires_at', '<=', $now));
+        $ids = (clone $expired)->orderBy('id')->limit(1000)->pluck('id')->all();
+
+        // Recheck lease expiry in the delete: a request may reclaim after selection.
+        return $ids === [] ? 0 : $expired->whereIn('id', $ids)->delete();
     }
 }

@@ -13,10 +13,12 @@ return new class extends Migration
             $table->foreignId('workspace_id')->constrained()->cascadeOnDelete();
             $table->char('event_hash', 64);
             $table->string('event_type', 64);
+            $table->dateTime('received_at');
             $table->uuid('claim_token')->nullable();
             $table->dateTime('lease_expires_at')->nullable();
             $table->dateTime('completed_at')->nullable();
             $table->unique(['workspace_id', 'event_hash'], 'square_webhook_event_unique');
+            $table->index(['workspace_id', 'received_at'], 'square_webhook_retention_index');
         });
     }
 
