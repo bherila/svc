@@ -280,6 +280,14 @@ final class PaymentReminderService
                 'error_summary' => 'Not sent: '.($decision?->refusal?->message() ?? 'the invoice changed after the reminder was claimed.'),
             ]);
         }
+        // Who it goes to is part of what was claimed. A billing address
+        // changed or a portal user removed since must not still receive it -
+        // with the PDF attached, for an invoice SVC collects.
+        if ($facts->recipients !== $reminder->recipients) {
+            return $this->resolve($workspace, $invoice, $reminder, PaymentReminderStatus::Cancelled, [
+                'error_summary' => 'Not sent: the client\'s recipients changed after the reminder was claimed.',
+            ]);
+        }
 
         try {
             $pdf = $decision->payLink === PaymentReminderPayLink::Square ? null

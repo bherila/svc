@@ -222,6 +222,25 @@ final class PaymentReminderServiceTest extends TestCase
         Mail::assertNothingSent();
     }
 
+    public function test_a_recipient_removed_between_claim_and_send_does_not_receive_the_reminder(): void
+    {
+        [$workspace, $owner, $company, $invoice] = $this->reminderFixture();
+        $service = app(PaymentReminderService::class);
+        $registered = $service->register($workspace, $invoice, $owner, PaymentReminderTrigger::Website);
+        // The claim commits with the old address; the address changes before the message leaves.
+        InvoiceReminderLog::saved(function (InvoiceReminderLog $reminder) use ($company): void {
+            if ($reminder->status === PaymentReminderStatus::Sending && $reminder->wasChanged('status')) {
+                $company->forceFill(['billing_email' => 'new-billing@reminders.example.test'])->save();
+            }
+        });
+
+        $result = $service->sendRegistered($workspace, $invoice, $registered->public_id);
+
+        $this->assertSame(PaymentReminderStatus::Cancelled, $result->status);
+        $this->assertSame('Not sent: the client\'s recipients changed after the reminder was claimed.', $result->error_summary);
+        Mail::assertNothingSent();
+    }
+
     public function test_a_provider_refusal_is_logged_as_failed_with_the_class_only(): void
     {
         [$workspace, $owner, , $invoice] = $this->reminderFixture();
