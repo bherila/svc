@@ -27,7 +27,7 @@ class ClientTaskController extends Controller
 
         $actor = $request->user();
         abort_unless($actor instanceof User, 401);
-        $tasks->create($actor, $workspace, $clientProject->public_id, $request->validated(), visibleDefault: true);
+        $tasks->create($actor, $workspace, $clientProject->public_id, $request->validated());
 
         return redirect()->back()->with('status', 'Task created.');
     }

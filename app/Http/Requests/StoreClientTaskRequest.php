@@ -15,9 +15,9 @@ class StoreClientTaskRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'title' => ['required', 'string', 'max:200'],
-            'description' => ['nullable', 'string', 'max:5000'],
-            'is_visible_to_client' => ['sometimes', 'boolean'],
+            'title' => ['required', 'string', 'max:255'],
+            'description' => ['nullable', 'string', 'max:10000'],
+            'is_visible_to_client' => ['required', 'boolean'],
         ];
     }
 }
