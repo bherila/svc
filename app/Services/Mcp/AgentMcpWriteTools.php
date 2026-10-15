@@ -362,6 +362,7 @@ final class AgentMcpWriteTools
             ->whereIn('public_id', $ids)
             ->withCapacityPlacement($workspace->id)
             ->with('project')
+            ->with(AgentTimeEntryPresenter::authorRelations($workspace))
             ->get()
             ->keyBy('public_id');
 

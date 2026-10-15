@@ -302,10 +302,7 @@ class TimeSheetController extends Controller
                 // so a row could name someone from outside the workspace
                 // entirely. A name is the one field here that identifies a
                 // person rather than describing work.
-                'user' => fn ($query) => $query->whereHas(
-                    'workspaces',
-                    fn ($workspaces) => $workspaces->whereKey($workspace->id),
-                ),
+                ...AgentTimeEntryPresenter::authorRelations($workspace),
             ])
             ->orderByDesc('worked_on')
             ->orderByDesc('id')

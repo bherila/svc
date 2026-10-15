@@ -212,7 +212,7 @@ final class AgentReadService
     public function timeEntries(User|AgentPrincipal $user, Workspace $workspace, ?string $projectId, ?string $status, ?string $from, ?string $to, int $limit, ?string $cursor, ?string $allocationState = null, ?bool $isBillable = null, bool $unallocated = false, bool $compact = false): array
     {
         $this->requireWorkspace($user, $workspace);
-        $query = $this->timeQueries->visibleTo($user, $workspace)->with(['project', 'clientCompany', 'task', 'user'])->withCapacityPlacement($workspace->id)->orderBy('id');
+        $query = $this->timeQueries->visibleTo($user, $workspace)->with(['project', 'clientCompany', 'task'])->with(AgentTimeEntryPresenter::authorRelations($workspace))->withCapacityPlacement($workspace->id)->orderBy('id');
         if ($projectId !== null && $projectId !== '') {
             $query->whereHas('project', fn (Builder $projects) => $projects->where('public_id', $projectId));
         }
@@ -266,7 +266,7 @@ final class AgentReadService
     {
         $this->requireWorkspace($user, $workspace);
         $entries = $this->timeQueries->visibleTo($user, $workspace)
-            ->with(['project', 'clientCompany', 'task', 'user'])
+            ->with(['project', 'clientCompany', 'task'])->with(AgentTimeEntryPresenter::authorRelations($workspace))
             ->withCapacityPlacement($workspace->id)
             ->whereIn('public_id', $ids)
             ->get()

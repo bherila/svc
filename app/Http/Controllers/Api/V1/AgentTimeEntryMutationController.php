@@ -38,7 +38,7 @@ final class AgentTimeEntryMutationController extends Controller
             $request->all(),
             $scopes->allows($request, AgentApiScopes::TIME_APPROVE),
         );
-        $entriesById = ClientTimeEntry::query()->where('workspace_id', $workspace->id)->whereIn('public_id', $ids)->with('project')->withCapacityPlacement($workspace->id)->get()->keyBy('public_id');
+        $entriesById = ClientTimeEntry::query()->where('workspace_id', $workspace->id)->whereIn('public_id', $ids)->with('project')->with(AgentTimeEntryPresenter::authorRelations($workspace))->withCapacityPlacement($workspace->id)->get()->keyBy('public_id');
         $entries = collect($ids)->map(function (string $id) use ($entriesById): ClientTimeEntry {
             $entry = $entriesById->get($id);
             abort_unless($entry instanceof ClientTimeEntry, 404);

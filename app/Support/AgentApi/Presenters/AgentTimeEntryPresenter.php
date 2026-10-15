@@ -9,6 +9,15 @@ use App\Support\AgentApi\TimeEntryAllocation;
 
 final class AgentTimeEntryPresenter
 {
+    /** @return array<string, \Closure> */
+    public static function authorRelations(Workspace $workspace): array
+    {
+        return [
+            'user' => fn ($users) => $users->whereHas('workspaces', fn ($workspaces) => $workspaces->whereKey($workspace->id)),
+            'user.workspaces' => fn ($workspaces) => $workspaces->whereKey($workspace->id),
+        ];
+    }
+
     /** @return array<string, mixed> */
     public function present(
         Workspace $workspace,
@@ -24,12 +33,15 @@ final class AgentTimeEntryPresenter
                 ->with(['invoice' => fn ($invoice) => $invoice->where('workspace_id', $workspace->id)]),
             ]);
         }
+        $entry->loadMissing(self::authorRelations($workspace));
+        $author = $entry->user;
+        $authorId = $author !== null && $author->workspaces->contains('id', $workspace->id) ? $author->public_id : null;
         $allocation = TimeEntryAllocation::fromEntry($entry);
         $payload = [
             'invoice_id' => $allocation->invoiceId,
             'allocation_state' => $allocation->state,
             'id' => $entry->public_id,
-            'author_id' => $entry->user?->public_id,
+            'author_id' => $authorId,
             'project_id' => $entry->project->public_id,
             'task_id' => $entry->task?->public_id,
             'worked_on' => $entry->worked_on->toDateString(),

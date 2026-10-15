@@ -12,6 +12,7 @@ use App\Models\WorkspaceMembership;
 use App\Services\AgentApi\AgentReadService;
 use App\Support\AgentApi\AgentApiScopes;
 use App\Support\AgentApi\AgentApiVersion;
+use App\Support\AgentApi\Presenters\AgentTimeEntryPresenter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\Concerns\WritesLegacyCrossTenantRows;
@@ -21,6 +22,35 @@ final class AgentTimeEntryMutationTest extends TestCase
 {
     use RefreshDatabase;
     use WritesLegacyCrossTenantRows;
+
+    public function test_former_authors_are_hidden_on_lists_by_id_and_mutation_responses(): void
+    {
+        config(['agent_api.writes_enabled' => true, 'agent_api.time_entry_writes_enabled' => true]);
+        [$workspace, $project] = $this->project();
+        $owner = User::factory()->create(['name' => 'Synthetic operator', 'email' => 'operator@example.test']);
+        $author = User::factory()->create(['name' => 'Synthetic former author', 'email' => 'former-author@example.test']);
+        $workspace->memberships()->create(['user_id' => $owner->id, 'role' => 'owner']);
+        $this->member($workspace, $author);
+        $workspace->memberships()->where('user_id', $author->id)->delete();
+        $away = Workspace::query()->create(['name' => 'Synthetic other workspace', 'slug' => 'synthetic-author-isolation']);
+        $this->member($away, $author);
+        $entry = ClientTimeEntry::query()->create([
+            'workspace_id' => $workspace->id, 'client_company_id' => $project->client_company_id,
+            'client_project_id' => $project->id, 'user_id' => $author->id,
+            'worked_on' => now()->toDateString(), 'minutes' => 30, 'description' => 'Synthetic former-author work', 'status' => 'draft', 'currency' => 'USD',
+        ])->refresh();
+        $this->actingAsAgent($owner, [AgentApiScopes::TIME_READ, AgentApiScopes::TIME_WRITE]);
+        $base = "/api/v1/workspaces/{$workspace->public_id}/time-entries";
+        $this->getJson($base)->assertOk()->assertJsonPath('data.0.author_id', null);
+        $this->assertNull(app(AgentReadService::class)->timeEntriesByIds($owner, $workspace, [$entry->public_id])[0]['author_id']);
+        $this->withHeader('Idempotency-Key', 'synthetic-former-author-update')->patchJson($base.'/'.$entry->public_id, [
+            'expected_version' => AgentApiVersion::for($entry), 'minutes' => 45,
+        ])->assertOk()->assertJsonPath('data.author_id', null);
+        $entry->setRelation('user', $author->load('workspaces'));
+        $this->assertNull(app(AgentTimeEntryPresenter::class)->present($workspace, $entry)['author_id']);
+        $this->member($workspace, $author);
+        $this->getJson($base)->assertOk()->assertJsonPath('data.0.author_id', $author->public_id);
+    }
 
     public function test_contributor_can_idempotently_log_then_edit_and_delete_their_draft_only(): void
     {
