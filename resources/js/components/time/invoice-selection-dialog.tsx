@@ -12,8 +12,8 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { apiRequest  } from '@/lib/api';
-import type {ApiSchema} from '@/lib/api';
+import { apiRequest } from '@/lib/api';
+import type { ApiSchema } from '@/lib/api';
 import { formatShortDay } from '@/lib/datetime';
 import { formatMoney } from '@/lib/money';
 import { formatHours, todayIn } from '@/lib/time';

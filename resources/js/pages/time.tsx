@@ -432,8 +432,8 @@ export default function TimeSheet({
     // their successful approval failed.
     const approve = async (entries: TimeEntry[]) => {
         if (approving) {
-return;
-}
+            return;
+        }
 
         setApproving(true);
         const result = await apiRequest('POST', actions.approve, {
@@ -458,8 +458,8 @@ return;
 
     const unapprove = async (entry: TimeEntry) => {
         if (approving || entry.unapprove_url === null) {
-return;
-}
+            return;
+        }
 
         setApproving(true);
         const result = await apiRequest('POST', entry.unapprove_url, {
@@ -479,8 +479,8 @@ return;
 
     const remove = async (entry: TimeEntry) => {
         if (deleting || entry.delete_url === null) {
-return;
-}
+            return;
+        }
 
         setDeleting(true);
         const result = await apiRequest('DELETE', entry.delete_url, {

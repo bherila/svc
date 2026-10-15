@@ -22,8 +22,8 @@ import {
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
-import { apiRequest, newIdempotencyKey  } from '@/lib/api';
-import type {ApiSchema} from '@/lib/api';
+import { apiRequest, newIdempotencyKey } from '@/lib/api';
+import type { ApiSchema } from '@/lib/api';
 import { todayIn } from '@/lib/time';
 import type { CompanyOption, TimeEntry } from '@/types/time-sheet';
 
@@ -124,8 +124,8 @@ export function TimeEntryDialog({
 
     const submit = async () => {
         if (saving) {
-return;
-}
+            return;
+        }
 
         if (clientDescriptionMissing) {
             setError('Client-visible time needs a client-facing description.');

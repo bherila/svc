@@ -4,7 +4,10 @@ import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiRequest } from '@/lib/api';
 import TimeSheet from '@/pages/time';
-vi.mock('@/lib/api', () => ({ apiRequest: vi.fn(() => new Promise(() => {})), newIdempotencyKey: () => crypto.randomUUID() }));
+vi.mock('@/lib/api', () => ({
+    apiRequest: vi.fn(() => new Promise(() => {})),
+    newIdempotencyKey: () => crypto.randomUUID(),
+}));
 import { horizontalOverflowRisks } from '@/test/horizontal-overflow';
 import { sharedPageProps } from '@/test/shared-page-props';
 import { workspaceNavigation } from '@/test/workspace-navigation';
