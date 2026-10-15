@@ -1,5 +1,5 @@
 import { router } from '@inertiajs/react';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { DurationField } from '@/components/time/duration-field';
 import { Button } from '@/components/ui/button';
 import {
@@ -22,6 +22,8 @@ import {
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
+import { apiRequest, newIdempotencyKey } from '@/lib/api';
+import type { ApiSchema } from '@/lib/api';
 import { todayIn } from '@/lib/time';
 import type { CompanyOption, TimeEntry } from '@/types/time-sheet';
 
@@ -29,6 +31,8 @@ import type { CompanyOption, TimeEntry } from '@/types/time-sheet';
 const NO_TASK = '__no_task__';
 
 type Draft = {
+    billing_rate: string;
+    currency: string;
     project_id: string;
     task_id: string;
     worked_on: string;
@@ -44,14 +48,17 @@ function draftFor(
     company: CompanyOption,
     entry: TimeEntry | null,
     timezone: string,
+    initialProjectId: string | null,
 ): Draft {
     if (entry !== null) {
         return {
+            billing_rate: '',
+            currency: '',
             project_id: entry.project.id,
             task_id: entry.task?.id ?? '',
             worked_on: entry.worked_on,
             minutes: entry.minutes,
-            description: entry.description,
+            description: entry.description ?? '',
             is_billable: entry.is_billable,
             is_deferred: entry.is_deferred,
             is_visible_to_client: entry.is_visible_to_client,
@@ -59,9 +66,15 @@ function draftFor(
         };
     }
 
-    const loggable = company.projects.find((project) => project.can_log_time);
+    const loggable =
+        company.projects.find(
+            (project) =>
+                project.can_log_time && project.id === initialProjectId,
+        ) ?? company.projects.find((project) => project.can_log_time);
 
     return {
+        billing_rate: '',
+        currency: loggable?.rate_override?.currency ?? '',
         project_id: loggable?.id ?? '',
         task_id: '',
         // Read now, on the workspace's calendar. A date sent from the server
@@ -85,24 +98,25 @@ function draftFor(
  * row changed elsewhere is refused rather than silently overwritten.
  */
 export function TimeEntryDialog({
-    workspaceId,
     timezone,
+    initialProjectId = null,
     company,
     entry,
     open,
     onOpenChange,
 }: {
-    workspaceId: string;
     timezone: string;
+    initialProjectId?: string | null;
     company: CompanyOption;
     entry: TimeEntry | null;
     open: boolean;
     onOpenChange: (open: boolean) => void;
 }) {
     const [draft, setDraft] = useState<Draft>(() =>
-        draftFor(company, entry, timezone),
+        draftFor(company, entry, timezone, initialProjectId),
     );
     const [saving, setSaving] = useState(false);
+    const attempt = useRef<{ body: string; key: string } | null>(null);
     const [error, setError] = useState<string | null>(null);
 
     const project = useMemo(
@@ -121,7 +135,11 @@ export function TimeEntryDialog({
         draft.is_visible_to_client &&
         draft.client_visible_description.trim() === '';
 
-    const submit = () => {
+    const submit = async () => {
+        if (saving) {
+            return;
+        }
+
         if (clientDescriptionMissing) {
             setError('Client-visible time needs a client-facing description.');
 
@@ -130,17 +148,6 @@ export function TimeEntryDialog({
 
         setError(null);
         setSaving(true);
-
-        const finish = {
-            onSuccess: () => onOpenChange(false),
-            onError: (errors: Record<string, string>) => {
-                setError(
-                    Object.values(errors)[0] ?? 'The entry could not be saved.',
-                );
-            },
-            onFinish: () => setSaving(false),
-            preserveScroll: true,
-        };
 
         const shared = {
             worked_on: draft.worked_on,
@@ -156,21 +163,90 @@ export function TimeEntryDialog({
 
         const taskId = draft.task_id === '' ? null : draft.task_id;
 
-        if (entry !== null) {
-            router.patch(
-                `/workspaces/${workspaceId}/time-entries/${entry.id}`,
-                { ...shared, task_id: taskId, expected_version: entry.version },
-                finish,
-            );
+        const url = entry === null ? project?.log_time_url : entry.update_url;
+
+        if (!url) {
+            setSaving(false);
+            setError('This action is no longer available. Reload the page.');
 
             return;
         }
 
-        router.post(
-            `/workspaces/${workspaceId}/projects/${draft.project_id}/time-entries`,
-            { ...shared, task_id: taskId },
-            finish,
+        let rateOverride: { billing_rate_amount?: number; currency?: string } =
+            {};
+
+        if (
+            entry === null &&
+            project?.rate_override &&
+            draft.billing_rate.trim() !== ''
+        ) {
+            const rate = draft.billing_rate.trim();
+            const [whole, fraction = ''] = rate.split('.');
+            const amount =
+                Number(whole) * 100 + Number(fraction.padEnd(2, '0'));
+
+            if (
+                !/^\d+(?:\.\d{1,2})?$/.test(rate) ||
+                !Number.isSafeInteger(amount) ||
+                !/^[A-Z]{3}$/.test(draft.currency)
+            ) {
+                setError(
+                    'Enter a non-negative hourly rate with up to two decimal places and a three-letter currency.',
+                );
+                setSaving(false);
+
+                return;
+            }
+
+            rateOverride = {
+                billing_rate_amount: amount,
+                currency: draft.currency,
+            };
+        }
+
+        const body =
+            entry === null
+                ? ({
+                      entries: [
+                          {
+                              ...shared,
+                              ...rateOverride,
+                              project_id: draft.project_id,
+                              task_id: taskId,
+                          },
+                      ],
+                  } satisfies ApiSchema<'TimeLogRequest'>)
+                : ({
+                      ...shared,
+                      task_id: taskId,
+                      expected_version: entry.version,
+                  } satisfies ApiSchema<'TimeUpdateRequest'>);
+        const fingerprint = JSON.stringify(body);
+
+        if (attempt.current?.body !== fingerprint) {
+            attempt.current = { body: fingerprint, key: newIdempotencyKey() };
+        }
+
+        const result = await apiRequest(
+            entry === null ? 'POST' : 'PATCH',
+            url,
+            body,
+            attempt.current.key,
         );
+
+        if (!result.ok) {
+            setError(result.message);
+            setSaving(false);
+
+            return;
+        }
+
+        router.reload({
+            onFinish: () => {
+                setSaving(false);
+                onOpenChange(false);
+            },
+        });
     };
 
     const loggable = company.projects.filter(
@@ -179,12 +255,12 @@ export function TimeEntryDialog({
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-lg">
+            <DialogContent className="max-h-[90dvh] grid-cols-1 overflow-y-auto sm:max-w-lg">
                 <DialogHeader>
                     <DialogTitle>
                         {entry === null ? 'Log time' : 'Edit time entry'}
                     </DialogTitle>
-                    <DialogDescription>
+                    <DialogDescription className="wrap-anywhere">
                         {entry === null
                             ? `Against ${company.name}.`
                             : 'Only entries that have not been sent to a client can be changed.'}
@@ -207,6 +283,14 @@ export function TimeEntryDialog({
                                 onValueChange={(value: string | null) => {
                                     set('project_id', value ?? '');
                                     set('task_id', '');
+                                    set('billing_rate', '');
+                                    set(
+                                        'currency',
+                                        company.projects.find(
+                                            (candidate) =>
+                                                candidate.id === value,
+                                        )?.rate_override?.currency ?? '',
+                                    );
                                 }}
                             >
                                 <SelectTrigger id="project" className="w-full">
@@ -281,7 +365,40 @@ export function TimeEntryDialog({
                         </div>
                     )}
 
-                    <div className="grid gap-4 sm:grid-cols-2">
+                    {entry === null && project?.rate_override && (
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                            <div className="grid grid-cols-1 gap-1.5">
+                                <Label htmlFor="billing-rate">
+                                    Hourly rate
+                                </Label>
+                                <Input
+                                    id="billing-rate"
+                                    inputMode="decimal"
+                                    placeholder="Use the agreement rate"
+                                    value={draft.billing_rate}
+                                    onChange={(event) =>
+                                        set('billing_rate', event.target.value)
+                                    }
+                                />
+                            </div>
+                            <div className="grid grid-cols-1 gap-1.5">
+                                <Label htmlFor="rate-currency">Currency</Label>
+                                <Input
+                                    id="rate-currency"
+                                    maxLength={3}
+                                    value={draft.currency}
+                                    onChange={(event) =>
+                                        set(
+                                            'currency',
+                                            event.target.value.toUpperCase(),
+                                        )
+                                    }
+                                />
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="grid grid-cols-1 gap-4">
                         <div className="grid grid-cols-1 gap-1.5">
                             <Label htmlFor="worked_on">Date</Label>
                             <Input

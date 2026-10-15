@@ -19,6 +19,7 @@ use App\Services\Billing\AgreementSelector;
 use App\Services\Billing\InvoiceLedgerBuilder;
 use App\Services\Billing\TimeEntryProjectChainGuard;
 use App\Support\AgentApi\AgentApiVersion;
+use App\Support\AgentApi\Presenters\AgentTimeEntryPresenter;
 use App\Support\Billing\BillingCadence;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\SelectedTimeInvoiceTerms;
@@ -182,6 +183,13 @@ class TimeSheetController extends Controller
                 ->where('status', 'draft')->where('invoice_kind', InvoiceKind::AdHoc->value)->firstOrFail();
         }
 
+        $logProject = null;
+        if ($request->filled('log_project')) {
+            $request->validate(['log_project' => ['required', 'uuid']]);
+            $logProject = $selectedCompany?->projects->firstWhere('public_id', $request->input('log_project'));
+            abort_unless($logProject instanceof ClientProject && ($permissions[$logProject->id]['log'] ?? false), 404);
+        }
+
         return Inertia::render('time', [
             'workspace' => [
                 'id' => $workspace->public_id,
@@ -191,10 +199,12 @@ class TimeSheetController extends Controller
             ],
             // Named by the request that enforces it, so the page cannot offer
             // a selection the write will refuse.
+            'log_project_id' => $logProject?->public_id,
             'approval_limit' => ApproveTimeEntriesRequest::MAX_ENTRIES,
+            'actions' => ['approve' => route('agent-api.v1.time-entries.approve', $workspace, absolute: false)],
             'invoice_draft' => $isManager ? [
                 'url' => $draft === null ? route('svc.billing.invoices.store', [$workspace, $clientCompany])
-                    : route('svc.billing.invoices.time', [$workspace, $draft]),
+                    : route('agent-api.v1.invoices.add_time', [$workspace, $draft->public_id], absolute: false),
                 'target' => $draft === null ? null : ['number' => $draft->invoice_number, 'currency' => $draft->currency,
                     'total_amount' => $draft->total_amount, 'version' => AgentApiVersion::for($draft),
                     'href' => route('clients.invoice', [$workspace, $clientCompany, $draft], absolute: false)],
@@ -218,6 +228,9 @@ class TimeSheetController extends Controller
                     // the change exists to admit, and the workspace lookup it
                     // needed is gone with it.
                     'can_log_time' => $permissions[$project->id]['log'] ?? false,
+                    'rate_override' => ($permissions[$project->id]['approve'] ?? false) ? ['currency' => $workspace->default_currency] : null,
+                    'log_time_url' => ($permissions[$project->id]['log'] ?? false)
+                        ? route('agent-api.v1.time-entries.store', $workspace, absolute: false) : null,
                     'tasks' => $project->tasks->map(fn (ClientTask $task): array => [
                         'id' => $task->public_id,
                         'title' => $task->title,
@@ -280,15 +293,16 @@ class TimeSheetController extends Controller
             // offered in the log form did.
             ->with([
                 'project',
+                'invoiceLines' => fn ($lines) => $lines
+                    ->where('client_invoice_lines.workspace_id', $workspace->id)
+                    ->wherePivot('workspace_id', $workspace->id)
+                    ->with(['invoice' => fn ($invoice) => $invoice->where('workspace_id', $workspace->id)]),
                 'task' => fn ($query) => $query->where('workspace_id', $workspace->id),
                 // `user_id` is an independent key and proves no membership,
                 // so a row could name someone from outside the workspace
                 // entirely. A name is the one field here that identifies a
                 // person rather than describing work.
-                'user' => fn ($query) => $query->whereHas(
-                    'workspaces',
-                    fn ($workspaces) => $workspaces->whereKey($workspace->id),
-                ),
+                ...AgentTimeEntryPresenter::authorRelations($workspace),
             ])
             ->orderByDesc('worked_on')
             ->orderByDesc('id')
@@ -799,20 +813,11 @@ class TimeSheetController extends Controller
             ? SelectedTimeInvoiceTerms::forEntry($entry)
             : null;
 
+        $entry->setRelation('task', $task);
+
         return [
-            'id' => $entry->public_id,
-            'version' => AgentApiVersion::for($entry),
-            'worked_on' => $entry->worked_on->toDateString(),
-            'minutes' => $entry->minutes,
-            'description' => $entry->description,
-            'client_visible_description' => $entry->client_visible_description,
-            'is_billable' => $entry->is_billable,
-            'is_deferred' => $entry->is_deferred,
-            'is_visible_to_client' => $entry->is_visible_to_client,
-            ...($isManager ? [
-                'subcontractor_billing_mode' => $entry->subcontractor_billing_mode?->value,
-            ] : []),
-            'status' => $entry->status,
+            ...app(AgentTimeEntryPresenter::class)->present($workspace, $entry),
+            ...($isManager ? ['subcontractor_billing_mode' => $entry->subcontractor_billing_mode?->value] : []),
             'project' => [
                 'id' => $project->public_id,
                 'name' => $project->name,
@@ -824,6 +829,7 @@ class TimeSheetController extends Controller
             'worker' => $entry->user?->name,
             'invoice' => $invoice === null ? null : [
                 'id' => $invoice['id'],
+                'href' => route('svc.billing.invoices.show', [$workspace, $invoice['id']], absolute: false),
                 'number' => $invoice['number'],
                 'status' => $invoice['status'],
             ],
@@ -833,6 +839,8 @@ class TimeSheetController extends Controller
                 'total_amount' => $invoiceTerms->totalAmount,
             ],
             'can_edit' => $editable,
+            'update_url' => $editable ? route('agent-api.v1.time-entries.update', [$workspace, $entry->public_id], absolute: false) : null,
+            'delete_url' => $editable ? route('agent-api.v1.time-entries.destroy', [$workspace, $entry->public_id], absolute: false) : null,
             'can_approve' => $entry->status === 'draft'
                 && $invoice === null
                 && ($permissions[$entry->client_project_id]['approve'] ?? false),
@@ -843,7 +851,7 @@ class TimeSheetController extends Controller
             'unapprove_url' => $isManager
                 && $entry->status === 'approved'
                 && $editableInvoice
-                ? route('svc.engagement.time-entries.unapprove', [$workspace, $entry->public_id], absolute: false)
+                ? route('agent-api.v1.time-entries.unapprove', [$workspace, $entry->public_id], absolute: false)
                 : null,
         ];
     }

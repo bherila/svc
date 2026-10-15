@@ -2,7 +2,6 @@
 
 namespace Tests\Feature\Engagement;
 
-use App\Http\Requests\Engagement\ApproveTimeEntriesRequest;
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
@@ -14,6 +13,7 @@ use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Support\AgentApi\AgentApiVersion;
+use App\Support\AgentApi\Presenters\AgentTimeEntryPresenter;
 use App\Support\AgentApi\ProjectRole;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -41,6 +41,7 @@ class TimeSheetTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $this->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40));
 
         $this->manager = User::factory()->create();
         $this->workspace = Workspace::query()->create([
@@ -61,6 +62,47 @@ class TimeSheetTest extends TestCase
         ]);
     }
 
+    public function test_the_sheet_uses_the_api_presenter_and_finished_mutation_urls(): void
+    {
+        $entry = $this->entry();
+        $expected = app(AgentTimeEntryPresenter::class)->present($this->workspace, $entry->fresh());
+        $this->actingAs($this->manager, 'web')->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
+            ->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->where('months.0.entries.0', function ($row) use ($expected): bool {
+                $this->assertEquals($expected, collect($row)->only(array_keys($expected))->all());
+
+                return true;
+            })
+            ->where('actions.approve', route('agent-api.v1.time-entries.approve', $this->workspace, absolute: false))
+            ->where('companies.0.projects.0.log_time_url', route('agent-api.v1.time-entries.store', $this->workspace, absolute: false))
+            ->where('months.0.entries.0.project_id', $this->project->public_id)
+            ->where('months.0.entries.0.author_id', $this->manager->public_id)
+            ->where('months.0.entries.0.allocation_state', 'unallocated')
+            ->where('months.0.entries.0.update_url', route('agent-api.v1.time-entries.update', [$this->workspace, $entry->public_id], absolute: false))
+            ->where('months.0.entries.0.delete_url', route('agent-api.v1.time-entries.destroy', [$this->workspace, $entry->public_id], absolute: false)));
+    }
+
+    public function test_project_logging_links_open_the_selected_project_and_refuse_foreign_context(): void
+    {
+        $project = $this->otherProject();
+        $url = route('clients.time', [$this->workspace, $this->company, 'log_project' => $project->public_id], absolute: false);
+        $this->actingAs($this->manager, 'web')->get(route('workspaces.operations', $this->workspace))
+            ->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->where('workspace.clients.0.projects', fn ($rows): bool => collect($rows)->firstWhere('id', $project->public_id)['time_url'] === $url));
+        $this->get($url)->assertOk()->assertInertia(fn (Assert $page) => $page->where('log_project_id', $project->public_id));
+        $foreign = $this->foreignWorkspace();
+        $this->get(route('clients.time', [$this->workspace, $this->company, 'log_project' => $foreign['project']->public_id]))->assertNotFound();
+    }
+
+    public function test_rate_override_capabilities_follow_the_project_approval_role(): void
+    {
+        $this->actingAs($this->manager, 'web')->get(route('clients.time', [$this->workspace, $this->company]))
+            ->assertOk()->assertInertia(fn (Assert $page) => $page->where('companies.0.projects.0.rate_override.currency', 'USD'));
+        $contributor = $this->memberWithProjectRole(ProjectRole::Contributor);
+        $this->actingAs($contributor, 'web')->get(route('clients.time', [$this->workspace, $this->company]))
+            ->assertOk()->assertInertia(fn (Assert $page) => $page->where('companies.0.projects.0.rate_override', null));
+    }
+
     public function test_manager_can_draft_only_eligible_unallocated_time_from_the_sheet(): void
     {
         $this->travelTo('2026-07-20');
@@ -70,7 +112,7 @@ class TimeSheetTest extends TestCase
         $this->entry(['status' => 'approved', 'is_billable' => true, 'is_deferred' => true, 'billing_rate_amount' => 10000, 'currency' => 'USD']);
         $this->entry(['status' => 'draft', 'is_billable' => true, 'billing_rate_amount' => 10000, 'currency' => 'USD']);
         $this->entry(['status' => 'approved', 'is_billable' => true, 'billing_rate_amount' => null]);
-        $this->actingAs($this->manager)->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
+        $this->actingAs($this->manager, 'web')->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()->assertInertia(fn (Assert $page) => $page
             ->where('invoice_draft.url', route('svc.billing.invoices.store', [$this->workspace, $this->company]))
             ->where('months.0.entries', function ($rows) use ($eligible): bool {
@@ -87,7 +129,7 @@ class TimeSheetTest extends TestCase
         $this->workspace->memberships()->where('user_id', $this->manager->id)->update(['role' => 'member']);
         $this->project->members()->attach($this->manager->id, ['workspace_id' => $this->workspace->id, 'role' => 'manager']);
         $this->entry(['status' => 'approved', 'is_billable' => true, 'billing_rate_amount' => 12345, 'currency' => 'USD']);
-        $this->actingAs($this->manager)->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
+        $this->actingAs($this->manager, 'web')->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()->assertInertia(fn (Assert $page) => $page
             ->where('invoice_draft', null)
             ->where('months.0.entries.0.invoice_terms', null));
@@ -101,7 +143,7 @@ class TimeSheetTest extends TestCase
 
         $this->travelTo('2026-07-20');
 
-        $this->actingAs($this->manager)
+        $this->actingAs($this->manager, 'web')
             ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
@@ -126,7 +168,7 @@ class TimeSheetTest extends TestCase
 
         $this->travelTo('2026-07-20');
 
-        $this->actingAs($this->manager)
+        $this->actingAs($this->manager, 'web')
             ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
@@ -147,7 +189,7 @@ class TimeSheetTest extends TestCase
 
         $this->travelTo('2026-07-20');
 
-        $this->actingAs($this->manager)
+        $this->actingAs($this->manager, 'web')
             ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
@@ -169,7 +211,7 @@ class TimeSheetTest extends TestCase
 
         $this->travelTo('2026-07-20');
 
-        $this->actingAs($this->manager)
+        $this->actingAs($this->manager, 'web')
             ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
@@ -194,7 +236,7 @@ class TimeSheetTest extends TestCase
 
         $this->travelTo('2026-07-20');
 
-        $this->actingAs($this->manager)
+        $this->actingAs($this->manager, 'web')
             ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
@@ -219,7 +261,7 @@ class TimeSheetTest extends TestCase
 
         $this->travelTo('2026-07-20');
 
-        $this->actingAs($this->manager)
+        $this->actingAs($this->manager, 'web')
             ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
@@ -244,7 +286,7 @@ class TimeSheetTest extends TestCase
 
         $this->travelTo('2026-07-20');
 
-        $this->actingAs($this->manager)
+        $this->actingAs($this->manager, 'web')
             ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
@@ -280,7 +322,7 @@ class TimeSheetTest extends TestCase
 
         $this->travelTo('2026-07-20');
 
-        $this->actingAs($this->manager)
+        $this->actingAs($this->manager, 'web')
             ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
@@ -303,18 +345,18 @@ class TimeSheetTest extends TestCase
         $this->attachToInvoice($onDraft, 'draft');
         $this->attachToInvoice($onIssued, 'issued');
 
-        $this->actingAs($this->manager)
-            ->patch("/workspaces/{$this->workspace->public_id}/time-entries/{$onDraft->public_id}", [
+        $this->actingAs($this->manager, 'web')
+            ->timePatch("/api/v1/workspaces/{$this->workspace->public_id}/time-entries/{$onDraft->public_id}", [
                 'expected_version' => $version,
                 'minutes' => 75,
             ])
-            ->assertRedirect();
+            ->assertSuccessful();
 
-        $this->actingAs($this->manager)
-            ->delete("/workspaces/{$this->workspace->public_id}/time-entries/{$onIssued->public_id}", [
+        $this->actingAs($this->manager, 'web')
+            ->timeDelete("/api/v1/workspaces/{$this->workspace->public_id}/time-entries/{$onIssued->public_id}", [
                 'expected_version' => AgentApiVersion::for($onIssued),
             ])
-            ->assertSessionHasErrors('engagement');
+            ->assertConflict();
 
         $this->assertSame(75, (int) $onDraft->fresh()?->minutes);
         // A legacy draft-status row is not invoiceable until approval. The
@@ -331,14 +373,14 @@ class TimeSheetTest extends TestCase
 
         $entry->forceFill(['minutes' => 90, 'lock_version' => $entry->lock_version + 1])->save();
 
-        $this->actingAs($this->manager)
-            ->patch("/workspaces/{$this->workspace->public_id}/time-entries/{$entry->public_id}", [
+        $this->actingAs($this->manager, 'web')
+            ->timePatch("/api/v1/workspaces/{$this->workspace->public_id}/time-entries/{$entry->public_id}", [
                 'expected_version' => $stale,
                 'minutes' => 30,
             ])
             // A conflict an operator can act on reaches them as a message the
             // dialog renders, not as a bare status the page cannot show.
-            ->assertSessionHasErrors('engagement');
+            ->assertConflict();
 
         $this->assertSame(90, (int) $entry->fresh()?->minutes);
     }
@@ -347,12 +389,12 @@ class TimeSheetTest extends TestCase
     {
         $entry = $this->entry();
 
-        $this->actingAs($this->manager)
-            ->patch("/workspaces/{$this->workspace->public_id}/time-entries/{$entry->public_id}", [
+        $this->actingAs($this->manager, 'web')
+            ->timePatch("/api/v1/workspaces/{$this->workspace->public_id}/time-entries/{$entry->public_id}", [
                 'expected_version' => AgentApiVersion::for($entry),
                 'is_visible_to_client' => true,
             ])
-            ->assertSessionHasErrors('engagement');
+            ->assertUnprocessable();
 
         $this->assertFalse((bool) $entry->fresh()?->is_visible_to_client);
     }
@@ -361,17 +403,17 @@ class TimeSheetTest extends TestCase
     {
         $entry = $this->entry();
 
-        $this->actingAs($this->manager)
-            ->delete("/workspaces/{$this->workspace->public_id}/time-entries/{$entry->public_id}", [])
-            ->assertSessionHasErrors('expected_version');
+        $this->actingAs($this->manager, 'web')
+            ->timeDelete("/api/v1/workspaces/{$this->workspace->public_id}/time-entries/{$entry->public_id}", [])
+            ->assertJsonValidationErrors('expected_version');
 
         $this->assertNotNull($entry->fresh());
 
-        $this->actingAs($this->manager)
-            ->delete("/workspaces/{$this->workspace->public_id}/time-entries/{$entry->public_id}", [
+        $this->actingAs($this->manager, 'web')
+            ->timeDelete("/api/v1/workspaces/{$this->workspace->public_id}/time-entries/{$entry->public_id}", [
                 'expected_version' => AgentApiVersion::for($entry),
             ])
-            ->assertRedirect();
+            ->assertSuccessful();
 
         // `fresh()` ignores global scopes, so it would hand the row back with
         // its `deleted_at` set and read as "still there".
@@ -384,14 +426,14 @@ class TimeSheetTest extends TestCase
         $first = $this->entry(['minutes' => 60]);
         $second = $this->entry(['minutes' => 30]);
 
-        $this->actingAs($this->manager)
-            ->post("/workspaces/{$this->workspace->public_id}/time-entries/approve", [
+        $this->actingAs($this->manager, 'web')
+            ->timePost("/api/v1/workspaces/{$this->workspace->public_id}/time-entries/approve", [
                 'entries' => [
                     ['id' => $first->public_id, 'expected_version' => AgentApiVersion::for($first)],
                     ['id' => $second->public_id, 'expected_version' => AgentApiVersion::for($second)],
                 ],
             ])
-            ->assertRedirect();
+            ->assertSuccessful();
 
         $this->assertSame('approved', $first->fresh()?->status);
         $this->assertSame('approved', $second->fresh()?->status);
@@ -412,11 +454,11 @@ class TimeSheetTest extends TestCase
             'currency' => 'USD',
         ]);
 
-        $this->actingAs($this->manager)
-            ->post("/workspaces/{$this->workspace->public_id}/time-entries/{$entry->public_id}/unapprove", [
+        $this->actingAs($this->manager, 'web')
+            ->timePost("/api/v1/workspaces/{$this->workspace->public_id}/time-entries/{$entry->public_id}/unapprove", [
                 'expected_version' => AgentApiVersion::for($entry),
             ])
-            ->assertRedirect()
+            ->assertSuccessful()
             ->assertSessionHasNoErrors();
 
         $fresh = $entry->fresh();
@@ -439,8 +481,8 @@ class TimeSheetTest extends TestCase
             'currency' => 'USD',
         ]);
 
-        $this->actingAs($this->manager)
-            ->post("/workspaces/{$this->workspace->public_id}/time-entries/{$entry->public_id}/unapprove", [
+        $this->actingAs($this->manager, 'web')
+            ->timePost("/api/v1/workspaces/{$this->workspace->public_id}/time-entries/{$entry->public_id}/unapprove", [
                 'expected_version' => AgentApiVersion::for($entry),
             ])
             ->assertSessionHasNoErrors();
@@ -461,15 +503,15 @@ class TimeSheetTest extends TestCase
 
         $this->travelTo('2026-07-20');
 
-        $this->actingAs($projectManager)
+        $this->actingAs($projectManager, 'web')
             ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->where('months.0.entries.0.status', 'approved')
                 ->where('months.0.entries.0.unapprove_url', null));
 
-        $this->actingAs($projectManager)
-            ->post("/workspaces/{$this->workspace->public_id}/time-entries/{$entry->public_id}/unapprove", [
+        $this->actingAs($projectManager, 'web')
+            ->timePost("/api/v1/workspaces/{$this->workspace->public_id}/time-entries/{$entry->public_id}/unapprove", [
                 'expected_version' => AgentApiVersion::for($entry),
             ])
             ->assertForbidden();
@@ -488,9 +530,9 @@ class TimeSheetTest extends TestCase
 
         $this->travelTo('2026-07-20');
 
-        $base = "/workspaces/{$this->workspace->public_id}/time-entries";
+        $base = "/api/v1/workspaces/{$this->workspace->public_id}/time-entries";
 
-        $this->actingAs($this->manager)
+        $this->actingAs($this->manager, 'web')
             ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
@@ -518,7 +560,7 @@ class TimeSheetTest extends TestCase
 
         $this->travelTo('2026-07-20');
 
-        $this->actingAs($this->manager)
+        $this->actingAs($this->manager, 'web')
             ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
@@ -526,11 +568,11 @@ class TimeSheetTest extends TestCase
                 ->where('months.0.entries.0.can_edit', false)
                 ->where('months.0.entries.0.unapprove_url', null));
 
-        $this->actingAs($this->manager)
-            ->post("/workspaces/{$this->workspace->public_id}/time-entries/{$entry->public_id}/unapprove", [
+        $this->actingAs($this->manager, 'web')
+            ->timePost("/api/v1/workspaces/{$this->workspace->public_id}/time-entries/{$entry->public_id}/unapprove", [
                 'expected_version' => AgentApiVersion::for($entry),
             ])
-            ->assertSessionHasErrors(['engagement' => 'The time entry invoice allocation has an inconsistent client company.']);
+            ->assertConflict()->assertJsonPath('message', 'The time entry invoice allocation has an inconsistent client company.');
 
         $this->assertSame('approved', $entry->fresh()?->status);
     }
@@ -540,11 +582,11 @@ class TimeSheetTest extends TestCase
         $entry = $this->entry(['status' => 'invoiced', 'billing_rate_amount' => 15000, 'billing_rate_source' => 'agreement']);
         $this->attachToInvoice($entry, 'paid');
 
-        $this->actingAs($this->manager)
-            ->post("/workspaces/{$this->workspace->public_id}/time-entries/{$entry->public_id}/unapprove", [
+        $this->actingAs($this->manager, 'web')
+            ->timePost("/api/v1/workspaces/{$this->workspace->public_id}/time-entries/{$entry->public_id}/unapprove", [
                 'expected_version' => AgentApiVersion::for($entry),
             ])
-            ->assertSessionHasErrors(['engagement' => 'This time has been billed. Void its invoice to change the approval.']);
+            ->assertConflict()->assertJsonPath('message', 'This time has been billed. Void its invoice to change the approval.');
 
         $this->assertSame('invoiced', $entry->fresh()?->status);
         $this->assertSame(15000, $entry->fresh()?->billing_rate_amount);
@@ -556,11 +598,11 @@ class TimeSheetTest extends TestCase
         $stale = AgentApiVersion::for($entry);
         $entry->forceFill(['description' => 'Edited since', 'lock_version' => $entry->lock_version + 1])->save();
 
-        $this->actingAs($this->manager)
-            ->post("/workspaces/{$this->workspace->public_id}/time-entries/{$entry->public_id}/unapprove", [
+        $this->actingAs($this->manager, 'web')
+            ->timePost("/api/v1/workspaces/{$this->workspace->public_id}/time-entries/{$entry->public_id}/unapprove", [
                 'expected_version' => $stale,
             ])
-            ->assertSessionHasErrors('engagement');
+            ->assertConflict();
 
         $this->assertSame('approved', $entry->fresh()?->status);
     }
@@ -577,8 +619,8 @@ class TimeSheetTest extends TestCase
             fn () => $this->entry(['client_project_id' => $foreign['project']->id, 'status' => 'approved']),
         );
 
-        $this->actingAs($outsider)
-            ->post("/workspaces/{$this->workspace->public_id}/time-entries/{$entry->public_id}/unapprove", [
+        $this->actingAs($outsider, 'web')
+            ->timePost("/api/v1/workspaces/{$this->workspace->public_id}/time-entries/{$entry->public_id}/unapprove", [
                 'expected_version' => AgentApiVersion::for($entry),
             ])
             ->assertNotFound();
@@ -596,15 +638,15 @@ class TimeSheetTest extends TestCase
         $this->agreementWithAnHourlyRate();
         $entry = $this->entry();
 
-        $this->actingAs($this->manager)
-            ->post("/workspaces/{$this->workspace->public_id}/time-entries/approve", [
+        $this->actingAs($this->manager, 'web')
+            ->timePost("/api/v1/workspaces/{$this->workspace->public_id}/time-entries/approve", [
                 'entries' => [[
                     'id' => $entry->public_id,
                     'expected_version' => AgentApiVersion::for($entry),
                     'billing_rate_amount' => 15000,
                 ]],
             ])
-            ->assertSessionHasErrors('engagement');
+            ->assertUnprocessable();
 
         // Refused outright rather than falling back to the agreement rate: a
         // half-stated override is a mistake, and guessing the other half is how
@@ -626,14 +668,14 @@ class TimeSheetTest extends TestCase
             'status' => 'open',
         ]);
 
-        $this->actingAs($this->manager)
-            ->post("/workspaces/{$this->workspace->public_id}/projects/{$this->project->public_id}/time-entries", [
+        $this->actingAs($this->manager, 'web')
+            ->logTime("{$this->project->public_id}", [
                 'worked_on' => '2026-07-04',
                 'minutes' => 45,
                 'description' => 'Work with a task behind it',
                 'task_id' => $task->public_id,
             ])
-            ->assertRedirect();
+            ->assertSuccessful();
 
         $entry = ClientTimeEntry::query()->latest('id')->firstOrFail();
         $this->assertSame($task->id, $entry->client_task_id);
@@ -645,14 +687,14 @@ class TimeSheetTest extends TestCase
      */
     public function test_client_visible_time_logged_from_the_browser_needs_a_client_description(): void
     {
-        $this->actingAs($this->manager)
-            ->post("/workspaces/{$this->workspace->public_id}/projects/{$this->project->public_id}/time-entries", [
+        $this->actingAs($this->manager, 'web')
+            ->logTime("{$this->project->public_id}", [
                 'worked_on' => '2026-07-04',
                 'minutes' => 45,
                 'description' => 'Internal note nobody outside should read',
                 'is_visible_to_client' => true,
             ])
-            ->assertSessionHasErrors('engagement');
+            ->assertUnprocessable();
 
         $this->assertSame(0, ClientTimeEntry::query()->count());
     }
@@ -680,7 +722,7 @@ class TimeSheetTest extends TestCase
 
         $this->travelTo('2026-07-20');
 
-        $this->actingAs($this->manager)
+        $this->actingAs($this->manager, 'web')
             ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
@@ -725,7 +767,7 @@ class TimeSheetTest extends TestCase
 
         $this->travelTo('2026-07-20');
 
-        $this->actingAs($this->manager)
+        $this->actingAs($this->manager, 'web')
             ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
@@ -766,7 +808,7 @@ class TimeSheetTest extends TestCase
 
         $this->travelTo('2026-07-20');
 
-        $this->actingAs($this->manager)
+        $this->actingAs($this->manager, 'web')
             ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
@@ -819,7 +861,7 @@ class TimeSheetTest extends TestCase
 
         $this->travelTo('2026-07-20');
 
-        $this->actingAs($this->manager)
+        $this->actingAs($this->manager, 'web')
             ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
@@ -857,7 +899,7 @@ class TimeSheetTest extends TestCase
 
         $this->travelTo('2026-07-20');
 
-        $this->actingAs($this->manager)
+        $this->actingAs($this->manager, 'web')
             ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
@@ -895,7 +937,7 @@ class TimeSheetTest extends TestCase
 
         $this->travelTo('2026-08-20');
 
-        $this->actingAs($this->manager)
+        $this->actingAs($this->manager, 'web')
             ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
@@ -957,7 +999,7 @@ class TimeSheetTest extends TestCase
 
         $this->travelTo('2026-07-20');
 
-        $this->actingAs($member)
+        $this->actingAs($member, 'web')
             ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
@@ -988,28 +1030,28 @@ class TimeSheetTest extends TestCase
         $contributor = $this->memberWithProjectRole(ProjectRole::Contributor);
         $viewer = $this->memberWithProjectRole(ProjectRole::Viewer);
 
-        $this->actingAs($contributor)
+        $this->actingAs($contributor, 'web')
             ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->where('companies.0.projects.0.can_log_time', true));
 
-        $this->actingAs($contributor)
-            ->post("/workspaces/{$this->workspace->public_id}/projects/{$this->project->public_id}/time-entries", [
+        $this->actingAs($contributor, 'web')
+            ->logTime("{$this->project->public_id}", [
                 'worked_on' => $this->today(),
                 'minutes' => 30,
                 'description' => 'Offered and accepted',
             ])
-            ->assertRedirect();
+            ->assertSuccessful();
 
-        $this->actingAs($viewer)
+        $this->actingAs($viewer, 'web')
             ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->where('companies.0.projects.0.can_log_time', false));
 
-        $this->actingAs($viewer)
-            ->post("/workspaces/{$this->workspace->public_id}/projects/{$this->project->public_id}/time-entries", [
+        $this->actingAs($viewer, 'web')
+            ->logTime("{$this->project->public_id}", [
                 'worked_on' => $this->today(),
                 'minutes' => 30,
                 'description' => 'Neither offered nor accepted',
@@ -1038,7 +1080,7 @@ class TimeSheetTest extends TestCase
 
         $this->travelTo('2026-07-20');
 
-        $this->actingAs($this->manager)
+        $this->actingAs($this->manager, 'web')
             ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
@@ -1070,7 +1112,7 @@ class TimeSheetTest extends TestCase
 
         $this->travelTo('2026-07-20');
 
-        $this->actingAs($this->manager)
+        $this->actingAs($this->manager, 'web')
             ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
@@ -1100,7 +1142,7 @@ class TimeSheetTest extends TestCase
 
         $this->travelTo('2026-07-20');
 
-        $this->actingAs($this->manager)
+        $this->actingAs($this->manager, 'web')
             ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page->has('months.0.capacity', 0));
@@ -1136,7 +1178,7 @@ class TimeSheetTest extends TestCase
 
         $this->travelTo('2026-07-20');
 
-        $this->actingAs($this->manager)
+        $this->actingAs($this->manager, 'web')
             ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
@@ -1171,8 +1213,8 @@ class TimeSheetTest extends TestCase
             'status' => 'draft',
         ]);
 
-        $this->actingAs($this->manager)
-            ->patch("/workspaces/{$this->workspace->public_id}/time-entries/{$foreign->public_id}", [
+        $this->actingAs($this->manager, 'web')
+            ->timePatch("/api/v1/workspaces/{$this->workspace->public_id}/time-entries/{$foreign->public_id}", [
                 'expected_version' => AgentApiVersion::for($foreign),
                 'minutes' => 15,
             ])
@@ -1212,12 +1254,12 @@ class TimeSheetTest extends TestCase
         $this->travelTo('2026-07-20');
 
         // The manager, who can see all of it, still gets the strip.
-        $this->actingAs($this->manager)
+        $this->actingAs($this->manager, 'web')
             ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page->has('months.0.capacity', 1));
 
-        $this->actingAs($member)
+        $this->actingAs($member, 'web')
             ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
@@ -1237,11 +1279,11 @@ class TimeSheetTest extends TestCase
         $version = AgentApiVersion::for($entry);
         $this->attachToInvoice($entry, 'issued');
 
-        $this->actingAs($this->manager)
-            ->post("/workspaces/{$this->workspace->public_id}/time-entries/approve", [
+        $this->actingAs($this->manager, 'web')
+            ->timePost("/api/v1/workspaces/{$this->workspace->public_id}/time-entries/approve", [
                 'entries' => [['id' => $entry->public_id, 'expected_version' => $version]],
             ])
-            ->assertSessionHasErrors('engagement');
+            ->assertConflict();
 
         $this->assertSame('draft', $entry->fresh()?->status);
         $this->assertNull($entry->fresh()?->billing_rate_amount);
@@ -1256,21 +1298,21 @@ class TimeSheetTest extends TestCase
     public function test_every_write_path_refuses_an_entry_that_is_already_invoiced(): void
     {
         $this->agreementWithAnHourlyRate();
-        $base = "/workspaces/{$this->workspace->public_id}";
+        $base = "/api/v1/workspaces/{$this->workspace->public_id}";
 
         /** @var array<string, callable(ClientTimeEntry, string): TestResponse> $writes */
         $writes = [
-            'update' => fn (ClientTimeEntry $entry, string $version) => $this->actingAs($this->manager)
-                ->patch("{$base}/time-entries/{$entry->public_id}", [
+            'update' => fn (ClientTimeEntry $entry, string $version) => $this->actingAs($this->manager, 'web')
+                ->timePatch("{$base}/time-entries/{$entry->public_id}", [
                     'expected_version' => $version,
                     'minutes' => 75,
                 ]),
-            'delete' => fn (ClientTimeEntry $entry, string $version) => $this->actingAs($this->manager)
-                ->delete("{$base}/time-entries/{$entry->public_id}", [
+            'delete' => fn (ClientTimeEntry $entry, string $version) => $this->actingAs($this->manager, 'web')
+                ->timeDelete("{$base}/time-entries/{$entry->public_id}", [
                     'expected_version' => $version,
                 ]),
-            'approve' => fn (ClientTimeEntry $entry, string $version) => $this->actingAs($this->manager)
-                ->post("{$base}/time-entries/approve", [
+            'approve' => fn (ClientTimeEntry $entry, string $version) => $this->actingAs($this->manager, 'web')
+                ->timePost("{$base}/time-entries/approve", [
                     'entries' => [['id' => $entry->public_id, 'expected_version' => $version]],
                 ]),
         ];
@@ -1280,11 +1322,7 @@ class TimeSheetTest extends TestCase
             $version = AgentApiVersion::for($entry);
             $this->attachToInvoice($entry, 'issued');
 
-            $write($entry, $version)->assertSessionHasErrors(
-                'engagement',
-                null,
-                'default',
-            );
+            $write($entry, $version)->assertConflict();
 
             $this->assertSame(60, (int) $entry->fresh()?->minutes, "{$verb} altered an invoiced entry");
             $this->assertSame('draft', $entry->fresh()?->status, "{$verb} altered an invoiced entry");
@@ -1314,7 +1352,7 @@ class TimeSheetTest extends TestCase
 
         $this->travelTo('2026-07-20');
 
-        $this->actingAs($this->manager)
+        $this->actingAs($this->manager, 'web')
             ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page->has('months.0.capacity', 0));
@@ -1323,7 +1361,7 @@ class TimeSheetTest extends TestCase
         // activating the same agreement produces the strip.
         $agreement->forceFill(['status' => 'active'])->save();
 
-        $this->actingAs($this->manager)
+        $this->actingAs($this->manager, 'web')
             ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page->has('months.0.capacity', 1));
@@ -1350,7 +1388,7 @@ class TimeSheetTest extends TestCase
 
         $this->travelTo('2026-07-20');
 
-        $this->actingAs($this->manager)
+        $this->actingAs($this->manager, 'web')
             ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(function (Assert $page): void {
@@ -1377,12 +1415,12 @@ class TimeSheetTest extends TestCase
      */
     public function test_the_old_workspace_wide_url_lands_on_this_clients_time(): void
     {
-        $this->actingAs($this->manager)
+        $this->actingAs($this->manager, 'web')
             ->get("/workspaces/{$this->workspace->public_id}/time")
             ->assertRedirect("/workspaces/{$this->workspace->public_id}?module=time")
             ->assertSessionMissing('errors');
 
-        $this->actingAs($this->manager)
+        $this->actingAs($this->manager, 'web')
             ->get("/workspaces/{$this->workspace->public_id}?module=time")
             ->assertRedirect("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time");
     }
@@ -1398,8 +1436,8 @@ class TimeSheetTest extends TestCase
         $version = AgentApiVersion::for($entry);
         $this->attachToInvoice($entry, 'issued');
 
-        $this->actingAs($this->manager)
-            ->patchJson("/workspaces/{$this->workspace->public_id}/time-entries/{$entry->public_id}", [
+        $this->actingAs($this->manager, 'web')
+            ->timePatch("/api/v1/workspaces/{$this->workspace->public_id}/time-entries/{$entry->public_id}", [
                 'expected_version' => $version,
                 'minutes' => 75,
             ])
@@ -1432,7 +1470,6 @@ class TimeSheetTest extends TestCase
             'status' => 'open',
         ]);
 
-        $url = "/workspaces/{$this->workspace->public_id}/projects/{$this->project->public_id}/time-entries";
         $payload = [
             'worked_on' => '2026-07-04',
             'minutes' => 60,
@@ -1440,15 +1477,15 @@ class TimeSheetTest extends TestCase
         ];
 
         // Another workspace's task is not found at all.
-        $this->actingAs($this->manager)
-            ->post($url, $payload + ['task_id' => $foreignTask->public_id])
+        $this->actingAs($this->manager, 'web')
+            ->logTime($this->project->public_id, $payload + ['task_id' => $foreignTask->public_id])
             ->assertNotFound();
 
         // This workspace's task, but another project's: refused by the
         // workflow, which is the check the workspace predicate cannot make.
-        $this->actingAs($this->manager)
-            ->post($url, $payload + ['task_id' => $siblingTask->public_id])
-            ->assertSessionHasErrors('engagement');
+        $this->actingAs($this->manager, 'web')
+            ->logTime($this->project->public_id, $payload + ['task_id' => $siblingTask->public_id])
+            ->assertUnprocessable();
 
         $this->assertSame(0, ClientTimeEntry::query()->count());
     }
@@ -1483,7 +1520,7 @@ class TimeSheetTest extends TestCase
 
         $this->travelTo('2026-07-20');
 
-        $this->actingAs($this->manager)
+        $this->actingAs($this->manager, 'web')
             ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(function (Assert $page): void {
@@ -1524,7 +1561,7 @@ class TimeSheetTest extends TestCase
 
         $this->travelTo('2026-07-20');
 
-        $this->actingAs($this->manager)
+        $this->actingAs($this->manager, 'web')
             ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
@@ -1579,7 +1616,7 @@ class TimeSheetTest extends TestCase
 
         $this->travelTo('2026-07-20');
 
-        $this->actingAs($this->manager)
+        $this->actingAs($this->manager, 'web')
             ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(function (Assert $page): void {
@@ -1630,12 +1667,12 @@ class TimeSheetTest extends TestCase
             fn () => $entry->invoiceLines()->attach($foreignLine->id, ['workspace_id' => $foreign['workspace']->id]),
         );
 
-        $this->actingAs($this->manager)
-            ->patch("/workspaces/{$this->workspace->public_id}/time-entries/{$entry->public_id}", [
+        $this->actingAs($this->manager, 'web')
+            ->timePatch("/api/v1/workspaces/{$this->workspace->public_id}/time-entries/{$entry->public_id}", [
                 'expected_version' => AgentApiVersion::for($entry),
                 'minutes' => 75,
             ])
-            ->assertRedirect();
+            ->assertSuccessful();
 
         $this->assertSame(75, (int) $entry->fresh()?->minutes);
     }
@@ -1656,7 +1693,7 @@ class TimeSheetTest extends TestCase
 
         $this->entry(['worked_on' => '2025-09-15', 'description' => 'Edge of the window']);
 
-        $this->actingAs($this->manager)
+        $this->actingAs($this->manager, 'web')
             ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
@@ -1686,7 +1723,7 @@ class TimeSheetTest extends TestCase
 
         $this->travelTo('2026-07-20');
 
-        $this->actingAs($this->manager)
+        $this->actingAs($this->manager, 'web')
             ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(function (Assert $page): void {
@@ -1738,19 +1775,19 @@ class TimeSheetTest extends TestCase
         $url = "/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time";
 
         // A viewer reads the project and none of its time.
-        $this->actingAs($viewer)->get($url)->assertOk()
+        $this->actingAs($viewer, 'web')->get($url)->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->has('companies.0.projects', 1)
                 ->has('months', 0));
 
         // A contributor reads their own row and not their colleague's.
-        $this->actingAs($contributor)->get($url)->assertOk()
+        $this->actingAs($contributor, 'web')->get($url)->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->has('months.0.entries', 1)
                 ->where('months.0.entries.0.id', $theirs->public_id));
 
         // A project manager reads both.
-        $this->actingAs($projectManager)->get($url)->assertOk()
+        $this->actingAs($projectManager, 'web')->get($url)->assertOk()
             ->assertInertia(fn (Assert $page) => $page->has('months.0.entries', 2));
 
         $this->assertNotSame($mine->public_id, $theirs->public_id);
@@ -1778,7 +1815,7 @@ class TimeSheetTest extends TestCase
 
         $this->travelTo('2026-07-20');
 
-        $this->actingAs($viewer)
+        $this->actingAs($viewer, 'web')
             ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(function (Assert $page): void {
@@ -1802,7 +1839,7 @@ class TimeSheetTest extends TestCase
 
         $this->travelTo('2026-07-20');
 
-        $this->actingAs($this->manager)
+        $this->actingAs($this->manager, 'web')
             ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
@@ -1832,8 +1869,8 @@ class TimeSheetTest extends TestCase
             $statements[] = $query->sql;
         });
 
-        $this->actingAs($this->manager)
-            ->patch("/workspaces/{$this->workspace->public_id}/time-entries/{$foreignEntry->public_id}", [
+        $this->actingAs($this->manager, 'web')
+            ->timePatch("/api/v1/workspaces/{$this->workspace->public_id}/time-entries/{$foreignEntry->public_id}", [
                 'expected_version' => AgentApiVersion::for($foreignEntry),
                 'minutes' => 75,
             ])
@@ -1899,12 +1936,12 @@ class TimeSheetTest extends TestCase
             fn () => $entry->invoiceLines()->attach($line->id, ['workspace_id' => $foreign['workspace']->id]),
         );
 
-        $this->actingAs($this->manager)
-            ->patch("/workspaces/{$this->workspace->public_id}/time-entries/{$entry->public_id}", [
+        $this->actingAs($this->manager, 'web')
+            ->timePatch("/api/v1/workspaces/{$this->workspace->public_id}/time-entries/{$entry->public_id}", [
                 'expected_version' => AgentApiVersion::for($entry),
                 'minutes' => 75,
             ])
-            ->assertRedirect();
+            ->assertSuccessful();
 
         $this->assertSame(75, (int) $entry->fresh()?->minutes);
     }
@@ -1941,7 +1978,7 @@ class TimeSheetTest extends TestCase
         $url = "/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time";
 
         // Consistent to begin with: the strip is there.
-        $this->actingAs($this->manager)->get($url)->assertOk()
+        $this->actingAs($this->manager, 'web')->get($url)->assertOk()
             ->assertInertia(fn (Assert $page) => $page->has('months.0.capacity', 1));
 
         // This entry is this company's as far as the ledger is concerned, and
@@ -1957,7 +1994,7 @@ class TimeSheetTest extends TestCase
             'status' => 'approved',
         ]));
 
-        $this->actingAs($this->manager)->get($url)->assertOk()
+        $this->actingAs($this->manager, 'web')->get($url)->assertOk()
             ->assertInertia(fn (Assert $page) => $page->has('months.0.capacity', 0));
     }
 
@@ -1978,7 +2015,7 @@ class TimeSheetTest extends TestCase
         $this->travelTo('2026-07-20');
         $url = "/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time";
 
-        $this->actingAs($this->manager)->get($url)->assertOk()
+        $this->actingAs($this->manager, 'web')->get($url)->assertOk()
             ->assertInertia(fn (Assert $page) => $page->has('months.0.capacity', 1));
 
         $foreign = $this->foreignWorkspace();
@@ -1995,7 +2032,7 @@ class TimeSheetTest extends TestCase
             'status' => 'approved',
         ]));
 
-        $this->actingAs($this->manager)->get($url)->assertOk()
+        $this->actingAs($this->manager, 'web')->get($url)->assertOk()
             ->assertInertia(fn (Assert $page) => $page->has('months.0.capacity', 0));
     }
 
@@ -2059,7 +2096,7 @@ class TimeSheetTest extends TestCase
 
         $this->travelTo('2026-07-20');
 
-        $this->actingAs($this->manager)
+        $this->actingAs($this->manager, 'web')
             ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
@@ -2088,7 +2125,7 @@ class TimeSheetTest extends TestCase
 
         $this->travelTo('2026-07-20');
 
-        $this->actingAs($this->manager)
+        $this->actingAs($this->manager, 'web')
             ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
@@ -2124,7 +2161,7 @@ class TimeSheetTest extends TestCase
             $statements[] = $query->sql;
         });
 
-        $this->actingAs($member)
+        $this->actingAs($member, 'web')
             ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk();
 
@@ -2173,7 +2210,7 @@ class TimeSheetTest extends TestCase
 
         $this->travelTo('2026-08-20');
 
-        $this->actingAs($this->manager)
+        $this->actingAs($this->manager, 'web')
             ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(function (Assert $page): void {
@@ -2215,7 +2252,7 @@ class TimeSheetTest extends TestCase
 
         $this->travelTo('2026-07-20');
 
-        $this->actingAs($this->manager)
+        $this->actingAs($this->manager, 'web')
             ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
@@ -2237,7 +2274,7 @@ class TimeSheetTest extends TestCase
 
         $this->travelTo('2026-07-20');
 
-        $this->actingAs($this->manager)
+        $this->actingAs($this->manager, 'web')
             ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
@@ -2257,7 +2294,7 @@ class TimeSheetTest extends TestCase
 
         $this->travelTo('2026-07-20');
 
-        $this->actingAs($this->manager)
+        $this->actingAs($this->manager, 'web')
             ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(function (Assert $page): void {
@@ -2288,23 +2325,23 @@ class TimeSheetTest extends TestCase
         ]);
 
         $entry = $this->entry(['client_task_id' => $first->id]);
-        $url = "/workspaces/{$this->workspace->public_id}/time-entries/{$entry->public_id}";
+        $url = "/api/v1/workspaces/{$this->workspace->public_id}/time-entries/{$entry->public_id}";
 
-        $this->actingAs($this->manager)
-            ->patch($url, [
+        $this->actingAs($this->manager, 'web')
+            ->timePatch($url, [
                 'expected_version' => AgentApiVersion::for($entry),
                 'task_id' => $second->public_id,
             ])
-            ->assertRedirect();
+            ->assertSuccessful();
 
         $this->assertSame($second->id, $entry->fresh()?->client_task_id);
 
-        $this->actingAs($this->manager)
-            ->patch($url, [
+        $this->actingAs($this->manager, 'web')
+            ->timePatch($url, [
                 'expected_version' => AgentApiVersion::for($entry->fresh()),
                 'task_id' => null,
             ])
-            ->assertRedirect();
+            ->assertSuccessful();
 
         $this->assertNull($entry->fresh()?->client_task_id);
     }
@@ -2322,8 +2359,8 @@ class TimeSheetTest extends TestCase
 
         $entry = $this->entry();
 
-        $this->actingAs($this->manager)
-            ->patch("/workspaces/{$this->workspace->public_id}/time-entries/{$entry->public_id}", [
+        $this->actingAs($this->manager, 'web')
+            ->timePatch("/api/v1/workspaces/{$this->workspace->public_id}/time-entries/{$entry->public_id}", [
                 'expected_version' => AgentApiVersion::for($entry),
                 'task_id' => $siblingTask->public_id,
             ])
@@ -2363,8 +2400,8 @@ class TimeSheetTest extends TestCase
             fn () => $this->entry(['client_project_id' => $foreign['project']->id]),
         );
 
-        $this->actingAs($outsider)
-            ->post("/workspaces/{$this->workspace->public_id}/time-entries/approve", [
+        $this->actingAs($outsider, 'web')
+            ->timePost("/api/v1/workspaces/{$this->workspace->public_id}/time-entries/approve", [
                 'entries' => [['id' => $entry->public_id, 'expected_version' => AgentApiVersion::for($entry)]],
             ])
             ->assertNotFound();
@@ -2383,8 +2420,8 @@ class TimeSheetTest extends TestCase
         ]);
         $entry = $this->entry(['client_company_id' => $otherCompany->id]);
 
-        $this->actingAs($this->manager)
-            ->post("/workspaces/{$this->workspace->public_id}/time-entries/approve", [
+        $this->actingAs($this->manager, 'web')
+            ->timePost("/api/v1/workspaces/{$this->workspace->public_id}/time-entries/approve", [
                 'entries' => [['id' => $entry->public_id, 'expected_version' => AgentApiVersion::for($entry)]],
             ])
             ->assertNotFound();
@@ -2407,7 +2444,7 @@ class TimeSheetTest extends TestCase
 
         $this->travelTo('2026-03-20');
 
-        $this->actingAs($this->manager)
+        $this->actingAs($this->manager, 'web')
             ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(function (Assert $page): void {
@@ -2445,7 +2482,7 @@ class TimeSheetTest extends TestCase
 
         $this->travelTo('2026-02-25');
 
-        $this->actingAs($this->manager)
+        $this->actingAs($this->manager, 'web')
             ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
@@ -2487,7 +2524,7 @@ class TimeSheetTest extends TestCase
 
         $this->travelTo('2026-07-20');
 
-        $this->actingAs($this->manager)
+        $this->actingAs($this->manager, 'web')
             ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
@@ -2505,24 +2542,24 @@ class TimeSheetTest extends TestCase
     {
         $this->travelTo('2026-07-20');
 
-        $this->actingAs($this->manager)
-            ->post("/workspaces/{$this->workspace->public_id}/projects/{$this->project->public_id}/time-entries", [
+        $this->actingAs($this->manager, 'web')
+            ->logTime("{$this->project->public_id}", [
                 'worked_on' => '2099-08-29',
                 'minutes' => 60,
                 'description' => 'Mistyped year',
             ])
-            ->assertSessionHasErrors('worked_on');
+            ->assertJsonValidationErrors('entries.0.worked_on');
 
         $this->assertSame(0, ClientTimeEntry::query()->count());
 
         // The end of the current month is still inside the window.
-        $this->actingAs($this->manager)
-            ->post("/workspaces/{$this->workspace->public_id}/projects/{$this->project->public_id}/time-entries", [
+        $this->actingAs($this->manager, 'web')
+            ->logTime("{$this->project->public_id}", [
                 'worked_on' => '2026-07-31',
                 'minutes' => 60,
                 'description' => 'Later this month',
             ])
-            ->assertRedirect();
+            ->assertSuccessful();
 
         $this->assertSame(1, ClientTimeEntry::query()->count());
     }
@@ -2561,8 +2598,8 @@ class TimeSheetTest extends TestCase
             ]);
         });
 
-        $this->actingAs($this->manager)
-            ->patch("/workspaces/{$this->workspace->public_id}/time-entries/{$entry->public_id}", [
+        $this->actingAs($this->manager, 'web')
+            ->timePatch("/api/v1/workspaces/{$this->workspace->public_id}/time-entries/{$entry->public_id}", [
                 'expected_version' => AgentApiVersion::for($entry),
                 'minutes' => 75,
             ])
@@ -2585,7 +2622,7 @@ class TimeSheetTest extends TestCase
 
         $this->travelTo('2026-07-20');
 
-        $this->actingAs($this->manager)
+        $this->actingAs($this->manager, 'web')
             ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(function (Assert $page): void {
@@ -2610,24 +2647,24 @@ class TimeSheetTest extends TestCase
     {
         $this->travelTo('2026-07-20');
 
-        $this->actingAs($this->manager)
-            ->post("/workspaces/{$this->workspace->public_id}/projects/{$this->project->public_id}/time-entries", [
+        $this->actingAs($this->manager, 'web')
+            ->logTime("{$this->project->public_id}", [
                 'worked_on' => '2006-07-04',
                 'minutes' => 60,
                 'description' => 'Mistyped year',
             ])
-            ->assertSessionHasErrors('worked_on');
+            ->assertJsonValidationErrors('entries.0.worked_on');
 
         $this->assertSame(0, ClientTimeEntry::query()->count());
 
         // The far edge of the window is still inside it.
-        $this->actingAs($this->manager)
-            ->post("/workspaces/{$this->workspace->public_id}/projects/{$this->project->public_id}/time-entries", [
+        $this->actingAs($this->manager, 'web')
+            ->logTime("{$this->project->public_id}", [
                 'worked_on' => '2025-08-01',
                 'minutes' => 60,
                 'description' => 'The oldest month the sheet shows',
             ])
-            ->assertRedirect();
+            ->assertSuccessful();
 
         $this->assertSame(1, ClientTimeEntry::query()->count());
     }
@@ -2656,7 +2693,7 @@ class TimeSheetTest extends TestCase
 
         $this->travelTo('2026-05-25');
 
-        $this->actingAs($this->manager)
+        $this->actingAs($this->manager, 'web')
             ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(function (Assert $page): void {
@@ -2695,11 +2732,11 @@ class TimeSheetTest extends TestCase
             'billing_rate_source' => 'explicit',
         ]);
 
-        $this->actingAs($this->manager)
-            ->post("/workspaces/{$this->workspace->public_id}/time-entries/approve", [
+        $this->actingAs($this->manager, 'web')
+            ->timePost("/api/v1/workspaces/{$this->workspace->public_id}/time-entries/approve", [
                 'entries' => [['id' => $entry->public_id, 'expected_version' => AgentApiVersion::for($entry)]],
             ])
-            ->assertRedirect();
+            ->assertSuccessful();
 
         $this->assertSame('approved', $entry->fresh()?->status);
         // Not 15000, which is what the agreement would have resolved to.
@@ -2722,7 +2759,7 @@ class TimeSheetTest extends TestCase
 
         $this->travelTo('2026-07-25');
 
-        $this->actingAs($this->manager)
+        $this->actingAs($this->manager, 'web')
             ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
@@ -2747,24 +2784,24 @@ class TimeSheetTest extends TestCase
         // The calendar travels, not a date. A date computed here would be
         // right at render and wrong by morning, and these pages are meant to
         // be left open; the browser reads the clock against this.
-        $this->actingAs($this->manager)
+        $this->actingAs($this->manager, 'web')
             ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page->where('workspace.timezone', 'America/Los_Angeles'));
 
-        $this->actingAs($this->manager)
+        $this->actingAs($this->manager, 'web')
             ->get("/workspaces/{$this->workspace->public_id}/operations")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page->where('workspace.timezone', 'America/Los_Angeles'));
 
         // And that default is a date the write accepts.
-        $this->actingAs($this->manager)
-            ->post("/workspaces/{$this->workspace->public_id}/projects/{$this->project->public_id}/time-entries", [
+        $this->actingAs($this->manager, 'web')
+            ->logTime("{$this->project->public_id}", [
                 'worked_on' => '2026-08-31',
                 'minutes' => 60,
                 'description' => 'Logged on the last day of the local month',
             ])
-            ->assertRedirect();
+            ->assertSuccessful();
 
         $this->assertSame(1, ClientTimeEntry::query()->count());
     }
@@ -2777,23 +2814,22 @@ class TimeSheetTest extends TestCase
     public function test_the_page_is_told_the_approval_limit_the_request_enforces(): void
     {
         $this->travelTo('2026-07-20');
-
-        $this->actingAs($this->manager)
+        $this->actingAs($this->manager, 'web')
             ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
-            ->assertOk()
-            ->assertInertia(fn (Assert $page) => $page
-                ->where('approval_limit', ApproveTimeEntriesRequest::MAX_ENTRIES));
+            ->assertOk()->assertInertia(fn (Assert $page) => $page->where('approval_limit', 100));
 
-        // And the request really does refuse one more than it advertises.
-        $entries = [];
+        $records = collect(range(1, 101))->map(fn () => $this->entry(['is_billable' => false]));
+        $entries = $records->map(fn (ClientTimeEntry $entry): array => [
+            'id' => $entry->public_id, 'expected_version' => AgentApiVersion::for($entry),
+        ])->all();
+        $url = "/api/v1/workspaces/{$this->workspace->public_id}/time-entries/approve";
+        $this->timePost($url, ['entries' => $entries])->assertJsonValidationErrors('entries');
+        $this->assertSame(101, ClientTimeEntry::query()->where('workspace_id', $this->workspace->id)->where('status', 'draft')->count());
 
-        for ($i = 0; $i <= ApproveTimeEntriesRequest::MAX_ENTRIES; $i++) {
-            $entries[] = ['id' => 'synthetic-'.$i, 'expected_version' => 'v'];
-        }
-
-        $this->actingAs($this->manager)
-            ->post("/workspaces/{$this->workspace->public_id}/time-entries/approve", ['entries' => $entries])
-            ->assertSessionHasErrors('entries');
+        $this->timePost($url, ['entries' => array_slice($entries, 0, 100)])->assertOk();
+        $this->assertSame(100, ClientTimeEntry::query()->where('workspace_id', $this->workspace->id)->where('status', 'approved')->count());
+        $this->timePost($url, ['entries' => array_slice($entries, 100)])->assertOk();
+        $this->assertSame(101, ClientTimeEntry::query()->where('workspace_id', $this->workspace->id)->where('status', 'approved')->count());
     }
 
     /**
@@ -2810,25 +2846,25 @@ class TimeSheetTest extends TestCase
     {
         $this->agreementWithAnHourlyRate();
 
-        $this->actingAs($this->manager)
-            ->post("/workspaces/{$this->workspace->public_id}/projects/{$this->project->public_id}/time-entries", [
+        $this->actingAs($this->manager, 'web')
+            ->logTime("{$this->project->public_id}", [
                 'worked_on' => '2026-07-04',
                 'minutes' => 60,
                 'description' => 'Logged with a rate and no currency',
                 'billing_rate_amount' => 22500,
             ])
-            ->assertRedirect();
+            ->assertSuccessful();
 
         $entry = ClientTimeEntry::query()->firstOrFail();
 
         $this->assertSame('explicit', $entry->billing_rate_source);
         $this->assertSame($this->workspace->fresh()?->default_currency, $entry->currency);
 
-        $this->actingAs($this->manager)
-            ->post("/workspaces/{$this->workspace->public_id}/time-entries/approve", [
+        $this->actingAs($this->manager, 'web')
+            ->timePost("/api/v1/workspaces/{$this->workspace->public_id}/time-entries/approve", [
                 'entries' => [['id' => $entry->public_id, 'expected_version' => AgentApiVersion::for($entry)]],
             ])
-            ->assertRedirect();
+            ->assertSuccessful();
 
         $this->assertSame(22500, (int) $entry->fresh()?->billing_rate_amount);
         $this->assertNotNull($entry->fresh()?->currency);
@@ -2844,11 +2880,11 @@ class TimeSheetTest extends TestCase
             'currency' => null,
         ]);
 
-        $this->actingAs($this->manager)
-            ->post("/workspaces/{$this->workspace->public_id}/time-entries/approve", [
+        $this->actingAs($this->manager, 'web')
+            ->timePost("/api/v1/workspaces/{$this->workspace->public_id}/time-entries/approve", [
                 'entries' => [['id' => $entry->public_id, 'expected_version' => AgentApiVersion::for($entry)]],
             ])
-            ->assertRedirect();
+            ->assertSuccessful();
 
         $this->assertSame(22500, (int) $entry->fresh()?->billing_rate_amount);
         $this->assertSame($this->workspace->fresh()?->default_currency, $entry->fresh()?->currency);
@@ -2912,7 +2948,7 @@ class TimeSheetTest extends TestCase
 
         $this->travelTo('2026-07-20');
 
-        $response = $this->actingAs($member)
+        $response = $this->actingAs($member, 'web')
             ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
             ->assertOk();
 
@@ -2945,7 +2981,7 @@ class TimeSheetTest extends TestCase
         }
 
         $this->assertQueryCountIndependentOfRows(
-            fn () => $this->actingAs($this->manager)
+            fn () => $this->actingAs($this->manager, 'web')
                 ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
                 ->assertOk(),
             function (): void {
@@ -2986,7 +3022,7 @@ class TimeSheetTest extends TestCase
         $this->travelTo('2026-07-20');
 
         $this->assertQueriesNameOnlyRealIdentifiers(
-            fn () => $this->actingAs($this->manager)
+            fn () => $this->actingAs($this->manager, 'web')
                 ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
                 ->assertOk(),
         );
@@ -3010,13 +3046,13 @@ class TimeSheetTest extends TestCase
     {
         $contributor = $this->memberWithProjectRole(ProjectRole::Contributor);
 
-        $this->actingAs($contributor)
-            ->post("/workspaces/{$this->workspace->public_id}/projects/{$this->project->public_id}/time-entries", [
+        $this->actingAs($contributor, 'web')
+            ->logTime("{$this->project->public_id}", [
                 'worked_on' => $this->today(),
                 'minutes' => 30,
                 'description' => 'Synthetic contributor time.',
             ])
-            ->assertRedirect();
+            ->assertSuccessful();
 
         $entry = ClientTimeEntry::query()->latest('id')->sole();
         $this->assertSame($contributor->id, $entry->user_id);
@@ -3033,8 +3069,8 @@ class TimeSheetTest extends TestCase
     {
         $viewer = $this->memberWithProjectRole(ProjectRole::Viewer);
 
-        $this->actingAs($viewer)
-            ->post("/workspaces/{$this->workspace->public_id}/projects/{$this->project->public_id}/time-entries", [
+        $this->actingAs($viewer, 'web')
+            ->logTime("{$this->project->public_id}", [
                 'worked_on' => $this->today(),
                 'minutes' => 30,
                 'description' => 'Synthetic viewer time.',
@@ -3056,13 +3092,13 @@ class TimeSheetTest extends TestCase
         $member = User::factory()->create();
         $this->workspace->memberships()->create(['user_id' => $member->id, 'role' => 'member']);
 
-        $this->actingAs($member)
-            ->post("/workspaces/{$this->workspace->public_id}/projects/{$this->project->public_id}/time-entries", [
+        $this->actingAs($member, 'web')
+            ->logTime("{$this->project->public_id}", [
                 'worked_on' => $this->today(),
                 'minutes' => 30,
                 'description' => 'Synthetic outsider time.',
             ])
-            ->assertForbidden();
+            ->assertNotFound();
 
         $this->assertSame(0, ClientTimeEntry::query()->count());
     }
@@ -3084,15 +3120,18 @@ class TimeSheetTest extends TestCase
         $contributor = $this->memberWithProjectRole(ProjectRole::Contributor);
         $someoneElse = $this->memberWithProjectRole(ProjectRole::Contributor);
 
-        $this->actingAs($contributor)
-            ->post("/workspaces/{$this->workspace->public_id}/projects/{$this->project->public_id}/time-entries", [
+        $this->actingAs($contributor, 'web')
+            ->logTime("{$this->project->public_id}", [
                 'worked_on' => $this->today(),
                 'minutes' => 30,
                 'description' => 'Synthetic attributed time.',
                 'user_id' => $someoneElse->id,
                 'user' => $someoneElse->public_id,
             ])
-            ->assertRedirect();
+            ->assertJsonValidationErrors('entries.0');
+
+        $this->assertDatabaseCount('client_time_entries', 0);
+        $this->logTime($this->project->public_id, ['worked_on' => $this->today(), 'minutes' => 30, 'description' => 'Synthetic attributed time.'])->assertCreated();
 
         $entry = ClientTimeEntry::query()->latest('id')->sole();
         $this->assertSame($contributor->id, $entry->user_id);
@@ -3112,14 +3151,14 @@ class TimeSheetTest extends TestCase
     {
         $contributor = $this->memberWithProjectRole(ProjectRole::Contributor);
 
-        $this->actingAs($contributor)
-            ->post("/workspaces/{$this->workspace->public_id}/projects/{$this->project->public_id}/time-entries", [
+        $this->actingAs($contributor, 'web')
+            ->logTime("{$this->project->public_id}", [
                 'worked_on' => $this->today(),
                 'minutes' => 30,
                 'description' => 'Synthetic priced time.',
                 'billing_rate_amount' => 99999,
             ])
-            ->assertSessionHasErrors('billing_rate_amount');
+            ->assertJsonValidationErrors('billing_rate_amount');
 
         $this->assertSame(0, ClientTimeEntry::query()->count());
     }
@@ -3132,14 +3171,14 @@ class TimeSheetTest extends TestCase
     {
         $manager = $this->memberWithProjectRole(ProjectRole::Manager);
 
-        $this->actingAs($manager)
-            ->post("/workspaces/{$this->workspace->public_id}/projects/{$this->project->public_id}/time-entries", [
+        $this->actingAs($manager, 'web')
+            ->logTime("{$this->project->public_id}", [
                 'worked_on' => $this->today(),
                 'minutes' => 30,
                 'description' => 'Synthetic managed time.',
                 'billing_rate_amount' => 12500,
             ])
-            ->assertRedirect();
+            ->assertSuccessful();
 
         $entry = ClientTimeEntry::query()->latest('id')->sole();
         $this->assertSame(12500, $entry->billing_rate_amount);
@@ -3171,8 +3210,8 @@ class TimeSheetTest extends TestCase
             'role' => ProjectRole::Contributor->value,
         ]);
 
-        $this->actingAs($contributor)
-            ->post("/workspaces/{$this->workspace->public_id}/projects/{$foreign['project']->public_id}/time-entries", [
+        $this->actingAs($contributor, 'web')
+            ->logTime("{$foreign['project']->public_id}", [
                 'worked_on' => $this->today(),
                 'minutes' => 30,
                 'description' => 'Synthetic cross-tenant time.',
@@ -3300,6 +3339,33 @@ class TimeSheetTest extends TestCase
     }
 
     /** @param array<string, mixed> $attributes */
+    /** @param array<string, mixed> $payload */
+    private function timePost(string $url, array $payload): TestResponse
+    {
+        return $this->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())->postJson($url, $payload);
+    }
+
+    /** @param array<string, mixed> $payload */
+    private function timePatch(string $url, array $payload): TestResponse
+    {
+        return $this->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())->patchJson($url, $payload);
+    }
+
+    /** @param array<string, mixed> $payload */
+    private function timeDelete(string $url, array $payload): TestResponse
+    {
+        return $this->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())->deleteJson($url, $payload);
+    }
+
+    /** @param array<string, mixed> $payload */
+    private function logTime(string $projectId, array $payload): TestResponse
+    {
+        return $this->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())
+            ->timePost("/api/v1/workspaces/{$this->workspace->public_id}/time-entries", [
+                'entries' => [['project_id' => $projectId, ...$payload]],
+            ]);
+    }
+
     private function entry(array $attributes = []): ClientTimeEntry
     {
         return ClientTimeEntry::query()->create($attributes + [

@@ -48,6 +48,26 @@ $app = require __DIR__.'/bootstrap.php';
 if (filesize($runtime.'/database.sqlite') !== 0) {
     throw new RuntimeException('Refusing to seed an existing database.');
 }
+// The API guard also needs signing keys for first-party sessions. Keep these
+// disposable keys inside this run's private runtime, never in the repository.
+$signingKey = openssl_pkey_new(['private_key_bits' => 2048, 'private_key_type' => OPENSSL_KEYTYPE_RSA]);
+if ($signingKey === false || ! openssl_pkey_export($signingKey, $privateKey)) {
+    throw new RuntimeException('Cannot initialize disposable API signing keys.');
+}
+$keyDetails = openssl_pkey_get_details($signingKey);
+if (! is_array($keyDetails)) {
+    throw new RuntimeException('Cannot initialize disposable API public key.');
+}
+$keyDirectory = $runtime.'/storage/app/private/oauth';
+if (! is_dir($keyDirectory)) {
+    mkdir($keyDirectory, 0700, true);
+}
+foreach (['private' => $privateKey, 'public' => $keyDetails['key']] as $kind => $value) {
+    $keyFile = $keyDirectory.'/oauth-'.$kind.'.key';
+    file_put_contents($keyFile, $value);
+    chmod($keyFile, 0600);
+}
+
 Artisan::call('migrate', ['--force' => true]);
 
 $owner = User::factory()->create([
@@ -184,6 +204,11 @@ app(AttachmentStorageService::class)->store(
     UploadedFile::fake()->createWithContent(str_repeat('SyntheticReceiptFilename', 8).'.txt', 'Synthetic layout receipt'), $owner,
 );
 
+$logProject = ClientProject::query()->create([
+    'workspace_id' => $workspace->id, 'client_company_id' => $company->id,
+    'name' => 'ZZZ Synthetic second logging project', 'status' => 'active',
+]);
+
 $correction = ClientTimeEntry::query()->create([
     'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_project_id' => $project->id,
     'user_id' => $owner->id, 'worked_on' => $date, 'minutes' => 60, 'description' => 'Synthetic draft correction',
@@ -256,12 +281,14 @@ file_put_contents($runtime.'/fixture.json', json_encode([
     'mcp_setup' => route('mcp.setup', $workspace, absolute: false),
     'draft_invoice' => route('clients.invoice', [$workspace, $company, $draft], absolute: false),
     'draft_time' => route('clients.time', [$workspace, $company, 'draft_invoice' => $draft->public_id], absolute: false),
-    'draft_id' => $draft->id, 'correction_id' => $correction->id,
+    'workspace_id' => $workspace->id, 'log_project_id' => $logProject->id,
+    'project_log' => route('clients.time', [$workspace, $company, 'log_project' => $logProject->public_id], absolute: false),
+    'draft_id' => $draft->id, 'correction_id' => $correction->id, 'companion_id' => $companion->id,
     'preserved_lines' => $draft->lines()->whereDoesntHave('timeEntries')->orderBy('id')->get()->map->getAttributes()->all(),
     'draft_writes' => [
-        'POST' => [route('svc.billing.invoices.time', [$workspace, $draft], absolute: false), route('svc.billing.invoices.issue', [$workspace, $draft], absolute: false), route('svc.billing.invoices.payments.store', [$workspace, $draft], absolute: false),
-            '/workspaces/'.$workspace->public_id.'/time-entries/'.$correction->public_id.'/unapprove', '/workspaces/'.$workspace->public_id.'/time-entries/approve'],
-        'PATCH' => ['/workspaces/'.$workspace->public_id.'/time-entries/'.$correction->public_id],
+        'POST' => [route('agent-api.v1.time-entries.store', $workspace, absolute: false), route('agent-api.v1.invoices.add_time', [$workspace, $draft->public_id], absolute: false), route('svc.billing.invoices.issue', [$workspace, $draft], absolute: false), route('svc.billing.invoices.payments.store', [$workspace, $draft], absolute: false),
+            '/api/v1/workspaces/'.$workspace->public_id.'/time-entries/'.$correction->public_id.'/unapprove', '/api/v1/workspaces/'.$workspace->public_id.'/time-entries/approve'],
+        'PATCH' => ['/api/v1/workspaces/'.$workspace->public_id.'/time-entries/'.$correction->public_id],
     ],
     'receipts' => route('svc.expenses.receipts', [$workspace, $company, $receiptExpense->public_id], absolute: false),
     'user_id' => $owner->id, 'date' => $date,

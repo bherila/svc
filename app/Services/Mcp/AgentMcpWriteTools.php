@@ -362,6 +362,7 @@ final class AgentMcpWriteTools
             ->whereIn('public_id', $ids)
             ->withCapacityPlacement($workspace->id)
             ->with('project')
+            ->with(AgentTimeEntryPresenter::authorRelations($workspace))
             ->get()
             ->keyBy('public_id');
 
@@ -389,9 +390,10 @@ final class AgentMcpWriteTools
         ?bool $is_deferred = null,
         ?bool $is_visible_to_client = null,
         #[Schema(maxLength: 10000)] ?string $client_visible_description = null,
+        #[Schema(format: 'uuid')] ?string $task_id = null,
     ): array {
         $body = compact('expected_version');
-        foreach (compact('worked_on', 'minutes', 'description', 'is_billable', 'is_deferred', 'is_visible_to_client', 'client_visible_description') as $name => $value) {
+        foreach (compact('worked_on', 'minutes', 'description', 'is_billable', 'is_deferred', 'is_visible_to_client', 'client_visible_description', 'task_id') as $name => $value) {
             if ($this->requestArguments->has($context, $name)) {
                 $body[$name] = $value;
             }

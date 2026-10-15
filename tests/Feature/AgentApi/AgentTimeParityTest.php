@@ -7,6 +7,7 @@ use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceLine;
 use App\Models\ClientProject;
 use App\Models\ClientProjectMembership;
+use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
@@ -21,6 +22,24 @@ final class AgentTimeParityTest extends TestCase
 {
     use RefreshDatabase;
     use WritesLegacyCrossTenantRows;
+
+    public function test_mcp_task_updates_match_the_declared_api_contract(): void
+    {
+        config(['agent_api.writes_enabled' => true, 'agent_api.time_entry_writes_enabled' => true]);
+        [$owner, $workspace, $company, $project] = $this->tenant();
+        $entry = $this->entry($owner, $workspace, $company, $project, ['status' => 'draft'])->refresh();
+        $task = ClientTask::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $project->id, 'title' => 'Synthetic task attribution']);
+        $this->actingAsMcp($owner, [AgentApiScopes::MCP_USE, AgentApiScopes::TIME_WRITE]);
+        $args = ['workspace_id' => $workspace->public_id, 'entry_id' => $entry->public_id, 'expected_version' => AgentApiVersion::for($entry), 'idempotency_key' => 'synthetic-task-set', 'task_id' => $task->public_id];
+        $result = $this->mcpCall('tools/call', ['name' => 'time_entries.update', 'arguments' => $args]);
+        $this->assertFalse($result['isError']);
+        $this->assertSame($task->public_id, $result['structuredContent']['data']['task_id']);
+        $this->assertSame($task->id, $entry->fresh()->client_task_id);
+        $result = $this->mcpCall('tools/call', ['name' => 'time_entries.update', 'arguments' => [...$args, 'expected_version' => $result['structuredContent']['data']['version'], 'idempotency_key' => 'synthetic-task-clear', 'task_id' => null]]);
+        $this->assertFalse($result['isError']);
+        $this->assertNull($result['structuredContent']['data']['task_id']);
+        $this->assertNull($entry->fresh()->client_task_id);
+    }
 
     public function test_unapprove_reuses_the_web_workflow_with_versions_replay_and_audit(): void
     {

@@ -38,6 +38,7 @@ const portalOnly = process.argv.includes('--portal-access');
 const correctionOnly = process.argv.includes('--invoice-correction');
 const squareOnly = process.argv.includes('--square');
 const remindersOnly = process.argv.includes('--reminders');
+const timeOnly = process.argv.includes('--time');
 const results = [];
 const failures = [];
 const serverLog = [];
@@ -282,22 +283,24 @@ try {
                 ? ['square_explore', 'square_invoice', 'square_portal']
                 : remindersOnly
                   ? ['reminder_invoice', 'settings']
-                  : [
-                      'mcp_setup',
-                      'invoice',
-                      'invoice_review',
-                      'reminder_invoice',
-                      'settings',
-                      'draft_invoice',
-                      'draft_time',
-                      'proposal',
-                      'proposal_acceptance',
-                      'operations',
-                      'time',
-                      'expenses',
-                      'receipts',
-                      'expense_schedules',
-                  ]) {
+                  : timeOnly
+                    ? ['time', 'draft_time']
+                    : [
+                          'mcp_setup',
+                          'invoice',
+                          'invoice_review',
+                          'reminder_invoice',
+                          'settings',
+                          'draft_invoice',
+                          'draft_time',
+                          'proposal',
+                          'proposal_acceptance',
+                          'operations',
+                          'time',
+                          'expenses',
+                          'receipts',
+                          'expense_schedules',
+                      ]) {
             const response = await page.goto(
                 origin + fixture[portalOnly ? 'portal_settings' : screen],
             );
@@ -350,9 +353,12 @@ try {
                     has: page.getByText('Payment reminders', { exact: true }),
                 });
                 await expect(
-                    card.getByText('Automatic reminders are on for this client', {
-                        exact: false,
-                    }),
+                    card.getByText(
+                        'Automatic reminders are on for this client',
+                        {
+                            exact: false,
+                        },
+                    ),
                 ).toBeVisible();
                 await expect(card.getByRole('row')).toHaveCount(4);
             }
@@ -508,6 +514,56 @@ try {
 
             if (screen === 'time') {
                 await page
+                    .getByRole('button', { name: 'Log time', exact: true })
+                    .click();
+                await expect(
+                    page.getByLabel('Hourly rate', { exact: true }),
+                ).toBeVisible();
+                await capture(screen, 'log-entry', width);
+                await page
+                    .getByLabel('Hourly rate', { exact: true })
+                    .fill('123.45');
+                await page
+                    .getByLabel('Work performed', { exact: true })
+                    .fill('Synthetic explicit rate acceptance');
+                await page
+                    .getByRole('button', { name: 'Log time', exact: true })
+                    .last()
+                    .scrollIntoViewIfNeeded();
+                await page
+                    .getByLabel('Duration', { exact: true })
+                    .fill('23:59');
+                await page
+                    .getByLabel('Work performed', { exact: true })
+                    .focus();
+                const durationText = await page
+                    .getByLabel('Duration', { exact: true })
+                    .evaluate((input) => {
+                        const style = getComputedStyle(input);
+                        const context = document
+                            .createElement('canvas')
+                            .getContext('2d');
+                        context.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+
+                        return {
+                            available:
+                                input.clientWidth -
+                                parseFloat(style.paddingLeft) -
+                                parseFloat(style.paddingRight),
+                            required: Math.ceil(
+                                context.measureText(input.value).width,
+                            ),
+                        };
+                    });
+                expect(
+                    durationText.available,
+                    'The duration value must be readable without clipping',
+                ).toBeGreaterThanOrEqual(durationText.required);
+                await capture(screen, 'log-fields', width);
+                await page
+                    .getByRole('button', { name: 'Cancel', exact: true })
+                    .click();
+                await page
                     .getByRole('button', {
                         name: 'Select time to invoice',
                         exact: true,
@@ -631,6 +687,40 @@ try {
     }
 
     if (!portalOnly && !correctionOnly && !squareOnly && !remindersOnly) {
+        await page.setViewportSize({ width: 1440, height: 1000 });
+        await page.goto(origin + fixture.project_log);
+        await expect(page.getByRole('dialog')).toBeVisible();
+        await expect(
+            page.getByRole('combobox', { name: 'Project', exact: true }),
+        ).toContainText('Synthetic second logging project');
+        await page
+            .getByLabel('Work performed', { exact: true })
+            .fill('Synthetic explicit rate acceptance');
+        await page.getByLabel('Hourly rate', { exact: true }).fill('123.45');
+        await page.getByLabel('Currency', { exact: true }).fill('USD');
+        await page
+            .getByRole('button', { name: 'Log time', exact: true })
+            .last()
+            .click();
+        await expect(page.getByRole('dialog')).toHaveCount(0);
+        const logged = page
+            .getByRole('row')
+            .filter({ hasText: 'Synthetic explicit rate acceptance' });
+        await logged
+            .getByRole('button', { name: 'Approve', exact: true })
+            .click();
+        await expect(logged).toContainText('Approved');
+        await capture('time', 'explicit-rate-approved', 1440);
+        run('php', ['scripts/layout/verify-time-log.php'], env);
+    }
+
+    if (
+        !portalOnly &&
+        !correctionOnly &&
+        !squareOnly &&
+        !remindersOnly &&
+        !timeOnly
+    ) {
         // Full operator correction path, all writes confined to the seeded records.
         await page.setViewportSize({ width: 1440, height: 1000 });
         await page.goto(origin + fixture.draft_invoice);
@@ -668,6 +758,11 @@ try {
         ).toBeVisible();
         await page
             .getByRole('button', { name: 'Add time to draft', exact: true })
+            .click();
+        await expect(page.getByRole('dialog')).toHaveCount(0);
+        await page
+            .locator(`a[href="${fixture.draft_invoice}"]`)
+            .first()
             .click();
         await expect(page).toHaveURL(origin + fixture.draft_invoice);
         await expect(

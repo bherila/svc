@@ -15486,7 +15486,12 @@
                         "$ref": "#/components/schemas/Uuid"
                     },
                     "author_id": {
-                        "$ref": "#/components/schemas/Uuid"
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "uuid",
+                        "description": "Public author id; null when the author is not a member of this workspace."
                     },
                     "project_id": {
                         "$ref": "#/components/schemas/Uuid"
@@ -15734,7 +15739,8 @@
                         "type": "boolean",
                         "description": "Approve the logged entries in the same transaction. Requires the time:approve OAuth scope, a user who can approve time on every project, and the agent write cutover; if approval is refused nothing is logged."
                     }
-                }
+                },
+                "description": "Log entries within the workspace calendar time sheet window: the current month and the preceding eleven months."
             },
             "TimeStatus": {
                 "type": "string",
@@ -15756,7 +15762,8 @@
                     },
                     "worked_on": {
                         "type": "string",
-                        "format": "date"
+                        "format": "date",
+                        "description": "Workspace calendar date within the time sheet’s twelve-month window, through the end of the current month."
                     },
                     "minutes": {
                         "type": "integer",
@@ -15783,6 +15790,14 @@
                         ],
                         "minLength": 1,
                         "maxLength": 10000
+                    },
+                    "task_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "uuid",
+                        "description": "Omit to preserve the task; null clears it. A task must belong to this entry’s project."
                     }
                 },
                 "allOf": [

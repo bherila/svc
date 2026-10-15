@@ -1,8 +1,20 @@
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import {
+    act,
+    fireEvent,
+    render,
+    screen,
+    waitFor,
+    within,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { apiRequest } from '@/lib/api';
 import TimeSheet from '@/pages/time';
+vi.mock('@/lib/api', () => ({
+    apiRequest: vi.fn(() => new Promise(() => {})),
+    newIdempotencyKey: () => crypto.randomUUID(),
+}));
 import { horizontalOverflowRisks } from '@/test/horizontal-overflow';
 import { sharedPageProps } from '@/test/shared-page-props';
 import { workspaceNavigation } from '@/test/workspace-navigation';
@@ -21,6 +33,7 @@ const inertia = vi.hoisted(() => ({
     patch: vi.fn(),
     post: vi.fn(),
     visit: vi.fn(),
+    reload: vi.fn(),
 }));
 
 let navigation: WorkspaceNavigation | null = null;
@@ -47,6 +60,14 @@ function entry(overrides: Partial<TimeEntry> = {}): TimeEntry {
     return {
         id: 'entry-1',
         version: 'version-1',
+        author_id: 'author-1',
+        project_id: 'project-1',
+        task_id: null,
+        invoice_id: null,
+        allocation_state: 'unallocated',
+        web_url: '/synthetic/time-entry',
+        update_url: '/synthetic/update-time',
+        delete_url: '/synthetic/delete-time',
         worked_on: '2026-08-23',
         minutes: 60,
         description: 'Review implementation',
@@ -77,6 +98,7 @@ function company(canLogTime = true): CompanyOption {
                 id: 'project-1',
                 name: 'Main project',
                 can_log_time: canLogTime,
+                log_time_url: canLogTime ? '/synthetic/log-time' : null,
                 tasks: [],
             },
         ],
@@ -175,6 +197,7 @@ function props({
             default_currency: 'USD',
             timezone: 'America/Los_Angeles',
         },
+        actions: { approve: '/synthetic/approve-time' },
         approval_limit: 50,
         invoice_draft: null,
         filters: { company_id: 'company-1' },
@@ -262,6 +285,91 @@ describe('time sheet controls', () => {
         expect(screen.queryByText(/Subcontractor ·/)).not.toBeInTheDocument();
     });
 
+    it('approves only the supplied batch limit and retains the remaining selection', async () => {
+        const data = props();
+        data.approval_limit = 2;
+        data.months[0].entries = [1, 2, 3].map((index) =>
+            entry({
+                id: `entry-${index}`,
+                description: `Synthetic batch ${index}`,
+                version: `version-${index}`,
+            }),
+        );
+        vi.mocked(apiRequest).mockResolvedValueOnce({
+            ok: true,
+            status: 200,
+            data: { approved_ids: ['entry-1', 'entry-2'] },
+        });
+        render(<TimeSheet {...data} />);
+        const user = userEvent.setup();
+
+        for (const index of [1, 2, 3]) {
+            await user.click(
+                screen.getByRole('checkbox', {
+                    name: `Select Synthetic batch ${index}`,
+                }),
+            );
+        }
+
+        await user.click(
+            screen.getByRole('button', { name: 'Approve 2 of 3' }),
+        );
+        expect(apiRequest).toHaveBeenCalledWith(
+            'POST',
+            '/synthetic/approve-time',
+            {
+                entries: [
+                    { id: 'entry-1', expected_version: 'version-1' },
+                    { id: 'entry-2', expected_version: 'version-2' },
+                ],
+            },
+        );
+        await waitFor(() => expect(inertia.reload).toHaveBeenCalledOnce());
+        await act(async () => inertia.reload.mock.calls[0][0].onFinish());
+        expect(screen.getByText(/1 selected/)).toBeInTheDocument();
+        expect(
+            screen.getByRole('checkbox', { name: 'Select Synthetic batch 1' }),
+        ).not.toBeChecked();
+        expect(
+            screen.getByRole('checkbox', { name: 'Select Synthetic batch 2' }),
+        ).not.toBeChecked();
+        expect(
+            screen.getByRole('checkbox', { name: 'Select Synthetic batch 3' }),
+        ).toBeChecked();
+    });
+
+    it('opens logging on the project supplied by the server', async () => {
+        const data = { ...props(), log_project_id: 'project-2' };
+        data.companies[0].projects.push({
+            id: 'project-2',
+            name: 'Synthetic second project',
+            can_log_time: true,
+            log_time_url: '/synthetic/log-time',
+            tasks: [],
+        });
+        render(<TimeSheet {...data} />);
+        expect(screen.getByRole('dialog')).toBeInTheDocument();
+        expect(
+            screen.getByRole('combobox', { name: 'Project' }),
+        ).toHaveTextContent('Synthetic second project');
+        const user = userEvent.setup();
+        await user.type(
+            screen.getByLabelText('Work performed'),
+            'Synthetic project-specific work',
+        );
+        await user.click(
+            within(screen.getByRole('dialog')).getByRole('button', {
+                name: 'Log time',
+            }),
+        );
+        expect(apiRequest).toHaveBeenCalledWith(
+            'POST',
+            '/synthetic/log-time',
+            { entries: [expect.objectContaining({ project_id: 'project-2' })] },
+            expect.any(String),
+        );
+    });
+
     it('keeps bulk approval single-flight until the request finishes', async () => {
         const user = userEvent.setup();
         render(<TimeSheet {...props()} />);
@@ -286,14 +394,14 @@ describe('time sheet controls', () => {
 
         await user.click(bulkApprove);
 
-        expect(inertia.post).toHaveBeenCalledTimes(1);
+        expect(vi.mocked(apiRequest)).toHaveBeenCalledTimes(1);
         expect(bulkApprove).toBeDisabled();
         expect(rowApprove).toBeDisabled();
 
         await user.click(bulkApprove);
         await user.click(rowApprove as HTMLElement);
 
-        expect(inertia.post).toHaveBeenCalledTimes(1);
+        expect(vi.mocked(apiRequest)).toHaveBeenCalledTimes(1);
     });
 
     it('keeps row approval single-flight until the request finishes', async () => {
@@ -303,12 +411,12 @@ describe('time sheet controls', () => {
 
         await user.click(approve);
 
-        expect(inertia.post).toHaveBeenCalledTimes(1);
+        expect(vi.mocked(apiRequest)).toHaveBeenCalledTimes(1);
         expect(approve).toBeDisabled();
 
         await user.click(approve);
 
-        expect(inertia.post).toHaveBeenCalledTimes(1);
+        expect(vi.mocked(apiRequest)).toHaveBeenCalledTimes(1);
     });
 
     it('withdraws an approval at the URL the server sent, once', async () => {
@@ -330,17 +438,17 @@ describe('time sheet controls', () => {
 
         await user.click(unapprove);
 
-        expect(inertia.post).toHaveBeenCalledTimes(1);
-        expect(inertia.post).toHaveBeenCalledWith(
+        expect(vi.mocked(apiRequest)).toHaveBeenCalledTimes(1);
+        expect(vi.mocked(apiRequest)).toHaveBeenCalledWith(
+            'POST',
             '/workspaces/workspace-1/time-entries/entry-1/unapprove',
             { expected_version: 'version-1' },
-            expect.anything(),
         );
         expect(unapprove).toBeDisabled();
 
         await user.click(unapprove);
 
-        expect(inertia.post).toHaveBeenCalledTimes(1);
+        expect(vi.mocked(apiRequest)).toHaveBeenCalledTimes(1);
     });
 
     it('offers no withdrawal the server did not send', () => {
@@ -364,12 +472,12 @@ describe('time sheet controls', () => {
 
         await user.click(remove);
 
-        expect(inertia.delete).toHaveBeenCalledTimes(1);
+        expect(vi.mocked(apiRequest)).toHaveBeenCalledTimes(1);
         expect(remove).toBeDisabled();
 
         fireEvent.click(remove);
 
-        expect(inertia.delete).toHaveBeenCalledTimes(1);
+        expect(vi.mocked(apiRequest)).toHaveBeenCalledTimes(1);
     });
 
     it('does not offer time logging when no project is loggable', () => {
@@ -812,13 +920,13 @@ describe('drafting an invoice from selected time', () => {
         await user.click(
             screen.getByRole('button', { name: 'Add time to draft' }),
         );
-        expect(inertia.post).toHaveBeenCalledWith(
+        expect(vi.mocked(apiRequest)).toHaveBeenCalledWith(
+            'POST',
             '/synthetic/draft/time',
             {
                 expected_version: 'current-draft-version',
                 time_entry_ids: ['entry-1'],
             },
-            expect.any(Object),
         );
     });
 

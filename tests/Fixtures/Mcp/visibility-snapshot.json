@@ -23430,7 +23430,12 @@
                                         "$ref": "#/$defs/Uuid"
                                     },
                                     "author_id": {
-                                        "$ref": "#/$defs/Uuid"
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "uuid",
+                                        "description": "Public author id; null when the author is not a member of this workspace."
                                     },
                                     "project_id": {
                                         "$ref": "#/$defs/Uuid"
@@ -23671,7 +23676,8 @@
                                 "type": "string",
                                 "format": "uuid"
                             }
-                        }
+                        },
+                        "description": "Log entries within the workspace calendar time sheet window: the current month and the preceding eleven months."
                     },
                     "description": "Idempotently log up to 20 completed time entries. When time:read is held and time_entries.list remains enabled, the response matches time_entries.list, including its role rule for rates; if that list capability is disabled, the response uses the plain write shape. If client_visible_description is supplied and is_visible_to_client is omitted, the entry defaults to client-visible; send false to stage client text privately. Pass approve: true to approve them in the same call, only when the user asked for approval; approving and explicit billing rates require time:approve and a project approver role.",
                     "annotations": {
@@ -23742,7 +23748,12 @@
                                         "$ref": "#/$defs/Uuid"
                                     },
                                     "author_id": {
-                                        "$ref": "#/$defs/Uuid"
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "uuid",
+                                        "description": "Public author id; null when the author is not a member of this workspace."
                                     },
                                     "project_id": {
                                         "$ref": "#/$defs/Uuid"
@@ -23952,7 +23963,12 @@
                                         "$ref": "#/$defs/Uuid"
                                     },
                                     "author_id": {
-                                        "$ref": "#/$defs/Uuid"
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "uuid",
+                                        "description": "Public author id; null when the author is not a member of this workspace."
                                     },
                                     "project_id": {
                                         "$ref": "#/$defs/Uuid"
@@ -24083,7 +24099,8 @@
                             },
                             "worked_on": {
                                 "type": "string",
-                                "format": "date"
+                                "format": "date",
+                                "description": "Workspace calendar date within the time sheet\u2019s twelve-month window, through the end of the current month."
                             },
                             "minutes": {
                                 "type": "integer",
@@ -24110,6 +24127,14 @@
                                 ],
                                 "minLength": 1,
                                 "maxLength": 10000
+                            },
+                            "task_id": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "format": "uuid",
+                                "description": "Omit to preserve the task; null clears it. A task must belong to this entry\u2019s project."
                             }
                         },
                         "required": [
@@ -24217,7 +24242,12 @@
                                         "$ref": "#/$defs/Uuid"
                                     },
                                     "author_id": {
-                                        "$ref": "#/$defs/Uuid"
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "uuid",
+                                        "description": "Public author id; null when the author is not a member of this workspace."
                                     },
                                     "project_id": {
                                         "$ref": "#/$defs/Uuid"
@@ -24560,10 +24590,10 @@
                 "tasks.update": "8ecdbb5c8eb349e8",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "30070d50d2bb043f",
-                "time_entries.log": "aefa42432fe16287",
-                "time_entries.unapprove": "b3ac3f20d8fb2232",
-                "time_entries.update": "6315fe84b67213c2",
+                "time_entries.list": "f02e3c1ff727c1fd",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.unapprove": "147eafb47a90392b",
+                "time_entries.update": "f668296662cfad04",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "resources": {
@@ -24714,9 +24744,9 @@
                 "tasks.update": "8ecdbb5c8eb349e8",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "30070d50d2bb043f",
-                "time_entries.log": "aefa42432fe16287",
-                "time_entries.update": "6315fe84b67213c2",
+                "time_entries.list": "f02e3c1ff727c1fd",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "resources": {
@@ -24865,9 +24895,9 @@
                 "tasks.update": "8ecdbb5c8eb349e8",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "30070d50d2bb043f",
-                "time_entries.log": "aefa42432fe16287",
-                "time_entries.update": "6315fe84b67213c2",
+                "time_entries.list": "f02e3c1ff727c1fd",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "resources": {
@@ -25016,9 +25046,9 @@
                 "tasks.update": "8ecdbb5c8eb349e8",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "30070d50d2bb043f",
-                "time_entries.log": "aefa42432fe16287",
-                "time_entries.update": "6315fe84b67213c2",
+                "time_entries.list": "f02e3c1ff727c1fd",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "resources": {
@@ -25167,9 +25197,9 @@
                 "tasks.update": "8ecdbb5c8eb349e8",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "30070d50d2bb043f",
-                "time_entries.log": "aefa42432fe16287",
-                "time_entries.update": "6315fe84b67213c2",
+                "time_entries.list": "f02e3c1ff727c1fd",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "resources": {
@@ -25321,7 +25351,7 @@
                 "square.series.list": "45d8133149067200",
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
-                "time_entries.list": "30070d50d2bb043f"
+                "time_entries.list": "f02e3c1ff727c1fd"
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -25569,7 +25599,7 @@
                 "search": "16364ecdaf8ef167",
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
-                "time_entries.list": "30070d50d2bb043f"
+                "time_entries.list": "f02e3c1ff727c1fd"
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -25769,7 +25799,7 @@
                 "search": "16364ecdaf8ef167",
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
-                "time_entries.list": "30070d50d2bb043f"
+                "time_entries.list": "f02e3c1ff727c1fd"
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -25969,9 +25999,9 @@
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "30070d50d2bb043f",
-                "time_entries.log": "aefa42432fe16287",
-                "time_entries.update": "6315fe84b67213c2"
+                "time_entries.list": "f02e3c1ff727c1fd",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04"
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -26121,9 +26151,9 @@
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "30070d50d2bb043f",
-                "time_entries.log": "aefa42432fe16287",
-                "time_entries.update": "6315fe84b67213c2"
+                "time_entries.list": "f02e3c1ff727c1fd",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04"
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -26273,9 +26303,9 @@
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "30070d50d2bb043f",
-                "time_entries.log": "aefa42432fe16287",
-                "time_entries.update": "6315fe84b67213c2"
+                "time_entries.list": "f02e3c1ff727c1fd",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04"
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -26423,9 +26453,9 @@
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "30070d50d2bb043f",
-                "time_entries.log": "aefa42432fe16287",
-                "time_entries.update": "6315fe84b67213c2"
+                "time_entries.list": "f02e3c1ff727c1fd",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04"
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -26573,9 +26603,9 @@
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "30070d50d2bb043f",
-                "time_entries.log": "aefa42432fe16287",
-                "time_entries.update": "6315fe84b67213c2"
+                "time_entries.list": "f02e3c1ff727c1fd",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04"
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -26723,9 +26753,9 @@
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "30070d50d2bb043f",
-                "time_entries.log": "aefa42432fe16287",
-                "time_entries.update": "6315fe84b67213c2"
+                "time_entries.list": "f02e3c1ff727c1fd",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04"
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -26877,7 +26907,7 @@
                 "square.series.list": "45d8133149067200",
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
-                "time_entries.list": "30070d50d2bb043f"
+                "time_entries.list": "f02e3c1ff727c1fd"
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -27027,7 +27057,7 @@
                 "square.series.list": "45d8133149067200",
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
-                "time_entries.list": "30070d50d2bb043f"
+                "time_entries.list": "f02e3c1ff727c1fd"
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -27177,7 +27207,7 @@
                 "search": "16364ecdaf8ef167",
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
-                "time_entries.list": "30070d50d2bb043f"
+                "time_entries.list": "f02e3c1ff727c1fd"
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -27325,7 +27355,7 @@
                 "search": "16364ecdaf8ef167",
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
-                "time_entries.list": "30070d50d2bb043f"
+                "time_entries.list": "f02e3c1ff727c1fd"
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -27473,7 +27503,7 @@
                 "search": "16364ecdaf8ef167",
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
-                "time_entries.list": "30070d50d2bb043f"
+                "time_entries.list": "f02e3c1ff727c1fd"
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -27621,7 +27651,7 @@
                 "search": "16364ecdaf8ef167",
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
-                "time_entries.list": "30070d50d2bb043f"
+                "time_entries.list": "f02e3c1ff727c1fd"
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -27769,9 +27799,9 @@
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "30070d50d2bb043f",
-                "time_entries.log": "aefa42432fe16287",
-                "time_entries.update": "6315fe84b67213c2"
+                "time_entries.list": "f02e3c1ff727c1fd",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04"
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -27921,9 +27951,9 @@
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "30070d50d2bb043f",
-                "time_entries.log": "aefa42432fe16287",
-                "time_entries.update": "6315fe84b67213c2"
+                "time_entries.list": "f02e3c1ff727c1fd",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04"
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -28073,9 +28103,9 @@
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "30070d50d2bb043f",
-                "time_entries.log": "aefa42432fe16287",
-                "time_entries.update": "6315fe84b67213c2"
+                "time_entries.list": "f02e3c1ff727c1fd",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04"
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -28223,9 +28253,9 @@
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "30070d50d2bb043f",
-                "time_entries.log": "aefa42432fe16287",
-                "time_entries.update": "6315fe84b67213c2"
+                "time_entries.list": "f02e3c1ff727c1fd",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04"
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -28373,9 +28403,9 @@
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "30070d50d2bb043f",
-                "time_entries.log": "aefa42432fe16287",
-                "time_entries.update": "6315fe84b67213c2"
+                "time_entries.list": "f02e3c1ff727c1fd",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04"
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -28523,9 +28553,9 @@
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "30070d50d2bb043f",
-                "time_entries.log": "aefa42432fe16287",
-                "time_entries.update": "6315fe84b67213c2"
+                "time_entries.list": "f02e3c1ff727c1fd",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04"
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -28673,10 +28703,10 @@
                 "tasks.update": "8ecdbb5c8eb349e8",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "30070d50d2bb043f",
-                "time_entries.log": "aefa42432fe16287",
-                "time_entries.unapprove": "b3ac3f20d8fb2232",
-                "time_entries.update": "6315fe84b67213c2",
+                "time_entries.list": "f02e3c1ff727c1fd",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.unapprove": "147eafb47a90392b",
+                "time_entries.update": "f668296662cfad04",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "resources": {
@@ -28825,10 +28855,10 @@
                 "tasks.update": "8ecdbb5c8eb349e8",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "30070d50d2bb043f",
-                "time_entries.log": "aefa42432fe16287",
-                "time_entries.unapprove": "b3ac3f20d8fb2232",
-                "time_entries.update": "6315fe84b67213c2",
+                "time_entries.list": "f02e3c1ff727c1fd",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.unapprove": "147eafb47a90392b",
+                "time_entries.update": "f668296662cfad04",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "resources": {
@@ -28978,9 +29008,9 @@
                 "tasks.update": "8ecdbb5c8eb349e8",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "30070d50d2bb043f",
-                "time_entries.log": "aefa42432fe16287",
-                "time_entries.update": "6315fe84b67213c2",
+                "time_entries.list": "f02e3c1ff727c1fd",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "resources": {
@@ -29128,9 +29158,9 @@
                 "tasks.update": "8ecdbb5c8eb349e8",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "30070d50d2bb043f",
-                "time_entries.log": "aefa42432fe16287",
-                "time_entries.update": "6315fe84b67213c2",
+                "time_entries.list": "f02e3c1ff727c1fd",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "resources": {
@@ -29278,9 +29308,9 @@
                 "tasks.update": "8ecdbb5c8eb349e8",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "30070d50d2bb043f",
-                "time_entries.log": "aefa42432fe16287",
-                "time_entries.update": "6315fe84b67213c2",
+                "time_entries.list": "f02e3c1ff727c1fd",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "resources": {
@@ -29428,9 +29458,9 @@
                 "tasks.update": "8ecdbb5c8eb349e8",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "30070d50d2bb043f",
-                "time_entries.log": "aefa42432fe16287",
-                "time_entries.update": "6315fe84b67213c2",
+                "time_entries.list": "f02e3c1ff727c1fd",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "resources": {
@@ -29583,7 +29613,7 @@
                 "square.series.list": "45d8133149067200",
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
-                "time_entries.list": "30070d50d2bb043f"
+                "time_entries.list": "f02e3c1ff727c1fd"
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -29733,7 +29763,7 @@
                 "square.series.list": "45d8133149067200",
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
-                "time_entries.list": "30070d50d2bb043f"
+                "time_entries.list": "f02e3c1ff727c1fd"
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -29883,7 +29913,7 @@
                 "search": "16364ecdaf8ef167",
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
-                "time_entries.list": "30070d50d2bb043f"
+                "time_entries.list": "f02e3c1ff727c1fd"
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -30031,7 +30061,7 @@
                 "search": "16364ecdaf8ef167",
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
-                "time_entries.list": "30070d50d2bb043f"
+                "time_entries.list": "f02e3c1ff727c1fd"
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -30179,7 +30209,7 @@
                 "search": "16364ecdaf8ef167",
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
-                "time_entries.list": "30070d50d2bb043f"
+                "time_entries.list": "f02e3c1ff727c1fd"
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -30327,7 +30357,7 @@
                 "search": "16364ecdaf8ef167",
                 "tasks.get": "8824509531fcb72d",
                 "tasks.list": "a079ea085f7cabcb",
-                "time_entries.list": "30070d50d2bb043f"
+                "time_entries.list": "f02e3c1ff727c1fd"
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -30473,10 +30503,10 @@
                 "tasks.update": "8ecdbb5c8eb349e8",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "30070d50d2bb043f",
-                "time_entries.log": "aefa42432fe16287",
-                "time_entries.unapprove": "b3ac3f20d8fb2232",
-                "time_entries.update": "6315fe84b67213c2",
+                "time_entries.list": "f02e3c1ff727c1fd",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.unapprove": "147eafb47a90392b",
+                "time_entries.update": "f668296662cfad04",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "resources": {
@@ -30624,10 +30654,10 @@
                 "tasks.update": "8ecdbb5c8eb349e8",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "30070d50d2bb043f",
-                "time_entries.log": "aefa42432fe16287",
-                "time_entries.unapprove": "b3ac3f20d8fb2232",
-                "time_entries.update": "6315fe84b67213c2",
+                "time_entries.list": "f02e3c1ff727c1fd",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.unapprove": "147eafb47a90392b",
+                "time_entries.update": "f668296662cfad04",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "resources": {
@@ -30776,9 +30806,9 @@
                 "tasks.update": "8ecdbb5c8eb349e8",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "30070d50d2bb043f",
-                "time_entries.log": "aefa42432fe16287",
-                "time_entries.update": "6315fe84b67213c2",
+                "time_entries.list": "f02e3c1ff727c1fd",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "resources": {
@@ -30927,9 +30957,9 @@
                 "tasks.update": "8ecdbb5c8eb349e8",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "30070d50d2bb043f",
-                "time_entries.log": "aefa42432fe16287",
-                "time_entries.update": "6315fe84b67213c2",
+                "time_entries.list": "f02e3c1ff727c1fd",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "resources": {
@@ -31078,9 +31108,9 @@
                 "tasks.update": "8ecdbb5c8eb349e8",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "30070d50d2bb043f",
-                "time_entries.log": "aefa42432fe16287",
-                "time_entries.update": "6315fe84b67213c2",
+                "time_entries.list": "f02e3c1ff727c1fd",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "resources": {
@@ -31229,9 +31259,9 @@
                 "tasks.update": "8ecdbb5c8eb349e8",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "30070d50d2bb043f",
-                "time_entries.log": "aefa42432fe16287",
-                "time_entries.update": "6315fe84b67213c2",
+                "time_entries.list": "f02e3c1ff727c1fd",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "resources": {
@@ -31382,9 +31412,9 @@
                 "tasks.update": "8ecdbb5c8eb349e8",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.log": "aefa42432fe16287",
-                "time_entries.unapprove": "b3ac3f20d8fb2232",
-                "time_entries.update": "6315fe84b67213c2",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.unapprove": "147eafb47a90392b",
+                "time_entries.update": "f668296662cfad04",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "resources": {
@@ -31532,9 +31562,9 @@
                 "tasks.update": "8ecdbb5c8eb349e8",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.log": "aefa42432fe16287",
-                "time_entries.unapprove": "b3ac3f20d8fb2232",
-                "time_entries.update": "6315fe84b67213c2",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.unapprove": "147eafb47a90392b",
+                "time_entries.update": "f668296662cfad04",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "resources": {
@@ -31683,8 +31713,8 @@
                 "tasks.update": "8ecdbb5c8eb349e8",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.log": "aefa42432fe16287",
-                "time_entries.update": "6315fe84b67213c2",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "resources": {
@@ -31831,8 +31861,8 @@
                 "tasks.update": "8ecdbb5c8eb349e8",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.log": "aefa42432fe16287",
-                "time_entries.update": "6315fe84b67213c2",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "resources": {
@@ -31979,8 +32009,8 @@
                 "tasks.update": "8ecdbb5c8eb349e8",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.log": "aefa42432fe16287",
-                "time_entries.update": "6315fe84b67213c2",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "resources": {
@@ -32127,8 +32157,8 @@
                 "tasks.update": "8ecdbb5c8eb349e8",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.log": "aefa42432fe16287",
-                "time_entries.update": "6315fe84b67213c2",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "resources": {
@@ -33051,10 +33081,10 @@
                 "tasks.update": "8ecdbb5c8eb349e8",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "30070d50d2bb043f",
-                "time_entries.log": "aefa42432fe16287",
-                "time_entries.unapprove": "b3ac3f20d8fb2232",
-                "time_entries.update": "6315fe84b67213c2",
+                "time_entries.list": "f02e3c1ff727c1fd",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.unapprove": "147eafb47a90392b",
+                "time_entries.update": "f668296662cfad04",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "resources": {
@@ -33204,10 +33234,10 @@
                 "tasks.update": "8ecdbb5c8eb349e8",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "30070d50d2bb043f",
-                "time_entries.log": "aefa42432fe16287",
-                "time_entries.unapprove": "b3ac3f20d8fb2232",
-                "time_entries.update": "6315fe84b67213c2",
+                "time_entries.list": "f02e3c1ff727c1fd",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.unapprove": "147eafb47a90392b",
+                "time_entries.update": "f668296662cfad04",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "resources": {
@@ -33358,9 +33388,9 @@
                 "tasks.update": "8ecdbb5c8eb349e8",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "30070d50d2bb043f",
-                "time_entries.log": "aefa42432fe16287",
-                "time_entries.update": "6315fe84b67213c2",
+                "time_entries.list": "f02e3c1ff727c1fd",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "resources": {
@@ -33509,9 +33539,9 @@
                 "tasks.update": "8ecdbb5c8eb349e8",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "30070d50d2bb043f",
-                "time_entries.log": "aefa42432fe16287",
-                "time_entries.update": "6315fe84b67213c2",
+                "time_entries.list": "f02e3c1ff727c1fd",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "resources": {
@@ -33660,9 +33690,9 @@
                 "tasks.update": "8ecdbb5c8eb349e8",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "30070d50d2bb043f",
-                "time_entries.log": "aefa42432fe16287",
-                "time_entries.update": "6315fe84b67213c2",
+                "time_entries.list": "f02e3c1ff727c1fd",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "resources": {
@@ -33811,9 +33841,9 @@
                 "tasks.update": "8ecdbb5c8eb349e8",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.list": "30070d50d2bb043f",
-                "time_entries.log": "aefa42432fe16287",
-                "time_entries.update": "6315fe84b67213c2",
+                "time_entries.list": "f02e3c1ff727c1fd",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "resources": {

@@ -1,3 +1,5 @@
+import type { ApiSchema } from '@/lib/api';
+
 export type TaskOption = {
     id: string;
     title: string;
@@ -7,6 +9,8 @@ export type ProjectOption = {
     id: string;
     name: string;
     can_log_time: boolean;
+    log_time_url: string | null;
+    rate_override?: { currency: string } | null;
     tasks: TaskOption[];
 };
 
@@ -17,23 +21,15 @@ export type CompanyOption = {
 };
 
 export type InvoiceLink = {
+    href: string;
     id: string;
     number: string | null;
     status: string;
 };
 
-export type TimeEntry = {
-    id: string;
-    version: string;
-    worked_on: string;
-    minutes: number;
-    description: string;
-    client_visible_description: string | null;
-    is_billable: boolean;
-    is_deferred: boolean;
-    is_visible_to_client: boolean;
-    subcontractor_billing_mode?: 'flat_hourly' | 'retainer' | 'direct' | null;
-    status: string;
+export type TimeEntry = ApiSchema<'TimeEntry'> & {
+    update_url: string | null;
+    delete_url: string | null;
     project: { id: string; name: string };
     task: { id: string; title: string } | null;
     worker: string | null;
@@ -149,6 +145,8 @@ export type TimeSheetProps = {
     };
     /** How many entries one approval request may carry. */
     approval_limit: number;
+    log_project_id?: string | null;
+    actions: { approve: string };
     invoice_draft: { url: string; target?: DraftTimeTarget | null } | null;
     /**
      * Which company the sheet actually read.

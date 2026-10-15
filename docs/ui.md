@@ -256,3 +256,5 @@ before capturing, and add the matching hostile-fixture case where practical.
 Only an explicitly listed pre-existing screen should use measurement-only mode;
 a new page under test must assert the invariants. Never add an application auth
 bypass or point this harness at an existing database or remote URL.
+
+The time sheet uses `/api/v1` for logging, editing, deleting, approval, withdrawal, and adding selected time to an existing draft. Each mutation uses the API client with an idempotency key and the rendered version where applicable, then reloads the page props. New invoice drafts still use the browser route. `pnpm run test:layout -- --time` checks the time sheet and draft selection at all four viewport widths.

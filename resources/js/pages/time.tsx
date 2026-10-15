@@ -31,6 +31,7 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import WorkspaceShell from '@/layouts/workspace-shell';
+import { apiRequest } from '@/lib/api';
 import { formatShortDay } from '@/lib/datetime';
 import { SHELL_CONTAINER } from '@/lib/layout';
 import { formatDecimalHours, formatHours } from '@/lib/time';
@@ -377,11 +378,13 @@ export default function TimeSheet({
     workspace,
     companies,
     months,
+    actions,
+    log_project_id: logProjectId = null,
     approval_limit: approvalLimit,
     invoice_draft: invoiceDraft,
 }: TimeSheetProps) {
     const [dialogEntry, setDialogEntry] = useState<TimeEntry | null>(null);
-    const [dialogOpen, setDialogOpen] = useState(false);
+    const [dialogOpen, setDialogOpen] = useState(logProjectId !== null);
     const [pendingDelete, setPendingDelete] = useState<TimeEntry | null>(null);
     const [selected, setSelected] = useState<string[]>([]);
     const [selectionMode, setSelectionMode] = useState<'approve' | 'invoice'>(
@@ -394,12 +397,6 @@ export default function TimeSheet({
     const [notice, setNotice] = useState<string | null>(null);
     const [approving, setApproving] = useState(false);
     const [deleting, setDeleting] = useState(false);
-
-    const reportFailure = (errors: Record<string, string>) => {
-        setNotice(
-            Object.values(errors)[0] ?? 'That action could not be completed.',
-        );
-    };
 
     // The route names the client, and the server sends exactly that one. The
     // page used to hold a second picker under the navbar's; two controls for
@@ -434,74 +431,73 @@ export default function TimeSheet({
     // click sends versions the first click has already spent: the first
     // request approves, the second comes back 409 and the operator is told
     // their successful approval failed.
-    const approve = (entries: TimeEntry[]) => {
+    const approve = async (entries: TimeEntry[]) => {
         if (approving) {
             return;
         }
 
         setApproving(true);
-        router.post(
-            `/workspaces/${workspace.id}/time-entries/approve`,
-            {
-                entries: entries.map((entry) => ({
-                    id: entry.id,
-                    expected_version: entry.version,
-                })),
-            },
-            {
-                preserveScroll: true,
-                onSuccess: () => {
-                    // Only what was sent. Clearing the whole selection after
-                    // approving the first batch would discard the remainder
-                    // the button just told the operator was still to come.
-                    const sent = new Set(entries.map((entry) => entry.id));
+        const result = await apiRequest('POST', actions.approve, {
+            entries: entries.map((entry) => ({
+                id: entry.id,
+                expected_version: entry.version,
+            })),
+        });
 
-                    setSelected((current) =>
-                        current.filter((id) => !sent.has(id)),
-                    );
-                    setNotice(null);
-                },
-                onError: reportFailure,
-                onFinish: () => setApproving(false),
-            },
-        );
+        if (!result.ok) {
+            setNotice(result.message);
+            setApproving(false);
+
+            return;
+        }
+
+        const sent = new Set(entries.map((entry) => entry.id));
+        setSelected((current) => current.filter((id) => !sent.has(id)));
+        setNotice(null);
+        router.reload({ onFinish: () => setApproving(false) });
     };
 
-    // Shares approval's single-flight flag rather than having its own: both
-    // spend a row's version, and a withdrawal racing an approval of the same
-    // row can only end with one of them told it failed.
-    const unapprove = (entry: TimeEntry) => {
+    const unapprove = async (entry: TimeEntry) => {
         if (approving || entry.unapprove_url === null) {
             return;
         }
 
         setApproving(true);
-        router.post(
-            entry.unapprove_url,
-            { expected_version: entry.version },
-            {
-                preserveScroll: true,
-                onSuccess: () => setNotice(null),
-                onError: reportFailure,
-                onFinish: () => setApproving(false),
-            },
-        );
+        const result = await apiRequest('POST', entry.unapprove_url, {
+            expected_version: entry.version,
+        });
+
+        if (!result.ok) {
+            setNotice(result.message);
+            setApproving(false);
+
+            return;
+        }
+
+        setNotice(null);
+        router.reload({ onFinish: () => setApproving(false) });
     };
 
-    // Same hazard as approval: the version travelled with the row, so a
-    // second click spends one the first has already used - the entry is
-    // deleted and the operator is told it failed.
-    const remove = (entry: TimeEntry) => {
-        if (deleting) {
+    const remove = async (entry: TimeEntry) => {
+        if (deleting || entry.delete_url === null) {
             return;
         }
 
         setDeleting(true);
-        router.delete(`/workspaces/${workspace.id}/time-entries/${entry.id}`, {
-            data: { expected_version: entry.version },
-            preserveScroll: true,
-            onSuccess: () => setNotice(null),
-            onError: reportFailure,
+        const result = await apiRequest('DELETE', entry.delete_url, {
+            expected_version: entry.version,
+        });
+
+        if (!result.ok) {
+            setNotice(result.message);
+            setDeleting(false);
+            setPendingDelete(null);
+
+            return;
+        }
+
+        setNotice(null);
+        router.reload({
             onFinish: () => {
                 setDeleting(false);
                 setPendingDelete(null);
@@ -670,7 +666,6 @@ export default function TimeSheet({
                             <MonthCard
                                 key={group.month.key}
                                 month={group.month}
-                                workspaceId={workspace.id}
                                 selected={selected}
                                 selectionMode={selectionMode}
                                 onToggle={(id) =>
@@ -696,8 +691,8 @@ export default function TimeSheet({
             {company !== undefined && dialogOpen && (
                 <TimeEntryDialog
                     key={dialogEntry?.id ?? 'new'}
-                    workspaceId={workspace.id}
                     timezone={workspace.timezone}
+                    initialProjectId={logProjectId}
                     company={company}
                     entry={dialogEntry}
                     open={dialogOpen}
@@ -832,7 +827,6 @@ function groupMonths(months: Month[]): MonthGroup[] {
 
 function MonthCard({
     month,
-    workspaceId,
     selected,
     selectionMode,
     onToggle,
@@ -843,7 +837,6 @@ function MonthCard({
     approving,
 }: {
     month: Month;
-    workspaceId: string;
     selected: string[];
     selectionMode: 'approve' | 'invoice';
     onToggle: (id: string) => void;
@@ -973,7 +966,7 @@ function MonthCard({
                                         <TableCell>
                                             {entry.invoice !== null ? (
                                                 <a
-                                                    href={`/workspaces/${workspaceId}/invoices/${entry.invoice.id}`}
+                                                    href={entry.invoice.href}
                                                     className="inline-block"
                                                 >
                                                     <Badge
