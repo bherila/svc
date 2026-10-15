@@ -204,6 +204,11 @@ app(AttachmentStorageService::class)->store(
     UploadedFile::fake()->createWithContent(str_repeat('SyntheticReceiptFilename', 8).'.txt', 'Synthetic layout receipt'), $owner,
 );
 
+$logProject = ClientProject::query()->create([
+    'workspace_id' => $workspace->id, 'client_company_id' => $company->id,
+    'name' => 'ZZZ Synthetic second logging project', 'status' => 'active',
+]);
+
 $correction = ClientTimeEntry::query()->create([
     'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_project_id' => $project->id,
     'user_id' => $owner->id, 'worked_on' => $date, 'minutes' => 60, 'description' => 'Synthetic draft correction',
@@ -276,10 +281,12 @@ file_put_contents($runtime.'/fixture.json', json_encode([
     'mcp_setup' => route('mcp.setup', $workspace, absolute: false),
     'draft_invoice' => route('clients.invoice', [$workspace, $company, $draft], absolute: false),
     'draft_time' => route('clients.time', [$workspace, $company, 'draft_invoice' => $draft->public_id], absolute: false),
+    'workspace_id' => $workspace->id, 'log_project_id' => $logProject->id,
+    'project_log' => route('clients.time', [$workspace, $company, 'log_project' => $logProject->public_id], absolute: false),
     'draft_id' => $draft->id, 'correction_id' => $correction->id, 'companion_id' => $companion->id,
     'preserved_lines' => $draft->lines()->whereDoesntHave('timeEntries')->orderBy('id')->get()->map->getAttributes()->all(),
     'draft_writes' => [
-        'POST' => [route('agent-api.v1.invoices.add_time', [$workspace, $draft->public_id], absolute: false), route('svc.billing.invoices.issue', [$workspace, $draft], absolute: false), route('svc.billing.invoices.payments.store', [$workspace, $draft], absolute: false),
+        'POST' => [route('agent-api.v1.time-entries.store', $workspace, absolute: false), route('agent-api.v1.invoices.add_time', [$workspace, $draft->public_id], absolute: false), route('svc.billing.invoices.issue', [$workspace, $draft], absolute: false), route('svc.billing.invoices.payments.store', [$workspace, $draft], absolute: false),
             '/api/v1/workspaces/'.$workspace->public_id.'/time-entries/'.$correction->public_id.'/unapprove', '/api/v1/workspaces/'.$workspace->public_id.'/time-entries/approve'],
         'PATCH' => ['/api/v1/workspaces/'.$workspace->public_id.'/time-entries/'.$correction->public_id],
     ],

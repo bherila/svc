@@ -514,6 +514,27 @@ try {
 
             if (screen === 'time') {
                 await page
+                    .getByRole('button', { name: 'Log time', exact: true })
+                    .click();
+                await expect(
+                    page.getByLabel('Hourly rate', { exact: true }),
+                ).toBeVisible();
+                await capture(screen, 'log-entry', width);
+                await page
+                    .getByLabel('Hourly rate', { exact: true })
+                    .fill('123.45');
+                await page
+                    .getByLabel('Work performed', { exact: true })
+                    .fill('Synthetic explicit rate acceptance');
+                await page
+                    .getByRole('button', { name: 'Log time', exact: true })
+                    .last()
+                    .scrollIntoViewIfNeeded();
+                await capture(screen, 'log-fields', width);
+                await page
+                    .getByRole('button', { name: 'Cancel', exact: true })
+                    .click();
+                await page
                     .getByRole('button', {
                         name: 'Select time to invoice',
                         exact: true,
@@ -634,6 +655,34 @@ try {
                 await capture(screen, 'correction', width);
             }
         }
+    }
+
+    if (!portalOnly && !correctionOnly && !squareOnly && !remindersOnly) {
+        await page.setViewportSize({ width: 1440, height: 1000 });
+        await page.goto(origin + fixture.project_log);
+        await expect(page.getByRole('dialog')).toBeVisible();
+        await expect(
+            page.getByRole('combobox', { name: 'Project', exact: true }),
+        ).toContainText('Synthetic second logging project');
+        await page
+            .getByLabel('Work performed', { exact: true })
+            .fill('Synthetic explicit rate acceptance');
+        await page.getByLabel('Hourly rate', { exact: true }).fill('123.45');
+        await page.getByLabel('Currency', { exact: true }).fill('USD');
+        await page
+            .getByRole('button', { name: 'Log time', exact: true })
+            .last()
+            .click();
+        await expect(page.getByRole('dialog')).toHaveCount(0);
+        const logged = page
+            .getByRole('row')
+            .filter({ hasText: 'Synthetic explicit rate acceptance' });
+        await logged
+            .getByRole('button', { name: 'Approve', exact: true })
+            .click();
+        await expect(logged).toContainText('Approved');
+        await capture('time', 'explicit-rate-approved', 1440);
+        run('php', ['scripts/layout/verify-time-log.php'], env);
     }
 
     if (
