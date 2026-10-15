@@ -69,7 +69,7 @@
                     }
                 },
                 "x-agent-effect": "local_write",
-                "x-agent-idempotent": false,
+                "x-agent-idempotent": true,
                 "x-agent-write-safety": {
                     "idempotency_key": "header_and_argument",
                     "expected_version": true,
@@ -141,7 +141,7 @@
                     }
                 },
                 "x-agent-effect": "local_write",
-                "x-agent-idempotent": false,
+                "x-agent-idempotent": true,
                 "x-agent-write-safety": {
                     "idempotency_key": "header_and_argument",
                     "expected_version": true
@@ -259,7 +259,7 @@
                     }
                 },
                 "x-agent-effect": "local_write",
-                "x-agent-idempotent": false,
+                "x-agent-idempotent": true,
                 "x-agent-write-safety": {
                     "idempotency_key": "header_and_argument",
                     "expected_version": true
@@ -532,7 +532,7 @@
                     }
                 },
                 "x-agent-effect": "destructive",
-                "x-agent-idempotent": false,
+                "x-agent-idempotent": true,
                 "x-agent-write-safety": {
                     "idempotency_key": "header_and_argument",
                     "expected_version": true,
@@ -1334,7 +1334,7 @@
                     }
                 },
                 "x-agent-effect": "destructive",
-                "x-agent-idempotent": false,
+                "x-agent-idempotent": true,
                 "x-agent-write-safety": {
                     "idempotency_key": "header_and_argument",
                     "expected_version": true,
@@ -1396,7 +1396,7 @@
                     }
                 },
                 "x-agent-effect": "local_write",
-                "x-agent-idempotent": false,
+                "x-agent-idempotent": true,
                 "x-agent-write-safety": {
                     "idempotency_key": "header_and_argument"
                 },
@@ -1568,7 +1568,7 @@
                     }
                 },
                 "x-agent-effect": "local_write",
-                "x-agent-idempotent": false,
+                "x-agent-idempotent": true,
                 "x-agent-write-safety": {
                     "idempotency_key": "header_and_argument",
                     "expected_version": true
@@ -2210,7 +2210,7 @@
                     }
                 },
                 "x-agent-effect": "local_write",
-                "x-agent-idempotent": false,
+                "x-agent-idempotent": true,
                 "x-agent-write-safety": {
                     "idempotency_key": "header_and_argument",
                     "expected_version": true

@@ -51,6 +51,11 @@ final class WriteSafetyContractTest extends TestCase
                 $this->assertFalse($operation->safety->confirm);
                 $this->assertNotNull($operation->safety->note);
             }
+            foreach (['clients.create', 'clients.update', 'clients.archive', 'clients.restore', 'agreements.create', 'agreements.update', 'agreements.activate', 'agreements.terminate'] as $id) {
+                $operation = $registry->find($id);
+                $this->assertNotNull($operation);
+                $this->assertTrue($operation->isIdempotent(), $id);
+            }
             $read = $registry->find('invoices.get');
             $this->assertNotNull($read);
             $this->assertNull($read->input);

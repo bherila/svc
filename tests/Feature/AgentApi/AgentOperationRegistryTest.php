@@ -74,6 +74,18 @@ final class AgentOperationRegistryTest extends TestCase
         }
     }
 
+    public function test_receipt_backed_client_and_agreement_writes_publish_safe_retries(): void
+    {
+        $document = AgentOpenApi::checked()->full();
+        $published = collect($document['paths'])->flatMap(fn (array $path): array => array_values($path))->keyBy('operationId');
+        foreach (['clients.create', 'clients.update', 'clients.archive', 'clients.restore', 'agreements.create', 'agreements.update', 'agreements.activate', 'agreements.terminate'] as $id) {
+            $operation = app(OperationRegistry::class)->find($id);
+            $this->assertNotNull($operation);
+            $this->assertTrue($operation->isIdempotent(), $id);
+            $this->assertTrue($published[$id]['x-agent-idempotent'], $id);
+        }
+    }
+
     /**
      * Every schema an operation takes from the document exists there: a
      * reference to a response or request the document does not declare would
