@@ -37,6 +37,7 @@ const widths = [390, 820, 1440, 1920];
 const portalOnly = process.argv.includes('--portal-access');
 const correctionOnly = process.argv.includes('--invoice-correction');
 const squareOnly = process.argv.includes('--square');
+const remindersOnly = process.argv.includes('--reminders');
 const results = [];
 const failures = [];
 const serverLog = [];
@@ -279,10 +280,13 @@ try {
               ? ['invoice_review']
               : squareOnly
                 ? ['square_explore', 'square_invoice', 'square_portal']
-                : [
+                : remindersOnly
+                  ? ['reminder_invoice', 'settings']
+                  : [
                       'mcp_setup',
                       'invoice',
                       'invoice_review',
+                      'reminder_invoice',
                       'settings',
                       'draft_invoice',
                       'draft_time',
@@ -341,6 +345,26 @@ try {
                 );
             }
 
+            if (screen === 'reminder_invoice') {
+                const card = page.locator('[data-slot="card"]').filter({
+                    has: page.getByText('Payment reminders', { exact: true }),
+                });
+                await expect(
+                    card.getByText('Automatic reminders are on for this client', {
+                        exact: false,
+                    }),
+                ).toBeVisible();
+                await expect(card.getByRole('row')).toHaveCount(4);
+            }
+
+            if (screen === 'settings') {
+                await expect(
+                    page.getByRole('switch', {
+                        name: 'Automatically remind this client about unpaid invoices',
+                    }),
+                ).toBeChecked();
+            }
+
             if (screen === 'proposal_acceptance') {
                 await expect(page.locator('#signer-name')).toBeVisible();
                 await expect(page.locator('#signer-title')).toBeVisible();
@@ -356,6 +380,17 @@ try {
             }
 
             await capture(screen, 'initial', width, screen === 'operations');
+
+            if (screen === 'reminder_invoice') {
+                await page
+                    .getByRole('button', { name: 'Send reminder', exact: true })
+                    .click();
+                await expect(page.getByRole('alertdialog')).toBeVisible();
+                await capture(screen, 'reminder-confirmation', width);
+                await page
+                    .getByRole('button', { name: 'Cancel', exact: true })
+                    .click();
+            }
 
             if (portalOnly) {
                 const card = page.locator('[data-slot="card"]').filter({
@@ -595,7 +630,7 @@ try {
         }
     }
 
-    if (!portalOnly && !correctionOnly && !squareOnly) {
+    if (!portalOnly && !correctionOnly && !squareOnly && !remindersOnly) {
         // Full operator correction path, all writes confined to the seeded records.
         await page.setViewportSize({ width: 1440, height: 1000 });
         await page.goto(origin + fixture.draft_invoice);
@@ -742,7 +777,9 @@ try {
                 ? 'Synthetic portal contacts and invitations on client settings; initial, project selection, removal and invitation withdrawal confirmation states at every required width.'
                 : squareOnly
                   ? 'Synthetic Square explore, linked operator invoice and linked client portal invoice at every required width.'
-                  : 'Synthetic local fixtures only. Invoice review/settings/proposal/time/expenses are asserted; operations is a bounded measurement of known pre-existing layout problems.',
+                  : remindersOnly
+                    ? 'Synthetic payment reminders: an operator invoice with its reminder log and send confirmation, and the client cadence switch on settings, at every required width.'
+                    : 'Synthetic local fixtures only. Invoice review/settings/proposal/time/expenses are asserted; operations is a bounded measurement of known pre-existing layout problems.',
             '',
             '| Page/state | Viewport | Document width | Navbar height | Gate | Screenshot |',
             '| --- | --- | --- | --- | --- | --- |',

@@ -2032,6 +2032,115 @@
                 ]
             }
         },
+        "/workspaces/{workspace}/clients/{client}/payment-reminders": {
+            "get": {
+                "operationId": "companies.payment_reminders.get",
+                "description": "Workspace managers only. Whether the client's automatic payment reminder cadence is on, since when, its steps, and the client version companies.payment_reminders.set requires.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "billing:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "client",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Authorized result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CompanyPaymentRemindersResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-mcp-tool": "companies.payment_reminders.get",
+                "x-svc-flags": []
+            },
+            "put": {
+                "operationId": "companies.payment_reminders.set",
+                "description": "Workspace managers only. Turn the client's automatic payment reminder cadence on or off: 3 days before an invoice's due date, on it, then 7 and 14 days after, between 09:00 and 17:00 in the workspace's time zone. It is off until turned on. Turning it on never sends a step that fell due before; turning it off stops every step not yet sent. An invoice Square collects is reminded about only with Square's own payment page, and not on the cadence while Square charges a card on file or sends its own reminders for it. Requires the client's current expected_version; the change is recorded in the client history.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "billing:write",
+                            "billing:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CompanyPaymentRemindersRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "client",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Cadence updated",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CompanyPaymentRemindersResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-mcp-tool": "companies.payment_reminders.set",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_CLIENT_WRITES_ENABLED"
+                ]
+            }
+        },
         "/workspaces/{workspace}/clients/{client}/square-customer": {
             "delete": {
                 "operationId": "companies.square_customer.clear",
@@ -3913,6 +4022,103 @@
                     "AGENT_API_INVOICE_WRITES_ENABLED"
                 ],
                 "x-mcp-tool": "invoices.release_delivery"
+            }
+        },
+        "/workspaces/{workspace}/invoices/{invoice}/reminders": {
+            "get": {
+                "operationId": "invoices.reminders.list",
+                "description": "Workspace managers only. Whether a payment reminder may be sent for the invoice now, to whom and with which pay link, why not when it may not, where the client's automatic cadence stands for it, and the latest 50 reminders, newest first, with who or what sent each and its result.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "billing:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/InvoiceId"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Authorized result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/InvoiceRemindersResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-mcp-tool": "invoices.reminders.list",
+                "x-svc-flags": []
+            },
+            "post": {
+                "operationId": "invoices.send_reminder",
+                "description": "Workspace managers only. Email the client a payment reminder for an issued or partially paid invoice with a balance, now, from SVC's usual invoice sender to the client's billing address and portal users. An invoice Square collects carries Square's own payment page and is refused with 422 when there is none usable (not linked, not mirrored, not open in Square, or paid partly outside Square); SVC never sends its own payment link for it. Any other invoice links to the client portal when the client could open it there, and carries the invoice PDF. Another reminder leaving for the same invoice is a 409. Requires the invoice's current expected_version and confirm: true. The reminder is registered with this request's receipt and sent once it commits; the response is the logged reminder with its result (sent, failed or cancelled). Repeating the same idempotency key returns the same reminder and sends nothing more.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "billing:write",
+                            "billing:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/InvoiceReminderSendRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/InvoiceId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Reminder sent or attempted",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/InvoiceReminderResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-mcp-tool": "invoices.send_reminder",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_INVOICE_WRITES_ENABLED"
+                ]
             }
         },
         "/workspaces/{workspace}/invoices/{invoice}/send": {
@@ -7715,6 +7921,92 @@
                     }
                 }
             },
+            "CompanyPaymentReminders": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "client_id",
+                    "version",
+                    "enabled",
+                    "enabled_at",
+                    "steps"
+                ],
+                "properties": {
+                    "client_id": {
+                        "$ref": "#/components/schemas/Uuid"
+                    },
+                    "version": {
+                        "$ref": "#/components/schemas/Version"
+                    },
+                    "enabled": {
+                        "type": "boolean"
+                    },
+                    "enabled_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time"
+                    },
+                    "steps": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                                "step",
+                                "label",
+                                "offset_days"
+                            ],
+                            "properties": {
+                                "step": {
+                                    "type": "string",
+                                    "enum": [
+                                        "due_minus_3",
+                                        "due",
+                                        "due_plus_7",
+                                        "due_plus_14"
+                                    ]
+                                },
+                                "label": {
+                                    "type": "string"
+                                },
+                                "offset_days": {
+                                    "type": "integer"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "CompanyPaymentRemindersRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "expected_version",
+                    "enabled"
+                ],
+                "properties": {
+                    "expected_version": {
+                        "$ref": "#/components/schemas/Version"
+                    },
+                    "enabled": {
+                        "type": "boolean"
+                    }
+                }
+            },
+            "CompanyPaymentRemindersResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data"
+                ],
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/CompanyPaymentReminders"
+                    }
+                }
+            },
             "CompanySquareCustomer": {
                 "type": "object",
                 "additionalProperties": false,
@@ -9827,6 +10119,360 @@
                 },
                 "description": "A line exactly as invoices.get returns it, without an id: nothing was written, so there is none."
             },
+            "InvoiceReminder": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "id",
+                    "origin",
+                    "step",
+                    "channel",
+                    "pay_link",
+                    "square_invoice_number",
+                    "recipients",
+                    "subject",
+                    "currency",
+                    "amount_due",
+                    "due_on",
+                    "status",
+                    "attempt_number",
+                    "triggered_by",
+                    "triggered_by_name",
+                    "queued_at",
+                    "sent_at",
+                    "failed_at",
+                    "next_attempt_at",
+                    "error_summary"
+                ],
+                "properties": {
+                    "id": {
+                        "$ref": "#/components/schemas/Uuid"
+                    },
+                    "origin": {
+                        "type": "string",
+                        "enum": [
+                            "manual",
+                            "automatic"
+                        ]
+                    },
+                    "step": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "enum": [
+                            "due_minus_3",
+                            "due",
+                            "due_plus_7",
+                            "due_plus_14",
+                            null
+                        ],
+                        "description": "The cadence step of an automatic reminder; null for one a person sent."
+                    },
+                    "channel": {
+                        "type": "string",
+                        "enum": [
+                            "email"
+                        ]
+                    },
+                    "pay_link": {
+                        "type": "string",
+                        "enum": [
+                            "square",
+                            "svc_portal",
+                            "none"
+                        ],
+                        "description": "square: Square's own payment page for an invoice Square collects. svc_portal: the invoice in the client portal, a sign-in page with no token. none: no link; the invoice PDF was attached."
+                    },
+                    "square_invoice_number": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 191
+                    },
+                    "recipients": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "format": "email"
+                        }
+                    },
+                    "subject": {
+                        "type": "string",
+                        "maxLength": 255
+                    },
+                    "currency": {
+                        "type": "string",
+                        "pattern": "^[A-Z]{3}$"
+                    },
+                    "amount_due": {
+                        "type": "integer",
+                        "description": "The balance the reminder stated, in minor units."
+                    },
+                    "due_on": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "pending",
+                            "sending",
+                            "sent",
+                            "failed",
+                            "cancelled"
+                        ],
+                        "description": "sent and failed are the mail provider's answer; cancelled was stopped before anything left because the invoice or its Square link changed. A reminder left sending was accepted by the provider without its result being saved."
+                    },
+                    "attempt_number": {
+                        "type": "integer",
+                        "minimum": 1
+                    },
+                    "triggered_by": {
+                        "type": "string",
+                        "enum": [
+                            "website",
+                            "agent",
+                            "scheduler"
+                        ]
+                    },
+                    "triggered_by_name": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "The person who sent it or on whose behalf an agent did; null for the cadence."
+                    },
+                    "queued_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "sent_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time"
+                    },
+                    "failed_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time"
+                    },
+                    "next_attempt_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time",
+                        "description": "When the cadence retries a failed step; null when it will not."
+                    },
+                    "error_summary": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    }
+                }
+            },
+            "InvoiceReminderResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data"
+                ],
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/InvoiceReminder"
+                    }
+                }
+            },
+            "InvoiceReminderSendRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "expected_version",
+                    "confirm"
+                ],
+                "properties": {
+                    "expected_version": {
+                        "$ref": "#/components/schemas/Version"
+                    },
+                    "confirm": {
+                        "type": "boolean",
+                        "const": true
+                    }
+                }
+            },
+            "InvoiceReminders": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "invoice_id",
+                    "invoice_version",
+                    "manual",
+                    "cadence",
+                    "reminders"
+                ],
+                "properties": {
+                    "invoice_id": {
+                        "$ref": "#/components/schemas/Uuid"
+                    },
+                    "invoice_version": {
+                        "$ref": "#/components/schemas/Version"
+                    },
+                    "manual": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "available",
+                            "refusal",
+                            "pay_link",
+                            "recipients"
+                        ],
+                        "properties": {
+                            "available": {
+                                "type": "boolean",
+                                "description": "Whether invoices.send_reminder would send now."
+                            },
+                            "refusal": {
+                                "oneOf": [
+                                    {
+                                        "$ref": "#/components/schemas/PaymentReminderRefusal"
+                                    },
+                                    {
+                                        "type": "null"
+                                    }
+                                ]
+                            },
+                            "pay_link": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "enum": [
+                                    "square",
+                                    "svc_portal",
+                                    "none",
+                                    null
+                                ]
+                            },
+                            "recipients": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string",
+                                    "format": "email"
+                                }
+                            }
+                        }
+                    },
+                    "cadence": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "enabled",
+                            "enabled_at",
+                            "hold",
+                            "schedule"
+                        ],
+                        "properties": {
+                            "enabled": {
+                                "type": "boolean"
+                            },
+                            "enabled_at": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "format": "date-time"
+                            },
+                            "hold": {
+                                "oneOf": [
+                                    {
+                                        "$ref": "#/components/schemas/PaymentReminderRefusal"
+                                    },
+                                    {
+                                        "type": "null"
+                                    }
+                                ],
+                                "description": "What stops the cadence for this invoice whatever the date; null when its steps are sent as they fall due."
+                            },
+                            "schedule": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "required": [
+                                        "step",
+                                        "label",
+                                        "scheduled_on",
+                                        "state"
+                                    ],
+                                    "properties": {
+                                        "step": {
+                                            "type": "string",
+                                            "enum": [
+                                                "due_minus_3",
+                                                "due",
+                                                "due_plus_7",
+                                                "due_plus_14"
+                                            ]
+                                        },
+                                        "label": {
+                                            "type": "string"
+                                        },
+                                        "scheduled_on": {
+                                            "type": [
+                                                "string",
+                                                "null"
+                                            ],
+                                            "format": "date"
+                                        },
+                                        "state": {
+                                            "type": "string",
+                                            "enum": [
+                                                "pending",
+                                                "sending",
+                                                "sent",
+                                                "failed",
+                                                "cancelled",
+                                                "upcoming",
+                                                "passed",
+                                                "unscheduled"
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "reminders": {
+                        "type": "array",
+                        "maxItems": 50,
+                        "items": {
+                            "$ref": "#/components/schemas/InvoiceReminder"
+                        }
+                    }
+                }
+            },
+            "InvoiceRemindersResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data"
+                ],
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/InvoiceReminders"
+                    }
+                }
+            },
             "InvoiceSendRequest": {
                 "type": "object",
                 "additionalProperties": false,
@@ -10117,6 +10763,42 @@
                         ]
                     }
                 }
+            },
+            "PaymentReminderRefusal": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "code",
+                    "message"
+                ],
+                "properties": {
+                    "code": {
+                        "type": "string",
+                        "enum": [
+                            "not_open",
+                            "nothing_due",
+                            "no_recipients",
+                            "in_flight",
+                            "square_not_linked",
+                            "square_page_missing",
+                            "square_not_open",
+                            "paid_outside_square",
+                            "cadence_off",
+                            "no_due_date",
+                            "square_autopay",
+                            "square_sends_reminders",
+                            "not_yet_due",
+                            "step_handled",
+                            "before_cadence_enabled",
+                            "before_issue",
+                            "outside_sending_hours"
+                        ]
+                    },
+                    "message": {
+                        "type": "string"
+                    }
+                },
+                "description": "Why a payment reminder is not sent: a stable code and a sentence for the operator."
             },
             "PortalAccessRevokedResponse": {
                 "type": "object",

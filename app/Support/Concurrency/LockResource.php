@@ -114,6 +114,9 @@ enum LockResource: string
     // administrator claim remains a notification-only lock.
     case ClientInvoiceEmailDelivery = 'client_invoice_email_deliveries';
     case ClientInvoiceAdministratorNotification = 'client_invoice_administrator_notifications';
+    // Payment reminders (#438) follow the same shape: claimed and resolved
+    // under the invoice lock, then the reminder row.
+    case InvoiceReminderLog = 'invoice_reminder_logs';
 
     // Credentials. Disconnecting an agent revokes its refresh token and then
     // its access token, and takes no other lock on the way; nothing else in the

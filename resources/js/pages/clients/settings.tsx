@@ -1,4 +1,6 @@
 import { Head, useForm } from '@inertiajs/react';
+import { PaymentReminderCadenceCard } from '@/components/billing/payment-reminders';
+import type { CompanyRemindersState } from '@/components/billing/payment-reminders';
 import { PortalAccess } from '@/components/clients/portal-access';
 import type { PortalAccessProps } from '@/components/clients/portal-access';
 import { Badge } from '@/components/ui/badge';
@@ -522,12 +524,15 @@ export default function ClientManage({
     projects,
     assignable,
     portal,
+    payment_reminders: paymentReminders = null,
 }: {
     workspace: { id: string };
     company: ManagedCompany;
     projects: ManagedProject[];
     assignable: AssignableMember[];
     portal: PortalAccessProps['portal'];
+    /** The client's automatic payment reminder cadence (#438). */
+    payment_reminders?: CompanyRemindersState | null;
 }) {
     return (
         <WorkspaceShell activeModule="home">
@@ -581,6 +586,10 @@ export default function ClientManage({
                         />
                     </CardContent>
                 </Card>
+
+                {paymentReminders !== null && (
+                    <PaymentReminderCadenceCard cadence={paymentReminders} />
+                )}
 
                 {company.square_customer !== undefined && (
                     <Card>

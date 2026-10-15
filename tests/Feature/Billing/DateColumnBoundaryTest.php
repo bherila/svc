@@ -221,6 +221,7 @@ final class DateColumnBoundaryTest extends TestCase
             'due_on' => '2026_10_12_210000_create_square_mirror',
             'sale_or_service_date' => '2026_10_12_210000_create_square_mirror',
         ],
+        'invoice_reminder_logs' => ['due_on' => '2026_10_14_120000_create_invoice_reminder_logs'],
     ];
 
     /**

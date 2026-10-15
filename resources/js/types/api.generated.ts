@@ -434,6 +434,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    '/workspaces/{workspace}/clients/{client}/payment-reminders': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Workspace managers only. Whether the client's automatic payment reminder cadence is on, since when, its steps, and the client version companies.payment_reminders.set requires. */
+        get: operations['companies.payment_reminders.get'];
+        /** @description Workspace managers only. Turn the client's automatic payment reminder cadence on or off: 3 days before an invoice's due date, on it, then 7 and 14 days after, between 09:00 and 17:00 in the workspace's time zone. It is off until turned on. Turning it on never sends a step that fell due before; turning it off stops every step not yet sent. An invoice Square collects is reminded about only with Square's own payment page, and not on the cadence while Square charges a card on file or sends its own reminders for it. Requires the client's current expected_version; the change is recorded in the client history. */
+        put: operations['companies.payment_reminders.set'];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     '/workspaces/{workspace}/clients/{client}/square-customer': {
         parameters: {
             query?: never;
@@ -884,6 +902,24 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations['invoices.release_delivery'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/invoices/{invoice}/reminders': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Workspace managers only. Whether a payment reminder may be sent for the invoice now, to whom and with which pay link, why not when it may not, where the client's automatic cadence stands for it, and the latest 50 reminders, newest first, with who or what sent each and its result. */
+        get: operations['invoices.reminders.list'];
+        put?: never;
+        /** @description Workspace managers only. Email the client a payment reminder for an issued or partially paid invoice with a balance, now, from SVC's usual invoice sender to the client's billing address and portal users. An invoice Square collects carries Square's own payment page and is refused with 422 when there is none usable (not linked, not mirrored, not open in Square, or paid partly outside Square); SVC never sends its own payment link for it. Any other invoice links to the client portal when the client could open it there, and carries the invoice PDF. Another reminder leaving for the same invoice is a 409. Requires the invoice's current expected_version and confirm: true. The reminder is registered with this request's receipt and sent once it commits; the response is the logged reminder with its result (sent, failed or cancelled). Repeating the same idempotency key returns the same reminder and sends nothing more. */
+        post: operations['invoices.send_reminder'];
         delete?: never;
         options?: never;
         head?: never;
@@ -1797,6 +1833,26 @@ export interface components {
         ClientCompanyResponse: {
             data: components['schemas']['ClientCompany'];
         };
+        CompanyPaymentReminders: {
+            client_id: components['schemas']['Uuid'];
+            version: components['schemas']['Version'];
+            enabled: boolean;
+            /** Format: date-time */
+            enabled_at: string | null;
+            steps: {
+                /** @enum {string} */
+                step: 'due_minus_3' | 'due' | 'due_plus_7' | 'due_plus_14';
+                label: string;
+                offset_days: number;
+            }[];
+        };
+        CompanyPaymentRemindersRequest: {
+            expected_version: components['schemas']['Version'];
+            enabled: boolean;
+        };
+        CompanyPaymentRemindersResponse: {
+            data: components['schemas']['CompanyPaymentReminders'];
+        };
         CompanySquareCustomer: {
             /** @description The confirmed opaque Square customer identifier. */
             square_customer_id: string;
@@ -2343,6 +2399,101 @@ export interface components {
             tax_amount: number;
             total_amount: number;
         };
+        InvoiceReminder: {
+            id: components['schemas']['Uuid'];
+            /** @enum {string} */
+            origin: 'manual' | 'automatic';
+            /**
+             * @description The cadence step of an automatic reminder; null for one a person sent.
+             * @enum {string|null}
+             */
+            step: 'due_minus_3' | 'due' | 'due_plus_7' | 'due_plus_14' | null;
+            /** @enum {string} */
+            channel: 'email';
+            /**
+             * @description square: Square's own payment page for an invoice Square collects. svc_portal: the invoice in the client portal, a sign-in page with no token. none: no link; the invoice PDF was attached.
+             * @enum {string}
+             */
+            pay_link: 'square' | 'svc_portal' | 'none';
+            square_invoice_number: string | null;
+            recipients: string[];
+            subject: string;
+            currency: string;
+            /** @description The balance the reminder stated, in minor units. */
+            amount_due: number;
+            /** Format: date */
+            due_on: string | null;
+            /**
+             * @description sent and failed are the mail provider's answer; cancelled was stopped before anything left because the invoice or its Square link changed. A reminder left sending was accepted by the provider without its result being saved.
+             * @enum {string}
+             */
+            status: 'pending' | 'sending' | 'sent' | 'failed' | 'cancelled';
+            attempt_number: number;
+            /** @enum {string} */
+            triggered_by: 'website' | 'agent' | 'scheduler';
+            /** @description The person who sent it or on whose behalf an agent did; null for the cadence. */
+            triggered_by_name: string | null;
+            /** Format: date-time */
+            queued_at: string;
+            /** Format: date-time */
+            sent_at: string | null;
+            /** Format: date-time */
+            failed_at: string | null;
+            /**
+             * Format: date-time
+             * @description When the cadence retries a failed step; null when it will not.
+             */
+            next_attempt_at: string | null;
+            error_summary: string | null;
+        };
+        InvoiceReminderResponse: {
+            data: components['schemas']['InvoiceReminder'];
+        };
+        InvoiceReminderSendRequest: {
+            expected_version: components['schemas']['Version'];
+            /** @constant */
+            confirm: true;
+        };
+        InvoiceReminders: {
+            invoice_id: components['schemas']['Uuid'];
+            invoice_version: components['schemas']['Version'];
+            manual: {
+                /** @description Whether invoices.send_reminder would send now. */
+                available: boolean;
+                refusal: components['schemas']['PaymentReminderRefusal'] | null;
+                /** @enum {string|null} */
+                pay_link: 'square' | 'svc_portal' | 'none' | null;
+                recipients: string[];
+            };
+            cadence: {
+                enabled: boolean;
+                /** Format: date-time */
+                enabled_at: string | null;
+                /** @description What stops the cadence for this invoice whatever the date; null when its steps are sent as they fall due. */
+                hold: components['schemas']['PaymentReminderRefusal'] | null;
+                schedule: {
+                    /** @enum {string} */
+                    step: 'due_minus_3' | 'due' | 'due_plus_7' | 'due_plus_14';
+                    label: string;
+                    /** Format: date */
+                    scheduled_on: string | null;
+                    /** @enum {string} */
+                    state:
+                        | 'pending'
+                        | 'sending'
+                        | 'sent'
+                        | 'failed'
+                        | 'cancelled'
+                        | 'upcoming'
+                        | 'passed'
+                        | 'unscheduled';
+                }[];
+            };
+            reminders: components['schemas']['InvoiceReminder'][];
+        };
+        InvoiceRemindersResponse: {
+            data: components['schemas']['InvoiceReminders'];
+        };
         InvoiceSendRequest: {
             expected_version: components['schemas']['Version'];
             /** @constant */
@@ -2418,6 +2569,29 @@ export interface components {
         LinkedTimeState: 'reserved' | 'consumed' | 'released';
         PaginationMeta: {
             next_cursor: string | null;
+        };
+        /** @description Why a payment reminder is not sent: a stable code and a sentence for the operator. */
+        PaymentReminderRefusal: {
+            /** @enum {string} */
+            code:
+                | 'not_open'
+                | 'nothing_due'
+                | 'no_recipients'
+                | 'in_flight'
+                | 'square_not_linked'
+                | 'square_page_missing'
+                | 'square_not_open'
+                | 'paid_outside_square'
+                | 'cadence_off'
+                | 'no_due_date'
+                | 'square_autopay'
+                | 'square_sends_reminders'
+                | 'not_yet_due'
+                | 'step_handled'
+                | 'before_cadence_enabled'
+                | 'before_issue'
+                | 'outside_sending_hours';
+            message: string;
         };
         PortalAccessRevokedResponse: {
             data: {
@@ -4635,6 +4809,60 @@ export interface operations {
             default: components['responses']['Error'];
         };
     };
+    'companies.payment_reminders.get': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                client: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['CompanyPaymentRemindersResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'companies.payment_reminders.set': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                client: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['CompanyPaymentRemindersRequest'];
+            };
+        };
+        responses: {
+            /** @description Cadence updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['CompanyPaymentRemindersResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
     'companies.square_customer.get': {
         parameters: {
             query?: never;
@@ -5614,6 +5842,60 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['InvoiceMutationResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'invoices.reminders.list': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                invoice: components['parameters']['InvoiceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['InvoiceRemindersResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'invoices.send_reminder': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                invoice: components['parameters']['InvoiceId'];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['InvoiceReminderSendRequest'];
+            };
+        };
+        responses: {
+            /** @description Reminder sent or attempted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['InvoiceReminderResponse'];
                 };
             };
             default: components['responses']['Error'];

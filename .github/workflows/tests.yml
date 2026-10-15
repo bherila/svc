@@ -22,6 +22,10 @@ on:
         description: Run the Square explore and linked invoice browser layout pass
         type: boolean
         default: false
+      reminder_layout:
+        description: Run the payment reminder browser layout pass
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -157,6 +161,49 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: square-layout
+          path: test-results/layout/
+          retention-days: 7
+
+  reminder-layout:
+    name: Payment reminder browser layout
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.reminder_layout }}
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Setup PHP
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+        with:
+          php-version: '8.5'
+          tools: composer:v2
+          coverage: none
+      - name: Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@12.11.2 --activate
+      - name: Authorize private MCP bridge dependency
+        uses: webfactory/ssh-agent@e83874834305fe9a4a2997156cb26c5de65a8555 # v0.10.0
+        with:
+          ssh-private-key: ${{ secrets.MCP_BRIDGE_DEPLOY_KEY }}
+      - name: Install dependencies
+        run: |
+          composer install --no-interaction
+          pnpm install --frozen-lockfile
+      - name: Prepare browser on the disposable runner
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Check browser layout
+        run: node scripts/check-layout.mjs --reminders
+      - name: Upload synthetic screenshots and measurements
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: reminder-layout
           path: test-results/layout/
           retention-days: 7
 

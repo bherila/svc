@@ -5,6 +5,7 @@ use App\Models\ClientPortalInvitation;
 use App\Models\ClientProject;
 use App\Models\ClientProposal;
 use App\Models\ClientTimeEntry;
+use App\Models\InvoiceReminderLog;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Queries\Expenses\WorkspaceExpenses;
@@ -223,7 +224,31 @@ app(RecordReceivedPayment::class)->record($workspace, $squareInvoice, ReceivedPa
     'amount' => 12_345, 'currency' => 'USD', 'received_on' => $date, 'method' => 'cash',
 ]));
 
+// Payment reminders (#438): an open invoice of a client with the cadence on,
+// and a logged reminder of every kind with oversized recipients and reasons.
+$company->forceFill(['payment_reminders_enabled_at' => CarbonImmutable::parse($date)->subMonth()])->save();
+$reminderInvoice = $service->issue($service->createDraft($workspace, $company, [
+    'invoice_number' => 'REMINDER-SYNTHETIC-'.str_repeat('X', 80), 'currency' => 'USD',
+    'issue_date' => CarbonImmutable::parse($date)->subDays(20)->toDateString(), 'due_date' => CarbonImmutable::parse($date)->subDays(5)->toDateString(),
+], [[
+    'type' => 'adjustment', 'description' => $description,
+    'quantity' => '1', 'unit_amount' => 12_345, 'tax_amount' => 0, 'sort_order' => 1,
+]]), $workspace);
+foreach ([
+    ['origin' => 'automatic', 'cadence_step' => 'due_minus_3', 'pay_link' => 'svc_portal', 'status' => 'sent', 'triggered_by' => 'scheduler'],
+    ['origin' => 'automatic', 'cadence_step' => 'due', 'pay_link' => 'none', 'status' => 'failed', 'triggered_by' => 'scheduler', 'error_summary' => 'Email delivery failed (TransportException).'],
+    ['origin' => 'manual', 'cadence_step' => null, 'pay_link' => 'none', 'status' => 'cancelled', 'triggered_by' => 'website', 'triggered_by_user_id' => $owner->id, 'error_summary' => 'Not sent: '.str_repeat('SyntheticUnbrokenReason', 10)],
+] as $attributes) {
+    InvoiceReminderLog::query()->create($attributes + [
+        'workspace_id' => $workspace->id, 'client_invoice_id' => $reminderInvoice->id, 'channel' => 'email',
+        'recipients' => [str_repeat('synthetic-accounts-payable', 4).'@synthetic-layout.example.test', 'billing-notifications@synthetic-layout.example.test'],
+        'subject' => 'Payment reminder: invoice '.$reminderInvoice->invoice_number, 'currency' => 'USD', 'amount_due' => 12_345,
+        'due_on' => $reminderInvoice->due_date, 'attempt_number' => 1, 'queued_at' => CarbonImmutable::now('UTC'), 'sent_at' => CarbonImmutable::now('UTC'),
+    ]);
+}
+
 file_put_contents($runtime.'/fixture.json', json_encode([
+    'reminder_invoice' => route('clients.invoice', [$workspace, $company, $reminderInvoice], absolute: false),
     'square_explore' => route('square.explore', $workspace, absolute: false),
     'square_invoice' => route('clients.invoice', [$workspace, $company, $squareInvoice], absolute: false),
     'square_portal' => route('portal.invoice', [$company, $squareInvoice], absolute: false),

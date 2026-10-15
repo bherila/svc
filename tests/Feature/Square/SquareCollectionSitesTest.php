@@ -22,10 +22,12 @@ use Tests\TestCase;
 /**
  * Where SVC can collect money from a client, read off the source (#438).
  *
- * Collection reduces to three primitives: an invoice email leaving
+ * Collection reduces to four primitives: an invoice email leaving
  * (`new InvoiceMail`, sent only from `InvoiceEmailService::deliver()`), a
- * Stripe payment intent (`->paymentIntents`), and an automatic delivery put on
- * the schedule (`'automatic_delivery_status' => 'scheduled'`). This walks
+ * payment reminder leaving (`new InvoicePaymentReminderMail`, sent only from
+ * `PaymentReminderService::deliver()`), a Stripe payment intent
+ * (`->paymentIntents`), and an automatic delivery put on the schedule
+ * (`'automatic_delivery_status' => 'scheduled'`). This walks
  * `app/` for every method that reaches one, and pins the set: a new caller of
  * a primitive fails here until it is either guarded and listed in
  * {@see SquareCollectionGuard::SITES}, or shown to be reached only through a
@@ -49,6 +51,9 @@ final class SquareCollectionSitesTest extends TestCase
         'App\Services\Billing\StripePaymentIntentService::createLocked' => '->paymentIntents, after the guard',
         'App\Services\Billing\InvoiceLifecycleService::issue' => 'schedules automatic delivery unless the guard says Square collects',
         'App\Services\Billing\InvoiceCorrectionService::setHold' => 'puts a held delivery back on the schedule, after the guard',
+        // A reminder chooses its pay link through the guard (#438): the facts
+        // it is sent on are re-read just before it leaves.
+        'App\Services\Billing\Reminders\PaymentReminderService::deliver' => 'new InvoicePaymentReminderMail, after PaymentReminderRepository::facts() and the policy\'s last word',
     ];
 
     public function test_only_the_known_methods_reach_a_collection_primitive(): void
@@ -99,12 +104,28 @@ final class SquareCollectionSitesTest extends TestCase
         $this->assertTrue($guarded('sendAutomatic'));
     }
 
+    /**
+     * A reminder leaves only on facts read again just before it is sent, and
+     * those facts always ask the guard which pay link an invoice may carry.
+     */
+    public function test_a_payment_reminder_decides_its_pay_link_through_the_guard_before_it_leaves(): void
+    {
+        $methods = $this->methods();
+        $calls = static fn (string $method, string $callee): bool => (new NodeFinder)->findFirst($methods[$method]->stmts ?? [], static fn (Node $node): bool => $node instanceof MethodCall
+            && $node->name instanceof Identifier && $node->name->toString() === $callee) !== null;
+
+        $this->assertTrue($calls('App\Services\Billing\Reminders\PaymentReminderService::deliver', 'facts'));
+        $this->assertTrue($calls('App\Services\Billing\Reminders\PaymentReminderService::deliver', 'lastWord'));
+        $this->assertTrue($calls('App\Services\Billing\Reminders\PaymentReminderRepository::facts', 'squareFacts'));
+        $this->assertArrayHasKey('App\Services\Billing\Reminders\PaymentReminderRepository::squareFacts', SquareCollectionGuard::SITES);
+    }
+
     /** `$this->deliver()` is the email primitive only inside InvoiceEmailService; other classes have their own `deliver`. */
     private function reachesPrimitive(Node\Stmt\ClassMethod $method, bool $emailService): bool
     {
         return (new NodeFinder)->findFirst($method->stmts ?? [], function (Node $node) use ($emailService): bool {
             if ($node instanceof New_ && $node->class instanceof Name) {
-                return $node->class->toString() === 'App\Mail\InvoiceMail';
+                return in_array($node->class->toString(), ['App\Mail\InvoiceMail', 'App\Mail\InvoicePaymentReminderMail'], true);
             }
             if ($node instanceof PropertyFetch && $node->name instanceof Identifier) {
                 return $node->name->toString() === 'paymentIntents';

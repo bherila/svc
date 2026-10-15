@@ -13,6 +13,7 @@ use App\Services\Activity\ClientActivityRecorder;
 use App\Services\Square\SquareCollectionGuard;
 use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\InvoiceStatus;
+use App\Support\Billing\Reminders\PaymentReminderStatus;
 use App\Support\Concurrency\Locks;
 use App\Support\WorkspaceClock;
 use Carbon\CarbonImmutable;
@@ -83,6 +84,15 @@ final class InvoiceCorrectionService
                 ->whereIn('status', ['pending', 'sending', 'sent'])
                 ->exists()) {
                 throw new DomainException('An invoice already sent, or currently being sent, cannot be corrected in place. Void and reissue it through the accounting workflow instead.');
+            }
+            // A payment reminder (#438) states the balance and due date and,
+            // for an invoice SVC collects, attaches the PDF: the client holds
+            // the document as much as after an invoice email.
+            if ($locked->reminderLogs()
+                ->where('workspace_id', $workspace->id)
+                ->whereIn('status', [PaymentReminderStatus::Pending->value, PaymentReminderStatus::Sending->value, PaymentReminderStatus::Sent->value])
+                ->exists()) {
+                throw new DomainException('An invoice the client has been sent a payment reminder for, or is being sent one, cannot be corrected in place. Void and reissue it through the accounting workflow instead.');
             }
 
             $originalNotification = ClientInvoiceAdministratorNotification::query()

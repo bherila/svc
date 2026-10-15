@@ -702,6 +702,30 @@ link. `billing_audit.stale_and_missing` includes the same flags in
 `square_payment_mismatches`, with a count and at most 100 invoices.
 See [payment status transport](square-status.md) for the signed receiver and sweep.
 
+### Payment reminders (#438)
+
+| Operation | REST | Scopes | Write cutover |
+|---|---|---|---|
+| `invoices.reminders.list` | `GET /workspaces/{workspace}/invoices/{invoice}/reminders` | `billing:read` | - |
+| `invoices.send_reminder` | `POST /workspaces/{workspace}/invoices/{invoice}/reminders` | `billing:write`, `billing:read` | invoices |
+| `companies.payment_reminders.get` | `GET /workspaces/{workspace}/clients/{client}/payment-reminders` | `billing:read` | - |
+| `companies.payment_reminders.set` | `PUT /workspaces/{workspace}/clients/{client}/payment-reminders` | `billing:write`, `billing:read` | clients |
+
+All are workspace-manager only; the website uses the same routes. A reminder is
+an email from SVC's usual invoice sender to the client's billing address and
+portal users about an issued or partially paid invoice with a balance. An
+invoice Square collects carries Square's own payment page from the mirror and
+is refused, never sent with SVC's own link, when that page is unusable. Other
+invoices link to the client portal when the client could open it there, and
+carry the PDF. `invoices.send_reminder` takes the invoice's `expected_version`,
+`confirm: true` and an idempotency key; it registers the reminder with its
+receipt and sends it once that commits, so a replay sends nothing more. The
+automatic cadence (3 days before the due date, on it, then 7 and 14 days after)
+is off until `companies.payment_reminders.set` turns it on for a client. Every
+reminder is logged with who or what sent it, the recipients, the step, the pay
+link and the result; see
+[payment reminders](client-management/invoice-delivery.md#payment-reminders).
+
 ## Legacy REST receipt cutover
 
 REST time-entry, task, and invoice writes now derive their idempotency namespace

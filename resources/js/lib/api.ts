@@ -15,8 +15,8 @@ export type ApiResult<T> =
  * authenticates with its session cookie; the server runs the same
  * request-forgery check a form post gets, so the XSRF token cookie Laravel sets
  * is echoed back. Every call is a fresh mutation attempt with its own
- * idempotency key: a double-click sends one key per click, and the version in
- * the body is what refuses the second.
+ * idempotency key unless the caller passes one: a double-click sends one key per
+ * click, and the version in the body is what refuses the second.
  *
  * URLs come from the server as finished strings - this never assembles one.
  */
@@ -24,6 +24,7 @@ export async function apiRequest<T = unknown>(
     method: 'POST' | 'PATCH' | 'PUT' | 'DELETE',
     url: string,
     body: object,
+    idempotencyKey: string = newIdempotencyKey(),
 ): Promise<ApiResult<T>> {
     let response: Response;
 
@@ -34,7 +35,7 @@ export async function apiRequest<T = unknown>(
             headers: {
                 Accept: 'application/json',
                 'Content-Type': 'application/json',
-                'Idempotency-Key': newIdempotencyKey(),
+                'Idempotency-Key': idempotencyKey,
                 ...xsrfHeader(),
             },
             body: JSON.stringify(body),
@@ -101,7 +102,14 @@ function xsrfHeader(): Record<string, string> {
     return match ? { 'X-XSRF-TOKEN': decodeURIComponent(match[1]) } : {};
 }
 
-function newIdempotencyKey(): string {
+/**
+ * A fresh key for one logical mutation. A caller whose action cannot be told
+ * apart by the version in its body - sending an email, which changes nothing it
+ * could be checked against - keeps one key across retries of the same attempt,
+ * so a request that succeeded but whose answer was lost replays instead of
+ * acting twice.
+ */
+export function newIdempotencyKey(): string {
     return typeof crypto !== 'undefined' && 'randomUUID' in crypto
         ? crypto.randomUUID()
         : `web-${Date.now()}-${Math.random().toString(36).slice(2)}`;
