@@ -23676,7 +23676,8 @@
                                 "type": "string",
                                 "format": "uuid"
                             }
-                        }
+                        },
+                        "description": "Log entries within the workspace calendar time sheet window: the current month and the preceding eleven months."
                     },
                     "description": "Idempotently log up to 20 completed time entries. When time:read is held and time_entries.list remains enabled, the response matches time_entries.list, including its role rule for rates; if that list capability is disabled, the response uses the plain write shape. If client_visible_description is supplied and is_visible_to_client is omitted, the entry defaults to client-visible; send false to stage client text privately. Pass approve: true to approve them in the same call, only when the user asked for approval; approving and explicit billing rates require time:approve and a project approver role.",
                     "annotations": {
@@ -24098,7 +24099,8 @@
                             },
                             "worked_on": {
                                 "type": "string",
-                                "format": "date"
+                                "format": "date",
+                                "description": "Workspace calendar date within the time sheet\u2019s twelve-month window, through the end of the current month."
                             },
                             "minutes": {
                                 "type": "integer",
@@ -24589,9 +24591,9 @@
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
-                "time_entries.log": "5f91054e07e08ab8",
+                "time_entries.log": "d531a58c710f33a6",
                 "time_entries.unapprove": "147eafb47a90392b",
-                "time_entries.update": "b2142ab9c2d914c7",
+                "time_entries.update": "f668296662cfad04",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "resources": {
@@ -24743,8 +24745,8 @@
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
-                "time_entries.log": "5f91054e07e08ab8",
-                "time_entries.update": "b2142ab9c2d914c7",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "resources": {
@@ -24894,8 +24896,8 @@
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
-                "time_entries.log": "5f91054e07e08ab8",
-                "time_entries.update": "b2142ab9c2d914c7",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "resources": {
@@ -25045,8 +25047,8 @@
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
-                "time_entries.log": "5f91054e07e08ab8",
-                "time_entries.update": "b2142ab9c2d914c7",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "resources": {
@@ -25196,8 +25198,8 @@
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
-                "time_entries.log": "5f91054e07e08ab8",
-                "time_entries.update": "b2142ab9c2d914c7",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "resources": {
@@ -25998,8 +26000,8 @@
                 "tasks.list": "a079ea085f7cabcb",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
-                "time_entries.log": "5f91054e07e08ab8",
-                "time_entries.update": "b2142ab9c2d914c7"
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04"
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -26150,8 +26152,8 @@
                 "tasks.list": "a079ea085f7cabcb",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
-                "time_entries.log": "5f91054e07e08ab8",
-                "time_entries.update": "b2142ab9c2d914c7"
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04"
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -26302,8 +26304,8 @@
                 "tasks.list": "a079ea085f7cabcb",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
-                "time_entries.log": "5f91054e07e08ab8",
-                "time_entries.update": "b2142ab9c2d914c7"
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04"
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -26452,8 +26454,8 @@
                 "tasks.list": "a079ea085f7cabcb",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
-                "time_entries.log": "5f91054e07e08ab8",
-                "time_entries.update": "b2142ab9c2d914c7"
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04"
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -26602,8 +26604,8 @@
                 "tasks.list": "a079ea085f7cabcb",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
-                "time_entries.log": "5f91054e07e08ab8",
-                "time_entries.update": "b2142ab9c2d914c7"
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04"
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -26752,8 +26754,8 @@
                 "tasks.list": "a079ea085f7cabcb",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
-                "time_entries.log": "5f91054e07e08ab8",
-                "time_entries.update": "b2142ab9c2d914c7"
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04"
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -27798,8 +27800,8 @@
                 "tasks.list": "a079ea085f7cabcb",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
-                "time_entries.log": "5f91054e07e08ab8",
-                "time_entries.update": "b2142ab9c2d914c7"
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04"
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -27950,8 +27952,8 @@
                 "tasks.list": "a079ea085f7cabcb",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
-                "time_entries.log": "5f91054e07e08ab8",
-                "time_entries.update": "b2142ab9c2d914c7"
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04"
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -28102,8 +28104,8 @@
                 "tasks.list": "a079ea085f7cabcb",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
-                "time_entries.log": "5f91054e07e08ab8",
-                "time_entries.update": "b2142ab9c2d914c7"
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04"
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -28252,8 +28254,8 @@
                 "tasks.list": "a079ea085f7cabcb",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
-                "time_entries.log": "5f91054e07e08ab8",
-                "time_entries.update": "b2142ab9c2d914c7"
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04"
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -28402,8 +28404,8 @@
                 "tasks.list": "a079ea085f7cabcb",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
-                "time_entries.log": "5f91054e07e08ab8",
-                "time_entries.update": "b2142ab9c2d914c7"
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04"
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -28552,8 +28554,8 @@
                 "tasks.list": "a079ea085f7cabcb",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
-                "time_entries.log": "5f91054e07e08ab8",
-                "time_entries.update": "b2142ab9c2d914c7"
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04"
             },
             "resources": {
                 "current-context": "e427d090c4d4bc73"
@@ -28702,9 +28704,9 @@
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
-                "time_entries.log": "5f91054e07e08ab8",
+                "time_entries.log": "d531a58c710f33a6",
                 "time_entries.unapprove": "147eafb47a90392b",
-                "time_entries.update": "b2142ab9c2d914c7",
+                "time_entries.update": "f668296662cfad04",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "resources": {
@@ -28854,9 +28856,9 @@
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
-                "time_entries.log": "5f91054e07e08ab8",
+                "time_entries.log": "d531a58c710f33a6",
                 "time_entries.unapprove": "147eafb47a90392b",
-                "time_entries.update": "b2142ab9c2d914c7",
+                "time_entries.update": "f668296662cfad04",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "resources": {
@@ -29007,8 +29009,8 @@
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
-                "time_entries.log": "5f91054e07e08ab8",
-                "time_entries.update": "b2142ab9c2d914c7",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "resources": {
@@ -29157,8 +29159,8 @@
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
-                "time_entries.log": "5f91054e07e08ab8",
-                "time_entries.update": "b2142ab9c2d914c7",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "resources": {
@@ -29307,8 +29309,8 @@
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
-                "time_entries.log": "5f91054e07e08ab8",
-                "time_entries.update": "b2142ab9c2d914c7",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "resources": {
@@ -29457,8 +29459,8 @@
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
-                "time_entries.log": "5f91054e07e08ab8",
-                "time_entries.update": "b2142ab9c2d914c7",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "resources": {
@@ -30502,9 +30504,9 @@
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
-                "time_entries.log": "5f91054e07e08ab8",
+                "time_entries.log": "d531a58c710f33a6",
                 "time_entries.unapprove": "147eafb47a90392b",
-                "time_entries.update": "b2142ab9c2d914c7",
+                "time_entries.update": "f668296662cfad04",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "resources": {
@@ -30653,9 +30655,9 @@
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
-                "time_entries.log": "5f91054e07e08ab8",
+                "time_entries.log": "d531a58c710f33a6",
                 "time_entries.unapprove": "147eafb47a90392b",
-                "time_entries.update": "b2142ab9c2d914c7",
+                "time_entries.update": "f668296662cfad04",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "resources": {
@@ -30805,8 +30807,8 @@
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
-                "time_entries.log": "5f91054e07e08ab8",
-                "time_entries.update": "b2142ab9c2d914c7",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "resources": {
@@ -30956,8 +30958,8 @@
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
-                "time_entries.log": "5f91054e07e08ab8",
-                "time_entries.update": "b2142ab9c2d914c7",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "resources": {
@@ -31107,8 +31109,8 @@
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
-                "time_entries.log": "5f91054e07e08ab8",
-                "time_entries.update": "b2142ab9c2d914c7",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "resources": {
@@ -31258,8 +31260,8 @@
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
-                "time_entries.log": "5f91054e07e08ab8",
-                "time_entries.update": "b2142ab9c2d914c7",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "resources": {
@@ -31410,9 +31412,9 @@
                 "tasks.update": "8ecdbb5c8eb349e8",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.log": "5f91054e07e08ab8",
+                "time_entries.log": "d531a58c710f33a6",
                 "time_entries.unapprove": "147eafb47a90392b",
-                "time_entries.update": "b2142ab9c2d914c7",
+                "time_entries.update": "f668296662cfad04",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "resources": {
@@ -31560,9 +31562,9 @@
                 "tasks.update": "8ecdbb5c8eb349e8",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.log": "5f91054e07e08ab8",
+                "time_entries.log": "d531a58c710f33a6",
                 "time_entries.unapprove": "147eafb47a90392b",
-                "time_entries.update": "b2142ab9c2d914c7",
+                "time_entries.update": "f668296662cfad04",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "resources": {
@@ -31711,8 +31713,8 @@
                 "tasks.update": "8ecdbb5c8eb349e8",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.log": "5f91054e07e08ab8",
-                "time_entries.update": "b2142ab9c2d914c7",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "resources": {
@@ -31859,8 +31861,8 @@
                 "tasks.update": "8ecdbb5c8eb349e8",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.log": "5f91054e07e08ab8",
-                "time_entries.update": "b2142ab9c2d914c7",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "resources": {
@@ -32007,8 +32009,8 @@
                 "tasks.update": "8ecdbb5c8eb349e8",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.log": "5f91054e07e08ab8",
-                "time_entries.update": "b2142ab9c2d914c7",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "resources": {
@@ -32155,8 +32157,8 @@
                 "tasks.update": "8ecdbb5c8eb349e8",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
-                "time_entries.log": "5f91054e07e08ab8",
-                "time_entries.update": "b2142ab9c2d914c7",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "resources": {
@@ -33080,9 +33082,9 @@
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
-                "time_entries.log": "5f91054e07e08ab8",
+                "time_entries.log": "d531a58c710f33a6",
                 "time_entries.unapprove": "147eafb47a90392b",
-                "time_entries.update": "b2142ab9c2d914c7",
+                "time_entries.update": "f668296662cfad04",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "resources": {
@@ -33233,9 +33235,9 @@
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
-                "time_entries.log": "5f91054e07e08ab8",
+                "time_entries.log": "d531a58c710f33a6",
                 "time_entries.unapprove": "147eafb47a90392b",
-                "time_entries.update": "b2142ab9c2d914c7",
+                "time_entries.update": "f668296662cfad04",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "resources": {
@@ -33387,8 +33389,8 @@
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
-                "time_entries.log": "5f91054e07e08ab8",
-                "time_entries.update": "b2142ab9c2d914c7",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "resources": {
@@ -33538,8 +33540,8 @@
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
-                "time_entries.log": "5f91054e07e08ab8",
-                "time_entries.update": "b2142ab9c2d914c7",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "resources": {
@@ -33689,8 +33691,8 @@
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
-                "time_entries.log": "5f91054e07e08ab8",
-                "time_entries.update": "b2142ab9c2d914c7",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "resources": {
@@ -33840,8 +33842,8 @@
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
-                "time_entries.log": "5f91054e07e08ab8",
-                "time_entries.update": "b2142ab9c2d914c7",
+                "time_entries.log": "d531a58c710f33a6",
+                "time_entries.update": "f668296662cfad04",
                 "workspaces.create": "3a4435044291b1a4"
             },
             "resources": {
