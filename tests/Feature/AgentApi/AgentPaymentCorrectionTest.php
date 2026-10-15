@@ -163,7 +163,7 @@ final class AgentPaymentCorrectionTest extends TestCase
     {
         [$user, $workspace, $payment] = $this->fixture();
         config(['agent_api.mcp_feature_flags' => ['payments.correct' => false]]);
-        $this->actingAsMcp($user, ['mcp:use', 'payments:read', 'payments:record']);
+        $this->actingAsMcp($user, ['mcp:use', 'payments:read', 'payments:record', 'billing:read']);
         $headers = $this->initialize();
 
         $names = array_column($this->postJson('/api/v1/mcp', ['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/list'], $headers)->assertOk()->json('result.tools'), 'name');
