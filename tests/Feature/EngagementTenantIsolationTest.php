@@ -35,7 +35,7 @@ class EngagementTenantIsolationTest extends TestCase
             'name' => 'Other Project',
         ]);
 
-        $this->actingAs($owner)->postJson("/workspaces/{$firstWorkspace->public_id}/projects/{$project->public_id}/time-entries", [
+        $this->actingAs($owner)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())->postJson("/api/v1/workspaces/{$firstWorkspace->public_id}/time-entries", ['entries' => [['project_id' => "{$project->public_id}", ...[
             'worked_on' => '2026-08-15',
             'minutes' => 30,
             'description' => 'Cross tenant attempt',
@@ -43,7 +43,7 @@ class EngagementTenantIsolationTest extends TestCase
             'is_deferred' => false,
             'billing_rate_amount' => 10000,
             'currency' => 'USD',
-        ])->assertNotFound();
+        ]]]])->assertNotFound();
 
         $this->assertDatabaseCount('client_time_entries', 0);
         $this->assertSame($firstWorkspace->id, $firstCompany->fresh()->workspace_id);

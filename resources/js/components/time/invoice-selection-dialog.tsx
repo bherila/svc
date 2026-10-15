@@ -12,6 +12,8 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { apiRequest  } from '@/lib/api';
+import type {ApiSchema} from '@/lib/api';
 import { formatShortDay } from '@/lib/datetime';
 import { formatMoney } from '@/lib/money';
 import { formatHours, todayIn } from '@/lib/time';
@@ -77,7 +79,7 @@ export function InvoiceSelectionDialog({
                 </DialogHeader>
                 <form
                     className="grid min-w-0 grid-cols-1 gap-4"
-                    onSubmit={(event) => {
+                    onSubmit={async (event) => {
                         event.preventDefault();
 
                         if (
@@ -90,25 +92,45 @@ export function InvoiceSelectionDialog({
 
                         setSaving(true);
                         setError(null);
+
+                        if (target) {
+                            const body = {
+                                expected_version: target.version,
+                                time_entry_ids: entries.map(
+                                    (entry) => entry.id,
+                                ),
+                            } satisfies ApiSchema<'InvoiceAddTimeRequest'>;
+                            const result = await apiRequest('POST', url, body);
+
+                            if (!result.ok) {
+                                setError(result.message);
+                                setSaving(false);
+
+                                return;
+                            }
+
+                            router.reload({
+                                onFinish: () => {
+                                    setSaving(false);
+                                    onSuccess();
+                                },
+                            });
+
+                            return;
+                        }
+
                         router.post(
                             url,
-                            target
-                                ? {
-                                      expected_version: target.version,
-                                      time_entry_ids: entries.map(
-                                          (entry) => entry.id,
-                                      ),
-                                  }
-                                : {
-                                      invoice_number: number.trim(),
-                                      currency,
-                                      issue_date: issueDate || null,
-                                      due_date: dueDate || null,
-                                      notes: notes || null,
-                                      time_entry_ids: entries.map(
-                                          (entry) => entry.id,
-                                      ),
-                                  },
+                            {
+                                invoice_number: number.trim(),
+                                currency,
+                                issue_date: issueDate || null,
+                                due_date: dueDate || null,
+                                notes: notes || null,
+                                time_entry_ids: entries.map(
+                                    (entry) => entry.id,
+                                ),
+                            },
                             {
                                 preserveScroll: true,
                                 onSuccess,

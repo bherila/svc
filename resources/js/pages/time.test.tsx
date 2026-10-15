@@ -2,7 +2,9 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { apiRequest } from '@/lib/api';
 import TimeSheet from '@/pages/time';
+vi.mock('@/lib/api', () => ({ apiRequest: vi.fn(() => new Promise(() => {})), newIdempotencyKey: () => crypto.randomUUID() }));
 import { horizontalOverflowRisks } from '@/test/horizontal-overflow';
 import { sharedPageProps } from '@/test/shared-page-props';
 import { workspaceNavigation } from '@/test/workspace-navigation';
@@ -21,6 +23,7 @@ const inertia = vi.hoisted(() => ({
     patch: vi.fn(),
     post: vi.fn(),
     visit: vi.fn(),
+    reload: vi.fn(),
 }));
 
 let navigation: WorkspaceNavigation | null = null;
@@ -47,6 +50,14 @@ function entry(overrides: Partial<TimeEntry> = {}): TimeEntry {
     return {
         id: 'entry-1',
         version: 'version-1',
+        author_id: 'author-1',
+        project_id: 'project-1',
+        task_id: null,
+        invoice_id: null,
+        allocation_state: 'unallocated',
+        web_url: '/synthetic/time-entry',
+        update_url: '/synthetic/update-time',
+        delete_url: '/synthetic/delete-time',
         worked_on: '2026-08-23',
         minutes: 60,
         description: 'Review implementation',
@@ -77,6 +88,7 @@ function company(canLogTime = true): CompanyOption {
                 id: 'project-1',
                 name: 'Main project',
                 can_log_time: canLogTime,
+                log_time_url: canLogTime ? '/synthetic/log-time' : null,
                 tasks: [],
             },
         ],
@@ -175,6 +187,7 @@ function props({
             default_currency: 'USD',
             timezone: 'America/Los_Angeles',
         },
+        actions: { approve: '/synthetic/approve-time' },
         approval_limit: 50,
         invoice_draft: null,
         filters: { company_id: 'company-1' },
@@ -286,14 +299,14 @@ describe('time sheet controls', () => {
 
         await user.click(bulkApprove);
 
-        expect(inertia.post).toHaveBeenCalledTimes(1);
+        expect(vi.mocked(apiRequest)).toHaveBeenCalledTimes(1);
         expect(bulkApprove).toBeDisabled();
         expect(rowApprove).toBeDisabled();
 
         await user.click(bulkApprove);
         await user.click(rowApprove as HTMLElement);
 
-        expect(inertia.post).toHaveBeenCalledTimes(1);
+        expect(vi.mocked(apiRequest)).toHaveBeenCalledTimes(1);
     });
 
     it('keeps row approval single-flight until the request finishes', async () => {
@@ -303,12 +316,12 @@ describe('time sheet controls', () => {
 
         await user.click(approve);
 
-        expect(inertia.post).toHaveBeenCalledTimes(1);
+        expect(vi.mocked(apiRequest)).toHaveBeenCalledTimes(1);
         expect(approve).toBeDisabled();
 
         await user.click(approve);
 
-        expect(inertia.post).toHaveBeenCalledTimes(1);
+        expect(vi.mocked(apiRequest)).toHaveBeenCalledTimes(1);
     });
 
     it('withdraws an approval at the URL the server sent, once', async () => {
@@ -330,17 +343,17 @@ describe('time sheet controls', () => {
 
         await user.click(unapprove);
 
-        expect(inertia.post).toHaveBeenCalledTimes(1);
-        expect(inertia.post).toHaveBeenCalledWith(
+        expect(vi.mocked(apiRequest)).toHaveBeenCalledTimes(1);
+        expect(vi.mocked(apiRequest)).toHaveBeenCalledWith(
+            'POST',
             '/workspaces/workspace-1/time-entries/entry-1/unapprove',
             { expected_version: 'version-1' },
-            expect.anything(),
         );
         expect(unapprove).toBeDisabled();
 
         await user.click(unapprove);
 
-        expect(inertia.post).toHaveBeenCalledTimes(1);
+        expect(vi.mocked(apiRequest)).toHaveBeenCalledTimes(1);
     });
 
     it('offers no withdrawal the server did not send', () => {
@@ -364,12 +377,12 @@ describe('time sheet controls', () => {
 
         await user.click(remove);
 
-        expect(inertia.delete).toHaveBeenCalledTimes(1);
+        expect(vi.mocked(apiRequest)).toHaveBeenCalledTimes(1);
         expect(remove).toBeDisabled();
 
         fireEvent.click(remove);
 
-        expect(inertia.delete).toHaveBeenCalledTimes(1);
+        expect(vi.mocked(apiRequest)).toHaveBeenCalledTimes(1);
     });
 
     it('does not offer time logging when no project is loggable', () => {
@@ -812,13 +825,13 @@ describe('drafting an invoice from selected time', () => {
         await user.click(
             screen.getByRole('button', { name: 'Add time to draft' }),
         );
-        expect(inertia.post).toHaveBeenCalledWith(
+        expect(vi.mocked(apiRequest)).toHaveBeenCalledWith(
+            'POST',
             '/synthetic/draft/time',
             {
                 expected_version: 'current-draft-version',
                 time_entry_ids: ['entry-1'],
             },
-            expect.any(Object),
         );
     });
 

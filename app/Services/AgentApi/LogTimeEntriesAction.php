@@ -9,6 +9,7 @@ use App\Models\Workspace;
 use App\Services\Authorization\ProjectAccess;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\AgentApi\AgentWriteCutover;
+use App\Support\Engagement\TimeSheetWindow;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Validator;
 
@@ -55,7 +56,7 @@ final class LogTimeEntriesAction
                     'entries.*' => ['required', 'array:project_id,task_id,worked_on,minutes,description,is_billable,is_deferred,is_visible_to_client,client_visible_description,billing_rate_amount,currency'],
                     'entries.*.project_id' => ['required', 'uuid'],
                     'entries.*.task_id' => ['nullable', 'uuid'],
-                    'entries.*.worked_on' => ['required', 'date_format:Y-m-d'],
+                    'entries.*.worked_on' => ['required', 'date_format:Y-m-d', 'after_or_equal:'.TimeSheetWindow::start($workspace->timezone)->toDateString(), 'before_or_equal:'.TimeSheetWindow::end($workspace->timezone)->toDateString()],
                     'entries.*.minutes' => ['required', 'integer', 'min:1', 'max:1440'],
                     'entries.*.description' => ['required', 'string', 'max:10000'],
                     'entries.*.is_billable' => ['sometimes', 'boolean'],

@@ -41,6 +41,7 @@ final class InvoiceFromTimeOverTheWebTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $this->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40));
         $this->workspace = Workspace::query()->create(['name' => 'Web', 'slug' => 'web']);
         $this->company = ClientCompany::query()->create([
             'workspace_id' => $this->workspace->id, 'name' => 'Web Client', 'slug' => 'web-client',
@@ -59,7 +60,7 @@ final class InvoiceFromTimeOverTheWebTest extends TestCase
         $first = $this->entry(90, 'Design review');
         $second = $this->entry(30, 'Follow-up');
 
-        $response = $this->actingAs($this->owner)->postJson($this->url(), [
+        $response = $this->actingAs($this->owner, 'web')->postJson($this->url(), [
             'invoice_number' => 'SVC-00001',
             'currency' => 'USD',
             'time_entry_ids' => [$first->public_id, $second->public_id],
@@ -81,7 +82,7 @@ final class InvoiceFromTimeOverTheWebTest extends TestCase
     {
         $entry = $this->entry(60, 'Consulting');
 
-        $this->actingAs($this->owner)->postJson($this->url(), [
+        $this->actingAs($this->owner, 'web')->postJson($this->url(), [
             'invoice_number' => 'SVC-00002',
             'currency' => 'USD',
             'time_entry_ids' => [$entry->public_id],
@@ -102,11 +103,11 @@ final class InvoiceFromTimeOverTheWebTest extends TestCase
     {
         $entry = $this->entry(60, 'Consulting');
 
-        $this->actingAs($this->owner)->postJson($this->url(), [
+        $this->actingAs($this->owner, 'web')->postJson($this->url(), [
             'invoice_number' => 'SVC-00003', 'currency' => 'USD', 'time_entry_ids' => [$entry->public_id],
         ])->assertCreated();
 
-        $this->actingAs($this->owner)->postJson($this->url(), [
+        $this->actingAs($this->owner, 'web')->postJson($this->url(), [
             'invoice_number' => 'SVC-00004', 'currency' => 'USD', 'time_entry_ids' => [$entry->public_id],
         ])->assertStatus(422);
 
@@ -115,14 +116,14 @@ final class InvoiceFromTimeOverTheWebTest extends TestCase
 
     public function test_an_invoice_still_needs_time_or_a_line(): void
     {
-        $this->actingAs($this->owner)->postJson($this->url(), [
+        $this->actingAs($this->owner, 'web')->postJson($this->url(), [
             'invoice_number' => 'SVC-00005', 'currency' => 'USD',
         ])->assertStatus(422)->assertJsonValidationErrors('lines');
     }
 
     public function test_manual_only_invoices_still_work(): void
     {
-        $this->actingAs($this->owner)->postJson($this->url(), [
+        $this->actingAs($this->owner, 'web')->postJson($this->url(), [
             'invoice_number' => 'SVC-00006',
             'currency' => 'USD',
             'lines' => [[
@@ -150,8 +151,8 @@ final class InvoiceFromTimeOverTheWebTest extends TestCase
         $invoice->refresh();
         $preserved = $invoice->lines()->orderBy('id')->get()->map->getAttributes()->all();
         $version = AgentApiVersion::for($invoice);
-        $this->actingAs($this->owner)->post($this->addUrl($invoice), ['expected_version' => $version, 'time_entry_ids' => [$entry->public_id]])
-            ->assertRedirect(route('clients.invoice', [$this->workspace, $this->company, $invoice]));
+        $this->actingAs($this->owner, 'web')->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())->postJson($this->addUrl($invoice), ['expected_version' => $version, 'time_entry_ids' => [$entry->public_id]])
+            ->assertOk();
         $invoice->refresh();
         $this->assertSame(76575, $invoice->total_amount);
         $this->assertSame(75, $invoice->tax_amount);
@@ -162,8 +163,8 @@ final class InvoiceFromTimeOverTheWebTest extends TestCase
         $this->assertSame(1, $other->invoiceLines()->count());
         $this->assertFalse(AgentApiVersion::matches($invoice, $version));
         $this->assertSame(1, ClientCompanyActivity::where('action', 'invoice.updated')->count());
-        $this->postJson($this->addUrl($invoice), ['expected_version' => $version, 'time_entry_ids' => [$this->entry(15, 'Synthetic stale attempt')->public_id]])->assertStatus(409);
-        $this->postJson($this->addUrl($invoice), ['expected_version' => AgentApiVersion::for($invoice), 'time_entry_ids' => [$entry->public_id]])->assertStatus(422);
+        $this->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())->postJson($this->addUrl($invoice), ['expected_version' => $version, 'time_entry_ids' => [$this->entry(15, 'Synthetic stale attempt')->public_id]])->assertStatus(409);
+        $this->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())->postJson($this->addUrl($invoice), ['expected_version' => AgentApiVersion::for($invoice), 'time_entry_ids' => [$entry->public_id]])->assertStatus(422);
         $this->assertSame(76575, $invoice->fresh()->total_amount);
     }
 
@@ -174,20 +175,20 @@ final class InvoiceFromTimeOverTheWebTest extends TestCase
         $invalid = $this->entry(60, 'Synthetic invalid');
         foreach ([['status' => 'draft'], ['is_deferred' => true], ['currency' => 'EUR'], ['is_billable' => false]] as $change) {
             $invalid->update(['status' => 'approved', 'is_deferred' => false, 'currency' => 'USD', 'is_billable' => true, ...$change]);
-            $this->actingAs($this->owner)->postJson($this->addUrl($invoice), ['expected_version' => AgentApiVersion::for($invoice), 'time_entry_ids' => [$valid->public_id, $invalid->public_id]])->assertStatus(422);
+            $this->actingAs($this->owner, 'web')->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())->postJson($this->addUrl($invoice), ['expected_version' => AgentApiVersion::for($invoice), 'time_entry_ids' => [$valid->public_id, $invalid->public_id]])->assertStatus(422);
             $this->assertFalse($valid->invoiceLines()->exists());
             $this->assertSame(18750, $invoice->fresh()->total_amount);
         }
         $other = ClientCompany::create(['workspace_id' => $this->workspace->id, 'name' => 'Synthetic other client', 'slug' => 'synthetic-other']);
         $invalid->update(['status' => 'approved', 'is_billable' => true, 'client_company_id' => $other->id]);
-        $this->postJson($this->addUrl($invoice), ['expected_version' => AgentApiVersion::for($invoice), 'time_entry_ids' => [$invalid->public_id]])->assertStatus(422);
+        $this->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())->postJson($this->addUrl($invoice), ['expected_version' => AgentApiVersion::for($invoice), 'time_entry_ids' => [$invalid->public_id]])->assertStatus(422);
         $foreign = Workspace::create(['name' => 'Synthetic foreign', 'slug' => 'synthetic-foreign']);
-        $this->postJson("/workspaces/{$foreign->public_id}/invoices/{$invoice->public_id}/time", ['expected_version' => AgentApiVersion::for($invoice), 'time_entry_ids' => [$valid->public_id]])->assertForbidden();
+        $this->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())->postJson("/api/v1/workspaces/{$foreign->public_id}/invoices/{$invoice->public_id}/time", ['expected_version' => AgentApiVersion::for($invoice), 'time_entry_ids' => [$valid->public_id]])->assertNotFound();
         $foreign->memberships()->create(['user_id' => $this->owner->id, 'role' => 'owner']);
-        $this->postJson("/workspaces/{$foreign->public_id}/invoices/{$invoice->public_id}/time", ['expected_version' => AgentApiVersion::for($invoice), 'time_entry_ids' => [$valid->public_id]])->assertNotFound();
+        $this->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())->postJson("/api/v1/workspaces/{$foreign->public_id}/invoices/{$invoice->public_id}/time", ['expected_version' => AgentApiVersion::for($invoice), 'time_entry_ids' => [$valid->public_id]])->assertNotFound();
         $member = User::factory()->create();
         $this->workspace->memberships()->create(['user_id' => $member->id, 'role' => 'member']);
-        $this->actingAs($member)->postJson($this->addUrl($invoice), ['expected_version' => AgentApiVersion::for($invoice), 'time_entry_ids' => [$valid->public_id]])->assertForbidden();
+        $this->actingAs($member, 'web')->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())->postJson($this->addUrl($invoice), ['expected_version' => AgentApiVersion::for($invoice), 'time_entry_ids' => [$valid->public_id]])->assertForbidden();
     }
 
     public function test_only_ad_hoc_drafts_accept_time_and_zero_priced_additions_consume_the_version(): void
@@ -197,11 +198,11 @@ final class InvoiceFromTimeOverTheWebTest extends TestCase
         $entry->update(['billing_rate_amount' => 0]);
         foreach ([['status' => 'issued'], ['status' => 'draft', 'invoice_kind' => 'cadence_period']] as $change) {
             $invoice->update($change);
-            $this->actingAs($this->owner)->postJson($this->addUrl($invoice), ['expected_version' => AgentApiVersion::for($invoice), 'time_entry_ids' => [$entry->public_id]])->assertStatus(422);
+            $this->actingAs($this->owner, 'web')->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())->postJson($this->addUrl($invoice), ['expected_version' => AgentApiVersion::for($invoice), 'time_entry_ids' => [$entry->public_id]])->assertStatus(422);
         }
         $invoice->update(['invoice_kind' => 'ad_hoc']);
         $version = AgentApiVersion::for($invoice);
-        $this->post($this->addUrl($invoice), ['expected_version' => $version, 'time_entry_ids' => [$entry->public_id]])->assertRedirect();
+        $this->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())->postJson($this->addUrl($invoice), ['expected_version' => $version, 'time_entry_ids' => [$entry->public_id]])->assertOk();
         $this->assertSame(18750, $invoice->fresh()->total_amount);
         $this->assertFalse(AgentApiVersion::matches($invoice->fresh(), $version));
         $this->assertSame(1, $entry->invoiceLines()->count());
@@ -211,7 +212,7 @@ final class InvoiceFromTimeOverTheWebTest extends TestCase
     {
         $invoice = app(InvoiceFromTimeService::class)->create($this->workspace, $this->company, ['currency' => 'USD'], [$this->entry(30, 'Synthetic included')->public_id]);
         $target = route('clients.time', [$this->workspace, $this->company, 'draft_invoice' => $invoice->public_id], absolute: false);
-        $this->actingAs($this->owner)->get(route('clients.invoice', [$this->workspace, $this->company, $invoice]))
+        $this->actingAs($this->owner, 'web')->get(route('clients.invoice', [$this->workspace, $this->company, $invoice]))
             ->assertOk()->assertInertia(fn (AssertableInertia $page) => $page->where('actions.add_time', $target));
         $this->get($target)->assertOk()->assertInertia(fn (AssertableInertia $page) => $page
             ->where('invoice_draft.target.version', AgentApiVersion::for($invoice))
@@ -238,7 +239,7 @@ final class InvoiceFromTimeOverTheWebTest extends TestCase
                 $allocationReads++;
             }
         });
-        $this->actingAs($this->owner)->post($this->addUrl($invoice), ['expected_version' => AgentApiVersion::for($invoice), 'time_entry_ids' => $ids])->assertRedirect();
+        $this->actingAs($this->owner, 'web')->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())->postJson($this->addUrl($invoice), ['expected_version' => AgentApiVersion::for($invoice), 'time_entry_ids' => $ids])->assertOk();
         $this->assertSame(1, $allocationReads, 'Allocation validation must not query once per selected entry.');
         $this->assertSame(81250, $invoice->fresh()->total_amount);
         $this->assertSame(101, $invoice->lines()->count());
@@ -254,7 +255,7 @@ final class InvoiceFromTimeOverTheWebTest extends TestCase
         $company = ClientCompany::create(['workspace_id' => $foreign->id, 'name' => 'Synthetic foreign client', 'slug' => 'synthetic-foreign-client']);
         $other = $service->create($foreign, $company, ['currency' => 'USD'], [], $line);
         $this->writingLegacyCrossTenantRows(fn () => $other->lines()->sole()->timeEntries()->attach($entry->id, ['workspace_id' => $foreign->id]));
-        $this->actingAs($this->owner)->postJson($this->addUrl($target), [
+        $this->actingAs($this->owner, 'web')->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())->postJson($this->addUrl($target), [
             'expected_version' => AgentApiVersion::for($target), 'time_entry_ids' => [$entry->public_id],
         ])->assertStatus(422);
         $this->assertSame(500, $target->fresh()->total_amount);
@@ -264,7 +265,7 @@ final class InvoiceFromTimeOverTheWebTest extends TestCase
 
     private function addUrl(ClientInvoice $invoice): string
     {
-        return "/workspaces/{$this->workspace->public_id}/invoices/{$invoice->public_id}/time";
+        return "/api/v1/workspaces/{$this->workspace->public_id}/invoices/{$invoice->public_id}/time";
     }
 
     private function url(): string

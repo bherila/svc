@@ -259,9 +259,9 @@ file_put_contents($runtime.'/fixture.json', json_encode([
     'draft_id' => $draft->id, 'correction_id' => $correction->id,
     'preserved_lines' => $draft->lines()->whereDoesntHave('timeEntries')->orderBy('id')->get()->map->getAttributes()->all(),
     'draft_writes' => [
-        'POST' => [route('svc.billing.invoices.time', [$workspace, $draft], absolute: false), route('svc.billing.invoices.issue', [$workspace, $draft], absolute: false), route('svc.billing.invoices.payments.store', [$workspace, $draft], absolute: false),
-            '/workspaces/'.$workspace->public_id.'/time-entries/'.$correction->public_id.'/unapprove', '/workspaces/'.$workspace->public_id.'/time-entries/approve'],
-        'PATCH' => ['/workspaces/'.$workspace->public_id.'/time-entries/'.$correction->public_id],
+        'POST' => [route('agent-api.v1.invoices.add_time', [$workspace, $draft->public_id], absolute: false), route('svc.billing.invoices.issue', [$workspace, $draft], absolute: false), route('svc.billing.invoices.payments.store', [$workspace, $draft], absolute: false),
+            '/api/v1/workspaces/'.$workspace->public_id.'/time-entries/'.$correction->public_id.'/unapprove', '/api/v1/workspaces/'.$workspace->public_id.'/time-entries/approve'],
+        'PATCH' => ['/api/v1/workspaces/'.$workspace->public_id.'/time-entries/'.$correction->public_id],
     ],
     'receipts' => route('svc.expenses.receipts', [$workspace, $company, $receiptExpense->public_id], absolute: false),
     'user_id' => $owner->id, 'date' => $date,

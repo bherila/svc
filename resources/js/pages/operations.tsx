@@ -33,6 +33,7 @@ type Project = {
     id: string;
     name: string;
     time_entries: TimeEntry[];
+    time_url: string;
 };
 
 type Proposal = {
@@ -199,108 +200,11 @@ function AttachmentPanel({
     );
 }
 
-function TimeEntryForm({
-    workspaceId,
-    project,
-    timezone,
-}: {
-    workspaceId: string;
-    project: Project;
-    timezone: string;
-}) {
-    const form = useForm({
-        // Not `new Date().toISOString()`: that is UTC's day, and the write
-        // validators bound the date by the workspace's own window - so for
-        // the hours the two calendars disagree, the untouched default was
-        // refused.
-        worked_on: todayIn(timezone),
-        minutes: '30',
-        description: '',
-        is_billable: true,
-        is_deferred: false,
-        billing_rate: '',
-        currency: 'USD',
-    });
-
-    const submit = (event: FormEvent) => {
-        event.preventDefault();
-        form.transform((data) => ({
-            ...data,
-            minutes: Number(data.minutes),
-            billing_rate_amount: toMinorUnits(data.billing_rate),
-        }));
-        form.post(
-            `/workspaces/${workspaceId}/projects/${project.id}/time-entries`,
-            { onSuccess: () => form.reset('description') },
-        );
-    };
-
+function TimeEntryForm({ project }: { project: Project }) {
     return (
-        <form onSubmit={submit} className="mt-3 grid gap-2 md:grid-cols-6">
-            <input
-                className={inputClass}
-                type="date"
-                value={form.data.worked_on}
-                onChange={(event) =>
-                    form.setData('worked_on', event.target.value)
-                }
-                required
-            />
-            <input
-                className={inputClass}
-                type="number"
-                min="1"
-                value={form.data.minutes}
-                onChange={(event) =>
-                    form.setData('minutes', event.target.value)
-                }
-                aria-label="Minutes"
-                required
-            />
-            <input
-                className={`${inputClass} md:col-span-2`}
-                placeholder="Work performed"
-                value={form.data.description}
-                onChange={(event) =>
-                    form.setData('description', event.target.value)
-                }
-                required
-            />
-            <input
-                className={inputClass}
-                type="number"
-                step="0.01"
-                min="0"
-                placeholder="Hourly rate"
-                value={form.data.billing_rate}
-                onChange={(event) =>
-                    form.setData('billing_rate', event.target.value)
-                }
-            />
-            <button className={buttonClass} disabled={form.processing}>
-                Log time
-            </button>
-            <label className="flex items-center gap-2 text-sm text-slate-600">
-                <input
-                    type="checkbox"
-                    checked={form.data.is_billable}
-                    onChange={(event) =>
-                        form.setData('is_billable', event.target.checked)
-                    }
-                />
-                Billable
-            </label>
-            <label className="flex items-center gap-2 text-sm text-slate-600">
-                <input
-                    type="checkbox"
-                    checked={form.data.is_deferred}
-                    onChange={(event) =>
-                        form.setData('is_deferred', event.target.checked)
-                    }
-                />
-                Deferred
-            </label>
-        </form>
+        <Link href={project.time_url} className={buttonClass}>
+            Log time
+        </Link>
     );
 }
 
@@ -763,11 +667,7 @@ export default function Operations({ workspace }: { workspace: Workspace }) {
                                             <h4 className="font-medium">
                                                 {project.name}
                                             </h4>
-                                            <TimeEntryForm
-                                                workspaceId={workspace.id}
-                                                project={project}
-                                                timezone={workspace.timezone}
-                                            />
+                                            <TimeEntryForm project={project} />
                                             <ul className="mt-3 space-y-1 text-sm text-slate-600">
                                                 {project.time_entries.map(
                                                     (entry) => (

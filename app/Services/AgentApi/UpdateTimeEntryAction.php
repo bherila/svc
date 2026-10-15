@@ -5,6 +5,7 @@ namespace App\Services\AgentApi;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Support\Engagement\TimeSheetWindow;
 use Illuminate\Support\Facades\Validator;
 
 /** Tenant-scoped, idempotent update of one editable time entry. */
@@ -25,7 +26,8 @@ final class UpdateTimeEntryAction
             function () use ($workspace, $entryId, $user, $payload): array {
                 $data = Validator::make($payload, [
                     'expected_version' => ['required', 'string', 'size:64'],
-                    'worked_on' => ['sometimes', 'date_format:Y-m-d'],
+                    'worked_on' => ['sometimes', 'date_format:Y-m-d', 'after_or_equal:'.TimeSheetWindow::start($workspace->timezone)->toDateString(), 'before_or_equal:'.TimeSheetWindow::end($workspace->timezone)->toDateString()],
+                    'task_id' => ['sometimes', 'nullable', 'uuid'],
                     'minutes' => ['sometimes', 'integer', 'min:1', 'max:1440'],
                     'description' => ['sometimes', 'string', 'max:10000'],
                     'is_billable' => ['sometimes', 'boolean'],

@@ -38,6 +38,7 @@ const portalOnly = process.argv.includes('--portal-access');
 const correctionOnly = process.argv.includes('--invoice-correction');
 const squareOnly = process.argv.includes('--square');
 const remindersOnly = process.argv.includes('--reminders');
+const timeOnly = process.argv.includes('--time');
 const results = [];
 const failures = [];
 const serverLog = [];
@@ -282,22 +283,24 @@ try {
                 ? ['square_explore', 'square_invoice', 'square_portal']
                 : remindersOnly
                   ? ['reminder_invoice', 'settings']
-                  : [
-                      'mcp_setup',
-                      'invoice',
-                      'invoice_review',
-                      'reminder_invoice',
-                      'settings',
-                      'draft_invoice',
-                      'draft_time',
-                      'proposal',
-                      'proposal_acceptance',
-                      'operations',
-                      'time',
-                      'expenses',
-                      'receipts',
-                      'expense_schedules',
-                  ]) {
+                  : timeOnly
+                    ? ['time', 'draft_time']
+                    : [
+                          'mcp_setup',
+                          'invoice',
+                          'invoice_review',
+                          'reminder_invoice',
+                          'settings',
+                          'draft_invoice',
+                          'draft_time',
+                          'proposal',
+                          'proposal_acceptance',
+                          'operations',
+                          'time',
+                          'expenses',
+                          'receipts',
+                          'expense_schedules',
+                      ]) {
             const response = await page.goto(
                 origin + fixture[portalOnly ? 'portal_settings' : screen],
             );
@@ -350,9 +353,12 @@ try {
                     has: page.getByText('Payment reminders', { exact: true }),
                 });
                 await expect(
-                    card.getByText('Automatic reminders are on for this client', {
-                        exact: false,
-                    }),
+                    card.getByText(
+                        'Automatic reminders are on for this client',
+                        {
+                            exact: false,
+                        },
+                    ),
                 ).toBeVisible();
                 await expect(card.getByRole('row')).toHaveCount(4);
             }
@@ -630,7 +636,13 @@ try {
         }
     }
 
-    if (!portalOnly && !correctionOnly && !squareOnly && !remindersOnly) {
+    if (
+        !portalOnly &&
+        !correctionOnly &&
+        !squareOnly &&
+        !remindersOnly &&
+        !timeOnly
+    ) {
         // Full operator correction path, all writes confined to the seeded records.
         await page.setViewportSize({ width: 1440, height: 1000 });
         await page.goto(origin + fixture.draft_invoice);
@@ -668,6 +680,11 @@ try {
         ).toBeVisible();
         await page
             .getByRole('button', { name: 'Add time to draft', exact: true })
+            .click();
+        await expect(page.getByRole('dialog')).toHaveCount(0);
+        await page
+            .locator(`a[href="${fixture.draft_invoice}"]`)
+            .first()
             .click();
         await expect(page).toHaveURL(origin + fixture.draft_invoice);
         await expect(

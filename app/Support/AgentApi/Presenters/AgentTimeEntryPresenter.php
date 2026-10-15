@@ -29,7 +29,7 @@ final class AgentTimeEntryPresenter
             'invoice_id' => $allocation->invoiceId,
             'allocation_state' => $allocation->state,
             'id' => $entry->public_id,
-            'author_id' => $entry->user->public_id,
+            'author_id' => $entry->user?->public_id,
             'project_id' => $entry->project->public_id,
             'task_id' => $entry->task?->public_id,
             'worked_on' => $entry->worked_on->toDateString(),

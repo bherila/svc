@@ -3580,7 +3580,11 @@ export interface components {
              */
             allocation_state: 'unallocated' | 'reserved' | 'consumed';
             id: components['schemas']['Uuid'];
-            author_id: components['schemas']['Uuid'];
+            /**
+             * Format: uuid
+             * @description Public author id; null when the author is not a member of this workspace.
+             */
+            author_id: string | null;
             project_id: components['schemas']['Uuid'];
             /** Format: uuid */
             task_id: string | null;
@@ -3633,6 +3637,7 @@ export interface components {
             billing_rate_amount?: number | null;
             currency?: string | null;
         } & unknown;
+        /** @description Log entries within the workspace calendar time sheet window: the current month and the preceding eleven months. */
         TimeLogRequest: {
             entries: components['schemas']['TimeLogItem'][];
             /** @description Approve the logged entries in the same transaction. Requires the time:approve OAuth scope, a user who can approve time on every project, and the agent write cutover; if approval is refused nothing is logged. */
@@ -3642,7 +3647,10 @@ export interface components {
         TimeStatus: 'draft' | 'approved' | 'invoiced';
         TimeUpdateRequest: {
             expected_version: components['schemas']['Version'];
-            /** Format: date */
+            /**
+             * Format: date
+             * @description Workspace calendar date within the time sheet’s twelve-month window, through the end of the current month.
+             */
             worked_on?: string;
             minutes?: number;
             description?: string;
@@ -3650,6 +3658,11 @@ export interface components {
             is_deferred?: boolean;
             is_visible_to_client?: boolean;
             client_visible_description?: string | null;
+            /**
+             * Format: uuid
+             * @description Omit to preserve the task; null clears it. A task must belong to this entry’s project.
+             */
+            task_id?: string | null;
         } & unknown;
         /** Format: uuid */
         Uuid: string;

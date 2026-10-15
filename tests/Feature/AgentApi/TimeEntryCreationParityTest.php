@@ -208,7 +208,7 @@ final class TimeEntryCreationParityTest extends TestCase
     private function submit(string $transport, User $user, Workspace $workspace, ClientProject $project, array $payload, int $expected = 201, string $expectedCategory = 'validation', bool $approvalScope = true, ?string $idempotencyKey = null): void
     {
         if ($transport === 'web') {
-            $this->actingAs($user, 'web')->postJson("/workspaces/{$workspace->public_id}/projects/{$project->public_id}/time-entries", $payload)->assertStatus($expected);
+            $this->actingAs($user, 'web')->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', $idempotencyKey ?? 'synthetic-'.str()->uuid())->postJson("/api/v1/workspaces/{$workspace->public_id}/time-entries", ['entries' => [$payload]])->assertStatus($expected);
 
             return;
         }

@@ -125,10 +125,10 @@ final class PortalProjectScopingTest extends TestCase
     {
         $user = $this->portalUser(ClientCompanyMembership::SCOPE_COMPANY);
 
-        $this->actingAs($user)->postJson(
-            "/workspaces/{$this->workspace->public_id}/projects/{$this->theirs->public_id}/time-entries",
-            ['worked_on' => '2026-03-14', 'minutes' => 60, 'description' => 'Trying to log time'],
-        )->assertForbidden();
+        $this->actingAs($user)->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', 'synthetic-'.str()->uuid())->postJson(
+            "/api/v1/workspaces/{$this->workspace->public_id}/time-entries",
+            ['entries' => [['project_id' => "{$this->theirs->public_id}", ...['worked_on' => '2026-03-14', 'minutes' => 60, 'description' => 'Trying to log time']]]],
+        )->assertNotFound();
 
         $this->assertSame(0, ClientTimeEntry::query()->count());
     }

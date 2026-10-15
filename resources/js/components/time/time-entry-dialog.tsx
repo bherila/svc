@@ -1,5 +1,5 @@
 import { router } from '@inertiajs/react';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { DurationField } from '@/components/time/duration-field';
 import { Button } from '@/components/ui/button';
 import {
@@ -22,6 +22,8 @@ import {
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
+import { apiRequest, newIdempotencyKey  } from '@/lib/api';
+import type {ApiSchema} from '@/lib/api';
 import { todayIn } from '@/lib/time';
 import type { CompanyOption, TimeEntry } from '@/types/time-sheet';
 
@@ -51,7 +53,7 @@ function draftFor(
             task_id: entry.task?.id ?? '',
             worked_on: entry.worked_on,
             minutes: entry.minutes,
-            description: entry.description,
+            description: entry.description ?? '',
             is_billable: entry.is_billable,
             is_deferred: entry.is_deferred,
             is_visible_to_client: entry.is_visible_to_client,
@@ -85,14 +87,12 @@ function draftFor(
  * row changed elsewhere is refused rather than silently overwritten.
  */
 export function TimeEntryDialog({
-    workspaceId,
     timezone,
     company,
     entry,
     open,
     onOpenChange,
 }: {
-    workspaceId: string;
     timezone: string;
     company: CompanyOption;
     entry: TimeEntry | null;
@@ -103,6 +103,7 @@ export function TimeEntryDialog({
         draftFor(company, entry, timezone),
     );
     const [saving, setSaving] = useState(false);
+    const attempt = useRef<{ body: string; key: string } | null>(null);
     const [error, setError] = useState<string | null>(null);
 
     const project = useMemo(
@@ -121,7 +122,11 @@ export function TimeEntryDialog({
         draft.is_visible_to_client &&
         draft.client_visible_description.trim() === '';
 
-    const submit = () => {
+    const submit = async () => {
+        if (saving) {
+return;
+}
+
         if (clientDescriptionMissing) {
             setError('Client-visible time needs a client-facing description.');
 
@@ -130,17 +135,6 @@ export function TimeEntryDialog({
 
         setError(null);
         setSaving(true);
-
-        const finish = {
-            onSuccess: () => onOpenChange(false),
-            onError: (errors: Record<string, string>) => {
-                setError(
-                    Object.values(errors)[0] ?? 'The entry could not be saved.',
-                );
-            },
-            onFinish: () => setSaving(false),
-            preserveScroll: true,
-        };
 
         const shared = {
             worked_on: draft.worked_on,
@@ -156,21 +150,57 @@ export function TimeEntryDialog({
 
         const taskId = draft.task_id === '' ? null : draft.task_id;
 
-        if (entry !== null) {
-            router.patch(
-                `/workspaces/${workspaceId}/time-entries/${entry.id}`,
-                { ...shared, task_id: taskId, expected_version: entry.version },
-                finish,
-            );
+        const url = entry === null ? project?.log_time_url : entry.update_url;
+
+        if (!url) {
+            setSaving(false);
+            setError('This action is no longer available. Reload the page.');
 
             return;
         }
 
-        router.post(
-            `/workspaces/${workspaceId}/projects/${draft.project_id}/time-entries`,
-            { ...shared, task_id: taskId },
-            finish,
+        const body =
+            entry === null
+                ? ({
+                      entries: [
+                          {
+                              ...shared,
+                              project_id: draft.project_id,
+                              task_id: taskId,
+                          },
+                      ],
+                  } satisfies ApiSchema<'TimeLogRequest'>)
+                : ({
+                      ...shared,
+                      task_id: taskId,
+                      expected_version: entry.version,
+                  } satisfies ApiSchema<'TimeUpdateRequest'>);
+        const fingerprint = JSON.stringify(body);
+
+        if (attempt.current?.body !== fingerprint) {
+            attempt.current = { body: fingerprint, key: newIdempotencyKey() };
+        }
+
+        const result = await apiRequest(
+            entry === null ? 'POST' : 'PATCH',
+            url,
+            body,
+            attempt.current.key,
         );
+
+        if (!result.ok) {
+            setError(result.message);
+            setSaving(false);
+
+            return;
+        }
+
+        router.reload({
+            onFinish: () => {
+                setSaving(false);
+                onOpenChange(false);
+            },
+        });
     };
 
     const loggable = company.projects.filter(
