@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { apiRequest, type ApiSchema } from '@/lib/api';
+import { apiRequest } from '@/lib/api';
+import type { ApiSchema } from '@/lib/api';
 
 function respond(status: number, body: unknown) {
     vi.stubGlobal(
