@@ -52,7 +52,7 @@ final class SquareCollectionHandoffTest extends TestCase
         $this->actingAsMcp($owner, self::SCOPES);
 
         $this->postJson("/api/v1/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/square-link", [
-            'expected_version' => AgentApiVersion::for($invoice->refresh()), 'square_invoice_id' => 'inv:0-fixture1', 'square_invoice_number' => '000001-R-0001',
+            'expected_version' => AgentApiVersion::for($invoice->refresh()), 'confirm' => true, 'square_invoice_id' => 'inv:0-fixture1', 'square_invoice_number' => '000001-R-0001',
         ], ['Idempotency-Key' => 'synthetic-pending'])
             ->assertConflict()
             ->assertJsonPath('message', 'A Stripe payment on invoice SYN-1 can still complete (pending, or failed and retryable). Let it succeed or cancel it in Stripe before Square collects this invoice.');
@@ -68,7 +68,7 @@ final class SquareCollectionHandoffTest extends TestCase
         ClientInvoicePayment::query()->where('workspace_id', $workspace->id)->update(['status' => 'failed']);
         $this->actingAsMcp($owner, self::SCOPES);
         $link = fn (string $key) => $this->postJson("/api/v1/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/square-link", [
-            'expected_version' => AgentApiVersion::for($invoice->refresh()), 'square_invoice_id' => 'inv:0-fixture1', 'square_invoice_number' => '000001-R-0001',
+            'expected_version' => AgentApiVersion::for($invoice->refresh()), 'confirm' => true, 'square_invoice_id' => 'inv:0-fixture1', 'square_invoice_number' => '000001-R-0001',
         ], ['Idempotency-Key' => $key]);
 
         $link('synthetic-failed')->assertConflict();
@@ -106,7 +106,7 @@ final class SquareCollectionHandoffTest extends TestCase
         $this->assertNotSame($before, AgentApiVersion::for($invoice->refresh()));
 
         $this->actingAsMcp($owner, self::SCOPES);
-        $body = ['square_invoice_id' => 'inv:0-fixture1', 'square_invoice_number' => '000001-R-0001'];
+        $body = ['confirm' => true, 'square_invoice_id' => 'inv:0-fixture1', 'square_invoice_number' => '000001-R-0001'];
         $this->postJson("/api/v1/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/square-link", ['expected_version' => $before, ...$body], ['Idempotency-Key' => 'synthetic-stale'])
             ->assertConflict()->assertJsonPath('message', 'The invoice has changed; read it and retry.');
         $this->postJson("/api/v1/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/square-link", ['expected_version' => AgentApiVersion::for($invoice), ...$body], ['Idempotency-Key' => 'synthetic-current'])
@@ -156,7 +156,7 @@ final class SquareCollectionHandoffTest extends TestCase
         ]);
         $this->actingAsMcp($owner, self::SCOPES);
         $link = fn (string $key) => $this->postJson("/api/v1/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/square-link", [
-            'expected_version' => AgentApiVersion::for($invoice->refresh()), 'square_invoice_id' => 'inv:0-fixture1', 'square_invoice_number' => '000001-R-0001',
+            'expected_version' => AgentApiVersion::for($invoice->refresh()), 'confirm' => true, 'square_invoice_id' => 'inv:0-fixture1', 'square_invoice_number' => '000001-R-0001',
         ], ['Idempotency-Key' => $key]);
         $mark = fn (string $key) => $this->putJson("/api/v1/workspaces/{$workspace->public_id}/agreements/{$agreement->public_id}/square-series", [
             'expected_version' => AgentApiVersion::for($agreement->refresh()), 'series_key' => '000001', 'confirm' => true,

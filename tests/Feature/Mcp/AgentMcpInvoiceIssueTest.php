@@ -469,7 +469,7 @@ final class AgentMcpInvoiceIssueTest extends TestCase
         $payment = ['amount' => 4000] + $this->payment();
         $this->callTool($session, 'invoices.issue', $this->issueArguments($workspace, $draft, 'shared-key', $payment));
         $recorded = $this->callTool($session, 'payments.record', [
-            'workspace_id' => $workspace->public_id, 'invoice_id' => $draft->public_id, 'idempotency_key' => 'shared-key', ...$payment,
+            'workspace_id' => $workspace->public_id, 'invoice_id' => $draft->public_id, 'idempotency_key' => 'shared-key', 'confirm' => true, 'expected_version' => AgentApiVersion::for($draft->fresh()), ...$payment,
         ]);
         $this->assertFalse($recorded['result']['isError'] ?? true, json_encode($recorded));
         $this->assertDatabaseCount('client_invoice_payments', 2);
