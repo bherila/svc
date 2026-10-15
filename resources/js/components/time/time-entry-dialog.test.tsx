@@ -167,4 +167,114 @@ describe('time entry dialog', () => {
         inertia.reload.mock.calls[0][0].onFinish();
         expect(onOpenChange).toHaveBeenCalledWith(false);
     });
+    it('lets an approver supply an explicit hourly rate for ad-hoc time', async () => {
+        const ratedCompany = {
+            ...company,
+            projects: company.projects.map((project) => ({
+                ...project,
+                rate_override: { currency: 'USD' },
+            })),
+        };
+        render(
+            <TimeEntryDialog
+                timezone="UTC"
+                company={ratedCompany}
+                entry={null}
+                open
+                onOpenChange={vi.fn()}
+            />,
+        );
+        const user = userEvent.setup();
+        await user.type(
+            screen.getByLabelText('Work performed'),
+            'Synthetic ad-hoc work',
+        );
+        await user.type(screen.getByLabelText('Hourly rate'), '123.45');
+        expect(screen.getByLabelText('Currency')).toHaveValue('USD');
+        await user.click(screen.getByRole('button', { name: 'Log time' }));
+        expect(apiRequest).toHaveBeenCalledWith(
+            'POST',
+            '/synthetic/log-time',
+            {
+                entries: [
+                    expect.objectContaining({
+                        billing_rate_amount: 12345,
+                        currency: 'USD',
+                    }),
+                ],
+            },
+            expect.any(String),
+        );
+    });
+    it.each([
+        ['0.29', 29],
+        ['0', 0],
+    ])('records the exact rate %s in minor units', async (rate, amount) => {
+        const ratedCompany = {
+            ...company,
+            projects: company.projects.map((project) => ({
+                ...project,
+                rate_override: { currency: 'USD' },
+            })),
+        };
+        render(
+            <TimeEntryDialog
+                timezone="UTC"
+                company={ratedCompany}
+                entry={null}
+                open
+                onOpenChange={vi.fn()}
+            />,
+        );
+        const user = userEvent.setup();
+        await user.type(
+            screen.getByLabelText('Work performed'),
+            'Synthetic rate boundary',
+        );
+        await user.type(screen.getByLabelText('Hourly rate'), rate);
+        await user.click(screen.getByRole('button', { name: 'Log time' }));
+        expect(apiRequest).toHaveBeenCalledWith(
+            'POST',
+            '/synthetic/log-time',
+            {
+                entries: [
+                    expect.objectContaining({ billing_rate_amount: amount }),
+                ],
+            },
+            expect.any(String),
+        );
+    });
+
+    it.each(['12.345', '9999999999999999', '-1'])(
+        'refuses an imprecise or unsafe hourly rate %s',
+        async (rate) => {
+            const ratedCompany = {
+                ...company,
+                projects: company.projects.map((project) => ({
+                    ...project,
+                    rate_override: { currency: 'USD' },
+                })),
+            };
+            render(
+                <TimeEntryDialog
+                    timezone="UTC"
+                    company={ratedCompany}
+                    entry={null}
+                    open
+                    onOpenChange={vi.fn()}
+                />,
+            );
+            const user = userEvent.setup();
+            await user.type(
+                screen.getByLabelText('Work performed'),
+                'Synthetic invalid rate',
+            );
+            await user.type(screen.getByLabelText('Hourly rate'), rate);
+            await user.click(screen.getByRole('button', { name: 'Log time' }));
+            expect(screen.getByRole('alert')).toHaveTextContent(
+                'non-negative hourly rate',
+            );
+            expect(apiRequest).not.toHaveBeenCalled();
+        },
+    );
 });

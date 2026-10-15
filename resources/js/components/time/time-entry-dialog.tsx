@@ -31,6 +31,8 @@ import type { CompanyOption, TimeEntry } from '@/types/time-sheet';
 const NO_TASK = '__no_task__';
 
 type Draft = {
+    billing_rate: string;
+    currency: string;
     project_id: string;
     task_id: string;
     worked_on: string;
@@ -50,6 +52,8 @@ function draftFor(
 ): Draft {
     if (entry !== null) {
         return {
+            billing_rate: '',
+            currency: '',
             project_id: entry.project.id,
             task_id: entry.task?.id ?? '',
             worked_on: entry.worked_on,
@@ -69,6 +73,8 @@ function draftFor(
         ) ?? company.projects.find((project) => project.can_log_time);
 
     return {
+        billing_rate: '',
+        currency: loggable?.rate_override?.currency ?? '',
         project_id: loggable?.id ?? '',
         task_id: '',
         // Read now, on the workspace's calendar. A date sent from the server
@@ -166,12 +172,45 @@ export function TimeEntryDialog({
             return;
         }
 
+        let rateOverride: { billing_rate_amount?: number; currency?: string } =
+            {};
+
+        if (
+            entry === null &&
+            project?.rate_override &&
+            draft.billing_rate.trim() !== ''
+        ) {
+            const rate = draft.billing_rate.trim();
+            const [whole, fraction = ''] = rate.split('.');
+            const amount =
+                Number(whole) * 100 + Number(fraction.padEnd(2, '0'));
+
+            if (
+                !/^\d+(?:\.\d{1,2})?$/.test(rate) ||
+                !Number.isSafeInteger(amount) ||
+                !/^[A-Z]{3}$/.test(draft.currency)
+            ) {
+                setError(
+                    'Enter a non-negative hourly rate with up to two decimal places and a three-letter currency.',
+                );
+                setSaving(false);
+
+                return;
+            }
+
+            rateOverride = {
+                billing_rate_amount: amount,
+                currency: draft.currency,
+            };
+        }
+
         const body =
             entry === null
                 ? ({
                       entries: [
                           {
                               ...shared,
+                              ...rateOverride,
                               project_id: draft.project_id,
                               task_id: taskId,
                           },
@@ -216,12 +255,12 @@ export function TimeEntryDialog({
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-lg">
+            <DialogContent className="max-h-[90dvh] grid-cols-1 overflow-y-auto sm:max-w-lg">
                 <DialogHeader>
                     <DialogTitle>
                         {entry === null ? 'Log time' : 'Edit time entry'}
                     </DialogTitle>
-                    <DialogDescription>
+                    <DialogDescription className="wrap-anywhere">
                         {entry === null
                             ? `Against ${company.name}.`
                             : 'Only entries that have not been sent to a client can be changed.'}
@@ -244,6 +283,14 @@ export function TimeEntryDialog({
                                 onValueChange={(value: string | null) => {
                                     set('project_id', value ?? '');
                                     set('task_id', '');
+                                    set('billing_rate', '');
+                                    set(
+                                        'currency',
+                                        company.projects.find(
+                                            (candidate) =>
+                                                candidate.id === value,
+                                        )?.rate_override?.currency ?? '',
+                                    );
                                 }}
                             >
                                 <SelectTrigger id="project" className="w-full">
@@ -318,7 +365,40 @@ export function TimeEntryDialog({
                         </div>
                     )}
 
-                    <div className="grid gap-4 sm:grid-cols-2">
+                    {entry === null && project?.rate_override && (
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                            <div className="grid grid-cols-1 gap-1.5">
+                                <Label htmlFor="billing-rate">
+                                    Hourly rate
+                                </Label>
+                                <Input
+                                    id="billing-rate"
+                                    inputMode="decimal"
+                                    placeholder="Use the agreement rate"
+                                    value={draft.billing_rate}
+                                    onChange={(event) =>
+                                        set('billing_rate', event.target.value)
+                                    }
+                                />
+                            </div>
+                            <div className="grid grid-cols-1 gap-1.5">
+                                <Label htmlFor="rate-currency">Currency</Label>
+                                <Input
+                                    id="rate-currency"
+                                    maxLength={3}
+                                    value={draft.currency}
+                                    onChange={(event) =>
+                                        set(
+                                            'currency',
+                                            event.target.value.toUpperCase(),
+                                        )
+                                    }
+                                />
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                         <div className="grid grid-cols-1 gap-1.5">
                             <Label htmlFor="worked_on">Date</Label>
                             <Input

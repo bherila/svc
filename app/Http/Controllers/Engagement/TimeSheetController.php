@@ -228,6 +228,7 @@ class TimeSheetController extends Controller
                     // the change exists to admit, and the workspace lookup it
                     // needed is gone with it.
                     'can_log_time' => $permissions[$project->id]['log'] ?? false,
+                    'rate_override' => ($permissions[$project->id]['approve'] ?? false) ? ['currency' => $workspace->default_currency] : null,
                     'log_time_url' => ($permissions[$project->id]['log'] ?? false)
                         ? route('agent-api.v1.time-entries.store', $workspace, absolute: false) : null,
                     'tasks' => $project->tasks->map(fn (ClientTask $task): array => [

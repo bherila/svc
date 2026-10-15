@@ -10,6 +10,7 @@ export type ProjectOption = {
     name: string;
     can_log_time: boolean;
     log_time_url: string | null;
+    rate_override?: { currency: string } | null;
     tasks: TaskOption[];
 };
 

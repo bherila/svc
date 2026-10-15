@@ -94,6 +94,15 @@ class TimeSheetTest extends TestCase
         $this->get(route('clients.time', [$this->workspace, $this->company, 'log_project' => $foreign['project']->public_id]))->assertNotFound();
     }
 
+    public function test_rate_override_capabilities_follow_the_project_approval_role(): void
+    {
+        $this->actingAs($this->manager, 'web')->get(route('clients.time', [$this->workspace, $this->company]))
+            ->assertOk()->assertInertia(fn (Assert $page) => $page->where('companies.0.projects.0.rate_override.currency', 'USD'));
+        $contributor = $this->memberWithProjectRole(ProjectRole::Contributor);
+        $this->actingAs($contributor, 'web')->get(route('clients.time', [$this->workspace, $this->company]))
+            ->assertOk()->assertInertia(fn (Assert $page) => $page->where('companies.0.projects.0.rate_override', null));
+    }
+
     public function test_manager_can_draft_only_eligible_unallocated_time_from_the_sheet(): void
     {
         $this->travelTo('2026-07-20');
