@@ -258,7 +258,7 @@ final class AgentMcpContractTest extends TestCase
             'operations.summary' => ['identity:read'],
             'payments.correct' => ['payments:record'],
             'payments.list' => ['payments:read'],
-            'payments.record' => ['payments:record'],
+            'payments.record' => ['payments:record', 'billing:read'],
             'projects.archive' => ['projects:write', 'projects:read'],
             'projects.create' => ['projects:write', 'clients:read'],
             'projects.get' => ['projects:read'],
@@ -338,11 +338,17 @@ final class AgentMcpContractTest extends TestCase
         $this->assertFalse($approvalItem['additionalProperties']);
     }
 
-    public function test_every_write_tool_inherits_its_body_contract_from_openapi(): void
+    public function test_every_write_tool_with_a_body_inherits_its_contract_from_openapi(): void
     {
         config(['agent_api.project_writes_enabled' => true, 'agent_api.writes_enabled' => true, 'agent_api.invoice_writes_enabled' => true, 'agent_api.expense_writes_enabled' => true, 'agent_api.payment_writes_enabled' => true]);
         foreach ($this->definitions() as $definition) {
             if ($definition->effect->readOnly()) {
+                continue;
+            }
+            if (in_array($definition->id, ['attachments.upload_url', 'expenses.receipts.upload_url'], true)) {
+                $this->assertNull($definition->rest?->requestSchema);
+                $this->assertNull($definition->input);
+
                 continue;
             }
             $body = AgentApiResponseSchemaCatalog::requestForOperation($definition->id);
@@ -364,7 +370,7 @@ final class AgentMcpContractTest extends TestCase
         }
     }
 
-    public function test_every_write_operation_requires_an_idempotency_header_and_tool_argument(): void
+    public function test_persisted_writes_require_idempotency_and_upload_preparation_declares_its_later_guard(): void
     {
         config(['agent_api.project_writes_enabled' => true, 'agent_api.writes_enabled' => true, 'agent_api.invoice_writes_enabled' => true, 'agent_api.expense_writes_enabled' => true, 'agent_api.payment_writes_enabled' => true]);
         $document = json_decode((string) file_get_contents(public_path('openapi/svc-agent-v1.json')), true, flags: JSON_THROW_ON_ERROR);
@@ -376,6 +382,15 @@ final class AgentMcpContractTest extends TestCase
                 ->firstWhere('operationId', $definition->id);
             $parameterRefs = collect($operation['parameters'] ?? [])->pluck('$ref');
             $input = $this->toolInputSchema($definition->id);
+            if (in_array($definition->id, ['attachments.upload_url', 'expenses.receipts.upload_url'], true)) {
+                $this->assertSame(IdempotencyKey::None, $definition->safety->idempotencyKey);
+                $this->assertNotNull($definition->safety->note);
+                $this->assertStringContainsString('upload itself requires an idempotency key and parent version', $definition->safety->note);
+                $this->assertNotContains('#/components/parameters/IdempotencyKey', $parameterRefs);
+                $this->assertNotContains('idempotency_key', $input['required'] ?? []);
+
+                continue;
+            }
             $this->assertSame(IdempotencyKey::HeaderAndArgument, $definition->safety->idempotencyKey, $definition->id);
 
             $this->assertContains('#/components/parameters/IdempotencyKey', $parameterRefs, $definition->id);

@@ -15,9 +15,10 @@ final class RecordReceivedPayment
 {
     public function __construct(private readonly InvoiceLifecycleService $invoices) {}
 
-    public function record(Workspace $workspace, ClientInvoice $invoice, ReceivedPaymentData $facts, ?string $idempotencyKey = null): ClientInvoicePayment
+    /** @param (callable(ClientInvoice): void)|null $assertLocked */
+    public function record(Workspace $workspace, ClientInvoice $invoice, ReceivedPaymentData $facts, ?string $idempotencyKey = null, ?callable $assertLocked = null): ClientInvoicePayment
     {
-        $payment = $this->invoices->applyPayment($invoice, $facts->attributes($idempotencyKey), $workspace);
+        $payment = $this->invoices->applyPayment($invoice, $facts->attributes($idempotencyKey), $workspace, $assertLocked);
         $payment->setRelation('invoice', ClientInvoice::query()->where('workspace_id', $workspace->id)->whereKey($payment->client_invoice_id)->firstOrFail());
 
         return $payment;

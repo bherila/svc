@@ -523,9 +523,9 @@ final class AgentOperationCatalog
                 'Prepare attachment upload',
                 'Prepare a ten-minute signed multipart REST upload URL without uploading bytes. POST file and expected_version there with the same bearer credential and a fresh Idempotency-Key. Upload retries with the same key and identical bytes return the first attachment. Current files:write and manager permission remain required.',
                 [AgentMcpWriteTools::class, 'attachmentsUploadUrl'],
-                Effect::Read,
+                Effect::LocalWrite,
                 true,
-                'mcp.read',
+                'mcp.write',
                 cutovers: [AgentDeploymentFlags::FILES],
                 manager: true,
             ),
@@ -600,9 +600,9 @@ final class AgentOperationCatalog
                 'Prepare expense receipt upload',
                 'Get a ten-minute multipart upload URL and current expense version. Upload with the same expenses:read and expenses:write bearer credential, Idempotency-Key header, file and expected_version form fields. Preparing a URL does not upload a receipt.',
                 [AgentMcpWriteTools::class, 'expenseReceiptsUploadUrl'],
-                Effect::Read,
+                Effect::LocalWrite,
                 true,
-                'mcp.read',
+                'mcp.write',
                 cutovers: [AgentDeploymentFlags::EXPENSES],
                 manager: true,
             ),
@@ -725,7 +725,7 @@ final class AgentOperationCatalog
             $this->tool(
                 'tasks.create',
                 'Create task',
-                'Create a task in an authorized project.',
+                'Create a task in an authorized project. Hidden from clients when visibility is omitted; callers must explicitly choose true to publish.',
                 [AgentMcpWriteTools::class, 'tasksCreate'],
                 Effect::LocalWrite,
                 true,
@@ -1010,7 +1010,7 @@ final class AgentOperationCatalog
             $this->tool(
                 'payments.record',
                 'Record received payment',
-                'Record money already received using an explicit invoice, amount in minor units, currency, payment date and method. Idempotency key required. Owner/admin only; overpayments refused. Never charges a customer or issues a refund.',
+                'Record money already received using an explicit invoice, amount in minor units, currency, payment date and method. Current invoice version, explicit user confirmation and idempotency key required. Owner/admin only; overpayments refused. Never charges a customer or issues a refund.',
                 [AgentMcpWriteTools::class, 'paymentsRecord'],
                 Effect::LocalWrite,
                 true,
@@ -1021,7 +1021,7 @@ final class AgentOperationCatalog
             $this->tool(
                 'payments.correct',
                 'Correct received payment',
-                'Correct the method, reference or received date of a payment already recorded, using the version from payments.list and a reason that is kept in the client history. Omitted fields are unchanged; a null reference clears it. Amount, currency, status and refunds cannot be changed here. Idempotency key required. Owner/admin only. Never charges a customer or issues a refund.',
+                'Correct the method, reference or received date of a payment already recorded, using the version from payments.list and a reason that is kept in the client history. Omitted fields are unchanged; a null reference clears it. Amount, currency, status and refunds cannot be changed here. Explicit user confirmation and idempotency key required. Owner/admin only. Never charges a customer or issues a refund.',
                 [AgentMcpWriteTools::class, 'paymentsCorrect'],
                 Effect::LocalWrite,
                 true,
@@ -1085,7 +1085,7 @@ final class AgentOperationCatalog
                 'Create a client company. Retry only an identical request with the same key.',
                 [AgentMcpClientWriteTools::class, 'clientsCreate'],
                 Effect::LocalWrite,
-                false,
+                true,
                 'mcp.write.clients',
                 cutovers: [AgentDeploymentFlags::CLIENTS],
                 manager: true,
@@ -1097,7 +1097,7 @@ final class AgentOperationCatalog
                 'Change only the fields sent using the current version. Omitted fields are unchanged and nullable fields can be cleared. Enabling automatic delivery requires a non-null delay and configured invoice recipients. Disabling automatic delivery cancels pending deliveries.',
                 [AgentMcpClientWriteTools::class, 'clientsUpdate'],
                 Effect::LocalWrite,
-                false,
+                true,
                 'mcp.write.clients',
                 cutovers: [AgentDeploymentFlags::CLIENTS],
                 manager: true,
@@ -1106,10 +1106,10 @@ final class AgentOperationCatalog
             $this->tool(
                 'clients.archive',
                 'Archive client',
-                'Deactivate a client using the current version. Invoices, time, payments and agreements are retained; restore reverses it.',
+                'Deactivate a client using the current version after explicit user confirmation. Invoices, time, payments and agreements are retained; restore reverses it.',
                 [AgentMcpClientWriteTools::class, 'clientsArchive'],
                 Effect::Destructive,
-                false,
+                true,
                 'mcp.write.clients',
                 cutovers: [AgentDeploymentFlags::CLIENTS],
                 manager: true,
@@ -1216,7 +1216,7 @@ final class AgentOperationCatalog
                 'Reactivate an archived client using the current version.',
                 [AgentMcpClientWriteTools::class, 'clientsRestore'],
                 Effect::LocalWrite,
-                false,
+                true,
                 'mcp.write.clients',
                 cutovers: [AgentDeploymentFlags::CLIENTS],
                 manager: true,
@@ -1228,7 +1228,7 @@ final class AgentOperationCatalog
                 'Create a client-wide draft agreement using the parent client version. Amounts are minor units and retainer_minutes are whole minutes. It bills nothing until activated.',
                 [AgentMcpClientWriteTools::class, 'agreementsCreate'],
                 Effect::LocalWrite,
-                false,
+                true,
                 'mcp.write.clients',
                 cutovers: [AgentDeploymentFlags::CLIENTS],
                 manager: true,
@@ -1240,7 +1240,7 @@ final class AgentOperationCatalog
                 'Correct only the terms sent using the current version. Omitted fields are unchanged; nullable fields can be cleared. Status and signature cannot be edited here.',
                 [AgentMcpClientWriteTools::class, 'agreementsUpdate'],
                 Effect::LocalWrite,
-                false,
+                true,
                 'mcp.write.clients',
                 cutovers: [AgentDeploymentFlags::CLIENTS],
                 manager: true,
@@ -1252,7 +1252,7 @@ final class AgentOperationCatalog
                 'Activate a draft or paused agreement so it governs billing. Requires explicit user confirmation and the current version. Overlapping active agreements are refused.',
                 [AgentMcpClientWriteTools::class, 'agreementsActivate'],
                 Effect::LocalWrite,
-                false,
+                true,
                 'mcp.write.clients',
                 cutovers: [AgentDeploymentFlags::CLIENTS],
                 manager: true,
@@ -1264,7 +1264,7 @@ final class AgentOperationCatalog
                 'End an agreement using the current version after explicit user confirmation. Termination is irreversible. ends_on defaults to today in the workspace timezone, never extending an earlier end or ending before the start.',
                 [AgentMcpClientWriteTools::class, 'agreementsTerminate'],
                 Effect::Destructive,
-                false,
+                true,
                 'mcp.write.clients',
                 cutovers: [AgentDeploymentFlags::CLIENTS],
                 manager: true,
@@ -1541,6 +1541,7 @@ final class AgentOperationCatalog
             $this->managerOnly[$id] = true;
         }
         $write = ! $effect->readOnly();
+        $hasBody = $documented && isset(AgentRestDocumentation::operations()[$id]['request']);
 
         return new Operation(
             id: $id,
@@ -1552,10 +1553,12 @@ final class AgentOperationCatalog
                 flags: [...$cutovers, ...$availability, ...self::mcpSwitches($group, $id)],
             ),
             idempotent: $idempotent,
-            safety: $write ? new WriteSafety(IdempotencyKey::HeaderAndArgument, expectedVersion: $this->takesVersion($id)) : new WriteSafety,
+            safety: $write && $hasBody
+                ? new WriteSafety(IdempotencyKey::HeaderAndArgument, expectedVersion: $this->takesVersion($id), confirm: $this->takesConfirmation($id))
+                : new WriteSafety(note: $write ? 'Authorizes a later upload; the upload itself requires an idempotency key and parent version.' : null),
             rest: $documented ? $this->rest($id) : null,
             mcp: new McpBinding(handler: $handler),
-            input: $input ?? ($write && $documented ? SchemaRef::requestOf($id) : null),
+            input: $input ?? ($write && $hasBody ? SchemaRef::requestOf($id) : null),
             output: $output ?? ($documented ? SchemaRef::responseOf($id) : null),
             extensions: $documented ? (AgentRestDocumentation::operations()[$id]['extensions'] ?? []) : [],
         );
@@ -1640,6 +1643,16 @@ final class AgentOperationCatalog
                 'content' => [$documented['binary'][0] => ['schema' => ['type' => 'string', 'format' => 'binary']]],
             ]] : [],
         );
+    }
+
+    private function takesConfirmation(string $id): bool
+    {
+        if (! isset(self::ROUTES[$id])) {
+            return false;
+        }
+        $body = AgentApiResponseSchemaCatalog::requestForOperation($id);
+
+        return isset($body['properties']['confirm']);
     }
 
     private function takesVersion(string $id): bool

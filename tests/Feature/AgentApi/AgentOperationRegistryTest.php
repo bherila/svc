@@ -10,6 +10,7 @@ use App\Services\AgentApi\Operations\AgentDeploymentFlags;
 use App\Services\AgentApi\Operations\AgentOperationCatalog;
 use App\Services\Mcp\McpFeatureFlags;
 use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
+use App\Support\AgentApi\AgentOpenApi;
 use App\Support\AgentApi\FirstPartySession;
 use Bherila\McpLaravelBridge\Capabilities\OperationRegistry;
 use Bherila\McpLaravelBridge\Capabilities\SchemaRef;
@@ -36,6 +37,53 @@ final class AgentOperationRegistryTest extends TestCase
     {
         OperationRegistryAssertions::assertOperationRegistryContract(app(OperationRegistry::class), null, ['mcp:use']);
         $this->assertSame(app(AgentOperationCatalog::class)->registry(), app(OperationRegistry::class));
+    }
+
+    public function test_every_confirmed_operation_is_explicitly_inventoried(): void
+    {
+        $expected = [
+            'agreements.activate', 'agreements.square_series.clear', 'agreements.square_series.set', 'agreements.terminate',
+            'attachments.delete', 'billing_schedules.generate', 'clients.archive',
+            'clients.portal_access.grant', 'clients.portal_access.revoke', 'clients.portal_access.update',
+            'clients.portal_invitations.create', 'clients.portal_invitations.resend', 'clients.portal_invitations.revoke',
+            'companies.square_customer.clear', 'companies.square_customer.set', 'expense_schedules.generate',
+            'invoices.correct', 'invoices.discard_draft', 'invoices.generate_period', 'invoices.issue',
+            'invoices.release_delivery', 'invoices.send', 'invoices.send_reminder', 'invoices.square_link', 'invoices.square_unlink', 'invoices.void',
+            'payments.correct', 'payments.record', 'projects.archive', 'projects.create', 'projects.members.update', 'projects.update',
+            'proposals.accept', 'proposals.send', 'square.import_customer',
+        ];
+        sort($expected);
+        $document = AgentOpenApi::checked()->full();
+        $published = collect($document['paths'])->flatMap(fn (array $path): array => array_values($path))->keyBy('operationId');
+        $actual = [];
+        foreach (app(OperationRegistry::class)->all() as $operation) {
+            if ($operation->safety->confirm) {
+                $actual[] = $operation->id;
+                $this->assertTrue($published[$operation->id]['x-agent-write-safety']['confirm'], $operation->id);
+                $body = AgentApiResponseSchemaCatalog::requestForOperation($operation->id);
+                $this->assertContains('confirm', $body['required'], $operation->id);
+                $this->assertSame(true, $body['properties']['confirm']['const'], $operation->id);
+            }
+        }
+        sort($actual);
+        $this->assertSame($expected, $actual);
+        foreach (['time_entries.delete', 'expenses.delete'] as $id) {
+            $operation = app(OperationRegistry::class)->find($id);
+            $this->assertNotNull($operation);
+            $this->assertFalse($operation->safety->confirm);
+        }
+    }
+
+    public function test_receipt_backed_client_and_agreement_writes_publish_safe_retries(): void
+    {
+        $document = AgentOpenApi::checked()->full();
+        $published = collect($document['paths'])->flatMap(fn (array $path): array => array_values($path))->keyBy('operationId');
+        foreach (['clients.create', 'clients.update', 'clients.archive', 'clients.restore', 'agreements.create', 'agreements.update', 'agreements.activate', 'agreements.terminate'] as $id) {
+            $operation = app(OperationRegistry::class)->find($id);
+            $this->assertNotNull($operation);
+            $this->assertTrue($operation->isIdempotent(), $id);
+            $this->assertTrue($published[$id]['x-agent-idempotent'], $id);
+        }
     }
 
     /**

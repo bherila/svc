@@ -804,6 +804,7 @@ describe('the Square link on an invoice', () => {
         expect(url).toBe(linkUrl);
         expect(init.method).toBe('POST');
         expect(JSON.parse(String(init.body))).toEqual({
+            confirm: true,
             expected_version: version,
             square_invoice_id: 'inv:0-fixture1',
             square_invoice_number: '000001-R-0003',

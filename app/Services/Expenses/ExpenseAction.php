@@ -36,9 +36,9 @@ final class ExpenseAction
         return (new WorkspaceExpenses($workspace))->unapprove($this->find($workspace, $id), $expectedVersion);
     }
 
-    public function discard(Workspace $workspace, string $id, ?string $expectedVersion = null, bool $draftOnly = false): void
+    public function discard(Workspace $workspace, string $id, ?string $expectedVersion = null): void
     {
-        (new WorkspaceExpenses($workspace))->discard($this->find($workspace, $id), $expectedVersion, $draftOnly);
+        (new WorkspaceExpenses($workspace))->discard($this->find($workspace, $id), $expectedVersion);
     }
 
     private function find(Workspace $workspace, string $id): ClientExpense

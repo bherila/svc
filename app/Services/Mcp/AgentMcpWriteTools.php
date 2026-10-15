@@ -102,7 +102,7 @@ final class AgentMcpWriteTools
         return $this->send('GET', "workspaces/{$workspace_id}/attachments/{$attachment_id}/download-url", []);
     }
 
-    /** Read-only preparation; upload the bytes to the returned URL with the same bearer credential.
+    /** Authorizes a later upload; upload the bytes to the returned URL with the same bearer credential.
      * @return array<string,mixed> */
     public function attachmentsUploadUrl(#[Schema(format: 'uuid')] string $workspace_id,
         #[Schema(enum: ['company', 'project', 'task', 'proposal', 'agreement', 'invoice'])] string $record_type,
@@ -128,6 +128,8 @@ final class AgentMcpWriteTools
         #[Schema(format: 'date')] string $received_on,
         #[Schema(minLength: 1, maxLength: ClientInvoicePayment::METHOD_MAX_LENGTH)] string $method,
         #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key,
+        #[Schema(minLength: 64, maxLength: 64)] string $expected_version,
+        #[Schema] bool $confirm,
         #[Schema(maxLength: 255)] ?string $reference = null,
     ): array {
         $context = $this->accounts->resolve($this->context('payments:record'), $workspace_id);
@@ -138,7 +140,7 @@ final class AgentMcpWriteTools
         $actor = User::query()->findOrFail($context->principal->subject->id);
         $ids = app(RecordPaymentAction::class)->run($actor, $workspace,
             $context->principal->clientId, $idempotency_key,
-            compact('invoice_id', 'amount', 'currency', 'received_on', 'method', 'reference'));
+            compact('invoice_id', 'amount', 'currency', 'received_on', 'method', 'reference', 'expected_version', 'confirm'));
 
         return app(AgentPaymentReadService::class)->result($actor, $workspace, $ids);
     }
@@ -155,12 +157,13 @@ final class AgentMcpWriteTools
         #[Schema(minLength: 64, maxLength: 64)] string $expected_version,
         #[Schema(minLength: 1, maxLength: 500)] string $reason,
         #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key,
+        #[Schema] bool $confirm,
         RequestContext $request,
         #[Schema(minLength: 1, maxLength: ClientInvoicePayment::METHOD_MAX_LENGTH)] ?string $method = null,
         #[Schema(maxLength: 255)] ?string $reference = null,
         #[Schema(format: 'date')] ?string $received_on = null,
     ): array {
-        $body = compact('expected_version', 'reason');
+        $body = compact('expected_version', 'reason', 'confirm');
         foreach (compact('method', 'reference', 'received_on') as $name => $value) {
             if ($this->requestArguments->has($request, $name)) {
                 $body[$name] = $value;

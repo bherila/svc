@@ -931,10 +931,13 @@ final class InvoiceLifecycleService
         });
     }
 
-    /** @param array<string, mixed> $data */
-    public function applyPayment(ClientInvoice $invoice, array $data, ?Workspace $workspace = null): ClientInvoicePayment
+    /**
+     * @param  array<string, mixed>  $data
+     * @param  (callable(ClientInvoice): void)|null  $assertLocked
+     */
+    public function applyPayment(ClientInvoice $invoice, array $data, ?Workspace $workspace = null, ?callable $assertLocked = null): ClientInvoicePayment
     {
-        return DB::transaction(function () use ($invoice, $data, $workspace): ClientInvoicePayment {
+        return DB::transaction(function () use ($invoice, $data, $workspace, $assertLocked): ClientInvoicePayment {
             BillingMaintenance::share($workspace->id ?? $invoice->workspace_id);
             $locked = $this->lockInvoice($invoice, $workspace);
             if ($locked->status === 'void') {
@@ -1028,6 +1031,12 @@ final class InvoiceLifecycleService
 
                     return $existing;
                 }
+            }
+
+            // Ask the caller's precondition under the invoice lock, after a
+            // completed keyed payment has had the chance to replay.
+            if ($assertLocked !== null) {
+                $assertLocked($locked);
             }
 
             // The automatic sender has already committed its durable claim

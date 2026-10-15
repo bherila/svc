@@ -8,7 +8,9 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\AgentAccess;
 use App\Services\Billing\RecordReceivedPayment;
+use App\Support\AgentApi\AgentApiVersion;
 use App\Support\AgentApi\AgentWriteCutover;
+use App\Support\AgentApi\ExplicitConfirmation;
 use App\Support\Billing\ReceivedPaymentData;
 use Illuminate\Support\Facades\Validator;
 
@@ -35,15 +37,20 @@ final class RecordPaymentAction
             function () use ($user, $workspace, $clientId, $key, $payload): array {
                 $this->authorize($user, $workspace);
                 $data = Validator::make(['payment' => $payload], [
-                    'payment' => ['required', 'array:invoice_id,amount,currency,received_on,method,reference'],
+                    'payment' => ['required', 'array:invoice_id,amount,currency,received_on,method,reference,expected_version,confirm'],
                     'payment.invoice_id' => ['required', 'uuid'],
+                    'payment.expected_version' => ['required', 'string', 'size:64'],
+                    'payment.confirm' => ['required', new ExplicitConfirmation],
                 ])->validate()['payment'];
                 $facts = ReceivedPaymentData::from($payload, errorPrefix: 'payment');
                 $invoice = ClientInvoice::query()->where('workspace_id', $workspace->id)
                     ->where('public_id', $data['invoice_id'])->firstOrFail();
                 // Domain keys are workspace-wide; namespace them by caller and operation
                 // so an agent receipt cannot collide with a CLI/import receipt.
-                $payment = $this->receivedPayments->record($workspace, $invoice, $facts, RecordReceivedPayment::agentKey($user->id, $clientId, $key));
+                $payment = $this->receivedPayments->record($workspace, $invoice, $facts, RecordReceivedPayment::agentKey($user->id, $clientId, $key),
+                    static function (ClientInvoice $locked) use ($data): void {
+                        abort_unless(AgentApiVersion::matches($locked, $data['expected_version']), 409, 'The invoice has changed; read it and retry.');
+                    });
 
                 return [$payment->public_id];
             },

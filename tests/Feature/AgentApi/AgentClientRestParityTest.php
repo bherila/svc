@@ -8,6 +8,7 @@ use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\AgentApi\AgentMutationExecutor;
 use App\Services\Engagement\AgreementWorkflow;
 use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
 use App\Support\AgentApi\AgentApiScopes;
@@ -31,6 +32,44 @@ final class AgentClientRestParityTest extends TestCase
     {
         parent::setUp();
         config(['agent_api.writes_enabled' => true, 'agent_api.client_writes_enabled' => true]);
+    }
+
+    public function test_archiving_requires_boolean_confirmation(): void
+    {
+        [$workspace, $owner, $client] = $this->fixture();
+        $this->actingAsMcp($owner, self::SCOPES);
+        foreach ([null, false, 1, 'true', '1'] as $index => $confirm) {
+            $body = ['expected_version' => AgentApiVersion::for($client)];
+            if ($confirm !== null) {
+                $body['confirm'] = $confirm;
+            }
+            $this->withHeader('Idempotency-Key', 'synthetic-unconfirmed-'.$index)->postJson('/api/v1/workspaces/'.$workspace->public_id.'/clients/'.$client->public_id.'/archive', $body)->assertUnprocessable();
+        }
+        $this->assertTrue($client->fresh()->is_active);
+        $this->assertDatabaseCount('agent_mutation_receipts', 0);
+    }
+
+    public function test_completed_archive_receipts_from_before_confirmation_can_still_replay(): void
+    {
+        [$workspace, $owner, $client] = $this->fixture();
+        $principal = $this->actingAsMcp($owner, self::SCOPES);
+        $clientId = $principal->token()->oauth_client_id;
+        $version = AgentApiVersion::for($client);
+        $body = ['expected_version' => $version];
+        app(AgentMutationExecutor::class)->run($owner, $workspace, $clientId, 'clients.archive', 'synthetic-before-confirmation', ['client_id' => $client->public_id, ...$body],
+            fn (): array => [app(UpdateClientCompany::class)->handle($workspace, $client, ['is_active' => false], $version)->public_id]);
+        $path = '/api/v1/workspaces/'.$workspace->public_id.'/clients/'.$client->public_id.'/archive';
+        $this->withHeader('Idempotency-Key', 'synthetic-before-confirmation')->postJson($path, $body)->assertOk()->assertJsonPath('data.is_active', false);
+        $this->assertDatabaseHas('agent_mutation_audits', ['workspace_id' => $workspace->id, 'operation' => 'clients.archive', 'outcome' => 'replay']);
+        $this->withHeader('Idempotency-Key', 'synthetic-new-unconfirmed')->postJson($path, ['expected_version' => AgentApiVersion::for($client->fresh())])->assertUnprocessable();
+        $this->assertDatabaseCount('agent_mutation_receipts', 1);
+        $confirmed = ['expected_version' => AgentApiVersion::for($client->fresh()), 'confirm' => true];
+        $this->withHeader('Idempotency-Key', 'synthetic-confirmed-archive')->postJson($path, $confirmed)->assertOk();
+        unset($confirmed['confirm']);
+        $this->withHeader('Idempotency-Key', 'synthetic-confirmed-archive')->postJson($path, $confirmed)->assertConflict();
+        $this->assertDatabaseCount('agent_mutation_receipts', 2);
+        $workspace->memberships()->where('workspace_id', $workspace->id)->where('user_id', $owner->id)->update(['role' => 'member']);
+        $this->withHeader('Idempotency-Key', 'synthetic-before-confirmation')->postJson($path, $body)->assertForbidden();
     }
 
     /** @return iterable<string, array{string}> */
@@ -285,7 +324,7 @@ final class AgentClientRestParityTest extends TestCase
         return match ($operation) {
             'clients.create' => ['POST', 'clients', ['name' => 'Synthetic Created Client'], [], 201],
             'clients.update' => ['PATCH', 'clients/'.$client->public_id, $version + ['name' => 'Synthetic Updated'], ['client_id' => $client->public_id], 200],
-            'clients.archive' => ['POST', 'clients/'.$client->public_id.'/archive', $version, ['client_id' => $client->public_id], 200],
+            'clients.archive' => ['POST', 'clients/'.$client->public_id.'/archive', $version + ['confirm' => true], ['client_id' => $client->public_id], 200],
             'clients.restore' => ['POST', 'clients/'.$client->public_id.'/restore', $version, ['client_id' => $client->public_id], 200],
             'agreements.create' => ['POST', 'clients/'.$client->public_id.'/agreements', $version + ['title' => 'Synthetic Created Agreement', 'starts_on' => '2026-01-01', 'currency' => 'USD'], ['client_id' => $client->public_id], 201],
             'agreements.update' => ['PATCH', 'agreements/'.$agreement->public_id, $agreementVersion + ['title' => 'Synthetic Updated'], ['agreement_id' => $agreement->public_id], 200],

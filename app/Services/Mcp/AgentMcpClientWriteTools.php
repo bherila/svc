@@ -45,8 +45,9 @@ final class AgentMcpClientWriteTools
         #[Schema(format: 'uuid')] string $client_id,
         #[Schema(minLength: 64, maxLength: 64)] string $expected_version,
         #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key,
+        #[Schema] bool $confirm,
     ): array {
-        return $this->send('POST', "workspaces/{$workspace_id}/clients/{$client_id}/archive", compact('expected_version'), $idempotency_key);
+        return $this->send('POST', "workspaces/{$workspace_id}/clients/{$client_id}/archive", compact('expected_version', 'confirm'), $idempotency_key);
     }
 
     /** @return array<string, mixed> */

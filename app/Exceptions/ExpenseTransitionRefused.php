@@ -48,7 +48,7 @@ final class ExpenseTransitionRefused extends RuntimeException
     public static function discard(mixed $storedStatus): self
     {
         return new self(sprintf(
-            'An expense with status "%s" is on a client bill and cannot be discarded.',
+            'An expense with status "%s" cannot be discarded; only a draft can. Unapprove an approved expense first.',
             self::render($storedStatus),
         ));
     }

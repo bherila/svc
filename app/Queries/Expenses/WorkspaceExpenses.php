@@ -251,23 +251,13 @@ final class WorkspaceExpenses
         ], $expectedVersion);
     }
 
-    /**
-     * Withdraw an expense that has not reached a bill.
-     *
-     * A soft delete, so the row survives for the audit trail and for anything
-     * that has already quoted it. Refused once the expense has been invoiced -
-     * and refused through {@see ExpenseStatus::hasBeenInvoicedValue()}, which
-     * answers yes to a status it does not recognise. That is the direction to
-     * be wrong in here: the cost of refusing a discard is that somebody asks a
-     * human, and the cost of allowing one is a line on an issued invoice
-     * pointing at a row that is gone.
-     */
-    public function discard(ClientExpense $expense, ?string $expectedVersion = null, bool $draftOnly = false): void
+    /** Withdraw a draft expense. Approved expenses must be unapproved first. */
+    public function discard(ClientExpense $expense, ?string $expectedVersion = null): void
     {
-        $this->mutate($expense, static function (ClientExpense $locked) use ($draftOnly): ClientExpense {
+        $this->mutate($expense, static function (ClientExpense $locked): ClientExpense {
             $status = $locked->getAttribute('status');
 
-            if (ExpenseStatus::hasBeenInvoicedValue($status) || ($draftOnly && ! ExpenseStatus::isEditableValue($status))) {
+            if (! ExpenseStatus::isEditableValue($status)) {
                 throw ExpenseTransitionRefused::discard($status);
             }
 

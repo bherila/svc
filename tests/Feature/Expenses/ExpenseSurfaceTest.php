@@ -102,13 +102,30 @@ final class ExpenseSurfaceTest extends TestCase
                 ->where('expenses.0.approved_by', $this->manager->name));
     }
 
+    public function test_an_approved_expense_must_be_unapproved_before_deletion(): void
+    {
+        $expense = $this->expense();
+        (new WorkspaceExpenses($this->workspace))->approve($expense, $this->manager);
+        $this->actingAs($this->manager)->get($this->url())->assertOk()->assertInertia(fn (Assert $page) => $page->where('expenses.0.can_discard', false)->where('expenses.0.can_unapprove', true));
+        $this->actingAs($this->manager)->delete('/workspaces/'.$this->workspace->public_id.'/expenses/'.$expense->public_id)->assertSessionHasErrors('expense');
+        $this->assertNull($expense->fresh()->deleted_at);
+        $this->assertSame('approved', $expense->fresh()->status);
+    }
+
+    public function test_web_currency_requires_the_same_uppercase_code_as_the_api(): void
+    {
+        $body = ['spent_on' => '2026-03-14', 'amount' => 100, 'currency' => 'usd', 'description' => 'Synthetic expense'];
+        $this->actingAs($this->manager)->postJson($this->url(), $body)->assertUnprocessable()->assertJsonValidationErrors('currency');
+        $this->assertDatabaseCount('client_expenses', 0);
+    }
+
     public function test_a_manager_records_approves_and_discards_an_expense(): void
     {
         $this->actingAs($this->manager)
             ->post($this->url(), [
                 'spent_on' => '2026-03-14',
                 'amount' => 4250,
-                'currency' => 'usd',
+                'currency' => 'USD',
                 'description' => 'Courier',
                 'project_id' => $this->project->public_id,
             ])
@@ -116,7 +133,7 @@ final class ExpenseSurfaceTest extends TestCase
 
         $expense = ClientExpense::query()->sole();
         $this->assertSame('draft', $expense->status);
-        // Normalised by the domain's own constructor, not by the controller.
+        // Both transports require the uppercase currency code.
         $this->assertSame('USD', $expense->currency);
         $this->assertSame($this->project->id, $expense->client_project_id);
         $this->assertSame($this->manager->id, $expense->created_by_user_id);

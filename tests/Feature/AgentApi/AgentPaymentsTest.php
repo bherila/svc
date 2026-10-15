@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\AgentCapabilities;
 use App\Services\Billing\InvoiceLifecycleService;
+use App\Support\AgentApi\AgentApiVersion;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -25,6 +26,69 @@ final class AgentPaymentsTest extends TestCase
 {
     use InspectsAgentOperations;
     use RefreshDatabase;
+
+    public function test_recording_requires_explicit_confirmation_and_the_invoice_version(): void
+    {
+        [$user, $workspace, $invoice] = $this->fixture();
+        $body = [...$this->payload($invoice), 'confirm' => true, 'expected_version' => AgentApiVersion::for($invoice)];
+        $this->actingAsMcp($user, ['payments:record', 'billing:read']);
+        foreach ([null, false, 1, 'true', '1'] as $index => $confirm) {
+            $input = [...$body, 'confirm' => $confirm];
+            if ($confirm === null) {
+                unset($input['confirm']);
+            }
+            $this->withHeader('Idempotency-Key', 'synthetic-unconfirmed-'.$index)->postJson($this->url($workspace), $input)->assertUnprocessable();
+        }
+        $missing = $body;
+        unset($missing['expected_version']);
+        $this->withHeader('Idempotency-Key', 'synthetic-no-version')->postJson($this->url($workspace), $missing)->assertUnprocessable();
+        $this->assertDatabaseCount('client_invoice_payments', 0);
+        $this->assertDatabaseCount('agent_mutation_receipts', 0);
+    }
+
+    #[DataProvider('transports')]
+    public function test_a_stale_invoice_refuses_a_new_payment_but_not_a_completed_retry(string $transport): void
+    {
+        [$user, $workspace, $invoice] = $this->fixture();
+        $body = [...$this->payload($invoice), 'confirm' => true, 'expected_version' => AgentApiVersion::for($invoice), 'amount' => 1000];
+        $first = $this->record($transport, $user, $workspace, $body, 'synthetic-version-first');
+        $this->assertSame($first, $this->record($transport, $user, $workspace, $body, 'synthetic-version-first'));
+        $this->record($transport, $user, $workspace, $body, 'synthetic-version-stale', 409);
+        $this->assertDatabaseCount('client_invoice_payments', 1);
+        $this->record($transport, $user, $workspace, [...$body, 'expected_version' => AgentApiVersion::for($invoice->fresh())], 'synthetic-version-next');
+        $this->assertDatabaseCount('client_invoice_payments', 2);
+    }
+
+    public function test_the_invoice_version_is_checked_on_the_locked_copy(): void
+    {
+        [$user, $workspace, $invoice] = $this->fixture();
+        $body = $this->payload($invoice);
+        $changed = false;
+        DB::listen(function (QueryExecuted $event) use ($workspace, $invoice, &$changed): void {
+            $sql = str_replace(['"', '`'], '', strtolower($event->sql));
+            if (! $changed && str_starts_with($sql, 'select') && str_contains($sql, 'from client_invoices') && str_contains($sql, 'public_id =')) {
+                $changed = true;
+                DB::table('client_invoices')->where('workspace_id', $workspace->id)->where('id', $invoice->id)->increment('lock_version');
+            }
+        });
+        $this->record('rest', $user, $workspace, $body, 'synthetic-locked-version', 409);
+        $this->assertTrue($changed);
+        $this->assertDatabaseCount('client_invoice_payments', 0);
+        $this->assertDatabaseCount('agent_mutation_receipts', 0);
+    }
+
+    public function test_recording_requires_the_read_scope_that_supplies_the_invoice_version(): void
+    {
+        [$user, $workspace, $invoice] = $this->fixture();
+        $this->actingAsMcp($user, ['payments:record']);
+        $this->withHeader('Idempotency-Key', 'synthetic-missing-invoice-read')->postJson($this->url($workspace), $this->payload($invoice))->assertForbidden();
+        $this->assertDatabaseCount('client_invoice_payments', 0);
+        $this->actingAsMcp($user, ['payments:record', 'billing:read']);
+        $version = $this->getJson('/api/v1/workspaces/'.$workspace->public_id.'/invoices/'.$invoice->public_id)->assertOk()->json('data.version');
+        $this->assertIsString($version);
+        $this->withHeader('Idempotency-Key', 'synthetic-readable-version')->postJson($this->url($workspace), [...$this->payload($invoice), 'expected_version' => $version])->assertCreated();
+        $this->assertSame(['payments:record', 'billing:read'], $this->agentOperation('payments.record')->requirement->scopes);
+    }
 
     public static function transports(): iterable
     {
@@ -47,7 +111,7 @@ final class AgentPaymentsTest extends TestCase
         $this->assertSame('succeeded', $payment->status);
         $this->assertSame($payload['received_on'], $payment->received_on->toDateString());
         $this->assertNull($payment->provider_payment_identifier);
-        $this->record($transport, $user, $workspace, $payload, 'synthetic-new', 422);
+        $this->record($transport, $user, $workspace, [...$payload, 'expected_version' => AgentApiVersion::for($invoice->fresh())], 'synthetic-new', 422);
         $this->record($transport, $user, $workspace, [...$payload, 'received_on' => now()->subDay()->toDateString()], 'synthetic-full', 409);
         $this->assertDatabaseCount('client_invoice_payments', 1);
         $this->assertDatabaseHas('agent_mutation_audits', ['workspace_id' => $workspace->id, 'operation' => 'payments.record', 'outcome' => 'replay']);
@@ -89,14 +153,15 @@ final class AgentPaymentsTest extends TestCase
         $payload = [...$this->payload($invoice), 'amount' => 1000];
         $ids = [];
         foreach (['synthetic-client-a', 'synthetic-client-b'] as $clientId) {
-            $principal = $this->actingAsMcp($user, ['payments:record']);
+            $principal = $this->actingAsMcp($user, ['payments:record', 'billing:read']);
             $claims = $principal->token();
             $token = Passport::token()->newQuery()->findOrFail($claims->oauth_access_token_id);
             $token->update(['client_id' => $clientId]);
             $principal->withAccessToken(new AccessToken([
                 'oauth_access_token_id' => $token->id, 'oauth_client_id' => $clientId,
-                'oauth_scopes' => ['payments:record'],
+                'oauth_scopes' => ['payments:record', 'billing:read'],
             ]));
+            $payload['expected_version'] = AgentApiVersion::for($invoice->fresh());
             $ids[] = $this->withHeader('Idempotency-Key', 'synthetic-same-key')->postJson($this->url($workspace), $payload)->assertCreated()->json('data.0.id');
             $this->assertDatabaseHas('agent_mutation_receipts', ['workspace_id' => $workspace->id, 'operation' => 'payments.record', 'oauth_client_id' => $clientId]);
         }
@@ -206,7 +271,7 @@ final class AgentPaymentsTest extends TestCase
         [$user, $workspace, $invoice] = $this->fixture();
         $this->actingAsMcp($user, ['payments:read']);
         $this->withHeader('Idempotency-Key', 'synthetic-scope')->postJson($this->url($workspace), $this->payload($invoice))->assertForbidden();
-        $this->actingAsMcp($user, ['payments:record']);
+        $this->actingAsMcp($user, ['payments:record', 'billing:read']);
         $this->getJson($this->url($workspace).'?invoice_id='.$invoice->public_id)->assertForbidden();
     }
 
@@ -239,7 +304,7 @@ final class AgentPaymentsTest extends TestCase
         $portal = User::factory()->create(['email' => 'synthetic-portal@example.test']);
         $company->portalUsers()->attach($portal->id, ['workspace_id' => $workspace->id]);
         $invoice->update(['is_visible_to_client' => true]);
-        $this->actingAsMcp($portal, ['payments:read', 'payments:record']);
+        $this->actingAsMcp($portal, ['payments:read', 'payments:record', 'billing:read']);
         $this->getJson($url)->assertOk()->assertJsonCount(3, 'data')->assertJsonPath('data.0.reference', null);
         $this->withHeader('Idempotency-Key', 'synthetic-portal')->postJson($this->url($workspace), $this->payload($invoice))->assertForbidden();
         $invoice->update(['is_visible_to_client' => false]);
@@ -249,7 +314,7 @@ final class AgentPaymentsTest extends TestCase
     public function test_entire_record_and_list_requests_scope_tenant_reads_and_writes(): void
     {
         [$user, $workspace, $invoice] = $this->fixture();
-        $this->actingAsMcp($user, ['payments:read', 'payments:record']);
+        $this->actingAsMcp($user, ['payments:read', 'payments:record', 'billing:read']);
         $queries = [];
         DB::listen(function (QueryExecuted $event) use (&$queries): void {
             $sql = str_replace(['"', '`'], '', strtolower($event->sql));
@@ -285,7 +350,7 @@ final class AgentPaymentsTest extends TestCase
         $portal = User::factory()->create(['email' => 'synthetic-list-portal@example.test']);
         $company->portalUsers()->attach($portal->id, ['workspace_id' => $workspace->id]);
         $invoice->update(['is_visible_to_client' => true]);
-        $this->actingAsMcp($portal, ['mcp:use', 'payments:read', 'payments:record']);
+        $this->actingAsMcp($portal, ['mcp:use', 'payments:read', 'payments:record', 'billing:read']);
         $headers = ['Mcp-Protocol-Version' => '2025-06-18'];
         $init = $this->postJson('/api/v1/mcp', ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'initialize',
             'params' => ['protocolVersion' => '2025-06-18', 'capabilities' => [], 'clientInfo' => ['name' => 'Synthetic list test', 'version' => '1']],
@@ -380,7 +445,7 @@ final class AgentPaymentsTest extends TestCase
     public function test_missing_and_blank_idempotency_keys_are_refused(): void
     {
         [$user, $workspace, $invoice] = $this->fixture();
-        $this->actingAsMcp($user, ['payments:record']);
+        $this->actingAsMcp($user, ['payments:record', 'billing:read']);
         $this->postJson($this->url($workspace), $this->payload($invoice))->assertUnprocessable();
         $this->withHeader('Idempotency-Key', '   ')->postJson($this->url($workspace), $this->payload($invoice))->assertUnprocessable();
         $this->assertDatabaseCount('client_invoice_payments', 0);
@@ -404,7 +469,7 @@ final class AgentPaymentsTest extends TestCase
 
     private function payload(ClientInvoice $invoice): array
     {
-        return ['invoice_id' => $invoice->public_id, 'amount' => 10000, 'currency' => 'USD', 'received_on' => now()->toDateString(), 'method' => 'cash'];
+        return ['confirm' => true, 'expected_version' => AgentApiVersion::for($invoice), 'invoice_id' => $invoice->public_id, 'amount' => 10000, 'currency' => 'USD', 'received_on' => now()->toDateString(), 'method' => 'cash'];
     }
 
     private function url(Workspace $workspace): string
@@ -414,7 +479,7 @@ final class AgentPaymentsTest extends TestCase
 
     private function record(string $transport, User $user, Workspace $workspace, array $payload, string $key, int $expected = 201, bool $reachesTheAction = true): mixed
     {
-        $this->actingAsMcp($user, ['mcp:use', 'payments:record']);
+        $this->actingAsMcp($user, ['mcp:use', 'payments:record', 'billing:read']);
         if ($transport === 'rest') {
             $response = $this->withHeader('Idempotency-Key', $key)->postJson($this->url($workspace), $payload)->assertStatus($expected);
 

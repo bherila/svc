@@ -20,9 +20,9 @@ final class WorkspaceTaskMutationAction
     public function __construct(private readonly ProjectAccess $access, private readonly WorkspaceClock $clock = new WorkspaceClock) {}
 
     /** @param array<string,mixed> $facts */
-    public function create(User $actor, Workspace $workspace, string $projectId, array $facts, bool $visibleDefault = false): ClientTask
+    public function create(User $actor, Workspace $workspace, string $projectId, array $facts): ClientTask
     {
-        return DB::transaction(function () use ($actor, $workspace, $projectId, $facts, $visibleDefault): ClientTask {
+        return DB::transaction(function () use ($actor, $workspace, $projectId, $facts): ClientTask {
             BillingMaintenance::share($workspace->id);
             $project = ClientProject::query()->where('workspace_id', $workspace->id)->where('public_id', $projectId)
                 ->whereHas('clientCompany', fn (Builder $company): Builder => $company->where('workspace_id', $workspace->id))->firstOrFail();
@@ -30,7 +30,7 @@ final class WorkspaceTaskMutationAction
             abort_unless($this->access->canManageTasks($actor, $project), 403);
             $task = $project->tasks()->create([
                 'workspace_id' => $workspace->id, 'title' => $facts['title'], 'description' => $facts['description'] ?? null,
-                'status' => 'open', 'is_visible_to_client' => $facts['is_visible_to_client'] ?? $visibleDefault,
+                'status' => 'open', 'is_visible_to_client' => $facts['is_visible_to_client'] ?? false,
             ]);
 
             return $task->setRelation('project', $project);

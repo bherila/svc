@@ -77,7 +77,7 @@ final class AgentClientController extends Controller
     {
         $context = $this->contexts->from($request);
         $data = $request->validate(['expected_version' => ['required', 'string', 'size:64']]);
-        $id = $this->mutations->setClientActive($context->user, $workspace, $context->oauthClientId, $context->idempotencyKey, $client, $active, $data['expected_version']);
+        $id = $this->mutations->setClientActive($context->user, $workspace, $context->oauthClientId, $context->idempotencyKey, $client, $active, $data['expected_version'], $request->only('confirm'));
 
         return response()->json(['data' => $this->clients->get($context->user, $workspace, $id)]);
     }
