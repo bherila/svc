@@ -8,6 +8,7 @@ use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\AgentApi\AgentMutationExecutor;
 use App\Services\Engagement\AgreementWorkflow;
 use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
 use App\Support\AgentApi\AgentApiScopes;
@@ -46,6 +47,29 @@ final class AgentClientRestParityTest extends TestCase
         }
         $this->assertTrue($client->fresh()->is_active);
         $this->assertDatabaseCount('agent_mutation_receipts', 0);
+    }
+
+    public function test_completed_archive_receipts_from_before_confirmation_can_still_replay(): void
+    {
+        [$workspace, $owner, $client] = $this->fixture();
+        $principal = $this->actingAsMcp($owner, self::SCOPES);
+        $clientId = $principal->token()->oauth_client_id;
+        $version = AgentApiVersion::for($client);
+        $body = ['expected_version' => $version];
+        app(AgentMutationExecutor::class)->run($owner, $workspace, $clientId, 'clients.archive', 'synthetic-before-confirmation', ['client_id' => $client->public_id, ...$body],
+            fn (): array => [app(UpdateClientCompany::class)->handle($workspace, $client, ['is_active' => false], $version)->public_id]);
+        $path = '/api/v1/workspaces/'.$workspace->public_id.'/clients/'.$client->public_id.'/archive';
+        $this->withHeader('Idempotency-Key', 'synthetic-before-confirmation')->postJson($path, $body)->assertOk()->assertJsonPath('data.is_active', false);
+        $this->assertDatabaseHas('agent_mutation_audits', ['workspace_id' => $workspace->id, 'operation' => 'clients.archive', 'outcome' => 'replay']);
+        $this->withHeader('Idempotency-Key', 'synthetic-new-unconfirmed')->postJson($path, ['expected_version' => AgentApiVersion::for($client->fresh())])->assertUnprocessable();
+        $this->assertDatabaseCount('agent_mutation_receipts', 1);
+        $confirmed = ['expected_version' => AgentApiVersion::for($client->fresh()), 'confirm' => true];
+        $this->withHeader('Idempotency-Key', 'synthetic-confirmed-archive')->postJson($path, $confirmed)->assertOk();
+        unset($confirmed['confirm']);
+        $this->withHeader('Idempotency-Key', 'synthetic-confirmed-archive')->postJson($path, $confirmed)->assertConflict();
+        $this->assertDatabaseCount('agent_mutation_receipts', 2);
+        $workspace->memberships()->where('workspace_id', $workspace->id)->where('user_id', $owner->id)->update(['role' => 'member']);
+        $this->withHeader('Idempotency-Key', 'synthetic-before-confirmation')->postJson($path, $body)->assertForbidden();
     }
 
     /** @return iterable<string, array{string}> */

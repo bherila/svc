@@ -15,6 +15,7 @@ use App\Services\Engagement\EngagementException;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\AgentApi\AgentWriteCutover;
 use App\Support\AgentApi\ClientMutationRules;
+use App\Support\AgentApi\ExplicitConfirmation;
 use App\Support\Concurrency\Locks;
 use Closure;
 use Illuminate\Support\Facades\Validator;
@@ -64,10 +65,27 @@ final class AgentClientMutationAction
         });
     }
 
-    /** Archive or restore: the reversible half of "delete", through the same edit the Manage form makes. */
-    public function setClientActive(User $user, Workspace $workspace, string $oauthClientId, string $key, string $clientId, bool $active, string $expectedVersion): string
+    /**
+     * Archive or restore through the same edit the Manage form makes.
+     *
+     * @param  array<string, mixed>  $confirmation
+     */
+    public function setClientActive(User $user, Workspace $workspace, string $oauthClientId, string $key, string $clientId, bool $active, string $expectedVersion, array $confirmation = []): string
     {
-        return $this->execute($active ? 'clients.restore' : 'clients.archive', $user, $workspace, $oauthClientId, $key, ['client_id' => $clientId, 'expected_version' => $expectedVersion], fn (): string => $this->updateClient->handle($workspace, $this->client($workspace, $clientId), ['is_active' => $active], $expectedVersion)->public_id);
+        $payload = ['client_id' => $clientId, 'expected_version' => $expectedVersion];
+        if (! $active && array_key_exists('confirm', $confirmation)) {
+            $payload['confirm'] = $confirmation['confirm'];
+        }
+
+        return $this->execute($active ? 'clients.restore' : 'clients.archive', $user, $workspace, $oauthClientId, $key, $payload, function () use ($workspace, $clientId, $active, $expectedVersion, $confirmation): string {
+            // A completed receipt may predate confirmation. Validate only new
+            // work; replay still checks the caller's current manager access.
+            if (! $active) {
+                Validator::make($confirmation, ['confirm' => ['required', new ExplicitConfirmation]])->validate();
+            }
+
+            return $this->updateClient->handle($workspace, $this->client($workspace, $clientId), ['is_active' => $active], $expectedVersion)->public_id;
+        });
     }
 
     /** @param array<string, mixed> $payload */

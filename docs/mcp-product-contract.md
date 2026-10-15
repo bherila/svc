@@ -320,3 +320,9 @@ visibility choice explicitly. Both creation surfaces accept titles up to 255
 characters and descriptions up to 10,000. Expense deletion requires draft status
 on every surface; unapprove an approved expense first. Web and API expense facts
 require uppercase three-letter currency codes.
+
+New archives validate confirmation inside their receipt callback. A completed
+archive receipt from before the confirmation requirement can replay its original
+body without writing again; every replay still requires current manager access.
+Confirmed archive receipts bind the confirmation field, so omitting it changes the
+request rather than replaying a newly confirmed archive.
