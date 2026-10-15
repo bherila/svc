@@ -32,6 +32,20 @@ final class AgentPaymentCorrectionTest extends TestCase
     use InspectsAgentOperations;
     use RefreshDatabase;
 
+    public function test_correcting_requires_boolean_confirmation_before_any_work(): void
+    {
+        [$user, $workspace, $payment] = $this->fixture();
+        foreach ([null, false, 1, 'true', '1'] as $index => $confirm) {
+            $body = [...$this->body($payment), 'confirm' => $confirm];
+            if ($confirm === null) {
+                unset($body['confirm']);
+            }
+            $this->correct('rest', $user, $workspace, $payment->public_id, $body, 'synthetic-unconfirmed-'.$index, 422);
+        }
+        $this->assertUnchanged($payment);
+        $this->assertDatabaseCount('agent_mutation_receipts', 0);
+    }
+
     /** @return iterable<string, array{string}> */
     public static function transports(): iterable
     {
@@ -44,6 +58,7 @@ final class AgentPaymentCorrectionTest extends TestCase
     {
         [$user, $workspace, $payment] = $this->fixture();
         $body = [
+            'confirm' => true,
             'expected_version' => AgentApiVersion::for($payment),
             'reason' => 'Synthetic statement',
             'method' => 'ach',
@@ -265,7 +280,7 @@ final class AgentPaymentCorrectionTest extends TestCase
         $input = $this->toolInputSchema('payments.correct');
         $validator = new SchemaValidator;
         $version = str_repeat('a', 64);
-        $base = ['expected_version' => $version, 'reason' => 'Synthetic'];
+        $base = ['confirm' => true, 'expected_version' => $version, 'reason' => 'Synthetic'];
         $tooling = ['workspace_id' => (string) str()->uuid(), 'payment_id' => (string) str()->uuid(), 'idempotency_key' => 'synthetic'];
 
         foreach (['REST body' => [$request, []], 'MCP input' => [$input, $tooling]] as $label => [$schema, $extra]) {
@@ -283,7 +298,7 @@ final class AgentPaymentCorrectionTest extends TestCase
     /** @return array<string, mixed> */
     private function body(ClientInvoicePayment $payment): array
     {
-        return ['expected_version' => AgentApiVersion::for($payment), 'reason' => 'Synthetic correction', 'method' => 'ach'];
+        return ['confirm' => true, 'expected_version' => AgentApiVersion::for($payment), 'reason' => 'Synthetic correction', 'method' => 'ach'];
     }
 
     private function assertUnchanged(ClientInvoicePayment $payment): void

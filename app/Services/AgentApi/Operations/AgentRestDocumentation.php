@@ -223,7 +223,7 @@ final class AgentRestDocumentation
             'attachments.upload_url' => [
                 'method' => 'POST',
                 'scopes' => ['files:write'],
-                'description' => 'Read-only URL preparation: does not reserve idempotency or persist bytes. Both file and workflow write flags and manager permission required. Upload file plus expected_version with same bearer credential and Idempotency-Key to returned URL.',
+                'description' => 'Authorizes a later upload; preparing a URL does not reserve idempotency or persist bytes. Both file and workflow write flags and manager permission required. Upload file plus expected_version with same bearer credential and Idempotency-Key to returned URL.',
                 'parameters' => [
                     'WorkspaceId',
                     [
@@ -238,7 +238,7 @@ final class AgentRestDocumentation
                     self::uuidPath('recordPublicId'),
                 ],
                 'response' => 'AttachmentUploadUrlResponse',
-                'response_description' => 'Read-only URL preparation: does not reserve idempotency or persist bytes. Both file and workflow write flags and manager permission required. Upload file plus expected_version with same bearer credential and Idempotency-Key to returned URL.',
+                'response_description' => 'Authorizes a later upload; preparing a URL does not reserve idempotency or persist bytes. Both file and workflow write flags and manager permission required. Upload file plus expected_version with same bearer credential and Idempotency-Key to returned URL.',
             ],
             'billing_audit.stale_and_missing' => [
                 'method' => 'GET',
@@ -301,7 +301,7 @@ final class AgentRestDocumentation
             'clients.archive' => [
                 'method' => 'POST',
                 'scopes' => ['clients:write', 'clients:read'],
-                'description' => 'Workspace managers only. Requires both AGENT_API_WRITES_ENABLED and AGENT_API_CLIENT_WRITES_ENABLED. Versioned writes also require the corresponding read scope. Enabling automatic delivery requires a delay and a valid billing email or client portal recipient. Existing records require their current opaque expected_version; agreement creation uses the parent client version. Activation and termination require confirm: true.',
+                'description' => 'Workspace managers only. Requires both AGENT_API_WRITES_ENABLED and AGENT_API_CLIENT_WRITES_ENABLED. Versioned writes also require the corresponding read scope. Enabling automatic delivery requires a delay and a valid billing email or client portal recipient. Existing records require their current opaque expected_version; agreement creation uses the parent client version. Archival requires confirm: true.',
                 'parameters' => ['WorkspaceId', self::uuidPath('client'), 'IdempotencyKey'],
                 'request' => 'clients_archiveRequest',
                 'response' => 'ClientCompanyResponse',
@@ -867,7 +867,7 @@ final class AgentRestDocumentation
             'invoices.square_link' => [
                 'method' => 'POST',
                 'scopes' => ['billing:write', 'billing:read'],
-                'description' => 'Workspace managers only. Link an SVC invoice to its Square invoice, as confirmed by a person: never automatically. Each side has at most one active link: a Square invoice already linked anywhere is refused with 409, and so is an invoice that is already linked unless replace: true re-points it (the replaced link is kept as history). Requires the invoice\'s current expected_version. When currency is given it must equal the invoice\'s. While an invoice is linked, or its agreement is billed in Square, SVC never emails it to the client, charges it or offers a payment link for it; issuing it and recording payments stay open. Square ids are checked for shape only; nothing is sent to Square.',
+                'description' => 'Workspace managers only. Link an SVC invoice to its Square invoice, as confirmed by a person: never automatically. Each side has at most one active link: a Square invoice already linked anywhere is refused with 409, and so is an invoice that is already linked unless replace: true re-points it (the replaced link is kept as history). Requires the invoice\'s current expected_version and confirm: true. When currency is given it must equal the invoice\'s. While an invoice is linked, or its agreement is billed in Square, SVC never emails it to the client, charges it or offers a payment link for it; issuing it and recording payments stay open. Square ids are checked for shape only; nothing is sent to Square.',
                 'parameters' => ['WorkspaceId', 'InvoiceId', 'IdempotencyKey'],
                 'request' => 'InvoiceSquareLinkRequest',
                 'response' => 'InvoiceSquareResponse',
@@ -922,7 +922,7 @@ final class AgentRestDocumentation
             'payments.correct' => [
                 'method' => 'PATCH',
                 'scopes' => ['payments:record'],
-                'description' => 'Owner/admin correction of a received payment\'s descriptive fields: method, reference and received_on, at least one of which must be given. Requires the version from payments.list and a reason, which is kept in the client history. Omitted fields are unchanged; an explicit null reference clears it. A stale version is refused with 409 and a correction that changes nothing records nothing. Amount, currency, status, refunds, the invoice and processor fields cannot be changed. Never initiates a charge or a refund. Requires both outer workflow and payment write flags.',
+                'description' => 'Owner/admin correction of a received payment\'s descriptive fields: method, reference and received_on, at least one of which must be given. Requires confirm: true, the version from payments.list and a reason, which is kept in the client history. Omitted fields are unchanged; an explicit null reference clears it. A stale version is refused with 409 and a correction that changes nothing records nothing. Amount, currency, status, refunds, the invoice and processor fields cannot be changed. Never initiates a charge or a refund. Requires both outer workflow and payment write flags.',
                 'parameters' => ['WorkspaceId', 'PaymentId', 'IdempotencyKey'],
                 'request' => 'ReceivedPaymentCorrectionRequest',
                 'response' => 'ReceivedPaymentResponse',
@@ -945,7 +945,7 @@ final class AgentRestDocumentation
             'payments.record' => [
                 'method' => 'POST',
                 'scopes' => ['payments:record'],
-                'description' => 'Owner/admin bookkeeping for money already received. Never initiates a charge. Explicit invoice, minor-unit amount, currency, payment date and method required; reference is optional. Overpayment refused. Requires both outer workflow and payment write flags.',
+                'description' => 'Owner/admin bookkeeping for money already received. Never initiates a charge. Explicit invoice, minor-unit amount, currency, payment date and method required; reference is optional. Current invoice expected_version and confirm: true required. Overpayment refused. Requires both outer workflow and payment write flags.',
                 'parameters' => ['WorkspaceId', 'IdempotencyKey'],
                 'request' => 'ReceivedPaymentRecordRequest',
                 'response' => 'ReceivedPaymentBatchResponse',

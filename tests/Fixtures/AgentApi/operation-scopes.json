@@ -160,7 +160,7 @@
         "flags": [
             "agent.writes.files",
             "mcp",
-            "mcp.switch:mcp.read",
+            "mcp.switch:mcp.write",
             "mcp.switch:attachments.upload_url"
         ]
     },
@@ -643,7 +643,7 @@
         "flags": [
             "agent.writes.expenses",
             "mcp",
-            "mcp.switch:mcp.read",
+            "mcp.switch:mcp.write",
             "mcp.switch:expenses.receipts.upload_url"
         ]
     },

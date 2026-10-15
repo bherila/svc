@@ -8,6 +8,7 @@ use App\Models\Workspace;
 use App\Services\Authorization\AgentAccess;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Support\AgentApi\AgentWriteCutover;
+use App\Support\AgentApi\ExplicitConfirmation;
 use Illuminate\Support\Facades\Validator;
 
 /**
@@ -43,8 +44,9 @@ final class CorrectPaymentAction
             function () use ($user, $workspace, $paymentId, $payload): array {
                 $this->authorize($user, $workspace);
                 $data = Validator::make(['body' => $payload], [
-                    'body' => ['required', 'array:expected_version,reason,method,reference,received_on'],
+                    'body' => ['required', 'array:expected_version,confirm,reason,method,reference,received_on'],
                     'body.expected_version' => ['required', 'string', 'size:64'],
+                    'body.confirm' => ['required', new ExplicitConfirmation],
                     'body.reason' => ['required', 'string', 'max:500'],
                     'body.method' => ['sometimes', 'required', 'string', 'max:'.ClientInvoicePayment::METHOD_MAX_LENGTH],
                     'body.reference' => ['sometimes', 'nullable', 'string', 'max:255'],

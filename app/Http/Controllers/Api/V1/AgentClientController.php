@@ -10,6 +10,7 @@ use App\Services\AgentApi\AgentAgreementReadService;
 use App\Services\AgentApi\AgentClientMutationAction;
 use App\Services\AgentApi\AgentClientReadService;
 use App\Services\AgentApi\AgentMutationContextFactory;
+use App\Support\AgentApi\ExplicitConfirmation;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -76,7 +77,7 @@ final class AgentClientController extends Controller
     private function setActive(Request $request, Workspace $workspace, string $client, bool $active): JsonResponse
     {
         $context = $this->contexts->from($request);
-        $data = $request->validate(['expected_version' => ['required', 'string', 'size:64']]);
+        $data = $request->validate(['expected_version' => ['required', 'string', 'size:64'], ...($active ? [] : ['confirm' => ['required', new ExplicitConfirmation]])]);
         $id = $this->mutations->setClientActive($context->user, $workspace, $context->oauthClientId, $context->idempotencyKey, $client, $active, $data['expected_version']);
 
         return response()->json(['data' => $this->clients->get($context->user, $workspace, $id)]);

@@ -42,6 +42,25 @@ final class SquareLinkApiTest extends TestCase
         config(['agent_api.writes_enabled' => true, 'agent_api.invoice_writes_enabled' => true, 'agent_api.client_writes_enabled' => true]);
     }
 
+    public function test_linking_and_customer_mapping_require_boolean_confirmation_before_any_work(): void
+    {
+        [$workspace, $owner, $company, $invoice] = $this->fixture();
+        $this->actingAsMcp($owner, self::SCOPES);
+        $requests = [
+            ['POST', 'invoices/'.$invoice->public_id.'/square-link', ['expected_version' => AgentApiVersion::for($invoice), 'square_invoice_id' => 'inv_fixture_1', 'square_invoice_number' => '000001-R-0001']],
+            ['PUT', 'clients/'.$company->public_id.'/square-customer', ['expected_version' => AgentApiVersion::for($company), 'square_customer_id' => 'cust_fixture_a']],
+        ];
+        foreach ($requests as [$method, $path, $body]) {
+            foreach ([null, false, 1, 'true', '1'] as $index => $confirm) {
+                $input = $confirm === null ? $body : [...$body, 'confirm' => $confirm];
+                $this->json($method, '/api/v1/workspaces/'.$workspace->public_id.'/'.$path, $input, ['Idempotency-Key' => 'synthetic-unconfirmed-'.$index])->assertUnprocessable();
+            }
+        }
+        $this->assertDatabaseCount('invoice_square_links', 0);
+        $this->assertDatabaseCount('company_square_customers', 0);
+        $this->assertDatabaseCount('agent_mutation_receipts', 0);
+    }
+
     /** @return iterable<string, array{string}> */
     public static function transports(): iterable
     {
@@ -368,6 +387,10 @@ final class SquareLinkApiTest extends TestCase
      */
     private function send(string $transport, string $operation, Workspace $workspace, array $ids, array $body = [], ?string $key = null): TestResponse|array
     {
+        if (in_array($operation, ['invoices.square_link', 'companies.square_customer.set'], true)) {
+            $body = ['confirm' => true, ...$body];
+        }
+
         return $transport === 'mcp'
             ? $this->callTool($this->initialize(), $operation, ['workspace_id' => $workspace->public_id, ...$ids, ...$body, ...($key === null ? [] : ['idempotency_key' => $key])])
             : $this->rest($operation, $workspace, $ids, $body, $key);
@@ -380,6 +403,10 @@ final class SquareLinkApiTest extends TestCase
      */
     private function rest(string $operation, Workspace $workspace, array $ids, array $body = [], ?string $key = null): TestResponse
     {
+        if (in_array($operation, ['invoices.square_link', 'companies.square_customer.set'], true)) {
+            $body = ['confirm' => true, ...$body];
+        }
+
         [$method, $path] = match ($operation) {
             'invoices.square_link' => ['POST', "invoices/{$ids['invoice_id']}/square-link"],
             'invoices.square_unlink' => ['DELETE', "invoices/{$ids['invoice_id']}/square-link"],

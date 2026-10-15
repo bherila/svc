@@ -33,6 +33,21 @@ final class AgentClientRestParityTest extends TestCase
         config(['agent_api.writes_enabled' => true, 'agent_api.client_writes_enabled' => true]);
     }
 
+    public function test_archiving_requires_boolean_confirmation(): void
+    {
+        [$workspace, $owner, $client] = $this->fixture();
+        $this->actingAsMcp($owner, self::SCOPES);
+        foreach ([null, false, 1, 'true', '1'] as $index => $confirm) {
+            $body = ['expected_version' => AgentApiVersion::for($client)];
+            if ($confirm !== null) {
+                $body['confirm'] = $confirm;
+            }
+            $this->withHeader('Idempotency-Key', 'synthetic-unconfirmed-'.$index)->postJson('/api/v1/workspaces/'.$workspace->public_id.'/clients/'.$client->public_id.'/archive', $body)->assertUnprocessable();
+        }
+        $this->assertTrue($client->fresh()->is_active);
+        $this->assertDatabaseCount('agent_mutation_receipts', 0);
+    }
+
     /** @return iterable<string, array{string}> */
     public static function writes(): iterable
     {
@@ -285,7 +300,7 @@ final class AgentClientRestParityTest extends TestCase
         return match ($operation) {
             'clients.create' => ['POST', 'clients', ['name' => 'Synthetic Created Client'], [], 201],
             'clients.update' => ['PATCH', 'clients/'.$client->public_id, $version + ['name' => 'Synthetic Updated'], ['client_id' => $client->public_id], 200],
-            'clients.archive' => ['POST', 'clients/'.$client->public_id.'/archive', $version, ['client_id' => $client->public_id], 200],
+            'clients.archive' => ['POST', 'clients/'.$client->public_id.'/archive', $version + ['confirm' => true], ['client_id' => $client->public_id], 200],
             'clients.restore' => ['POST', 'clients/'.$client->public_id.'/restore', $version, ['client_id' => $client->public_id], 200],
             'agreements.create' => ['POST', 'clients/'.$client->public_id.'/agreements', $version + ['title' => 'Synthetic Created Agreement', 'starts_on' => '2026-01-01', 'currency' => 'USD'], ['client_id' => $client->public_id], 201],
             'agreements.update' => ['PATCH', 'agreements/'.$agreement->public_id, $agreementVersion + ['title' => 'Synthetic Updated'], ['agreement_id' => $agreement->public_id], 200],

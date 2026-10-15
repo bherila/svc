@@ -53,7 +53,7 @@ final class AgentOpenApi
             apiTokenDescription: 'A personal API token created on the SVC setup page. It carries the scopes chosen when it was created and expires after the chosen lifetime.',
             connectionScopes: [AgentApiScopes::MCP_USE],
             summaries: false,
-            agentExtensions: false,
+            agentExtensions: true,
             parameters: AgentRestDocumentation::parameters(),
             responses: ['Error' => [
                 'description' => 'OAuth, authorization, tenant, conflict, validation, or rate-limit error',

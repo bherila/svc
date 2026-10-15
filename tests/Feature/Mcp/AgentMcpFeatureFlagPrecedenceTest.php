@@ -3,6 +3,7 @@
 namespace Tests\Feature\Mcp;
 
 use App\Models\User;
+use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Concerns\CallsMcp;
@@ -12,6 +13,31 @@ final class AgentMcpFeatureFlagPrecedenceTest extends TestCase
 {
     use CallsMcp;
     use RefreshDatabase;
+
+    public function test_upload_authorizations_obey_the_write_switch_and_are_not_read_only(): void
+    {
+        $owner = User::factory()->create();
+        $workspace = Workspace::query()->create(['name' => 'Synthetic upload workspace', 'slug' => 'synthetic-upload-workspace']);
+        $workspace->memberships()->create(['user_id' => $owner->id, 'role' => 'owner']);
+        config(['agent_api.writes_enabled' => true, 'agent_api.file_writes_enabled' => true, 'agent_api.expense_writes_enabled' => true]);
+        $this->actingAsMcp($owner, ['mcp:use', 'identity:read', 'files:write', 'expenses:read', 'expenses:write']);
+        $uploads = ['attachments.upload_url', 'expenses.receipts.upload_url'];
+        config(['agent_api.mcp_feature_flags' => ['mcp.read' => false, 'mcp.write' => true]]);
+        $tools = collect($this->listTools($this->initialize()))->keyBy('name');
+        foreach ($uploads as $name) {
+            $this->assertArrayHasKey($name, $tools->all());
+            $this->assertFalse($tools[$name]['annotations']['readOnlyHint'] ?? false);
+            $this->assertNotContains('idempotency_key', $tools[$name]['inputSchema']['required'] ?? []);
+        }
+        config(['agent_api.mcp_feature_flags' => ['mcp.read' => true, 'mcp.write' => false]]);
+        $session = $this->initialize();
+        $names = $this->toolNames($session);
+        foreach ($uploads as $name) {
+            $this->assertNotContains($name, $names);
+            $result = $this->callTool($session, $name, ['workspace_id' => $workspace->public_id]);
+            $this->assertSame(-32601, $result['error']['code']);
+        }
+    }
 
     /** @return iterable<string, array{array<string, bool>, bool}> */
     public static function flags(): iterable

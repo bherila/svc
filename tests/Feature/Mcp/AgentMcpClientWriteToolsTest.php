@@ -271,7 +271,7 @@ final class AgentMcpClientWriteToolsTest extends TestCase
                 : ClientCompany::query()->where('public_id', $arguments['client_id'] ?? null)->first();
             $arguments['expected_version'] = $model === null ? str_repeat('0', 64) : AgentApiVersion::for($model);
         }
-        if (in_array($name, ['agreements.activate', 'agreements.terminate'], true)) {
+        if (in_array($name, ['clients.archive', 'agreements.activate', 'agreements.terminate'], true)) {
             $arguments['confirm'] = true;
         }
 

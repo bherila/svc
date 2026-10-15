@@ -43,7 +43,7 @@ final class ReceivedPaymentWorkflowParityTest extends TestCase
         $this->assertSame(1200, $pending->fresh()->balance_amount);
         $principal = $this->actingAsMcp($owner, ['billing:deliver', 'payments:record']);
         $client = $principal->token()->oauth_client_id;
-        $this->postJson('/api/v1/workspaces/'.$workspace->public_id.'/payments', ['invoice_id' => $api->public_id, ...$facts], ['Idempotency-Key' => 'synthetic-agent-receipt'])->assertCreated();
+        $this->postJson('/api/v1/workspaces/'.$workspace->public_id.'/payments', ['invoice_id' => $api->public_id, 'confirm' => true, 'expected_version' => AgentApiVersion::for($api), ...$facts], ['Idempotency-Key' => 'synthetic-agent-receipt'])->assertCreated();
         $this->postJson('/api/v1/workspaces/'.$workspace->public_id.'/invoices/'.$issue->public_id.'/issue', ['expected_version' => AgentApiVersion::for($issue), 'confirm' => true, 'payment' => $facts], ['Idempotency-Key' => 'synthetic-issue-receipt'])->assertOk();
         foreach ([$web, $api, $issue] as $invoice) {
             $this->assertSame('paid', $invoice->fresh()->status);

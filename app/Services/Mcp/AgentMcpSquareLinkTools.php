@@ -24,6 +24,7 @@ final class AgentMcpSquareLinkTools
         #[Schema(minLength: 64, maxLength: 64)] string $expected_version,
         #[Schema(maxLength: 191)] string $square_invoice_id,
         #[Schema(maxLength: 191)] string $square_invoice_number,
+        #[Schema] bool $confirm,
         #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key,
         RequestContext $request,
         ?string $currency = null,
@@ -32,7 +33,7 @@ final class AgentMcpSquareLinkTools
         ?array $reasons = null,
         bool $replace = false,
     ): array {
-        $body = compact('expected_version', 'square_invoice_id', 'square_invoice_number');
+        $body = compact('expected_version', 'confirm', 'square_invoice_id', 'square_invoice_number');
         foreach (compact('currency', 'match_method', 'score', 'reasons', 'replace') as $name => $value) {
             if ($this->arguments->has($request, $name)) {
                 $body[$name] = $value;
@@ -65,9 +66,10 @@ final class AgentMcpSquareLinkTools
         #[Schema(format: 'uuid')] string $client_id,
         #[Schema(minLength: 64, maxLength: 64)] string $expected_version,
         #[Schema(maxLength: 191)] string $square_customer_id,
+        #[Schema] bool $confirm,
         #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key,
     ): array {
-        return $this->send('PUT', "workspaces/{$workspace_id}/clients/{$client_id}/square-customer", compact('expected_version', 'square_customer_id'), $idempotency_key);
+        return $this->send('PUT', "workspaces/{$workspace_id}/clients/{$client_id}/square-customer", compact('expected_version', 'confirm', 'square_customer_id'), $idempotency_key);
     }
 
     /** @return array<string, mixed> */

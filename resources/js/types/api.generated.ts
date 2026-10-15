@@ -201,7 +201,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Read-only URL preparation: does not reserve idempotency or persist bytes. Both file and workflow write flags and manager permission required. Upload file plus expected_version with same bearer credential and Idempotency-Key to returned URL. */
+        /** @description Authorizes a later upload; preparing a URL does not reserve idempotency or persist bytes. Both file and workflow write flags and manager permission required. Upload file plus expected_version with same bearer credential and Idempotency-Key to returned URL. */
         post: operations['attachments.upload_url'];
         delete?: never;
         options?: never;
@@ -287,7 +287,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Workspace managers only. Requires both AGENT_API_WRITES_ENABLED and AGENT_API_CLIENT_WRITES_ENABLED. Versioned writes also require the corresponding read scope. Enabling automatic delivery requires a delay and a valid billing email or client portal recipient. Existing records require their current opaque expected_version; agreement creation uses the parent client version. Activation and termination require confirm: true. */
+        /** @description Workspace managers only. Requires both AGENT_API_WRITES_ENABLED and AGENT_API_CLIENT_WRITES_ENABLED. Versioned writes also require the corresponding read scope. Enabling automatic delivery requires a delay and a valid billing email or client portal recipient. Existing records require their current opaque expected_version; agreement creation uses the parent client version. Archival requires confirm: true. */
         post: operations['clients.archive'];
         delete?: never;
         options?: never;
@@ -968,7 +968,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Workspace managers only. Link an SVC invoice to its Square invoice, as confirmed by a person: never automatically. Each side has at most one active link: a Square invoice already linked anywhere is refused with 409, and so is an invoice that is already linked unless replace: true re-points it (the replaced link is kept as history). Requires the invoice's current expected_version. When currency is given it must equal the invoice's. While an invoice is linked, or its agreement is billed in Square, SVC never emails it to the client, charges it or offers a payment link for it; issuing it and recording payments stay open. Square ids are checked for shape only; nothing is sent to Square. */
+        /** @description Workspace managers only. Link an SVC invoice to its Square invoice, as confirmed by a person: never automatically. Each side has at most one active link: a Square invoice already linked anywhere is refused with 409, and so is an invoice that is already linked unless replace: true re-points it (the replaced link is kept as history). Requires the invoice's current expected_version and confirm: true. When currency is given it must equal the invoice's. While an invoice is linked, or its agreement is billed in Square, SVC never emails it to the client, charges it or offers a payment link for it; issuing it and recording payments stay open. Square ids are checked for shape only; nothing is sent to Square. */
         post: operations['invoices.square_link'];
         /** @description Workspace managers only. Unlink an invoice from its Square invoice. The link is kept as history and either side may be linked again. Requires the invoice's current expected_version and confirm: true. */
         delete: operations['invoices.square_unlink'];
@@ -1040,7 +1040,7 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        /** @description Owner/admin correction of a received payment's descriptive fields: method, reference and received_on, at least one of which must be given. Requires the version from payments.list and a reason, which is kept in the client history. Omitted fields are unchanged; an explicit null reference clears it. A stale version is refused with 409 and a correction that changes nothing records nothing. Amount, currency, status, refunds, the invoice and processor fields cannot be changed. Never initiates a charge or a refund. Requires both outer workflow and payment write flags. */
+        /** @description Owner/admin correction of a received payment's descriptive fields: method, reference and received_on, at least one of which must be given. Requires confirm: true, the version from payments.list and a reason, which is kept in the client history. Omitted fields are unchanged; an explicit null reference clears it. A stale version is refused with 409 and a correction that changes nothing records nothing. Amount, currency, status, refunds, the invoice and processor fields cannot be changed. Never initiates a charge or a refund. Requires both outer workflow and payment write flags. */
         patch: operations['payments.correct'];
         trace?: never;
     };
@@ -1054,7 +1054,7 @@ export interface paths {
         /** @description List received payments for an explicit invoice_id or company_id (at least one required). Invoice visibility applies; private processor and reconciliation data is excluded. */
         get: operations['payments.list'];
         put?: never;
-        /** @description Owner/admin bookkeeping for money already received. Never initiates a charge. Explicit invoice, minor-unit amount, currency, payment date and method required; reference is optional. Overpayment refused. Requires both outer workflow and payment write flags. */
+        /** @description Owner/admin bookkeeping for money already received. Never initiates a charge. Explicit invoice, minor-unit amount, currency, payment date and method required; reference is optional. Current invoice expected_version and confirm: true required. Overpayment refused. Requires both outer workflow and payment write flags. */
         post: operations['payments.record'];
         delete?: never;
         options?: never;
@@ -1869,6 +1869,11 @@ export interface components {
         CompanySquareCustomerRequest: {
             expected_version: components['schemas']['Version'];
             square_customer_id: components['schemas']['SquareCustomerId'];
+            /**
+             * @description Explicit user confirmation is required.
+             * @constant
+             */
+            confirm: true;
         };
         CompanySquareState: {
             client_id: components['schemas']['Uuid'];
@@ -2534,6 +2539,11 @@ export interface components {
              * @default false
              */
             replace: boolean;
+            /**
+             * @description Explicit user confirmation is required.
+             * @constant
+             */
+            confirm: true;
         };
         InvoiceSquareResponse: {
             data: components['schemas']['InvoiceSquare'];
@@ -2877,6 +2887,11 @@ export interface components {
                   reference?: string | null;
                   /** Format: date */
                   received_on?: string;
+                  /**
+                   * @description Explicit user confirmation is required.
+                   * @constant
+                   */
+                  confirm: true;
               }
             | unknown
             | unknown
@@ -2894,6 +2909,13 @@ export interface components {
             received_on: string;
             method: string;
             reference?: string | null;
+            /**
+             * @description Explicit user confirmation is required.
+             * @constant
+             */
+            confirm: true;
+            /** @description Current invoice version from invoices.get. */
+            expected_version: string;
         };
         ReceivedPaymentResponse: {
             data: components['schemas']['ReceivedPayment'];
@@ -3542,7 +3564,11 @@ export interface components {
         TaskCreateRequest: {
             title: string;
             description?: string | null;
-            is_visible_to_client?: boolean;
+            /**
+             * @description Hidden from clients when omitted. Callers choose visibility explicitly when publishing a task.
+             * @default false
+             */
+            is_visible_to_client: boolean;
         };
         TaskListResponse: {
             data: components['schemas']['Task'][];
@@ -3754,6 +3780,11 @@ export interface components {
         };
         clients_archiveRequest: {
             expected_version: string;
+            /**
+             * @description Explicit user confirmation is required.
+             * @constant
+             */
+            confirm: true;
         };
         clients_createRequest: {
             name: string;
@@ -4269,7 +4300,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Read-only URL preparation: does not reserve idempotency or persist bytes. Both file and workflow write flags and manager permission required. Upload file plus expected_version with same bearer credential and Idempotency-Key to returned URL. */
+            /** @description Authorizes a later upload; preparing a URL does not reserve idempotency or persist bytes. Both file and workflow write flags and manager permission required. Upload file plus expected_version with same bearer credential and Idempotency-Key to returned URL. */
             200: {
                 headers: {
                     [name: string]: unknown;

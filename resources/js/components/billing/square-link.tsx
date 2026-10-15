@@ -57,6 +57,7 @@ export function SquareInvoiceCard({ square }: { square: InvoiceSquareState }) {
         }
 
         const body: ApiSchema<'InvoiceSquareLinkRequest'> = {
+            confirm: true,
             expected_version: square.invoice_version,
             square_invoice_id: squareInvoiceId.trim(),
             square_invoice_number: squareInvoiceNumber.trim(),

@@ -50,7 +50,7 @@ final class AgentSquareLinkController extends Controller
         $this->mutations->run($context->user, $workspace, $context->oauthClientId, 'invoices.square_link', $context->idempotencyKey, ['invoice_id' => $invoice, 'body' => $request->all()], function () use ($request, $workspace, $invoice, $context): array {
             $record = $this->invoice($workspace, $invoice, $context->user);
             $data = $this->validated($request, [
-                'expected_version' => ['required', 'string', 'size:64'],
+                ...$this->confirmedVersion(),
                 'square_invoice_id' => ['required', 'string', 'max:191', 'regex:'.SquareIdentifiers::INVOICE_ID_PATTERN],
                 'square_invoice_number' => ['required', 'string', 'max:191', 'regex:'.SquareIdentifiers::INVOICE_NUMBER_PATTERN],
                 'currency' => ['sometimes', 'string', 'regex:/^[A-Z]{3}$/D'],
@@ -113,7 +113,7 @@ final class AgentSquareLinkController extends Controller
         $this->mutations->run($context->user, $workspace, $context->oauthClientId, 'companies.square_customer.set', $context->idempotencyKey, ['client_id' => $client, 'body' => $request->all()], function () use ($request, $workspace, $client, $context): array {
             $company = $this->company($workspace, $client, $context->user);
             $data = $this->validated($request, [
-                'expected_version' => ['required', 'string', 'size:64'],
+                ...$this->confirmedVersion(),
                 'square_customer_id' => ['required', 'string', 'max:191', 'regex:'.SquareIdentifiers::CUSTOMER_ID_PATTERN],
             ]);
             $this->square->setCustomer($workspace, $company, $context->user, $data['expected_version'], $data['square_customer_id']);
