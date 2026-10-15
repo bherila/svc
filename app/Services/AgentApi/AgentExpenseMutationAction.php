@@ -85,7 +85,7 @@ final class AgentExpenseMutationAction
             /** @var array{expected_version:string} $data */
             $data = Validator::make($payload, ['expected_version' => ['required', 'string', 'size:64']])->validate();
             try {
-                $this->expenses->discard($workspace, $expenseId, $data['expected_version'], draftOnly: true);
+                $this->expenses->discard($workspace, $expenseId, $data['expected_version']);
             } catch (ExpenseTransitionRefused $exception) {
                 abort(409, $exception->getMessage());
             }
@@ -132,7 +132,7 @@ final class AgentExpenseMutationAction
     {
         return [
             'spent_on' => ['required', 'date_format:Y-m-d'], 'amount' => ['required', 'integer', 'min:1'],
-            'currency' => ['required', 'string', 'regex:/^[A-Z]{3}$/'],
+            'currency' => ['required', 'string', 'regex:/^[A-Z]{3}$/D'],
             'description' => ['required', 'string', 'max:2000'], 'project_id' => ['sometimes', 'nullable', 'uuid'],
         ];
     }

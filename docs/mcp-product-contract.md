@@ -298,3 +298,25 @@ This comes from the complete MCP registry and the same discovery gates as
 when its scope and deployment gates permit it, including before the user owns
 a workspace. Invoice descriptions direct callers to this metadata instead of
 claiming payment recording is always available (#382).
+
+## Write preconditions
+
+The generated OpenAPI operations publish `x-agent-write-safety` from the registry.
+Confirmation metadata follows the request body: a required `confirm` is the JSON
+boolean `true`, not a truthy string or number. `payments.record`, `payments.correct`,
+`invoices.square_link`, `companies.square_customer.set` and `clients.archive` require
+confirmation. Recording a received payment also requires the invoice's current
+`expected_version`; it is checked under the invoice lock. A completed idempotent
+retry returns the original payment even after its invoice version advances.
+Draft `time_entries.delete` and `expenses.delete` do not require confirmation.
+
+`attachments.upload_url` and `expenses.receipts.upload_url` authorize writes and
+obey `mcp.write`, with no read-only hint. Preparing a URL has no request body or
+persistent receipt; the subsequent multipart upload requires its own idempotency
+key and parent version.
+
+Task creation defaults to hidden in the API. The website request must send its
+visibility choice explicitly. Both creation surfaces accept titles up to 255
+characters and descriptions up to 10,000. Expense deletion requires draft status
+on every surface; unapprove an approved expense first. Web and API expense facts
+require uppercase three-letter currency codes.

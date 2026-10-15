@@ -83,7 +83,7 @@ final class AgentExpenseApiTest extends TestCase
         $this->getJson($this->url($workspace))->assertOk()->assertJsonCount(0, 'data');
     }
 
-    public function test_browser_mutations_advance_revision_and_agent_deletion_is_narrower_than_browser_discard(): void
+    public function test_browser_mutations_advance_revision_and_both_deletions_require_drafts(): void
     {
         [$workspace, $company, $project, $owner] = $this->fixture();
         $record = $this->record($workspace, $company, $project);
@@ -96,7 +96,7 @@ final class AgentExpenseApiTest extends TestCase
         $this->withHeader('Idempotency-Key', 'expense-browser-stale')->patchJson($this->url($workspace).'/'.$record->public_id, $this->facts() + ['expected_version' => $version])->assertConflict();
         $approved = $expenses->approve($draft, $owner);
         $this->withHeader('Idempotency-Key', 'expense-approved-delete')->deleteJson($this->url($workspace).'/'.$record->public_id, ['expected_version' => AgentApiVersion::for($approved)])->assertConflict();
-        $expenses->discard($approved);
+        $expenses->discard($expenses->unapprove($approved));
         $this->assertSoftDeleted('client_expenses', ['id' => $record->id]);
     }
 

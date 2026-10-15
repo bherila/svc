@@ -41,7 +41,7 @@ class ExpenseFactsRequest extends FormRequest
         return [
             'spent_on' => ['required', 'date'],
             'amount' => ['required', 'integer', 'min:1'],
-            'currency' => ['required', 'string', 'size:3', 'alpha'],
+            'currency' => ['required', 'string', 'regex:/^[A-Z]{3}$/D'],
             'description' => ['required', 'string', 'max:2000'],
             // Absent and null are the same answer here - no project - because
             // an expense belongs to the company and attribution to one of its

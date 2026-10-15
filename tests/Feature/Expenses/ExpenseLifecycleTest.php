@@ -399,6 +399,7 @@ final class ExpenseLifecycleTest extends TestCase
         // exception for.
         $expenses->update($expense, $this->syntheticExpenseFacts('corrected', 30_000));
         $expenses->approve($expense, $approver);
+        $expenses->unapprove($expense);
         $expenses->discard($expense);
 
         $touching = array_values(array_filter(
@@ -417,7 +418,7 @@ final class ExpenseLifecycleTest extends TestCase
             static fn (string $sql): bool => str_starts_with(ltrim(strtolower($sql)), 'update'),
         ));
 
-        $this->assertCount(3, $writes, 'One edit, one transition and one soft delete, or the writes were not inspected.');
+        $this->assertCount(4, $writes, 'One edit, approval, withdrawal and soft delete, or the writes were not inspected.');
     }
 
     public function test_the_scope_still_only_lists_approved_expenses_it_owns(): void
