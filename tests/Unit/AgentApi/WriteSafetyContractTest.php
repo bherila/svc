@@ -56,6 +56,9 @@ final class WriteSafetyContractTest extends TestCase
                 $this->assertNotNull($operation);
                 $this->assertTrue($operation->isIdempotent(), $id);
             }
+            $record = $registry->find('payments.record');
+            $this->assertNotNull($record);
+            $this->assertSame(['payments:record', 'billing:read'], $record->requirement->scopes);
             $read = $registry->find('invoices.get');
             $this->assertNotNull($read);
             $this->assertNull($read->input);
