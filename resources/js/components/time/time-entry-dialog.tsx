@@ -398,7 +398,7 @@ export function TimeEntryDialog({
                         </div>
                     )}
 
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div className="grid grid-cols-1 gap-4">
                         <div className="grid grid-cols-1 gap-1.5">
                             <Label htmlFor="worked_on">Date</Label>
                             <Input

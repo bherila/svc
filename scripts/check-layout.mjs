@@ -530,6 +530,35 @@ try {
                     .getByRole('button', { name: 'Log time', exact: true })
                     .last()
                     .scrollIntoViewIfNeeded();
+                await page
+                    .getByLabel('Duration', { exact: true })
+                    .fill('23:59');
+                await page
+                    .getByLabel('Work performed', { exact: true })
+                    .focus();
+                const durationText = await page
+                    .getByLabel('Duration', { exact: true })
+                    .evaluate((input) => {
+                        const style = getComputedStyle(input);
+                        const context = document
+                            .createElement('canvas')
+                            .getContext('2d');
+                        context.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+
+                        return {
+                            available:
+                                input.clientWidth -
+                                parseFloat(style.paddingLeft) -
+                                parseFloat(style.paddingRight),
+                            required: Math.ceil(
+                                context.measureText(input.value).width,
+                            ),
+                        };
+                    });
+                expect(
+                    durationText.available,
+                    'The duration value must be readable without clipping',
+                ).toBeGreaterThanOrEqual(durationText.required);
                 await capture(screen, 'log-fields', width);
                 await page
                     .getByRole('button', { name: 'Cancel', exact: true })
