@@ -6,6 +6,7 @@ use App\Services\AgentApi\Operations\AgentOperationCatalog;
 use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
 use Bherila\McpLaravelBridge\Capabilities\Effect;
 use Bherila\McpLaravelBridge\Capabilities\IdempotencyKey;
+use Bherila\McpLaravelBridge\Capabilities\SchemaRef;
 use Illuminate\Container\Container;
 use Illuminate\Foundation\Application;
 use PHPUnit\Framework\TestCase;
@@ -34,6 +35,9 @@ final class WriteSafetyContractTest extends TestCase
                 $this->assertSame(IdempotencyKey::HeaderAndArgument, $operation->safety->idempotencyKey, $id);
                 $this->assertSame($version, $operation->safety->expectedVersion, $id);
                 $this->assertSame($confirmation, $operation->safety->confirm, $id);
+                if ($id !== 'clients.archive') {
+                    $this->assertEquals(SchemaRef::requestOf($id), $operation->input, $id);
+                }
             }
             foreach (['attachments.upload_url', 'expenses.receipts.upload_url'] as $id) {
                 $operation = $registry->find($id);
