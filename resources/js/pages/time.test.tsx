@@ -338,6 +338,38 @@ describe('time sheet controls', () => {
         ).toBeChecked();
     });
 
+    it('opens logging on the project supplied by the server', async () => {
+        const data = { ...props(), log_project_id: 'project-2' };
+        data.companies[0].projects.push({
+            id: 'project-2',
+            name: 'Synthetic second project',
+            can_log_time: true,
+            log_time_url: '/synthetic/log-time',
+            tasks: [],
+        });
+        render(<TimeSheet {...data} />);
+        expect(screen.getByRole('dialog')).toBeInTheDocument();
+        expect(
+            screen.getByRole('combobox', { name: 'Project' }),
+        ).toHaveTextContent('Synthetic second project');
+        const user = userEvent.setup();
+        await user.type(
+            screen.getByLabelText('Work performed'),
+            'Synthetic project-specific work',
+        );
+        await user.click(
+            within(screen.getByRole('dialog')).getByRole('button', {
+                name: 'Log time',
+            }),
+        );
+        expect(apiRequest).toHaveBeenCalledWith(
+            'POST',
+            '/synthetic/log-time',
+            { entries: [expect.objectContaining({ project_id: 'project-2' })] },
+            expect.any(String),
+        );
+    });
+
     it('keeps bulk approval single-flight until the request finishes', async () => {
         const user = userEvent.setup();
         render(<TimeSheet {...props()} />);

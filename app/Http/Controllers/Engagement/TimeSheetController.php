@@ -183,6 +183,13 @@ class TimeSheetController extends Controller
                 ->where('status', 'draft')->where('invoice_kind', InvoiceKind::AdHoc->value)->firstOrFail();
         }
 
+        $logProject = null;
+        if ($request->filled('log_project')) {
+            $request->validate(['log_project' => ['required', 'uuid']]);
+            $logProject = $selectedCompany?->projects->firstWhere('public_id', $request->input('log_project'));
+            abort_unless($logProject instanceof ClientProject && ($permissions[$logProject->id]['log'] ?? false), 404);
+        }
+
         return Inertia::render('time', [
             'workspace' => [
                 'id' => $workspace->public_id,
@@ -192,6 +199,7 @@ class TimeSheetController extends Controller
             ],
             // Named by the request that enforces it, so the page cannot offer
             // a selection the write will refuse.
+            'log_project_id' => $logProject?->public_id,
             'approval_limit' => ApproveTimeEntriesRequest::MAX_ENTRIES,
             'actions' => ['approve' => route('agent-api.v1.time-entries.approve', $workspace, absolute: false)],
             'invoice_draft' => $isManager ? [

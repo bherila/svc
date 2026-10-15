@@ -166,7 +166,7 @@ class WorkspaceOperationsController extends Controller
                 $projects[] = [
                     'id' => $project->public_id,
                     'name' => $project->name,
-                    'time_url' => route('clients.time', [$workspace, $company], absolute: false),
+                    'time_url' => route('clients.time', [$workspace, $company, 'log_project' => $project->public_id], absolute: false),
                     'time_entries' => ($timeEntriesByProject->get($project->id) ?? collect())
                         ->map(fn (ClientTimeEntry $entry): array => [
                             'id' => $entry->public_id,

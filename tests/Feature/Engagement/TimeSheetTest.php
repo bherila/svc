@@ -82,6 +82,18 @@ class TimeSheetTest extends TestCase
             ->where('months.0.entries.0.delete_url', route('agent-api.v1.time-entries.destroy', [$this->workspace, $entry->public_id], absolute: false)));
     }
 
+    public function test_project_logging_links_open_the_selected_project_and_refuse_foreign_context(): void
+    {
+        $project = $this->otherProject();
+        $url = route('clients.time', [$this->workspace, $this->company, 'log_project' => $project->public_id], absolute: false);
+        $this->actingAs($this->manager, 'web')->get(route('workspaces.operations', $this->workspace))
+            ->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->where('workspace.clients.0.projects', fn ($rows): bool => collect($rows)->firstWhere('id', $project->public_id)['time_url'] === $url));
+        $this->get($url)->assertOk()->assertInertia(fn (Assert $page) => $page->where('log_project_id', $project->public_id));
+        $foreign = $this->foreignWorkspace();
+        $this->get(route('clients.time', [$this->workspace, $this->company, 'log_project' => $foreign['project']->public_id]))->assertNotFound();
+    }
+
     public function test_manager_can_draft_only_eligible_unallocated_time_from_the_sheet(): void
     {
         $this->travelTo('2026-07-20');

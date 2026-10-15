@@ -46,6 +46,7 @@ function draftFor(
     company: CompanyOption,
     entry: TimeEntry | null,
     timezone: string,
+    initialProjectId: string | null,
 ): Draft {
     if (entry !== null) {
         return {
@@ -61,7 +62,11 @@ function draftFor(
         };
     }
 
-    const loggable = company.projects.find((project) => project.can_log_time);
+    const loggable =
+        company.projects.find(
+            (project) =>
+                project.can_log_time && project.id === initialProjectId,
+        ) ?? company.projects.find((project) => project.can_log_time);
 
     return {
         project_id: loggable?.id ?? '',
@@ -88,19 +93,21 @@ function draftFor(
  */
 export function TimeEntryDialog({
     timezone,
+    initialProjectId = null,
     company,
     entry,
     open,
     onOpenChange,
 }: {
     timezone: string;
+    initialProjectId?: string | null;
     company: CompanyOption;
     entry: TimeEntry | null;
     open: boolean;
     onOpenChange: (open: boolean) => void;
 }) {
     const [draft, setDraft] = useState<Draft>(() =>
-        draftFor(company, entry, timezone),
+        draftFor(company, entry, timezone, initialProjectId),
     );
     const [saving, setSaving] = useState(false);
     const attempt = useRef<{ body: string; key: string } | null>(null);

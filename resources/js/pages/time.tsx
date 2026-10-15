@@ -379,11 +379,12 @@ export default function TimeSheet({
     companies,
     months,
     actions,
+    log_project_id: logProjectId = null,
     approval_limit: approvalLimit,
     invoice_draft: invoiceDraft,
 }: TimeSheetProps) {
     const [dialogEntry, setDialogEntry] = useState<TimeEntry | null>(null);
-    const [dialogOpen, setDialogOpen] = useState(false);
+    const [dialogOpen, setDialogOpen] = useState(logProjectId !== null);
     const [pendingDelete, setPendingDelete] = useState<TimeEntry | null>(null);
     const [selected, setSelected] = useState<string[]>([]);
     const [selectionMode, setSelectionMode] = useState<'approve' | 'invoice'>(
@@ -691,6 +692,7 @@ export default function TimeSheet({
                 <TimeEntryDialog
                     key={dialogEntry?.id ?? 'new'}
                     timezone={workspace.timezone}
+                    initialProjectId={logProjectId}
                     company={company}
                     entry={dialogEntry}
                     open={dialogOpen}

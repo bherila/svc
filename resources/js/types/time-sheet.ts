@@ -144,6 +144,7 @@ export type TimeSheetProps = {
     };
     /** How many entries one approval request may carry. */
     approval_limit: number;
+    log_project_id?: string | null;
     actions: { approve: string };
     invoice_draft: { url: string; target?: DraftTimeTarget | null } | null;
     /**
