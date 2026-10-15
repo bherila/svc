@@ -305,7 +305,7 @@ The generated OpenAPI operations publish `x-agent-write-safety` from the registr
 Confirmation metadata follows the request body: a required `confirm` is the JSON
 boolean `true`, not a truthy string or number. `payments.record`, `payments.correct`,
 `invoices.square_link`, `companies.square_customer.set` and `clients.archive` require
-confirmation. Recording a received payment also requires the invoice's current
+confirmation. Recording a received payment also requires `billing:read` to obtain the invoice's current
 `expected_version`; it is checked under the invoice lock. A completed idempotent
 retry returns the original payment even after its invoice version advances.
 Draft `time_entries.delete` and `expenses.delete` do not require confirmation.

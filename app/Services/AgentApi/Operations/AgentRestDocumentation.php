@@ -944,8 +944,8 @@ final class AgentRestDocumentation
             ],
             'payments.record' => [
                 'method' => 'POST',
-                'scopes' => ['payments:record'],
-                'description' => 'Owner/admin bookkeeping for money already received. Never initiates a charge. Explicit invoice, minor-unit amount, currency, payment date and method required; reference is optional. Current invoice expected_version and confirm: true required. Overpayment refused. Requires both outer workflow and payment write flags.',
+                'scopes' => ['payments:record', 'billing:read'],
+                'description' => 'Owner/admin bookkeeping for money already received. Never initiates a charge. Explicit invoice, minor-unit amount, currency, payment date and method required; reference is optional. Read invoices.get with billing:read for the current invoice expected_version; confirm: true is required. Overpayment refused. Requires both outer workflow and payment write flags.',
                 'parameters' => ['WorkspaceId', 'IdempotencyKey'],
                 'request' => 'ReceivedPaymentRecordRequest',
                 'response' => 'ReceivedPaymentBatchResponse',

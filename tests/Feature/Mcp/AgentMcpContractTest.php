@@ -258,7 +258,7 @@ final class AgentMcpContractTest extends TestCase
             'operations.summary' => ['identity:read'],
             'payments.correct' => ['payments:record'],
             'payments.list' => ['payments:read'],
-            'payments.record' => ['payments:record'],
+            'payments.record' => ['payments:record', 'billing:read'],
             'projects.archive' => ['projects:write', 'projects:read'],
             'projects.create' => ['projects:write', 'clients:read'],
             'projects.get' => ['projects:read'],

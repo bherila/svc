@@ -1054,7 +1054,7 @@ export interface paths {
         /** @description List received payments for an explicit invoice_id or company_id (at least one required). Invoice visibility applies; private processor and reconciliation data is excluded. */
         get: operations['payments.list'];
         put?: never;
-        /** @description Owner/admin bookkeeping for money already received. Never initiates a charge. Explicit invoice, minor-unit amount, currency, payment date and method required; reference is optional. Current invoice expected_version and confirm: true required. Overpayment refused. Requires both outer workflow and payment write flags. */
+        /** @description Owner/admin bookkeeping for money already received. Never initiates a charge. Explicit invoice, minor-unit amount, currency, payment date and method required; reference is optional. Read invoices.get with billing:read for the current invoice expected_version; confirm: true is required. Overpayment refused. Requires both outer workflow and payment write flags. */
         post: operations['payments.record'];
         delete?: never;
         options?: never;
