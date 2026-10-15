@@ -1,4 +1,11 @@
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import {
+    act,
+    fireEvent,
+    render,
+    screen,
+    waitFor,
+    within,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -276,6 +283,59 @@ describe('time sheet controls', () => {
         );
 
         expect(screen.queryByText(/Subcontractor ·/)).not.toBeInTheDocument();
+    });
+
+    it('approves only the supplied batch limit and retains the remaining selection', async () => {
+        const data = props();
+        data.approval_limit = 2;
+        data.months[0].entries = [1, 2, 3].map((index) =>
+            entry({
+                id: `entry-${index}`,
+                description: `Synthetic batch ${index}`,
+                version: `version-${index}`,
+            }),
+        );
+        vi.mocked(apiRequest).mockResolvedValueOnce({
+            ok: true,
+            status: 200,
+            data: { approved_ids: ['entry-1', 'entry-2'] },
+        });
+        render(<TimeSheet {...data} />);
+        const user = userEvent.setup();
+
+        for (const index of [1, 2, 3]) {
+            await user.click(
+                screen.getByRole('checkbox', {
+                    name: `Select Synthetic batch ${index}`,
+                }),
+            );
+        }
+
+        await user.click(
+            screen.getByRole('button', { name: 'Approve 2 of 3' }),
+        );
+        expect(apiRequest).toHaveBeenCalledWith(
+            'POST',
+            '/synthetic/approve-time',
+            {
+                entries: [
+                    { id: 'entry-1', expected_version: 'version-1' },
+                    { id: 'entry-2', expected_version: 'version-2' },
+                ],
+            },
+        );
+        await waitFor(() => expect(inertia.reload).toHaveBeenCalledOnce());
+        await act(async () => inertia.reload.mock.calls[0][0].onFinish());
+        expect(screen.getByText(/1 selected/)).toBeInTheDocument();
+        expect(
+            screen.getByRole('checkbox', { name: 'Select Synthetic batch 1' }),
+        ).not.toBeChecked();
+        expect(
+            screen.getByRole('checkbox', { name: 'Select Synthetic batch 2' }),
+        ).not.toBeChecked();
+        expect(
+            screen.getByRole('checkbox', { name: 'Select Synthetic batch 3' }),
+        ).toBeChecked();
     });
 
     it('keeps bulk approval single-flight until the request finishes', async () => {

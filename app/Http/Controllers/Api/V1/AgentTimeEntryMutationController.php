@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Engagement\ApproveTimeEntriesRequest;
 use App\Models\ClientTimeEntry;
 use App\Models\Workspace;
 use App\Services\AgentApi\AgentMutationContextFactory;
@@ -146,7 +147,7 @@ final class AgentTimeEntryMutationController extends Controller
             $context->idempotencyKey,
             $request->all(),
             function () use ($request, $workspace, $time, $context): array {
-                $data = $request->validate(['entries' => ['required', 'array', 'min:1', 'max:100'], 'entries.*' => ['required', 'array:id,expected_version,billing_rate_amount,currency'], 'entries.*.id' => ['required', 'uuid', 'distinct'], 'entries.*.expected_version' => ['required', 'string', 'size:64'], 'entries.*.billing_rate_amount' => ['sometimes', 'integer', 'min:0'], 'entries.*.currency' => ['sometimes', 'string', 'size:3', 'regex:/^[A-Z]{3}$/']]);
+                $data = $request->validate(['entries' => ['required', 'array', 'min:1', 'max:'.ApproveTimeEntriesRequest::MAX_ENTRIES], 'entries.*' => ['required', 'array:id,expected_version,billing_rate_amount,currency'], 'entries.*.id' => ['required', 'uuid', 'distinct'], 'entries.*.expected_version' => ['required', 'string', 'size:64'], 'entries.*.billing_rate_amount' => ['sometimes', 'integer', 'min:0'], 'entries.*.currency' => ['sometimes', 'string', 'size:3', 'regex:/^[A-Z]{3}$/']]);
                 $time->approve($workspace, $context->user, $data['entries']);
 
                 return array_column($data['entries'], 'id');

@@ -2,7 +2,6 @@
 
 namespace Tests\Feature\Engagement;
 
-use App\Http\Requests\Engagement\ApproveTimeEntriesRequest;
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
@@ -2794,23 +2793,22 @@ class TimeSheetTest extends TestCase
     public function test_the_page_is_told_the_approval_limit_the_request_enforces(): void
     {
         $this->travelTo('2026-07-20');
-
         $this->actingAs($this->manager, 'web')
             ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
-            ->assertOk()
-            ->assertInertia(fn (Assert $page) => $page
-                ->where('approval_limit', ApproveTimeEntriesRequest::MAX_ENTRIES));
+            ->assertOk()->assertInertia(fn (Assert $page) => $page->where('approval_limit', 100));
 
-        // And the request really does refuse one more than it advertises.
-        $entries = [];
+        $records = collect(range(1, 101))->map(fn () => $this->entry(['is_billable' => false]));
+        $entries = $records->map(fn (ClientTimeEntry $entry): array => [
+            'id' => $entry->public_id, 'expected_version' => AgentApiVersion::for($entry),
+        ])->all();
+        $url = "/api/v1/workspaces/{$this->workspace->public_id}/time-entries/approve";
+        $this->timePost($url, ['entries' => $entries])->assertJsonValidationErrors('entries');
+        $this->assertSame(101, ClientTimeEntry::query()->where('workspace_id', $this->workspace->id)->where('status', 'draft')->count());
 
-        for ($i = 0; $i <= ApproveTimeEntriesRequest::MAX_ENTRIES; $i++) {
-            $entries[] = ['id' => 'synthetic-'.$i, 'expected_version' => 'v'];
-        }
-
-        $this->actingAs($this->manager, 'web')
-            ->timePost("/api/v1/workspaces/{$this->workspace->public_id}/time-entries/approve", ['entries' => $entries])
-            ->assertJsonValidationErrors('entries');
+        $this->timePost($url, ['entries' => array_slice($entries, 0, 100)])->assertOk();
+        $this->assertSame(100, ClientTimeEntry::query()->where('workspace_id', $this->workspace->id)->where('status', 'approved')->count());
+        $this->timePost($url, ['entries' => array_slice($entries, 100)])->assertOk();
+        $this->assertSame(101, ClientTimeEntry::query()->where('workspace_id', $this->workspace->id)->where('status', 'approved')->count());
     }
 
     /**

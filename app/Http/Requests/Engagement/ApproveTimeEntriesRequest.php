@@ -18,7 +18,7 @@ class ApproveTimeEntriesRequest extends FormRequest
      * selection the page allows and the request refuses is rejected whole,
      * and the operator is given no way to make it smaller.
      */
-    public const MAX_ENTRIES = 200;
+    public const MAX_ENTRIES = 100;
 
     /** @return array<string, list<mixed>> */
     public function rules(): array
