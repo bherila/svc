@@ -3564,11 +3564,8 @@ export interface components {
         TaskCreateRequest: {
             title: string;
             description?: string | null;
-            /**
-             * @description Hidden from clients when omitted. Callers choose visibility explicitly when publishing a task.
-             * @default false
-             */
-            is_visible_to_client: boolean;
+            /** @description Hidden from clients when omitted. Callers choose visibility explicitly when publishing a task. */
+            is_visible_to_client?: boolean;
         };
         TaskListResponse: {
             data: components['schemas']['Task'][];

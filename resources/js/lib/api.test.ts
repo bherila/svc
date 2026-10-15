@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { apiRequest } from '@/lib/api';
+import { apiRequest, type ApiSchema } from '@/lib/api';
 
 function respond(status: number, body: unknown) {
     vi.stubGlobal(
@@ -12,6 +12,19 @@ function respond(status: number, body: unknown) {
 
 describe('apiRequest refusals', () => {
     afterEach(() => vi.unstubAllGlobals());
+
+    it('accepts the hidden-by-default task request without an explicit visibility field', async () => {
+        const body: ApiSchema<'TaskCreateRequest'> = {
+            title: 'Synthetic hidden task',
+        };
+        respond(201, { data: { is_visible_to_client: false } });
+        const result = await apiRequest('POST', '/api/v1/example', body);
+        expect(result.ok).toBe(true);
+        const init = vi.mocked(fetch).mock.calls[0][1];
+        expect(JSON.parse(String(init?.body))).toEqual({
+            title: 'Synthetic hidden task',
+        });
+    });
 
     it.each([
         [401, { message: 'Unauthenticated.' }],

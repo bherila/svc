@@ -16016,7 +16016,6 @@
                     },
                     "is_visible_to_client": {
                         "type": "boolean",
-                        "default": false,
                         "description": "Hidden from clients when omitted. Callers choose visibility explicitly when publishing a task."
                     }
                 }
