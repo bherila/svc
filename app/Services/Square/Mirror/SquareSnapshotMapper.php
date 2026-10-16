@@ -4,6 +4,7 @@ namespace App\Services\Square\Mirror;
 
 use App\Services\Square\SquareClient;
 use App\Services\Square\SquarePresenter;
+use App\Support\Square\SquareIdentifiers;
 use Carbon\CarbonImmutable;
 use Throwable;
 
@@ -35,7 +36,7 @@ final class SquareSnapshotMapper
     public function invoice(array $invoice): ?array
     {
         $presented = $this->presenter->invoice($invoice);
-        $id = self::id($presented['id']);
+        $id = is_string($presented['id']) && SquareIdentifiers::isInvoiceId($presented['id']) ? $presented['id'] : null;
         $status = is_string($presented['status']) && preg_match(self::STATUS, $presented['status']) === 1 ? $presented['status'] : null;
         if ($id === null || $status === null) {
             return null;

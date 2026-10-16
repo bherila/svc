@@ -21,8 +21,16 @@ use App\Services\Square\SquareInvoiceSeries;
  */
 final class SquareIdentifiers
 {
-    /** Square object ids: letters, digits and `:`, `_`, `-`; invoices carry a colon. */
-    public const string INVOICE_ID_PATTERN = '/^[A-Za-z0-9][A-Za-z0-9:_-]{0,190}$/D';
+    /**
+     * Opaque invoice ids, including legacy leading underscores and padding.
+     * 191 ASCII bytes matches link storage and the public link contract; the
+     * mirror's 192-byte column is a superset. Never normalize an id.
+     * Square documents no invoice-id alphabet: this is SVC's bounded input
+     * contract, not a claim that other Square resources use this shape.
+     */
+    public const string INVOICE_ID_SCHEMA_PATTERN = '^[A-Za-z0-9_][A-Za-z0-9:_=\-]{0,190}$';
+
+    public const string INVOICE_ID_PATTERN = '/'.self::INVOICE_ID_SCHEMA_PATTERN.'/D';
 
     public const string CUSTOMER_ID_PATTERN = '/^[A-Za-z0-9][A-Za-z0-9_-]{0,190}$/D';
 

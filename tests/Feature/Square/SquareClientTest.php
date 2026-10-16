@@ -28,6 +28,33 @@ final class SquareClientTest extends TestCase
         $this->connectSquare(null, ['workspace' => 'synthetic-workspace']);
     }
 
+    public function test_invoice_id_shapes_are_resource_specific_and_never_repaired(): void
+    {
+        Http::fake(['*' => Http::response(['ok' => true])]);
+        $client = app(SquareClient::class);
+        foreach (['_synthetic_legacy_invoice', 'SyntheticLegacyInvoice==', '_'.str_repeat('x', 188).'=='] as $id) {
+            $client->getInvoice($id);
+            Http::assertSent(static fn (Request $request): bool => $request->url() === self::SQUARE_BASE.'/v2/invoices/'.rawurlencode($id));
+            foreach ([$client->retrieveCustomer(...), $client->retrieveOrder(...), $client->getPayment(...)] as $read) {
+                try {
+                    $read($id);
+                    $this->fail('Invoice-only shapes must not broaden other resource ids.');
+                } catch (InvalidArgumentException) {
+                    $this->addToAssertionCount(1);
+                }
+            }
+        }
+        foreach ([' synthetic', 'synthetic ', 'synthetic%3D', 'synthetic/path', 'synthetic?query', 'synthetic#fragment', "synthetic\n", str_repeat('x', 192)] as $id) {
+            try {
+                $client->getInvoice($id);
+                $this->fail('Invalid ids must be refused without normalization.');
+            } catch (InvalidArgumentException) {
+                $this->addToAssertionCount(1);
+            }
+        }
+        Http::assertSentCount(3);
+    }
+
     public function test_every_read_sends_the_pinned_version_and_credential_to_an_allow_listed_endpoint_only(): void
     {
         Http::fake([self::SQUARE_BASE.'/*' => Http::response(['ok' => true])]);
