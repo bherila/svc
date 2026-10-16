@@ -61,6 +61,24 @@ final class SquareLinkApiTest extends TestCase
         $this->assertDatabaseCount('agent_mutation_receipts', 0);
     }
 
+    public function test_opaque_invoice_links_preserve_ids_over_rest_and_mcp(): void
+    {
+        foreach (['rest', 'mcp'] as $transport) {
+            foreach (['_synthetic_legacy_invoice', 'SyntheticLegacyInvoice=='] as $id) {
+                [$workspace, $owner, , $invoice] = $this->fixture();
+                $this->actingAsMcp($owner, self::SCOPES);
+                $linked = $this->success($transport, 'invoices.square_link', $workspace, ['invoice_id' => $invoice->public_id], [
+                    'expected_version' => AgentApiVersion::for($invoice),
+                    'square_invoice_id' => $id,
+                    'square_invoice_number' => '000001',
+                    'match_method' => 'manual',
+                ], 'synthetic-opaque-link');
+                $this->assertSame($id, $linked['data']['link']['square_invoice_id']);
+                $this->assertSame($id, InvoiceSquareLink::query()->where('workspace_id', $workspace->id)->sole()->square_invoice_id);
+            }
+        }
+    }
+
     /** @return iterable<string, array{string}> */
     public static function transports(): iterable
     {

@@ -8,6 +8,7 @@ use App\Services\Square\SquareConfiguration;
 use App\Services\Square\SquarePaymentReconciler;
 use App\Services\Square\SquareRequestFailed;
 use App\Services\Square\SquareWebhookReceipts;
+use App\Support\Square\SquareIdentifiers;
 use DomainException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -43,7 +44,7 @@ final class SquareWebhookController
         $id = $event['event_id'] ?? null;
         $hint = $type === 'refund.updated' ? data_get($event, 'data.object.refund.payment_id') : data_get($event, 'data.id');
         if (! is_string($id) || preg_match('/^[A-Za-z0-9][A-Za-z0-9:_-]{0,254}$/D', $id) !== 1
-            || ! is_string($hint) || preg_match(SquareClient::ID_PATTERN, $hint) !== 1) {
+            || ! is_string($hint) || preg_match(str_starts_with($type, 'invoice.') ? SquareIdentifiers::INVOICE_ID_PATTERN : SquareClient::ID_PATTERN, $hint) !== 1) {
             return response()->json(['message' => 'Invalid webhook envelope.'], 400);
         }
         $configuration = SquareConfiguration::fromConfig();

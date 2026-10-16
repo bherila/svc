@@ -2,6 +2,7 @@
 
 namespace App\Services\Square;
 
+use App\Support\Square\SquareIdentifiers;
 use GuzzleHttp\Exception\TransferException;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Factory as HttpFactory;
@@ -23,7 +24,7 @@ use InvalidArgumentException;
  */
 final class SquareClient
 {
-    /** Square ids are opaque: letters, digits, and `:`, `_` or `-` (e.g. `inv:0-...`). */
+    /** Non-invoice Square ids are opaque: letters, digits, and `:`, `_` or `-` (e.g. `inv:0-...`). */
     public const string ID_PATTERN = '/^[A-Za-z0-9][A-Za-z0-9:_\-]{0,191}$/D';
 
     /** Square cursors are opaque, printable and unspaced. */
@@ -149,7 +150,7 @@ final class SquareClient
         if ($endpoint->takesId() !== ($id !== null)) {
             throw new InvalidArgumentException('This Square endpoint takes exactly one id.');
         }
-        $path = $id === null ? $endpoint->path() : str_replace('{id}', rawurlencode($this->id($id)), $endpoint->path());
+        $path = $id === null ? $endpoint->path() : str_replace('{id}', rawurlencode($endpoint === SquareEndpoint::GetInvoice ? $this->invoiceId($id) : $this->id($id)), $endpoint->path());
         $query = array_filter($query, static fn (mixed $value): bool => $value !== null);
 
         for ($attempt = 1; ; $attempt++) {
@@ -172,13 +173,13 @@ final class SquareClient
                     continue;
                 }
 
-                throw SquareRequestFailed::unavailable();
+                throw SquareRequestFailed::unavailable(SquareReadFailureReason::Transport);
             }
 
             if ($response->successful()) {
                 $decoded = $response->json();
                 if (! is_array($decoded)) {
-                    throw SquareRequestFailed::unreadable();
+                    throw SquareRequestFailed::unreadable(SquareReadFailureReason::MalformedJson);
                 }
 
                 return $decoded;
@@ -235,6 +236,15 @@ final class SquareClient
 
         // A redirect (never followed) or anything else Square does not send.
         return SquareRequestFailed::unreadable();
+    }
+
+    private function invoiceId(string $id): string
+    {
+        if (! SquareIdentifiers::isInvoiceId($id)) {
+            throw new InvalidArgumentException('Not a Square invoice id.');
+        }
+
+        return $id;
     }
 
     private function id(string $id): string

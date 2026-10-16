@@ -6183,8 +6183,8 @@
                         "schema": {
                             "type": "string",
                             "minLength": 1,
-                            "maxLength": 192,
-                            "pattern": "^[A-Za-z0-9][A-Za-z0-9:_-]*$"
+                            "maxLength": 191,
+                            "pattern": "^[A-Za-z0-9_][A-Za-z0-9:_=\\-]{0,190}$"
                         }
                     }
                 ],
@@ -13819,7 +13819,7 @@
             "SquareInvoiceId": {
                 "type": "string",
                 "maxLength": 191,
-                "pattern": "^[A-Za-z0-9][A-Za-z0-9:_-]{0,190}$",
+                "pattern": "^[A-Za-z0-9_][A-Za-z0-9:_=\\-]{0,190}$",
                 "description": "A Square invoice id, held as an opaque string. SVC checks its shape only; it never resolves it against Square."
             },
             "SquareInvoiceLink": {

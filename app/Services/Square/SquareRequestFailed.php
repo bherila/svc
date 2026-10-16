@@ -23,6 +23,7 @@ final class SquareRequestFailed extends HttpException
         public readonly ?string $squareCategory = null,
         public readonly ?string $squareCode = null,
         array $headers = [],
+        public readonly ?SquareReadFailureReason $reason = null,
     ) {
         parent::__construct($status, $message, null, $headers);
     }
@@ -68,14 +69,14 @@ final class SquareRequestFailed extends HttpException
         return new self(429, sprintf('Too many Square reads for this workspace. Retry in %d seconds.', $seconds), null, null, ['Retry-After' => (string) $seconds]);
     }
 
-    public static function unavailable(): self
+    public static function unavailable(?SquareReadFailureReason $reason = null): self
     {
-        return new self(503, 'Square is unavailable. Retry later.', 'API_ERROR', 'SERVICE_UNAVAILABLE', ['Retry-After' => '30']);
+        return new self(503, 'Square is unavailable. Retry later.', 'API_ERROR', 'SERVICE_UNAVAILABLE', ['Retry-After' => '30'], $reason);
     }
 
-    public static function unreadable(): self
+    public static function unreadable(?SquareReadFailureReason $reason = null): self
     {
-        return new self(502, 'Square returned a response svc cannot read.');
+        return new self(502, 'Square returned a response svc cannot read.', reason: $reason);
     }
 
     /** Only record-specific failures let a reconciliation sweep keep reading. */
