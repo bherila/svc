@@ -1050,6 +1050,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    '/workspaces/{workspace}/invoices/{invoice}/square-reconcile': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Workspace managers only. Reconcile one linked invoice with Square now, rather than waiting for a webhook or the sweep every 15 minutes: the same read-only refetch of the Square invoice, its order and payments, then completed payments recorded through the received-payment service with provider square and the Square payment id, and refunds applied as corrections. Repeating it is safe: a Square payment is recorded once and refunds are cumulative, and a repeated idempotency key reconciles again and returns the invoice as it now stands. An invoice with no active Square link is refused with 422, as are Square facts the ledger refuses (a draft or void invoice, a currency mismatch, an over-balance payment). Nothing is created, changed or paid in Square. Returns the invoice's Square state; read invoices.get for its balance. */
+        post: operations['invoices.square_reconcile'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     '/workspaces/{workspace}/invoices/{invoice}/details': {
         parameters: {
             query?: never;
@@ -2906,6 +2923,8 @@ export interface components {
              */
             confirm: true;
         };
+        /** @description No fields: the invoice's active Square link names what to reconcile. */
+        InvoiceSquareReconcileRequest: Record<string, never>;
         InvoiceSquareResponse: {
             data: components['schemas']['InvoiceSquare'];
         };
@@ -7588,6 +7607,36 @@ export interface operations {
         };
         responses: {
             /** @description Invoice unlinked from Square */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['InvoiceSquareResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'invoices.square_reconcile': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                invoice: components['parameters']['InvoiceId'];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['InvoiceSquareReconcileRequest'];
+            };
+        };
+        responses: {
+            /** @description The invoice after reconciliation */
             200: {
                 headers: {
                     [name: string]: unknown;

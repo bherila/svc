@@ -69,6 +69,22 @@ final class AgentMcpBillingAuditTools
         return ['data' => $this->audits->openingRollover($context->principal->subject, $context->workspace)];
     }
 
+    /** @return array{data: array<string, mixed>} */
+    public function scheduleGenerationPreflight(#[Schema(format: 'uuid')] string $workspace_id): array
+    {
+        $context = $this->workspace($workspace_id);
+
+        return ['data' => $this->audits->scheduleGenerationPreflight($context->principal->subject, $context->workspace)];
+    }
+
+    /** @return array{data: array<string, int>} */
+    public function unlinkedProposalAgreements(#[Schema(format: 'uuid')] string $workspace_id): array
+    {
+        $context = $this->workspace($workspace_id);
+
+        return ['data' => $this->audits->unlinkedProposalAgreements($context->principal->subject, $context->workspace)];
+    }
+
     private function workspace(string $workspaceId): McpRequestContext
     {
         $context = $this->requestContext ?? throw new LogicException('MCP billing audit tools require a request context.');

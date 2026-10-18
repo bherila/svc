@@ -1636,6 +1636,16 @@ final class AgentRestDocumentation
                 'response_description' => 'Imported client and optional draft agreement',
                 'extensions' => ['x-mcp-tool' => 'square.import_customer', 'x-svc-flags' => ['AGENT_API_WRITES_ENABLED', 'AGENT_API_CLIENT_WRITES_ENABLED']],
             ],
+            'invoices.square_reconcile' => [
+                'method' => 'POST',
+                'scopes' => ['billing:write', 'billing:read'],
+                'description' => 'Workspace managers only. Reconcile one linked invoice with Square now, rather than waiting for a webhook or the sweep every 15 minutes: the same read-only refetch of the Square invoice, its order and payments, then completed payments recorded through the received-payment service with provider square and the Square payment id, and refunds applied as corrections. Repeating it is safe: a Square payment is recorded once and refunds are cumulative, and a repeated idempotency key reconciles again and returns the invoice as it now stands. An invoice with no active Square link is refused with 422, as are Square facts the ledger refuses (a draft or void invoice, a currency mismatch, an over-balance payment). Nothing is created, changed or paid in Square. Returns the invoice\'s Square state; read invoices.get for its balance.',
+                'parameters' => ['WorkspaceId', 'InvoiceId', 'IdempotencyKey'],
+                'request' => 'InvoiceSquareReconcileRequest',
+                'response' => 'InvoiceSquareResponse',
+                'response_description' => 'The invoice after reconciliation',
+                'extensions' => ['x-mcp-tool' => 'invoices.square_reconcile', 'x-svc-flags' => ['AGENT_API_WRITES_ENABLED']],
+            ],
             'square.sync' => [
                 'method' => 'POST',
                 'scopes' => ['billing:write'],

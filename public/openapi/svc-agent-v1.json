@@ -6069,6 +6069,69 @@
                 ]
             }
         },
+        "/workspaces/{workspace}/invoices/{invoice}/square-reconcile": {
+            "post": {
+                "operationId": "invoices.square_reconcile",
+                "description": "Workspace managers only. Reconcile one linked invoice with Square now, rather than waiting for a webhook or the sweep every 15 minutes: the same read-only refetch of the Square invoice, its order and payments, then completed payments recorded through the received-payment service with provider square and the Square payment id, and refunds applied as corrections. Repeating it is safe: a Square payment is recorded once and refunds are cumulative, and a repeated idempotency key reconciles again and returns the invoice as it now stands. An invoice with no active Square link is refused with 422, as are Square facts the ledger refuses (a draft or void invoice, a currency mismatch, an over-balance payment). Nothing is created, changed or paid in Square. Returns the invoice's Square state; read invoices.get for its balance.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "billing:write",
+                            "billing:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/InvoiceSquareReconcileRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/InvoiceId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The invoice after reconciliation",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/InvoiceSquareResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "local_write",
+                "x-agent-idempotent": true,
+                "x-agent-write-safety": {
+                    "idempotency_key": "header_and_argument"
+                },
+                "x-agent-mcp-tool": "invoices.square_reconcile",
+                "x-mcp-tool": "invoices.square_reconcile",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED"
+                ]
+            }
+        },
         "/workspaces/{workspace}/invoices/{invoice}/details": {
             "patch": {
                 "operationId": "invoices.update_details",
@@ -13912,6 +13975,12 @@
                         "description": "Explicit user confirmation is required."
                     }
                 }
+            },
+            "InvoiceSquareReconcileRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "No fields: the invoice's active Square link names what to reconcile.",
+                "properties": {}
             },
             "InvoiceSquareResponse": {
                 "type": "object",

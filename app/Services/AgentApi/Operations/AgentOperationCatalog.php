@@ -140,6 +140,7 @@ final class AgentOperationCatalog
         'invoices.send' => ['invoices.send', '/workspaces/{workspace}/invoices/{invoice}/send', [200]],
         'invoices.square_candidates' => ['invoices.square-candidates.index', '/workspaces/{workspace}/invoices/{invoice}/square-candidates', [200]],
         'invoices.square_link' => ['invoices.square-link.store', '/workspaces/{workspace}/invoices/{invoice}/square-link', [200]],
+        'invoices.square_reconcile' => ['invoices.square-reconcile.store', '/workspaces/{workspace}/invoices/{invoice}/square-reconcile', [200]],
         'invoices.square_unlink' => ['invoices.square-link.destroy', '/workspaces/{workspace}/invoices/{invoice}/square-link', [200]],
         'invoices.update_details' => ['invoices.update_details', '/workspaces/{workspace}/invoices/{invoice}/details', [200]],
         'invoices.update_draft' => ['invoices.update', '/workspaces/{workspace}/invoices/{invoice}', [200]],
@@ -1387,6 +1388,32 @@ final class AgentOperationCatalog
                 output: AgentInlineSchemas::billingAuditOutput(AgentInlineSchemas::billingAuditProperties('billing.audit_opening_rollover')),
                 scopes: ['billing:read'],
             ),
+            $this->tool(
+                'billing.preflight_schedule_generation',
+                'Preflight schedule generation',
+                'Workspace managers only. Classify every period each of the workspace\'s active billing schedules is due to bill through today, without writing, and count how many schedules would halt and why, as svc:billing:preflight-schedule-generation does for every workspace. Counts only; complete is false when a schedule\'s backlog was longer than the preflight examined, and the result is then inconclusive rather than clean.',
+                [AgentMcpBillingAuditTools::class, 'scheduleGenerationPreflight'],
+                Effect::Read,
+                true,
+                'mcp.read.billing.preflight_schedule_generation',
+                manager: true,
+                input: AgentInlineSchemas::billingAuditInput(),
+                output: AgentInlineSchemas::billingAuditOutput(AgentInlineSchemas::billingAuditProperties('billing.preflight_schedule_generation')),
+                scopes: ['billing:read'],
+            ),
+            $this->tool(
+                'billing.audit_unlinked_proposal_agreements',
+                'Audit unlinked proposal agreements',
+                'Workspace managers only. Count the workspace\'s proposals whose agreement the duplicate guard in acceptance cannot see, as svc:engagement:audit-unlinked-proposal-agreements does for every workspace. Counts only; nothing is repaired or guessed.',
+                [AgentMcpBillingAuditTools::class, 'unlinkedProposalAgreements'],
+                Effect::Read,
+                true,
+                'mcp.read.billing.audit_unlinked_proposal_agreements',
+                manager: true,
+                input: AgentInlineSchemas::billingAuditInput(),
+                output: AgentInlineSchemas::billingAuditOutput(AgentInlineSchemas::billingAuditProperties('billing.audit_unlinked_proposal_agreements')),
+                scopes: ['billing:read'],
+            ),
         ];
     }
 
@@ -1441,6 +1468,7 @@ final class AgentOperationCatalog
     private function squareMirror(): array
     {
         $this->external['square.sync'] = true;
+        $this->external['invoices.square_reconcile'] = true;
         $reads = [];
         foreach ([
             'square.mirror.invoices.list' => ['List mirrored Square invoices', 'invoices'],
@@ -1473,6 +1501,18 @@ final class AgentOperationCatalog
                 true,
                 'mcp.write',
                 cutovers: [AgentDeploymentFlags::CLIENTS],
+                availability: [AgentDeploymentFlags::SQUARE],
+                manager: true,
+            ),
+            $this->tool(
+                'invoices.square_reconcile',
+                'Reconcile invoice with Square',
+                self::documented('invoices.square_reconcile'),
+                [AgentMcpSquareMirrorTools::class, 'reconcileInvoice'],
+                Effect::LocalWrite,
+                true,
+                'mcp.write',
+                cutovers: [AgentDeploymentFlags::WRITES],
                 availability: [AgentDeploymentFlags::SQUARE],
                 manager: true,
             ),

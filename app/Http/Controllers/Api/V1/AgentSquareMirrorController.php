@@ -12,8 +12,11 @@ use App\Services\Square\Mirror\SquareCustomerImporter;
 use App\Services\Square\Mirror\SquareMirrorPresenter;
 use App\Services\Square\Mirror\SquareMirrorReadService;
 use App\Services\Square\Mirror\SquareMirrorService;
+use App\Services\Square\SquareInvoiceReconciliation;
+use App\Support\AgentApi\Presenters\SquareLinkPresenter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 
 /**
  * HTTP adapter for svc's read-only mirror of Square (#438). Authorization,
@@ -34,6 +37,17 @@ final class AgentSquareMirrorController extends Controller
         $run = $this->mirror->sync($context->user, $workspace, $context->oauthClientId, $context->idempotencyKey);
 
         return response()->json(['data' => $this->presenter->run($run)]);
+    }
+
+    public function reconcileInvoice(Request $request, Workspace $workspace, string $invoice, AgentMutationContextFactory $contexts, SquareInvoiceReconciliation $reconciliation, SquareLinkPresenter $links): JsonResponse
+    {
+        if ($request->all() !== []) {
+            throw ValidationException::withMessages(['body' => 'invoices.square_reconcile takes no fields.']);
+        }
+
+        $context = $contexts->from($request);
+
+        return response()->json(['data' => $links->invoice($reconciliation->reconcileFor($context->user, $workspace, $invoice, $context->oauthClientId, $context->idempotencyKey))]);
     }
 
     public function invoices(Request $request, Workspace $workspace): JsonResponse

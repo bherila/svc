@@ -9,8 +9,10 @@ use App\Models\Workspace;
 use App\Services\Authorization\AgentAccess;
 use App\Services\Billing\MissingBilledOverageAuditor;
 use App\Services\Billing\OpeningRolloverAuditor;
+use App\Services\Billing\ScheduleGenerationPreflight;
 use App\Services\Billing\UndatedCollectibleInvoiceAuditor;
 use App\Services\Billing\UnplaceableInvoiceAuditor;
+use App\Services\Engagement\UnlinkedProposalAgreementAuditor;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 
 /**
@@ -29,6 +31,8 @@ final class AgentBillingAuditReadService
         private readonly UndatedCollectibleInvoiceAuditor $undatedCollectible,
         private readonly MissingBilledOverageAuditor $missingBilledOverage,
         private readonly OpeningRolloverAuditor $openingRollover,
+        private readonly ScheduleGenerationPreflight $schedulePreflight,
+        private readonly UnlinkedProposalAgreementAuditor $unlinkedProposalAgreements,
     ) {}
 
     /** @return array<string, float|int> */
@@ -72,6 +76,29 @@ final class AgentBillingAuditReadService
         $this->requireManager($user, $workspace);
 
         return $this->openingRollover->count($workspace)->toArray();
+    }
+
+    /**
+     * The schedule-generation preflight for this workspace's due periods, as
+     * `svc:billing:preflight-schedule-generation` reports it for every
+     * workspace: counts only, and `complete` false when a backlog was longer
+     * than the preflight examined.
+     *
+     * @return array<string, mixed>
+     */
+    public function scheduleGenerationPreflight(User|AgentPrincipal $user, Workspace $workspace): array
+    {
+        $this->requireManager($user, $workspace);
+
+        return $this->schedulePreflight->run($workspace)->toArray();
+    }
+
+    /** @return array<string, int> */
+    public function unlinkedProposalAgreements(User|AgentPrincipal $user, Workspace $workspace): array
+    {
+        $this->requireManager($user, $workspace);
+
+        return $this->unlinkedProposalAgreements->count($workspace)->toArray();
     }
 
     private function requireManager(User|AgentPrincipal $user, Workspace $workspace): void
