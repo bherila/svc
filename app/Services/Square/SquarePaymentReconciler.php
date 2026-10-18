@@ -26,13 +26,27 @@ final class SquarePaymentReconciler
 
     public function invoice(Workspace $workspace, string $squareInvoiceId): void
     {
+        $refetched = $this->refetch($workspace, $squareInvoiceId);
+        if ($refetched !== null) {
+            $this->apply($workspace, $refetched);
+        }
+    }
+
+    /**
+     * The read half: Square's invoice, order and payments re-read and
+     * checked, and the mirror refreshed. No ledger write, and no database
+     * transaction is held across the Square calls. Null when the Square
+     * invoice was never linked here.
+     */
+    public function refetch(Workspace $workspace, string $squareInvoiceId): ?SquareInvoiceRefetch
+    {
         if (! SquareConfiguration::fromConfig()->servesWorkspace($workspace)) {
             throw SquareRequestFailed::notConnected();
         }
         $link = $this->links->activeLinkForSquareInvoice($workspace->id, $squareInvoiceId);
         $historical = $link ?? InvoiceSquareLink::query()->where('workspace_id', $workspace->id)->where('square_invoice_id', $squareInvoiceId)->orderByDesc('id')->first();
         if ($historical === null) {
-            return;
+            return null;
         }
         $invoice = $this->client->getInvoice($squareInvoiceId)['invoice'] ?? null;
         $row = is_array($invoice) ? $this->mapper->invoice($invoice) : null;
@@ -67,9 +81,20 @@ final class SquarePaymentReconciler
             }
         }
         $this->mirror->storeInvoices($workspace, [$row], $this->clock->now()->utc());
-        foreach ($facts as $fact) {
-            if (! $this->payments->refundExisting($workspace, $fact) && $link !== null) {
-                $this->payments->record($workspace, $link, $fact);
+
+        return new SquareInvoiceRefetch($link, array_values($facts));
+    }
+
+    /**
+     * The write half: refunds applied to payments already recorded, and new
+     * completed payments recorded against the active link, if there is one.
+     * Makes no Square call.
+     */
+    public function apply(Workspace $workspace, SquareInvoiceRefetch $refetched): void
+    {
+        foreach ($refetched->payments as $fact) {
+            if (! $this->payments->refundExisting($workspace, $fact) && $refetched->activeLink !== null) {
+                $this->payments->record($workspace, $refetched->activeLink, $fact);
             }
         }
     }

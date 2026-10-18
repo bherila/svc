@@ -2,13 +2,17 @@
 
 namespace Tests\Feature\Square;
 
+use App\Models\AgentMutationAudit;
+use App\Models\AgentMutationReceipt;
 use App\Models\ClientInvoice;
 use App\Models\SquareSyncRun;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Square\SquareInvoiceReconciliation;
 use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\Http;
 use Mcp\Capability\Discovery\SchemaValidator;
 use Tests\Concerns\CallsMcp;
@@ -70,6 +74,33 @@ final class SquareOperabilityTest extends TestCase
         $this->assertSame(0, Http::recorded()->count());
     }
 
+    public function test_the_receipt_and_audit_record_the_outcome_and_reads_are_budgeted(): void
+    {
+        [$workspace, $owner, , $invoice] = $this->paymentFixture();
+        config(['agent_api.writes_enabled' => true]);
+        $this->actingAsMcp($owner, self::SCOPES);
+        $audits = static fn (string $outcome): int => AgentMutationAudit::query()->where('workspace_id', $workspace->id)->where('operation', 'invoices.square_reconcile')->where('outcome', $outcome)->count();
+
+        $this->squareInvoiceFailureStatus = 503;
+        $this->postJson($this->url($workspace, $invoice), [], ['Idempotency-Key' => 'synthetic-outage'])->assertStatus(503);
+        $this->assertSame([0, 1], [$audits('success'), $audits('failed')]);
+        $this->assertSame(0, AgentMutationReceipt::query()->where('workspace_id', $workspace->id)->where('operation', 'invoices.square_reconcile')->count());
+
+        // The same key, once Square answers, reconciles: the failure left no receipt.
+        $this->squareInvoiceFailureStatus = null;
+        $this->postJson($this->url($workspace, $invoice), [], ['Idempotency-Key' => 'synthetic-outage'])->assertOk();
+        $this->assertSame([1, 1], [$audits('success'), $audits('failed')]);
+        $this->assertSame('paid', $invoice->fresh()->status);
+
+        for ($attempt = 3; $attempt <= SquareInvoiceReconciliation::RECONCILES_PER_WINDOW; $attempt++) {
+            $this->postJson($this->url($workspace, $invoice), [], ['Idempotency-Key' => 'synthetic-budget-'.$attempt])->assertOk();
+        }
+        $before = Http::recorded()->count();
+        $this->postJson($this->url($workspace, $invoice), [], ['Idempotency-Key' => 'synthetic-over-budget'])->assertStatus(429)->assertHeader('Retry-After');
+        $this->assertSame($before, Http::recorded()->count(), 'Over budget, Square is not read.');
+        $this->assertSame(1, $invoice->payments()->count());
+    }
+
     public function test_the_command_reconciles_one_invoice_by_its_public_id(): void
     {
         [$workspace, , $company, $invoice] = $this->paymentFixture();
@@ -84,23 +115,44 @@ final class SquareOperabilityTest extends TestCase
         $this->squareInvoiceFailureStatus = 503;
         $this->artisan('svc:square:reconcile-payments', ['--invoice' => $invoice->public_id])->assertFailed();
         Http::assertNotSent(fn ($request): bool => $request->method() !== 'GET');
+
+        // Asked for one invoice with Square unconfigured, it did nothing, and says so.
+        config(['services.square.access_token' => null]);
+        $this->artisan('svc:square:reconcile-payments', ['--invoice' => $invoice->public_id])->expectsOutputToContain('Square is not configured, so the invoice was not reconciled.')->assertFailed();
+        $this->artisan('svc:square:reconcile-payments')->assertSuccessful();
     }
 
     public function test_status_reports_configuration_and_the_last_sync_without_a_credential(): void
     {
         [$workspace] = $this->paymentFixture();
 
-        $this->assertSame(0, Artisan::call('svc:square:status', ['--format' => 'json']));
+        // Configured but never synced: overdue.
+        $this->assertSame(1, Artisan::call('svc:square:status', ['--format' => 'json']));
         $output = Artisan::output();
         $this->assertStringNotContainsString(self::SQUARE_TOKEN, $output);
         $this->assertStringNotContainsString('fixture-signature-key', $output);
-        $this->assertSame(['provider' => 'square', 'configured' => true, 'environment' => 'sandbox', 'square_version' => '2026-09-16', 'workspace_present' => true, 'webhook_signature_key_present' => true, 'last_synced_at' => null, 'last_run' => null], json_decode($output, true, flags: JSON_THROW_ON_ERROR));
+        $this->assertSame(['provider' => 'square', 'configured' => true, 'environment' => 'sandbox', 'square_version' => '2026-09-16', 'workspace_present' => true, 'webhook_signature_key_present' => true, 'last_synced_at' => null, 'last_run' => null, 'last_run_abandoned' => false, 'sync_overdue' => true], json_decode($output, true, flags: JSON_THROW_ON_ERROR));
 
-        $run = SquareSyncRun::query()->create(['workspace_id' => $workspace->id, 'trigger' => SquareSyncRun::TRIGGER_SCHEDULE, 'status' => SquareSyncRun::COMPLETED, 'api_version' => '2026-09-16', 'started_at' => '2030-02-02 11:00:00', 'finished_at' => '2030-02-02 11:01:00', 'invoices_seen' => 3, 'invoices_changed' => 1]);
+        $run = SquareSyncRun::query()->create(['workspace_id' => $workspace->id, 'trigger' => SquareSyncRun::TRIGGER_SCHEDULE, 'status' => SquareSyncRun::COMPLETED, 'api_version' => '2026-09-16', 'started_at' => '2030-02-02 11:50:00', 'finished_at' => '2030-02-02 11:51:00', 'invoices_seen' => 3, 'invoices_changed' => 1]);
         $this->assertSame(0, Artisan::call('svc:square:status', ['--format' => 'json']));
         $status = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
-        $this->assertSame('2030-02-02T11:01:00Z', $status['last_synced_at']);
+        $this->assertSame('2030-02-02T11:51:00Z', $status['last_synced_at']);
         $this->assertSame([$run->public_id, 'completed', 'schedule', 3, 1, null], [$status['last_run']['id'], $status['last_run']['status'], $status['last_run']['trigger'], $status['last_run']['invoices_seen'], $status['last_run']['invoices_changed'], $status['last_run']['error_code']]);
+        $this->assertSame([false, false], [$status['last_run_abandoned'], $status['sync_overdue']]);
+
+        // A run left running past the abandonment threshold: the scheduler stopped.
+        $stuck = SquareSyncRun::query()->create(['workspace_id' => $workspace->id, 'trigger' => SquareSyncRun::TRIGGER_SCHEDULE, 'status' => SquareSyncRun::RUNNING, 'api_version' => '2026-09-16', 'started_at' => '2030-02-02 11:59:00']);
+        $this->assertSame(0, Artisan::call('svc:square:status', ['--format' => 'json']), 'Running, and recent.');
+        $this->travel(31)->minutes();
+        $this->assertSame(1, Artisan::call('svc:square:status', ['--format' => 'json']));
+        $this->assertSame([true, false], array_values(array_intersect_key(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR), array_flip(['last_run_abandoned', 'sync_overdue']))));
+        $this->artisan('svc:square:status')->expectsOutputToContain('running (schedule), abandoned')->assertFailed();
+        $stuck->delete();
+        $this->travel(30)->minutes();
+        $this->assertSame(1, Artisan::call('svc:square:status', ['--format' => 'json']), 'No completed sync for over an hour.');
+        $this->assertSame([false, true], array_values(array_intersect_key(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR), array_flip(['last_run_abandoned', 'sync_overdue']))));
+        $this->travelBack();
+        Date::setTestNow('2030-02-02 12:00:00');
 
         SquareSyncRun::query()->create(['workspace_id' => $workspace->id, 'trigger' => SquareSyncRun::TRIGGER_SCHEDULE, 'status' => SquareSyncRun::FAILED, 'api_version' => '2026-09-16', 'error_code' => 'unauthorized']);
         $this->artisan('svc:square:status')->expectsOutputToContain('failed (schedule), unauthorized')->assertFailed();
@@ -113,7 +165,7 @@ final class SquareOperabilityTest extends TestCase
     {
         $this->connectSquare(null);
         $this->assertSame(1, Artisan::call('svc:square:status', ['--format' => 'json']));
-        $this->assertSame(['provider' => 'square', 'configured' => false, 'environment' => null, 'square_version' => null, 'workspace_present' => false, 'webhook_signature_key_present' => false, 'last_synced_at' => null, 'last_run' => null], json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR));
+        $this->assertSame(['provider' => 'square', 'configured' => false, 'environment' => null, 'square_version' => null, 'workspace_present' => false, 'webhook_signature_key_present' => false, 'last_synced_at' => null, 'last_run' => null, 'last_run_abandoned' => false, 'sync_overdue' => false], json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR));
 
         config(['services.square.workspace' => '00000000-0000-4000-8000-000000000999']);
         $this->assertSame(1, Artisan::call('svc:square:status', ['--format' => 'json']));

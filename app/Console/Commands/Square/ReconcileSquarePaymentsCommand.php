@@ -34,6 +34,11 @@ final class ReconcileSquarePaymentsCommand extends Command
         }
         $configuration = SquareConfiguration::fromConfig();
         if (! $configuration->isConfigured()) {
+            if ($invoice !== null) {
+                $this->components->warn('Square is not configured, so the invoice was not reconciled.');
+
+                return self::FAILURE;
+            }
             $this->components->info('Square is not configured; nothing to reconcile.');
 
             return self::SUCCESS;

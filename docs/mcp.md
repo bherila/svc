@@ -1357,7 +1357,7 @@ the source of truth; the mirror is a cache that a sync refreshes.
 | Operation | REST (`/api/v1/workspaces/{workspace}/square/…`) | Notes |
 | --- | --- | --- |
 | `square.sync` | `POST sync` | `billing:write`, `Idempotency-Key`; refresh the mirror now and return the run |
-| `invoices.square_reconcile` | `POST /workspaces/{workspace}/invoices/{invoice}/square-reconcile` | `billing:write`, `billing:read`, `Idempotency-Key`, empty body; reconcile one linked invoice's payments and refunds now and return its Square state |
+| `invoices.square_reconcile` | `POST /workspaces/{workspace}/invoices/{invoice}/square-reconcile` | `billing:write`, `billing:read`, `Idempotency-Key`, empty body; reconcile one linked invoice's payments and refunds now and return its Square state; 20 per workspace per ten minutes |
 | `square.mirror.invoices.list` | `GET mirror/invoices` | `location_id`, `status`, `customer_id`, `series_key`, `due_from`/`due_to`; up to 100 per page, opaque cursor |
 | `square.series.list` | `GET series` | Recurring series by `series_key`, optionally for one `location_id` or `customer_id`; up to 50 per page |
 | `square.series.get` | `GET series/{series}` | One series with every mirrored member by occurrence |

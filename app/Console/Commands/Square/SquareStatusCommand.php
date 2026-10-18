@@ -2,9 +2,12 @@
 
 namespace App\Console\Commands\Square;
 
+use App\Models\SquareSyncRun;
 use App\Models\Workspace;
 use App\Services\Square\Mirror\SquareMirrorReadService;
+use App\Services\Square\Mirror\SquareMirrorSync;
 use App\Services\Square\SquareConfiguration;
+use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
 
 /**
@@ -12,9 +15,9 @@ use Illuminate\Console\Command;
  * without exposing a credential and without calling Square. The post-deploy
  * probe runs it beside the Stripe and Brevo probes.
  *
- * Exits 0 when Square is configured, its workspace exists and the latest sync
- * run did not fail; 1 when Square is not configured or that is not so, which
- * the probe reports without failing a deploy. The last run is read from svc's
+ * Exits 0 when Square is configured, its workspace exists, a sync completed
+ * within the hour and the latest run neither failed nor was abandoned; 1
+ * otherwise, which the probe reports without failing a deploy. The last run is read from svc's
  * own records, through the same freshness the mirror reads report.
  */
 final class SquareStatusCommand extends Command
@@ -22,6 +25,9 @@ final class SquareStatusCommand extends Command
     protected $signature = 'svc:square:status {--format=text : Output text or json}';
 
     protected $description = 'Report whether Square is configured and how the last mirror sync ended, without exposing credentials';
+
+    /** The schedule syncs every fifteen minutes; an hour without a completed sync is overdue. */
+    public const int OVERDUE_AFTER_MINUTES = 60;
 
     public function handle(SquareMirrorReadService $mirror): int
     {
@@ -47,7 +53,16 @@ final class SquareStatusCommand extends Command
             'last_synced_at' => $freshness['last_synced_at'],
             'last_run' => $lastRun === null ? null : array_intersect_key($lastRun, array_flip(['id', 'trigger', 'status', 'requested_at', 'finished_at', 'invoices_seen', 'invoices_changed', 'truncated', 'error_code'])),
         ];
-        $healthy = $workspace !== null && ($lastRun === null || $lastRun['status'] !== 'failed');
+        // A run left requested or running past the sync's own abandonment
+        // threshold, or no completed sync for an hour, means the scheduler or
+        // its process stopped; nothing else marks either while it is down.
+        $now = CarbonImmutable::now();
+        $abandoned = $lastRun !== null && in_array($lastRun['status'], [SquareSyncRun::REQUESTED, SquareSyncRun::RUNNING], true)
+            && is_string($lastRun['requested_at']) && CarbonImmutable::parse($lastRun['requested_at'])->lt($now->subMinutes(SquareMirrorSync::ABANDONED_AFTER_MINUTES));
+        $overdue = $workspace !== null && ($freshness['last_synced_at'] === null || CarbonImmutable::parse((string) $freshness['last_synced_at'])->lt($now->subMinutes(self::OVERDUE_AFTER_MINUTES)));
+        $status['last_run_abandoned'] = $abandoned;
+        $status['sync_overdue'] = $overdue;
+        $healthy = $workspace !== null && ! $abandoned && ! $overdue && ($lastRun === null || $lastRun['status'] !== SquareSyncRun::FAILED);
 
         if ($format === 'json') {
             $this->line((string) json_encode($status, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
@@ -58,7 +73,8 @@ final class SquareStatusCommand extends Command
             $this->components->twoColumnDetail('Workspace present', $status['workspace_present'] ? 'yes' : 'no');
             $this->components->twoColumnDetail('Webhook signature key', $status['webhook_signature_key_present'] ? 'present' : 'absent');
             $this->components->twoColumnDetail('Last completed sync', $status['last_synced_at'] ?? 'never');
-            $this->components->twoColumnDetail('Last run', $lastRun === null ? 'none' : sprintf('%s (%s)%s', $lastRun['status'], $lastRun['trigger'], $lastRun['error_code'] === null ? '' : ', '.$lastRun['error_code']));
+            $this->components->twoColumnDetail('Last run', $lastRun === null ? 'none' : sprintf('%s (%s)%s%s', $lastRun['status'], $lastRun['trigger'], $lastRun['error_code'] === null ? '' : ', '.$lastRun['error_code'], $abandoned ? ', abandoned' : ''));
+            $this->components->twoColumnDetail('Sync overdue', $overdue ? 'yes' : 'no');
         }
 
         return $healthy ? self::SUCCESS : self::FAILURE;

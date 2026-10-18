@@ -23,7 +23,13 @@ invoice now instead, and `invoices.square_reconcile` (REST and MCP, workspace
 managers, `billing:write`) does the same for an agent - for example right after
 `invoices.square_link`, rather than waiting up to fifteen minutes. All three use
 `SquareInvoiceReconciliation`, which runs the sweep's own read-only refetch; an
-invoice with no active link is refused. Repeating it records nothing twice.
+invoice with no active link is refused. Repeating it records nothing twice. The
+operation reads Square before writing its idempotency receipt, so the receipt and
+its audit record the outcome: a failed read or a refused payment is audited as a
+failure, leaves no receipt, and the same key may be retried. Each call can read
+Square up to 102 times, so a workspace gets 20 per ten minutes before 429. Asked
+for one invoice while Square is not configured, the command fails rather than
+reporting success.
 It visits active links in bounded database batches, including paid invoices so
 refunds missed by webhooks are recovered. Both transports finish their work in
 the request or command; neither dispatches jobs. The sweep works without the
@@ -150,9 +156,13 @@ records, imports or writes to Square.
 `php artisan svc:square:status --format=json` reports whether Square is
 configured, its environment and pinned `Square-Version`, whether its workspace
 exists and the webhook signature key is installed, the last completed sync and
-the latest sync run (status, trigger, counts and error code). It never prints a
-credential and never calls Square. It exits 0 when Square is configured, its
-workspace exists and the latest run did not fail, and 1 otherwise. The
+the latest sync run (status, trigger, counts and error code), plus
+`last_run_abandoned` (a run still requested or running after the sync's own
+30-minute abandonment threshold) and `sync_overdue` (no completed sync within an
+hour). It never prints a credential and never calls Square. It exits 0 when Square
+is configured, its workspace exists, a sync completed within the hour and the
+latest run neither failed nor was abandoned, and 1 otherwise - so a stopped
+scheduler shows up even though nothing else marks its runs while it is down. The
 post-deploy probe runs it beside `svc:stripe:status` and `svc:brevo:status`, and,
 as for those, treats exit 1 as a report rather than a deploy failure.
 

@@ -9,6 +9,7 @@ use App\Models\Workspace;
 use App\Services\AgentApi\AgentMutationExecutor;
 use App\Services\Authorization\AgentAccess;
 use DomainException;
+use Illuminate\Cache\RateLimiter;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 
 /**
@@ -25,32 +26,58 @@ use Illuminate\Database\Eloquent\ModelNotFoundException;
  */
 final class SquareInvoiceReconciliation
 {
+    /** API reconciliations per workspace in {@see WINDOW_SECONDS}: each reads Square up to 102 times. */
+    public const int RECONCILES_PER_WINDOW = 20;
+
+    public const int WINDOW_SECONDS = 600;
+
     public function __construct(
         private readonly SquarePaymentReconciler $reconciler,
         private readonly SquareLinkRepository $links,
         private readonly AgentAccess $access,
         private readonly AgentMutationExecutor $mutations,
+        private readonly RateLimiter $limiter,
     ) {}
 
     /**
-     * For a person or agent through the API: workspace managers only, under
-     * one mutation receipt per idempotency key. The receipt only admits the
-     * request - Square is read after it commits, never inside a transaction -
-     * so a replayed key reconciles again, harmlessly, and returns the invoice
-     * as it now stands.
+     * For a person or agent through the API: workspace managers only, within
+     * a per-workspace budget of Square reads, under one mutation receipt per
+     * idempotency key. Square is read first, outside any transaction; the
+     * ledger is written inside the receipt's, so the receipt and its audit
+     * record the outcome - a failed read or a refused payment is audited as a
+     * failure and leaves no receipt, and a retry tries again. A replayed key
+     * returns the invoice as it now stands.
      */
     public function reconcileFor(User $user, Workspace $workspace, string $invoiceId, string $clientId, string $idempotencyKey): ClientInvoice
     {
+        $this->admit($user, $workspace);
+        [$invoice, $link] = $this->linked($workspace, $invoiceId);
+        $key = 'square-reconcile:'.$workspace->getKey();
+        if (! $this->limiter->attempt($key, self::RECONCILES_PER_WINDOW, static fn (): bool => true, self::WINDOW_SECONDS)) {
+            $seconds = max(1, $this->limiter->availableIn($key));
+            abort(429, "Square was reconciled often just now. Retry in {$seconds} seconds.", ['Retry-After' => (string) $seconds]);
+        }
+        try {
+            $refetched = $this->reconciler->refetch($workspace, $link->square_invoice_id);
+        } catch (SquareRequestFailed|DomainException $failure) {
+            $refetched = $failure;
+        }
         $this->mutations->run($user, $workspace, $clientId, 'invoices.square_reconcile', $idempotencyKey, ['invoice_id' => $invoiceId],
-            function () use ($user, $workspace, $invoiceId): array {
+            function () use ($user, $workspace, $invoice, $refetched): array {
                 $this->admit($user, $workspace);
+                if ($refetched instanceof \Throwable) {
+                    throw $refetched;
+                }
+                if ($refetched !== null) {
+                    $this->reconciler->apply($workspace, $refetched);
+                }
 
-                return [$this->linked($workspace, $invoiceId)[0]->public_id];
+                return [$invoice->public_id];
             },
             fn (array $ids) => $this->admit($user, $workspace),
         );
 
-        return $this->reconcile($workspace, $invoiceId);
+        return $invoice->refresh();
     }
 
     /**
