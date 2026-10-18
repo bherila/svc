@@ -151,8 +151,12 @@ the table says once, underneath, what the marker means.
 ## Correcting a payment's date
 
 `POST /workspaces/{workspace}/invoices/{clientInvoice}/payments/{clientInvoicePayment}/received-on`,
-requiring `manage` on the workspace, and reaching
-`InvoiceLifecycleService::setPaymentReceivedOn()`.
+requiring `manage` on the workspace, a `received_on` and a `reason` (at most 500
+characters), and reaching `InvoiceLifecycleService::correctPayment()` with the
+date as its one field. The reason is required on the screen as it is by
+`payments.correct` (#454), so every payment correction records the same audited
+`invoice.payment_corrected` - before, after and reason - whichever door it came
+through.
 
 This is **not** a payment-edit path and does not open one. The request names one
 field and the service writes one column: amount, currency, method, status and
@@ -204,11 +208,11 @@ credit pool or a reconciliation - so correcting one rewrites no financial fact.
   excerpt on each side, because the activity payload is capped at 10,000 bytes
   and a note may be that long by itself.
 
-`setPaymentReceivedOn()` is now this operation with one field and no reason:
-the date-only **Correct date** control on the invoice screen never asked for
-one. It keeps recording `invoice.payment_date_corrected` with its
-`previous_received_on`/`received_on` payload, so the activity feed and every
-earlier entry keep their meaning.
+`setPaymentReceivedOn()` is this operation with one field and no reason. The
+invoice screen's **Correct date** control used it before it asked for a reason;
+it now asks, and calls `correctPayment()`. `setPaymentReceivedOn()` still records
+`invoice.payment_date_corrected` with its `previous_received_on`/`received_on`
+payload, so the activity feed and every earlier entry keep their meaning.
 
 The console door is `svc:billing:correct-payment` and the API door is
 `payments.correct`, over REST and MCP (see [the MCP guide](../mcp.md)); both

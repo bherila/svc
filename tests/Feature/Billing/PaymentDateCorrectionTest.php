@@ -133,6 +133,7 @@ final class PaymentDateCorrectionTest extends TestCase
         $this->actingAs($owner)
             ->postJson($this->correctionUrl($workspace, $invoice, $payment), [
                 'received_on' => '2026-08-18',
+                'reason' => 'Synthetic bank statement',
                 'amount' => 999999,
                 'status' => 'refunded',
                 'refunded_amount' => 999999,
@@ -186,13 +187,13 @@ final class PaymentDateCorrectionTest extends TestCase
         $this->actingAs($owner)
             ->postJson(
                 "/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/payments/{$otherPayment->public_id}/received-on",
-                ['received_on' => '2026-08-18'],
+                ['received_on' => '2026-08-18', 'reason' => 'Synthetic bank statement'],
             )
             ->assertNotFound();
 
         // The other workspace in the URL, where they are not a member.
         $this->actingAs($owner)
-            ->postJson($this->correctionUrl($otherWorkspace, $otherInvoice, $otherPayment), ['received_on' => '2026-08-18'])
+            ->postJson($this->correctionUrl($otherWorkspace, $otherInvoice, $otherPayment), ['received_on' => '2026-08-18', 'reason' => 'Synthetic bank statement'])
             ->assertForbidden();
 
         $this->assertSame('2026-08-25', $otherPayment->fresh()?->received_on?->toDateString());
@@ -297,7 +298,7 @@ final class PaymentDateCorrectionTest extends TestCase
         });
 
         $this->actingAs($owner)
-            ->postJson($this->correctionUrl($workspace, $invoice, $payment), ['received_on' => '2026-08-18'])
+            ->postJson($this->correctionUrl($workspace, $invoice, $payment), ['received_on' => '2026-08-18', 'reason' => 'Synthetic bank statement'])
             ->assertOk();
 
         // The binding layer really was exercised, so an empty capture cannot be

@@ -652,7 +652,34 @@ try {
                 await expect(
                     page.getByLabel(/^Corrected date for/),
                 ).toBeVisible();
+                // The reason the correction now requires (#454), oversized
+                // and unbroken, so the row it sits in has to give it room.
+                await page
+                    .getByLabel('Reason for the correction', { exact: true })
+                    .fill('SyntheticCorrectionReasonWithoutBreaks'.repeat(8));
                 await capture(screen, 'correction', width);
+                await page
+                    .getByRole('button', { name: 'Cancel', exact: true })
+                    .click();
+                const voiding = page.getByRole('button', {
+                    name: 'Void',
+                    exact: true,
+                });
+
+                if ((await voiding.count()) > 0) {
+                    await voiding.click();
+                    await expect(page.getByRole('alertdialog')).toHaveCSS(
+                        'opacity',
+                        '1',
+                    );
+                    await page
+                        .getByLabel('Reason', { exact: true })
+                        .fill('SyntheticVoidReasonWithoutBreaks'.repeat(20));
+                    await capture(screen, 'void', width);
+                    await page
+                        .getByRole('button', { name: 'Cancel', exact: true })
+                        .click();
+                }
             }
 
             if (screen === 'invoice_review') {

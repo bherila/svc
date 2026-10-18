@@ -175,11 +175,16 @@ class InvoiceController extends Controller
         return $this->mutationResponse($request, $invoice, 'Invoice issued.');
     }
 
+    /**
+     * Void an invoice, saying why (#454): the reason is required here as it is
+     * by `invoices.void`, and kept on the invoice.
+     */
     public function void(Request $request, Workspace $workspace, ClientInvoice $clientInvoice, InvoiceLifecycleService $service): JsonResponse|RedirectResponse
     {
         Gate::authorize('manage', $workspace);
         $service->assertTenant($workspace, $clientInvoice);
-        $invoice = $service->void($clientInvoice, $workspace);
+        $reason = $request->validate(['reason' => ['required', 'string', 'max:'.ClientInvoice::VOID_REASON_MAX_LENGTH]])['reason'];
+        $invoice = $service->void($clientInvoice, $workspace, trim((string) $reason));
 
         return $this->mutationResponse($request, $invoice, 'Invoice voided.');
     }
@@ -263,8 +268,9 @@ class InvoiceController extends Controller
      * described and then refused.
      *
      * Everything else about the payment is out of reach by construction:
-     * {@see CorrectPaymentDateRequest} validates one field, and
-     * {@see InvoiceLifecycleService::setPaymentReceivedOn()} writes one column.
+     * {@see CorrectPaymentDateRequest} validates one field and the reason, and
+     * {@see InvoiceLifecycleService::correctPayment()} is handed only that
+     * field.
      */
     public function correctPaymentDate(
         CorrectPaymentDateRequest $request,
@@ -286,9 +292,14 @@ class InvoiceController extends Controller
             ->where('public_id', $clientInvoicePayment)
             ->firstOrFail();
 
-        $payment = $service->setPaymentReceivedOn(
+        // The general correction with one field named, so the screen records
+        // the same audited `invoice.payment_corrected` - before, after and
+        // reason - that `payments.correct` and the console command do.
+        $payment = $service->correctPayment(
             $existing,
-            (string) $request->validated('received_on'),
+            ['received_on' => (string) $request->validated('received_on')],
+            (string) $request->validated('reason'),
+            null,
             $workspace,
         );
 

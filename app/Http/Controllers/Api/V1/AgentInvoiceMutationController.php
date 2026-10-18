@@ -152,7 +152,7 @@ final class AgentInvoiceMutationController extends Controller
         $context = $contexts->from($request);
         $ids = $mutations->run($context->user, $workspace, $context->oauthClientId, 'invoices.void', $context->idempotencyKey, ['invoice_id' => $invoice, 'body' => $request->all()], function () use ($request, $workspace, $invoice, $access, $context, $lifecycle): array {
             $record = $this->authorizedInvoice($workspace, $invoice, $access, $context->user);
-            $data = $request->validate(['expected_version' => ['required', 'string', 'size:64'], 'reason' => ['required', 'string', 'max:1000'], 'confirm' => ['required', new ExplicitConfirmation]]);
+            $data = $request->validate(['expected_version' => ['required', 'string', 'size:64'], 'reason' => ['required', 'string', 'max:'.ClientInvoice::VOID_REASON_MAX_LENGTH], 'confirm' => ['required', new ExplicitConfirmation]]);
             abort_unless(AgentApiVersion::matches($record, $data['expected_version']), 409);
             $record = $lifecycle->void($record, $workspace, $data['reason']);
 

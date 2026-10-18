@@ -244,6 +244,12 @@ export default function ClientInvoiceDetail({
     // because a correction is a repair rather than an editing mode.
     const [correcting, setCorrecting] = useState<string | null>(null);
     const [correctedDate, setCorrectedDate] = useState('');
+    // Why the date is being corrected. Required, as payments.correct requires
+    // it: the reason is kept in the client history beside the change.
+    const [correctedDateReason, setCorrectedDateReason] = useState('');
+    // Why the invoice is being voided, required as invoices.void requires it
+    // and kept on the invoice.
+    const [voidReason, setVoidReason] = useState('');
     const [busy, setBusy] = useState(false);
     const [notice, setNotice] = useState<string | null>(null);
     const [editingDates, setEditingDates] = useState(false);
@@ -497,7 +503,10 @@ export default function ClientInvoiceDetail({
                             <Button
                                 variant="destructive"
                                 size="sm"
-                                onClick={() => setVoiding(true)}
+                                onClick={() => {
+                                    setVoidReason('');
+                                    setVoiding(true);
+                                }}
                             >
                                 Void
                             </Button>
@@ -1166,9 +1175,31 @@ export default function ClientInvoiceDetail({
                                                                     )
                                                                 }
                                                             />
+                                                            <Input
+                                                                aria-label="Reason for the correction"
+                                                                placeholder="Reason"
+                                                                className="w-48"
+                                                                maxLength={500}
+                                                                value={
+                                                                    correctedDateReason
+                                                                }
+                                                                onChange={(
+                                                                    event,
+                                                                ) =>
+                                                                    setCorrectedDateReason(
+                                                                        event
+                                                                            .target
+                                                                            .value,
+                                                                    )
+                                                                }
+                                                            />
                                                             <Button
                                                                 size="sm"
-                                                                disabled={busy}
+                                                                disabled={
+                                                                    busy ||
+                                                                    correctedDateReason.trim() ===
+                                                                        ''
+                                                                }
                                                                 onClick={() =>
                                                                     post(
                                                                         payment.correct_date_href ??
@@ -1176,6 +1207,7 @@ export default function ClientInvoiceDetail({
                                                                         {
                                                                             received_on:
                                                                                 correctedDate,
+                                                                            reason: correctedDateReason.trim(),
                                                                         },
                                                                     )
                                                                 }
@@ -1220,6 +1252,9 @@ export default function ClientInvoiceDetail({
                                                                                 todayIn(
                                                                                     timezone,
                                                                                 ),
+                                                                        );
+                                                                        setCorrectedDateReason(
+                                                                            '',
                                                                         );
                                                                         setCorrecting(
                                                                             payment.id,
@@ -1414,15 +1449,35 @@ export default function ClientInvoiceDetail({
                 open={voiding}
                 onOpenChange={(open: boolean) => setVoiding(open)}
             >
-                <AlertDialogContent>
+                <AlertDialogContent className="grid-cols-1">
                     <AlertDialogHeader>
                         <AlertDialogTitle>Void this invoice?</AlertDialogTitle>
-                        <AlertDialogDescription>
+                        <AlertDialogDescription className="wrap-anywhere">
                             {invoice.invoice_number ?? 'This invoice'} stops
                             being collectible, and the work on it returns to
                             being unbilled.
                         </AlertDialogDescription>
                     </AlertDialogHeader>
+                    <div className="grid grid-cols-1 gap-2">
+                        <Label htmlFor="void-reason">Reason</Label>
+                        <Textarea
+                            id="void-reason"
+                            className="max-h-48 wrap-anywhere"
+                            maxLength={1000}
+                            value={voidReason}
+                            aria-describedby="void-reason-hint"
+                            onChange={(event) =>
+                                setVoidReason(event.target.value)
+                            }
+                        />
+                        <p
+                            id="void-reason-hint"
+                            className="text-xs text-muted-foreground"
+                        >
+                            Kept on the invoice, so anyone reading it later
+                            knows why it was voided.
+                        </p>
+                    </div>
                     <AlertDialogFooter>
                         <AlertDialogCancel
                             render={<Button variant="outline">Cancel</Button>}
@@ -1431,8 +1486,12 @@ export default function ClientInvoiceDetail({
                             render={
                                 <Button
                                     variant="destructive"
-                                    disabled={busy}
-                                    onClick={() => post(actions.void ?? '')}
+                                    disabled={busy || voidReason.trim() === ''}
+                                    onClick={() =>
+                                        post(actions.void ?? '', {
+                                            reason: voidReason.trim(),
+                                        })
+                                    }
                                 >
                                     Void
                                 </Button>
