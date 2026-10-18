@@ -106,7 +106,10 @@ Square dashboard URLs, and `truncated`:
 - `series_drift`: a billed-in-Square agreement whose billed series members differ
   in `cadence`, `currency` (another one, or more than one) or latest billed
   `amount`, or whose series the mirror does not hold (`series_not_mirrored`).
-  `SCHEDULED` members are not billed yet and are left out. The agreement's amount
+  `SCHEDULED` members are not billed yet, and members dated before the
+  agreement's start are history; both are left out. Square numbers invoices
+  uniquely per location only, so a prefix used in more than one location is
+  reported as `multiple_locations` and not compared. The agreement's amount
   is its retainer fee for one whole cycle; an agreement that sells no retainer fee
   is not compared on amount, and a series with fewer than two dated billed members
   has no cadence to compare.

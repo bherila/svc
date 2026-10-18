@@ -3379,7 +3379,7 @@ export interface components {
                 customers: components['schemas']['SquareUnlinkedCustomerBalance'][];
                 truncated: boolean;
             };
-            /** @description Billed-in-Square agreements whose billed members (SCHEDULED ones are not yet billed) differ in cadence, currency (another, or more than one) or latest amount, or whose series the mirror does not hold. */
+            /** @description Billed-in-Square agreements whose billed members since the agreement began (SCHEDULED ones are not yet billed) differ in cadence, currency (another, or more than one) or latest amount, whose series the mirror does not hold, or whose series prefix is used in more than one Square location. */
             series_drift: {
                 count: number;
                 agreements: components['schemas']['SquareSeriesDrift'][];
@@ -3874,8 +3874,13 @@ export interface components {
             /** Format: uri */
             agreement_url: string;
             series_key: components['schemas']['SquareSeriesKey'];
+            /** @description multiple_locations: the series prefix is used in more than one Square location, which Square allows, so the series is not compared. */
             codes: (
-                'cadence' | 'currency' | 'amount' | 'series_not_mirrored'
+                | 'cadence'
+                | 'currency'
+                | 'amount'
+                | 'series_not_mirrored'
+                | 'multiple_locations'
             )[];
             /**
              * @description Null when the agreement does not bill on a repeating cycle.

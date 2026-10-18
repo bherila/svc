@@ -319,6 +319,34 @@ final class SquareBillingAuditPolicyTest extends TestCase
         $this->assertSame([[SquareBillingAuditPolicy::DRIFT_SERIES_NOT_MIRRORED], [], false], [$bounded->seriesDrift[0]['codes'], $bounded->unlinkedCustomerBalances, $bounded->complete]);
     }
 
+    public function test_members_before_the_agreement_began_do_not_drift_it(): void
+    {
+        $members = self::monthly(12_345);
+        array_unshift($members, self::invoice('inv_old_1', -1, '2029-11-15', 'PAID', total: 99, currency: 'EUR'), self::invoice('inv_old_2', 0, '2029-12-15', 'PAID', total: 99, currency: 'EUR'));
+
+        $this->assertSame([], self::classify($members)->seriesDrift);
+        $this->assertSame([], self::classify([self::invoice('inv_old_1', 1, '2029-11-15', 'PAID', total: 99)])->seriesDrift, 'Only history: nothing to compare.');
+        $this->assertSame([SquareBillingAuditPolicy::DRIFT_CURRENCY], self::classify([self::invoice('inv_start', 1, '2030-01-01', 'PAID', currency: 'EUR')])->seriesDrift[0]['codes'], 'A member on the start day is the agreement\'s.');
+        $this->assertSame([SquareBillingAuditPolicy::DRIFT_AMOUNT], self::classify([...self::monthly(12_345), self::invoice('inv_undated', 9, null, 'PAID', total: 1)])->seriesDrift[0]['codes'], 'An undated member is compared.');
+    }
+
+    public function test_a_prefix_in_two_locations_is_reported_and_not_compared(): void
+    {
+        $members = self::monthly(12_345);
+        $members[] = new SquareAuditInvoice('inv_elsewhere', '000123-R-0001', '000123', 1, 'cust_other', null, 'LOCFIXTURE02', 'PAID', 'EUR', 1, 1, '2030-01-20', null, false, [], null, true);
+
+        $drift = self::classify($members)->seriesDrift;
+
+        $this->assertCount(1, $drift);
+        $this->assertSame([[SquareBillingAuditPolicy::DRIFT_MULTIPLE_LOCATIONS], null, null, null], [$drift[0]['codes'], $drift[0]['series_cadence'], $drift[0]['series_currency'], $drift[0]['series_amount']]);
+        $this->assertSame(self::AGREEMENT, $drift[0]['agreement']->agreementId);
+        $later = new SquareAuditAgreement('00000000-0000-4000-8000-00000000a009', self::COMPANY, '000999', '2030-01-01', BillingCadence::Monthly, 1, 'USD');
+        $both = SquareBillingAuditPolicy::classify(new SquareBillingAuditFacts('2030-10-01', [self::agreement(), $later], [...$members, self::invoice('inv_later', 1, '2030-01-15', 'PAID', series: '000999')], [], [], [], true));
+        $this->assertSame([[SquareBillingAuditPolicy::DRIFT_MULTIPLE_LOCATIONS], [SquareBillingAuditPolicy::DRIFT_AMOUNT]], array_column($both->seriesDrift, 'codes'), 'The next agreement is still compared.');
+        $members[count($members) - 1] = new SquareAuditInvoice('inv_elsewhere', '000123-R-0001', '000123', 1, 'cust_other', null, null, 'PAID', 'USD', 12_345, 1, '2030-01-20', null, false, [], null, true);
+        $this->assertSame([], self::classify($members)->seriesDrift, 'An unknown location is not a second one.');
+    }
+
     public function test_absence_is_not_claimed_when_the_series_load_was_bounded(): void
     {
         $facts = new SquareBillingAuditFacts('2030-10-01', [self::agreement()], [], [], [], [], false, false);

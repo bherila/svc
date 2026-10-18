@@ -15676,7 +15676,7 @@
                                 "type": "boolean"
                             }
                         },
-                        "description": "Billed-in-Square agreements whose billed members (SCHEDULED ones are not yet billed) differ in cadence, currency (another, or more than one) or latest amount, or whose series the mirror does not hold."
+                        "description": "Billed-in-Square agreements whose billed members since the agreement began (SCHEDULED ones are not yet billed) differ in cadence, currency (another, or more than one) or latest amount, whose series the mirror does not hold, or whose series prefix is used in more than one Square location."
                     }
                 },
                 "description": "Phase-two Square billing-audit flags, read from svc's mirror as of its last sync. Empty where Square does not serve the workspace. Nothing here writes to Square."
@@ -18287,9 +18287,11 @@
                                 "cadence",
                                 "currency",
                                 "amount",
-                                "series_not_mirrored"
+                                "series_not_mirrored",
+                                "multiple_locations"
                             ]
-                        }
+                        },
+                        "description": "multiple_locations: the series prefix is used in more than one Square location, which Square allows, so the series is not compared."
                     },
                     "agreement_cadence": {
                         "type": [
