@@ -181,6 +181,76 @@ final class SquareBillingAuditPolicyTest extends TestCase
         $this->assertTrue(self::classify([])->complete);
     }
 
+    public function test_periods_and_payments_are_ordered_by_date_then_id_with_undated_last(): void
+    {
+        $invoices = [
+            self::invoice('inv_c', 3, '2030-03-15', 'UNPAID', payments: ['pay_c']),
+            self::invoice('inv_n', 4, null, 'UNPAID', payments: ['pay_n']),
+            self::invoice('inv_b', 2, '2030-01-15', 'PAID', payments: ['pay_b2', 'pay_b1']),
+            self::invoice('inv_a', 1, '2030-01-15', 'PAID', payments: ['pay_a']),
+            self::invoice('inv_d', 5, '2030-02-15', 'PAID', payments: ['pay_d']),
+        ];
+
+        $findings = self::classify($invoices);
+
+        $this->assertSame(['inv_a', 'inv_b', 'inv_d', 'inv_c', 'inv_n'], array_map(static fn (array $period): string => $period['invoice']->squareInvoiceId, $findings->unmirroredPeriods));
+        $this->assertSame(['pay_a', 'pay_b1', 'pay_b2', 'pay_d', 'pay_c', 'pay_n'], array_column($findings->unmatchedPayments, 'payment_id'));
+    }
+
+    public function test_a_payment_on_a_series_no_agreement_is_billed_in_is_out_of_reach(): void
+    {
+        $findings = self::classify([self::invoice('inv_other', 1, '2030-01-15', 'PAID', series: '000999', payments: ['pay_other'])]);
+
+        $this->assertSame([], $findings->unmatchedPayments);
+    }
+
+    public function test_an_unknown_amount_owes_nothing_and_an_unknown_payment_is_none(): void
+    {
+        $findings = self::classify([
+            self::invoice('inv_a1', null, '2030-01-10', 'UNPAID', series: null, customer: 'cust_a', total: null),
+            self::invoice('inv_a2', null, '2030-01-11', 'UNPAID', series: null, customer: 'cust_a', total: 3_000, paid: null),
+            self::invoice('inv_z1', null, '2030-01-11', 'UNPAID', series: null, customer: 'cust_z', total: 0),
+            self::invoice('inv_y1', null, '2030-01-11', 'UNPAID', series: null, customer: 'cust_y', total: 1, currency: 'EUR'),
+            self::invoice('inv_y2', null, '2030-01-11', 'UNPAID', series: null, customer: 'cust_y', total: 1),
+        ]);
+
+        $this->assertSame([['cust_a', 3_000], ['cust_z', 0], ['cust_y', null]], array_map(static fn (array $customer): array => [$customer['customer_id'], $customer['open_amount']], $findings->unlinkedCustomerBalances));
+    }
+
+    public function test_drift_reads_members_in_occurrence_order_whatever_order_they_were_loaded_in(): void
+    {
+        $members = [
+            self::invoice('inv_late', 3, '2030-03-15', 'PAID', linked: true, total: 12_345),
+            self::invoice('inv_early', 1, '2030-01-15', 'PAID', linked: true, total: 9_000),
+            self::invoice('inv_mid', 2, '2030-02-15', 'PAID', linked: true, total: 9_000),
+        ];
+        $agreement = self::agreement();
+
+        $this->assertSame([], self::classify($members, agreement: $agreement)->seriesDrift);
+        $drift = self::classify(array_reverse($members), agreement: self::agreement(BillingCadence::Monthly, 9_000))->seriesDrift;
+        $this->assertSame([SquareBillingAuditPolicy::DRIFT_AMOUNT], $drift[0]['codes']);
+        $this->assertSame(12_345, $drift[0]['series_amount']);
+    }
+
+    public function test_a_drift_entry_names_its_agreement(): void
+    {
+        $agreement = self::agreement(BillingCadence::Monthly, 1);
+
+        $this->assertSame($agreement, self::classify(self::monthly(12_345), agreement: $agreement)->seriesDrift[0]['agreement']);
+    }
+
+    public function test_an_invoice_is_dated_by_its_due_date_before_its_schedule_and_is_a_series_member(): void
+    {
+        $invoice = new SquareAuditInvoice('inv_fixture', '000123-R-0002', '000123', 2, 'cust_fixture', 'Synthetic Recipient', 'LOCFIXTURE01', 'UNPAID', 'USD', 12_345, 45, '2030-02-15', '2030-02-01', true, [], null);
+
+        $this->assertSame('2030-02-15', $invoice->date());
+        $this->assertSame('2030-02-01', (new SquareAuditInvoice('inv_fixture', null, null, null, null, null, null, 'SCHEDULED', null, null, null, null, '2030-02-01', false, [], null))->date());
+        $this->assertSame([
+            'series_occurrence' => 2, 'due_on' => '2030-02-15', 'scheduled_on' => '2030-02-01', 'status' => 'UNPAID', 'currency' => 'USD', 'total_amount' => 12_345,
+            'paid_amount' => 45, 'autopay' => true, 'square_customer_id' => 'cust_fixture', 'recipient_name' => 'Synthetic Recipient', 'square_location_id' => 'LOCFIXTURE01',
+        ], $invoice->seriesMember());
+    }
+
     /** @return list<SquareAuditInvoice> */
     private static function monthly(int $amount, string $currency = 'USD'): array
     {
@@ -225,8 +295,8 @@ final class SquareBillingAuditPolicyTest extends TestCase
         bool $linked = false,
         array $payments = [],
         ?string $customer = 'cust_series',
-        int $total = 12_345,
-        int $paid = 0,
+        ?int $total = 12_345,
+        ?int $paid = 0,
         string $currency = 'USD',
         ?string $name = null,
     ): SquareAuditInvoice {

@@ -8,7 +8,8 @@ use App\Support\Billing\BillingCadence;
  * An agreement billed in a Square series, as the billing audit compares it
  * (#438). `cadence` is the cadence svc bills on, or null when the agreement
  * does not bill on a repeating cycle; `periodAmount` is the retainer fee for
- * one whole cycle in minor units, or null when the agreement sells none.
+ * one whole cycle in minor units - positive, or null when the agreement
+ * sells none.
  */
 final readonly class SquareAuditAgreement
 {
@@ -18,6 +19,7 @@ final readonly class SquareAuditAgreement
         public string $seriesKey,
         public string $startsOn,
         public ?BillingCadence $cadence,
+        /** @var positive-int|null */
         public ?int $periodAmount,
         public string $currency,
     ) {}

@@ -125,28 +125,32 @@ final class SquareBillingAuditPolicy
                 || ! in_array($invoice->status, SquareSeriesSummary::OPEN_STATUSES, true)) {
                 continue;
             }
-            $customer = $customers[$id] ?? ['count' => 0, 'currencies' => [], 'amount' => 0, 'recipient_name' => null];
+            $customer = $customers[$id] ?? ['customer_id' => $id, 'currencies' => [], 'count' => 0, 'amount' => 0, 'recipient_name' => null];
             $customer['count']++;
-            if ($invoice->currency !== null) {
-                $customer['currencies'][$invoice->currency] = true;
+            if ($invoice->currency !== null && ! in_array($invoice->currency, $customer['currencies'], true)) {
+                $customer['currencies'][] = $invoice->currency;
             }
-            $customer['amount'] += max(0, ($invoice->totalAmount ?? 0) - ($invoice->paidAmount ?? 0));
+            // An invoice with no amount owes nothing known; an overpaid one owes nothing.
+            if ($invoice->totalAmount !== null) {
+                $customer['amount'] += max(0, $invoice->totalAmount - ($invoice->paidAmount ?? 0));
+            }
             $customer['recipient_name'] ??= $invoice->recipientName;
             $customers[$id] = $customer;
         }
         $balances = [];
-        foreach ($customers as $id => $customer) {
+        foreach ($customers as $customer) {
             $single = count($customer['currencies']) <= 1;
             $balances[] = [
-                'customer_id' => (string) $id,
+                'customer_id' => $customer['customer_id'],
                 'recipient_name' => $customer['recipient_name'],
                 'open_invoice_count' => $customer['count'],
-                'currency' => $single ? (array_key_first($customer['currencies']) ?? null) : null,
+                'currency' => $single ? ($customer['currencies'][0] ?? null) : null,
                 'open_amount' => $single ? $customer['amount'] : null,
             ];
         }
-        // Most owed first; a balance in several currencies cannot be ranked.
-        usort($balances, static fn (array $a, array $b): int => [$b['open_amount'] ?? -1, $a['customer_id']] <=> [$a['open_amount'] ?? -1, $b['customer_id']]);
+        // Most owed first; a balance in several currencies cannot be ranked, so it comes last.
+        usort($balances, static fn (array $a, array $b): int => [$a['open_amount'] === null, $b['open_amount'], $a['customer_id']]
+            <=> [$b['open_amount'] === null, $a['open_amount'], $b['customer_id']]);
 
         return $balances;
     }
@@ -180,7 +184,7 @@ final class SquareBillingAuditPolicy
             }
             if ($currency !== null && $currency !== $agreement->currency) {
                 $codes[] = self::DRIFT_CURRENCY;
-            } elseif ($agreement->periodAmount !== null && $agreement->periodAmount > 0 && $amount !== null && $amount !== $agreement->periodAmount) {
+            } elseif ($agreement->periodAmount !== null && $amount !== null && $amount !== $agreement->periodAmount) {
                 $codes[] = self::DRIFT_AMOUNT;
             }
             if ($codes !== []) {
