@@ -86,6 +86,19 @@ final class RevokeCredentialsIssuedDuringRevocation
         $fenced = self::$fenced[$event->accessTokenId] ?? null;
         unset(self::$fenced[$event->accessTokenId]);
         $parent = Passport::token()->newQuery()->whereKey($event->accessTokenId)->first(['user_id', 'client_id', 'revoked']);
+        // Passport persists the replacement access token and only then its
+        // refresh token, so a lineage fenced in between was not there when
+        // the access token was announced. Recheck it now, and end the pair.
+        $redeemed = $this->lineage->redeemedAccessTokenId(app()->bound('request') ? request() : null);
+        if ($parent !== null && ! (bool) $parent->getAttribute('revoked') && $redeemed !== null && $this->fence->coversLineage($redeemed)) {
+            $owner = AgentPrincipal::query()->find($parent->getAttribute('user_id'));
+            if ($owner instanceof AgentPrincipal) {
+                // Its refresh tokens first, this one included, then the access token.
+                $this->revoker->revoke(AgentCredentialSelection::token($owner, $event->accessTokenId, fence: false), self::ACTOR);
+
+                return;
+            }
+        }
         // A parent that is already gone was revoked and purged in between (a
         // purge takes revoked rows): the refresh token is no more legitimate.
         if ($parent !== null && ! (bool) $parent->getAttribute('revoked')) {

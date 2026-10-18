@@ -23,7 +23,9 @@ use BWH\Auth\OAuth\Server\ResourceRefreshTokenRepository;
 use Illuminate\Auth\Middleware\Authenticate;
 use Illuminate\Cache\ArrayStore;
 use Illuminate\Cache\Repository as CacheRepository;
+use Illuminate\Contracts\Encryption\Encrypter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
 use Illuminate\Log\Events\MessageLogged;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Auth;
@@ -40,6 +42,7 @@ use Laravel\Passport\Events\AccessTokenCreated;
 use Laravel\Passport\Events\RefreshTokenCreated;
 use Laravel\Passport\Passport;
 use League\OAuth2\Server\AuthorizationServer;
+use League\OAuth2\Server\CryptTrait;
 use League\OAuth2\Server\ResourceServer;
 use RuntimeException;
 use Tests\TestCase;
@@ -649,6 +652,43 @@ final class AgentOAuthLifecycleTest extends TestCase
         Auth::forgetGuards();
         $this->mcpInitialize($raced['access_token'])->assertUnauthorized();
         $this->refresh($clientId, $raced['refresh_token'], $resource)->assertBadRequest()->assertJsonPath('error', 'invalid_grant');
+    }
+
+    /**
+     * Passport persists a refresh's replacement access token, then its refresh
+     * token. A self-revocation landing between the two fences the old lineage
+     * after the access token was announced; the refresh token's announcement
+     * still catches the pair.
+     */
+    public function test_a_lineage_fenced_between_the_replacement_s_access_and_refresh_tokens_catches_both(): void
+    {
+        $person = User::factory()->create();
+        $clientId = $this->registerClient();
+        $oldAccess = Str::random(80);
+        $replacement = Str::random(80);
+        Passport::token()->forceFill(['id' => $replacement, 'user_id' => $person->id, 'client_id' => $clientId, 'scopes' => [], 'revoked' => false, 'expires_at' => now()->addHour()])->saveOrFail();
+        $refreshId = Str::random(80);
+        Passport::refreshToken()->forceFill(['id' => $refreshId, 'access_token_id' => $replacement, 'revoked' => false, 'expires_at' => now()->addDay()])->saveOrFail();
+        app(AgentCredentialFence::class)->raiseLineage($oldAccess);
+        $crypt = new class
+        {
+            use CryptTrait;
+
+            public function seal(string $plain): string
+            {
+                return $this->encrypt($plain);
+            }
+        };
+        $crypt->setEncryptionKey(Passport::tokenEncryptionKey(app(Encrypter::class)));
+        $this->app->instance('request', Request::create('/oauth/token', 'POST', [
+            'grant_type' => 'refresh_token',
+            'refresh_token' => $crypt->seal((string) json_encode(['refresh_token_id' => Str::random(80), 'access_token_id' => $oldAccess])),
+        ]));
+
+        app(RevokeCredentialsIssuedDuringRevocation::class)->refreshTokenCreated(new RefreshTokenCreated($refreshId, $replacement));
+
+        $this->assertTrue((bool) Passport::token()->newQuery()->whereKey($replacement)->value('revoked'));
+        $this->assertTrue((bool) Passport::refreshToken()->newQuery()->whereKey($refreshId)->value('revoked'));
     }
 
     /**
