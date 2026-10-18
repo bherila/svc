@@ -95,8 +95,10 @@ php artisan svc:auth:revoke-connections USER_PUBLIC_UUID --client=OAUTH_CLIENT_I
    `2026_10_18_120000_backfill_oauth_refresh_token_owners` migration records
    the owner of every such token whose access token still exists, so this is
    normally zero. If it is not and the compromise could involve one of them,
-   rerun with `--unattributed`: it revokes every one of them, for whoever holds
-   it, reports `unattributed_refresh_tokens_revoked`, and logs
+   turn OAuth issuance off (step 1; the command refuses `--unattributed`
+   otherwise, since no fence can name an unattributed token's owner and a
+   refresh in flight could replace it) and rerun with `--unattributed`: it
+   revokes every one of them, for whoever holds it, reports `unattributed_refresh_tokens_revoked`, and logs
    `agent_token.unattributed_refresh_tokens_revoked`. Their connectors must
    authorize again.
 7. Run it again. It is idempotent, and a second run reporting zeros confirms

@@ -109,13 +109,28 @@ final readonly class CredentialRevoker
      * Revoke every {@see unattributedRefreshTokens()} - whoever they belong
      * to, which is exactly what cannot be known - so a containment that must
      * not miss one can close them. Each such connection authorizes again.
+     *
+     * Only while OAuth issuance is off: no fence can name the owner of a
+     * token nobody can attribute, so a refresh already in flight would
+     * otherwise persist a live replacement after this revokes its parent.
+     *
+     * @throws RevocationRefused while OAuth issuance is on
      */
     public function revokeUnattributedRefreshTokens(string $actor): int
     {
+        if (! self::unattributedRevocationAllowed()) {
+            throw new RevocationRefused('Revoking unattributed refresh tokens needs OAuth issuance off first (AGENT_API_OAUTH_SERVER_ENABLED=false), so no refresh can replace one meanwhile.');
+        }
         $revoked = $this->unattributedRefreshTokenQuery()->update(['revoked' => true]);
         $this->log->info('agent_token.unattributed_refresh_tokens_revoked', ['actor' => $actor, 'revoked' => $revoked]);
 
         return $revoked;
+    }
+
+    /** Whether {@see revokeUnattributedRefreshTokens()} may run: only with OAuth issuance (and so refresh) off. */
+    public static function unattributedRevocationAllowed(): bool
+    {
+        return ! (bool) config('bherila-auth.oauth_server.enabled', false);
     }
 
     /** @return Builder<RefreshToken> */

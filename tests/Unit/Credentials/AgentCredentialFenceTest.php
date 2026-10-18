@@ -83,12 +83,24 @@ final class AgentCredentialFenceTest extends TestCase
         $this->assertContains([RevokeCredentialsIssuedDuringRevocation::class, 'refreshTokenCreated'], $listeners[RefreshTokenCreated::class] ?? []);
     }
 
-    public function test_a_value_that_is_not_an_expiry_covers_nothing(): void
+    /** Redis without value serialization returns a stored number as a numeric string. */
+    public function test_an_expiry_read_back_as_a_numeric_string_still_fences(): void
     {
         $cache = new Repository(new ArrayStore);
         $cache->put('agent-credential-fence:7:client-a', (string) (time() + 600), 600);
-        $cache->put('agent-credential-fence:7:*', true, 600);
 
-        $this->assertFalse((new AgentCredentialFence($cache, new WorkspaceClock))->covers(7, 'client-a'));
+        $this->assertTrue((new AgentCredentialFence($cache, new WorkspaceClock))->covers(7, 'client-a'));
+    }
+
+    public function test_a_value_that_is_not_an_expiry_covers_nothing(): void
+    {
+        $cache = new Repository(new ArrayStore);
+        $cache->put('agent-credential-fence:7:client-a', 'soon', 600);
+        $cache->put('agent-credential-fence:7:*', [time() + 600], 600);
+        $cache->put('agent-credential-fence:8:*', (string) (time() + 600).'.5', 600);
+
+        $fence = new AgentCredentialFence($cache, new WorkspaceClock);
+        $this->assertFalse($fence->covers(7, 'client-a'));
+        $this->assertFalse($fence->covers(8, 'client-a'));
     }
 }

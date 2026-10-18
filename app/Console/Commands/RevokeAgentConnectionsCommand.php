@@ -46,6 +46,12 @@ final class RevokeAgentConnectionsCommand extends Command
 
             return self::INVALID;
         }
+        // Refused before anything is revoked, rather than half way through.
+        if ((bool) $this->option('unattributed') && ! CredentialRevoker::unattributedRevocationAllowed()) {
+            $this->error('--unattributed needs OAuth issuance off first (AGENT_API_OAUTH_SERVER_ENABLED=false): no fence can name the owner of an unattributed token, so a refresh in flight could replace one.');
+
+            return self::FAILURE;
+        }
         $user = $this->userByPublicId((string) $this->argument('user_public_id'));
         if (is_int($user)) {
             return $user;

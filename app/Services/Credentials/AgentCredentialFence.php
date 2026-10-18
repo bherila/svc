@@ -44,8 +44,10 @@ final readonly class AgentCredentialFence
     {
         $now = $this->clock->now()->getTimestamp();
         foreach ([$clientId, self::EVERY_CLIENT] as $client) {
-            $until = $this->cache->get(self::key($userId, $client));
-            if (is_int($until) && $until > $now) {
+            // A store that keeps numbers unserialized (Redis without value
+            // serialization) hands the expiry back as a numeric string.
+            $until = filter_var($this->cache->get(self::key($userId, $client)), FILTER_VALIDATE_INT);
+            if ($until !== false && $until > $now) {
                 return true;
             }
         }

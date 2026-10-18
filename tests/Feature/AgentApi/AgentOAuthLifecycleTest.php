@@ -4,6 +4,8 @@ namespace Tests\Feature\AgentApi;
 
 use App\Models\User;
 use App\Services\Credentials\AgentCredentialFence;
+use App\Services\Credentials\CredentialRevoker;
+use App\Services\Credentials\RevocationRefused;
 use App\Support\AgentApi\AgentApiScopes;
 use BWH\Auth\Http\Middleware\EnforceOAuthPkce;
 use BWH\Auth\Http\Middleware\EnforceOAuthResourceIndicator;
@@ -455,8 +457,15 @@ final class AgentOAuthLifecycleTest extends TestCase
         $this->assertSame(['access_tokens' => 0, 'refresh_tokens' => 0, 'authorization_codes' => 0, 'unattributed_refresh_tokens' => 1], json_decode(trim(Artisan::output()), true));
         $this->assertFalse((bool) Passport::refreshToken()->newQuery()->where('access_token_id', $accessId)->value('revoked'));
 
+        // No fence can name an unattributed token's owner, so issuance must be off first.
+        $this->assertSame(1, Artisan::call('svc:auth:revoke-connections', ['user_public_id' => $stranger->public_id, '--unattributed' => true]));
+        $this->assertFalse((bool) Passport::refreshToken()->newQuery()->where('access_token_id', $accessId)->value('revoked'));
+        $this->expectsRefusal(static fn () => app(CredentialRevoker::class)->revokeUnattributedRefreshTokens('test'));
+
+        config(['bherila-auth.oauth_server.enabled' => false]);
         $this->assertSame(0, Artisan::call('svc:auth:revoke-connections', ['user_public_id' => $stranger->public_id, '--unattributed' => true]));
         $this->assertSame(['access_tokens' => 0, 'refresh_tokens' => 0, 'authorization_codes' => 0, 'unattributed_refresh_tokens_revoked' => 1, 'unattributed_refresh_tokens' => 0], json_decode(trim(Artisan::output()), true));
+        config(['bherila-auth.oauth_server.enabled' => true]);
         $this->refresh($clientId, $legacy['refresh_token'], $resource)->assertBadRequest()->assertJsonPath('error', 'invalid_grant');
     }
 
@@ -523,6 +532,16 @@ final class AgentOAuthLifecycleTest extends TestCase
         Auth::forgetGuards();
         $this->mcpInitialize($sibling['access_token'])->assertOk();
         $this->refresh($clientId, $theirs['refresh_token'], $resource)->assertOk();
+    }
+
+    private function expectsRefusal(callable $revoke): void
+    {
+        try {
+            $revoke();
+        } catch (RevocationRefused) {
+            return;
+        }
+        $this->fail('The unattributed revocation was not refused while OAuth issuance is on.');
     }
 
     private function registerClient(): string
