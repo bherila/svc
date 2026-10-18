@@ -5,6 +5,7 @@ namespace Tests\Feature\Auth;
 use App\Models\AgentPrincipal;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Credentials\AgentCredentialFence;
 use App\Services\Credentials\AgentTokenKind;
 use App\Support\AgentApi\AgentApiScopes;
 use BWH\Auth\OAuth\Server\OAuthResourceIndicator;
@@ -386,6 +387,27 @@ final class IssueAgentTokenCommandTest extends TestCase
         foreach ([$rest, $mcp, $kept, $user->email, ...$ids] as $secret) {
             $this->assertStringNotContainsString($secret, $serialized);
         }
+    }
+
+    /**
+     * An operator token issued for a person while their connections are being
+     * cut off is fenced like any other credential: refused, and its row revoked.
+     */
+    public function test_an_operator_token_issued_inside_a_revocation_fence_is_refused_and_revoked(): void
+    {
+        [$user] = $this->member('fenced-operator');
+        [$stranger] = $this->member('fenced-stranger');
+        $this->assertSame(0, Artisan::call('svc:auth:revoke-connections', ['user_public_id' => $user->public_id]));
+
+        [$exit, $output] = $this->issue($user, 'Inside fence', [AgentApiScopes::IDENTITY_READ]);
+        $this->assertSame(1, $exit);
+        $this->assertStringNotContainsString('"token"', $output);
+        $this->assertTrue((bool) Passport::token()->newQuery()->where('user_id', $user->id)->sole()->revoked);
+        // Another person is not fenced.
+        $this->assertSame(0, $this->issue($stranger, 'Unfenced', [AgentApiScopes::IDENTITY_READ])[0]);
+
+        $this->travel(AgentCredentialFence::SECONDS + 1)->seconds();
+        $this->assertSame(0, $this->issue($user, 'After fence', [AgentApiScopes::IDENTITY_READ])[0]);
     }
 
     /** @return array{0: User, 1: Workspace} */

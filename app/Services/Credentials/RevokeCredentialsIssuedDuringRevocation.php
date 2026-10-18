@@ -4,7 +4,6 @@ namespace App\Services\Credentials;
 
 use App\Models\AgentPrincipal;
 use Laravel\Passport\AuthCode;
-use Laravel\Passport\Client;
 use Laravel\Passport\Events\AccessTokenCreated;
 use Laravel\Passport\Events\RefreshTokenCreated;
 use Laravel\Passport\Passport;
@@ -15,7 +14,7 @@ use Psr\Log\LoggerInterface;
  * {@see AgentCredentialFence}): runs synchronously as Passport persists each
  * credential, so what a racing grant or consent returns is already dead.
  *
- * - an OAuth-grant access token persisted inside a fence goes through
+ * - an access token (OAuth grant or personal) persisted inside a fence goes through
  *   {@see CredentialRevoker}, which audits it;
  * - an authorization code persisted inside a fence (a consent approved just
  *   before the revocation) is revoked, so it cannot be exchanged once the
@@ -41,10 +40,8 @@ final readonly class RevokeCredentialsIssuedDuringRevocation
         if ($userId === false || ! $this->fence->covers($userId, $event->clientId)) {
             return;
         }
-        $client = Passport::client()->newQuery()->find($event->clientId);
-        if (! $client instanceof Client || $client->hasGrantType('personal_access')) {
-            return;
-        }
+        // Personal access tokens too: an operator token issued for the person
+        // while their connections are being cut off is no exception.
         $owner = AgentPrincipal::query()->find($userId);
         if ($owner instanceof AgentPrincipal) {
             $this->revoker->revoke(AgentCredentialSelection::token($owner, $event->tokenId), self::ACTOR);

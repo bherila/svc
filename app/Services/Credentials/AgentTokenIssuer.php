@@ -14,6 +14,7 @@ use Carbon\CarbonImmutable;
 use DateInterval;
 use DomainException;
 use Illuminate\Container\Container;
+use Illuminate\Support\Facades\Cache;
 use Laravel\Passport\ClientRepository;
 use Laravel\Passport\Passport;
 use League\OAuth2\Server\AuthorizationServer;
@@ -83,11 +84,17 @@ final readonly class AgentTokenIssuer
             throw new AgentTokenRefused('This account cannot hold API credentials.');
         }
 
-        $expiresAt = CarbonImmutable::parse(Passport::token()->newQuery()->whereKey($issued['id'])->value('expires_at'));
+        $row = Passport::token()->newQuery()->whereKey($issued['id'])->firstOrFail(['expires_at', 'revoked']);
+        // A revocation of this person's credentials is under way, and its
+        // fence revoked the token as Passport persisted it.
+        if ((bool) $row->getAttribute('revoked')) {
+            throw new AgentTokenRefused('A revocation of this person\'s agent credentials is in progress, so the token was revoked as it was issued. Retry after '.AgentCredentialFence::SECONDS.' seconds.');
+        }
+        $expiresAt = CarbonImmutable::parse($row->getAttribute('expires_at'));
         // Passport reads the lifetime from shared state when it builds its
         // server; never hand out a credential that outlives what was asked.
         if ($expiresAt->greaterThan($this->clock->now()->addMinutes($request->ttlMinutes + 1))) {
-            $this->revoker->revoke(AgentCredentialSelection::token($principal, $issued['id']), $request->kind->actor());
+            $this->revoker->revoke(AgentCredentialSelection::token($principal, $issued['id'], fence: false), $request->kind->actor());
 
             throw new AgentTokenRefused('The token was issued with a longer lifetime than requested and has been revoked.');
         }
@@ -159,13 +166,18 @@ final readonly class AgentTokenIssuer
         // The repository binds the row and the signed JWT during issuance.
         // Checking the client and resource here keeps a misconfigured Passport
         // client from producing a credential nobody can revoke or the endpoint
-        // would refuse.
-        Passport::token()->newQuery()
+        // would refuse. A row that fails is revoked rather than left live.
+        $bound = Passport::token()->newQuery()
             ->whereKey($issued->accessTokenId)
             ->where('user_id', $principal->getKey())
             ->where('client_id', $clientId)
             ->where('resource_uri', $resource)
-            ->firstOrFail();
+            ->exists();
+        if (! $bound) {
+            $this->revoker->revoke(AgentCredentialSelection::token($principal, (string) $issued->accessTokenId, fence: false), $request->kind->actor());
+
+            throw new AgentTokenRefused('The token was not issued from the expected client and resource, and has been revoked. Retry.');
+        }
 
         return ['id' => (string) $issued->accessTokenId, 'token' => (string) $issued->accessToken];
     }
@@ -197,14 +209,21 @@ final readonly class AgentTokenIssuer
      * The client Passport itself issues agent-principal personal tokens from.
      *
      * Passport picks the newest personal access client for the provider and
-     * cannot be told otherwise, so one is created only when there is none.
+     * cannot be told otherwise, so one is created only when there is none -
+     * under a lock, so two first issues cannot each create one.
      */
     private function personalAccessClient(): string
     {
         try {
             return (string) $this->clients->personalAccessClient(self::PROVIDER)->getKey();
         } catch (RuntimeException) {
-            return (string) $this->clients->createPersonalAccessGrantClient(self::CLIENT_NAME, self::PROVIDER)->getKey();
+            return Cache::lock('agent-token-issuer:personal-access-client', 10)->block(10, function (): string {
+                try {
+                    return (string) $this->clients->personalAccessClient(self::PROVIDER)->getKey();
+                } catch (RuntimeException) {
+                    return (string) $this->clients->createPersonalAccessGrantClient(self::CLIENT_NAME, self::PROVIDER)->getKey();
+                }
+            });
         }
     }
 }

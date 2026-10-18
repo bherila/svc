@@ -46,7 +46,7 @@ final readonly class CredentialRevoker
     {
         $connection = Passport::token()->getConnection();
         // Raised first, so a grant that persists while this runs is caught too.
-        if ($selection->scope === AgentCredentialScope::Connections) {
+        if ($selection->fence && $selection->scope === AgentCredentialScope::Connections) {
             $this->fence->raise($selection->ownerId, $selection->clientId);
         }
         // A refresh of this connection that passed its check may already have
@@ -55,7 +55,7 @@ final readonly class CredentialRevoker
         // persists its replacement after this either way. So the client comes
         // from the owner's row whatever its state, and the fence catches the
         // replacement.
-        if ($selection->scope === AgentCredentialScope::Token) {
+        if ($selection->fence && $selection->scope === AgentCredentialScope::Token) {
             $clientId = Passport::token()->newQuery()
                 ->where('user_id', $selection->ownerId)
                 ->whereKey((string) $selection->tokenId)

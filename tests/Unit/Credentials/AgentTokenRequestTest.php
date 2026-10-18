@@ -141,6 +141,14 @@ final class AgentTokenRequestTest extends TestCase
         $all = AgentCredentialSelection::connections($owner);
         $this->assertSame([41, AgentCredentialScope::Connections, null, null, null], [$all->ownerId, $all->scope, $all->clientId, $all->atMost, $all->storedName]);
         $this->assertSame('client-id', AgentCredentialSelection::connections($owner, 'Client-ID')->clientId);
+        // Fenced unless the caller has just minted the token itself or is about to issue deliberately.
+        $this->assertSame([true, false, false, true, false], [
+            AgentCredentialSelection::token($principal, 'token-id')->fence,
+            AgentCredentialSelection::token($principal, 'token-id', fence: false)->fence,
+            $one->fence,
+            $all->fence,
+            AgentCredentialSelection::connections($owner, fence: false)->fence,
+        ]);
         $this->assertSame(['token', 'name', 'connections'], array_map(static fn (AgentCredentialScope $scope): string => $scope->value, AgentCredentialScope::cases()));
     }
 

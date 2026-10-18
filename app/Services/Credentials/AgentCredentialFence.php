@@ -14,10 +14,10 @@ use Illuminate\Contracts\Cache\Repository;
  * waited on the revocation's row locks - would otherwise persist a live
  * access and refresh token just after it. Passport announces every access
  * token it persists, so {@see RevokeCredentialsIssuedDuringRevocation} revokes
- * any OAuth-grant token that lands inside a fence, and any refresh token whose
- * access token is already revoked. Personal access tokens are never fenced:
- * they cannot be refreshed, and the issuer mints them right after a revocation
- * on purpose (the deployment smoke).
+ * any access token (an operator's personal token included) or authorization
+ * code that lands inside a fence, and any refresh token whose access token is
+ * already revoked. A caller that revokes and then deliberately issues - the
+ * deployment smoke ending its own principal's tokens - selects without a fence.
  *
  * One cache entry per person and client (or every client), so raising two
  * fences never overwrites one with the other.
