@@ -15572,7 +15572,7 @@
                 "properties": {
                     "complete": {
                         "type": "boolean",
-                        "description": "False when the audit reached a bound (5,000 members of billed-in-Square series, 5,000 other mirrored invoices, or 500 agreements); every count is then a floor, and series_not_mirrored is not claimed when series members were bounded."
+                        "description": "False when the audit reached a bound (5,000 members of billed-in-Square series, 5,000 other mirrored invoices, or 500 agreements), or when the mirror has yet to read the payment ids of a paid invoice in reach. Every count is then a floor, and series_drift is withheld when series members were bounded."
                     },
                     "unmirrored_series_periods": {
                         "type": "object",

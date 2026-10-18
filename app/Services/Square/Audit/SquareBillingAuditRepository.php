@@ -10,6 +10,7 @@ use App\Models\SquareCustomerSnapshot;
 use App\Models\SquareInvoiceSnapshot;
 use App\Models\Workspace;
 use App\Services\Square\Mirror\SquareSeriesSummary;
+use App\Services\Square\Mirror\SquareSnapshotMapper;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 
@@ -43,7 +44,7 @@ final class SquareBillingAuditRepository
         $seriesKeys = array_map(static fn (SquareAuditAgreement $agreement): string => $agreement->seriesKey, $agreements);
 
         $columns = ['id', 'square_invoice_id', 'invoice_number', 'series_key', 'series_occurrence', 'square_customer_id', 'recipient_name', 'square_location_id',
-            'status', 'currency', 'total_amount', 'paid_amount', 'due_on', 'scheduled_at', 'autopay', 'payment_ids'];
+            'status', 'currency', 'total_amount', 'paid_amount', 'due_on', 'scheduled_at', 'autopay', 'payment_ids', 'square_order_id', 'payment_ids_basis'];
         // Series members first, under their own bound and newest first, so a
         // large mirror never hides a billed-in-Square series: drift reads the
         // latest members, and absence is only claimed of a complete load.
@@ -102,6 +103,7 @@ final class SquareBillingAuditRepository
                 $snapshot->autopay,
                 array_values(array_filter($snapshot->payment_ids ?? [], 'is_string')),
                 $links[$snapshot->square_invoice_id] ?? null,
+                SquareSnapshotMapper::paymentIdsCurrent($snapshot->status, $snapshot->paid_amount, $snapshot->square_order_id, $snapshot->payment_ids_basis),
             );
         }
 

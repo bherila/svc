@@ -241,10 +241,10 @@ final class SquareBillingAuditPolicyTest extends TestCase
 
     public function test_an_invoice_is_dated_by_its_due_date_before_its_schedule_and_is_a_series_member(): void
     {
-        $invoice = new SquareAuditInvoice('inv_fixture', '000123-R-0002', '000123', 2, 'cust_fixture', 'Synthetic Recipient', 'LOCFIXTURE01', 'UNPAID', 'USD', 12_345, 45, '2030-02-15', '2030-02-01', true, [], null);
+        $invoice = new SquareAuditInvoice('inv_fixture', '000123-R-0002', '000123', 2, 'cust_fixture', 'Synthetic Recipient', 'LOCFIXTURE01', 'UNPAID', 'USD', 12_345, 45, '2030-02-15', '2030-02-01', true, [], null, true);
 
         $this->assertSame('2030-02-15', $invoice->date());
-        $this->assertSame('2030-02-01', (new SquareAuditInvoice('inv_fixture', null, null, null, null, null, null, 'SCHEDULED', null, null, null, null, '2030-02-01', false, [], null))->date());
+        $this->assertSame('2030-02-01', (new SquareAuditInvoice('inv_fixture', null, null, null, null, null, null, 'SCHEDULED', null, null, null, null, '2030-02-01', false, [], null, true))->date());
         $this->assertSame([
             'series_occurrence' => 2, 'due_on' => '2030-02-15', 'scheduled_on' => '2030-02-01', 'status' => 'UNPAID', 'currency' => 'USD', 'total_amount' => 12_345,
             'paid_amount' => 45, 'autopay' => true, 'square_customer_id' => 'cust_fixture', 'recipient_name' => 'Synthetic Recipient', 'square_location_id' => 'LOCFIXTURE01',
@@ -285,6 +285,28 @@ final class SquareBillingAuditPolicyTest extends TestCase
 
         $this->assertSame([SquareBillingAuditPolicy::DRIFT_AMOUNT], $drift[0]['codes']);
         $this->assertSame('USD', $drift[0]['series_currency']);
+    }
+
+    public function test_an_unresolved_invoice_in_reach_makes_the_audit_incomplete(): void
+    {
+        $unresolved = new SquareAuditInvoice('inv_pending', '000123-R-0001', '000123', 1, 'cust_series', null, null, 'PAID', 'USD', 12_345, 12_345, '2030-01-15', null, false, [], null, false);
+        $stranger = new SquareAuditInvoice('inv_stranger', '000500', null, null, 'cust_stranger', null, null, 'PAID', 'USD', 100, 100, '2030-01-15', null, false, [], null, false);
+
+        $this->assertFalse(self::classify([$unresolved])->complete);
+        $this->assertFalse(self::classify([$unresolved, self::invoice('inv_fixture_2', 2, '2030-02-15', 'PAID')])->complete);
+        $this->assertFalse(self::classify([self::invoice('inv_fixture_2', 2, '2030-02-15', 'PAID'), $unresolved])->complete);
+        $this->assertTrue(self::classify([self::invoice('inv_fixture_2', 2, '2030-02-15', 'PAID'), self::invoice('inv_fixture_3', 3, '2030-03-15', 'PAID')])->complete);
+        $this->assertTrue(self::classify([$stranger])->complete, 'An invoice outside the payment check cannot leave it incomplete.');
+    }
+
+    public function test_drift_is_withheld_when_the_series_load_was_bounded(): void
+    {
+        $facts = new SquareBillingAuditFacts('2030-10-01', [self::agreement(BillingCadence::Annual, 1)], self::monthly(12_345), [], [], [], false, false);
+
+        $findings = SquareBillingAuditPolicy::classify($facts);
+
+        $this->assertSame([], $findings->seriesDrift);
+        $this->assertFalse($findings->complete);
     }
 
     public function test_absence_is_not_claimed_when_the_series_load_was_bounded(): void
@@ -360,6 +382,7 @@ final class SquareBillingAuditPolicyTest extends TestCase
             false,
             $payments,
             $linked ? new SquareAuditLinkedInvoice('00000000-0000-4000-8000-0000000b'.substr(md5($id), 0, 4), self::COMPANY) : null,
+            true,
         );
     }
 }

@@ -17,14 +17,16 @@ use Carbon\CarbonImmutable;
  *   actively linked invoice, a member of a billed-in-Square series, or an
  *   invoice of a confirmed customer - that svc has not recorded under
  *   provider `square`. A payment svc recorded against another invoice still
- *   matches: a received payment stays with its original invoice.
+ *   matches: a received payment stays with its original invoice. While the
+ *   mirror has yet to read an invoice's payment ids, the audit is incomplete.
  * - **Unlinked customer balance:** a Square customer no client company is
  *   mapped to, still listed by Square, with an open invoice - the same
  *   customers `square.customers.unlinked` lists with an open balance.
  * - **Series drift:** a billed-in-Square series whose billed members differ
  *   from its agreement in cadence, currency (another one, or more than one)
- *   or latest amount, or which the mirror does not hold at all - the last
- *   only when the load held every series member. SCHEDULED members are not
+ *   or latest amount, or which the mirror does not hold at all - none of it
+ *   when the member load was bounded, since any series may then be partial,
+ *   and the audit then says it is incomplete. SCHEDULED members are not
  *   billed yet and are left out. An agreement that sells no retainer fee is
  *   not compared on amount, and a series with fewer than two dated billed
  *   members has no cadence to compare.
@@ -53,12 +55,14 @@ final class SquareBillingAuditPolicy
             $agreements[$agreement->seriesKey] = $agreement;
         }
 
+        [$payments, $paymentsResolved] = self::unmatchedPayments($facts, $agreements);
+
         return new SquareBillingAuditFindings(
             self::unmirroredPeriods($facts, $agreements),
-            self::unmatchedPayments($facts, $agreements),
+            $payments,
             self::unlinkedCustomerBalances($facts),
             self::drift($facts),
-            $facts->complete,
+            $facts->complete && $paymentsResolved,
         );
     }
 
@@ -89,17 +93,21 @@ final class SquareBillingAuditPolicy
 
     /**
      * @param  array<string, SquareAuditAgreement>  $agreements
-     * @return list<array{invoice: SquareAuditInvoice, payment_id: string, reason: string}>
+     * @return array{list<array{invoice: SquareAuditInvoice, payment_id: string, reason: string}>, bool} the unmatched payments, and whether every invoice in reach had its payment ids resolved
      */
     private static function unmatchedPayments(SquareBillingAuditFacts $facts, array $agreements): array
     {
         $unmatched = [];
+        $resolved = true;
         foreach ($facts->invoices as $invoice) {
             $inReach = $invoice->linked !== null
                 || ($invoice->seriesKey !== null && isset($agreements[$invoice->seriesKey]))
                 || ($invoice->customerId !== null && isset($facts->mappedCustomerIds[$invoice->customerId]));
             if (! $inReach) {
                 continue;
+            }
+            if (! $invoice->paymentIdsResolved) {
+                $resolved = false;
             }
             foreach ($invoice->paymentIds as $paymentId) {
                 if (! isset($facts->recordedPaymentIds[$paymentId])) {
@@ -114,7 +122,7 @@ final class SquareBillingAuditPolicy
         usort($unmatched, static fn (array $a, array $b): int => [$a['invoice']->date() ?? '9999-12-31', $a['invoice']->squareInvoiceId, $a['payment_id']]
             <=> [$b['invoice']->date() ?? '9999-12-31', $b['invoice']->squareInvoiceId, $b['payment_id']]);
 
-        return $unmatched;
+        return [$unmatched, $resolved];
     }
 
     /** @return list<array{customer_id: string, recipient_name: string|null, open_invoice_count: int, currency: string|null, open_amount: int|null}> */
@@ -166,15 +174,17 @@ final class SquareBillingAuditPolicy
                 $members[$invoice->seriesKey][] = $invoice;
             }
         }
+        // A bounded member load may have cut any series short, and a partial
+        // series would drift on whichever members happened to load.
+        if (! $facts->seriesComplete) {
+            return [];
+        }
         $today = CarbonImmutable::parse($facts->today);
         $drift = [];
         foreach ($facts->agreements as $agreement) {
             $series = $members[$agreement->seriesKey] ?? [];
             if ($series === []) {
-                // Absence is a finding only when the load held every member.
-                if ($facts->seriesComplete) {
-                    $drift[] = ['agreement' => $agreement, 'codes' => [self::DRIFT_SERIES_NOT_MIRRORED], 'series_cadence' => null, 'series_currency' => null, 'series_amount' => null];
-                }
+                $drift[] = ['agreement' => $agreement, 'codes' => [self::DRIFT_SERIES_NOT_MIRRORED], 'series_cadence' => null, 'series_currency' => null, 'series_amount' => null];
 
                 continue;
             }

@@ -41,4 +41,21 @@ final class SquareSnapshotPaymentIdsTest extends TestCase
         $this->assertSame('pay_50', $ids[49]);
         $this->assertSame([], (new SquareSnapshotMapper(new SquarePresenter))->paymentIds(['tenders' => 'none']));
     }
+
+    public function test_payment_ids_are_current_for_the_status_paid_amount_and_tender_rules_they_were_read_for(): void
+    {
+        $basis = SquareSnapshotMapper::paymentIdsBasis('PAID', 12_345);
+
+        $this->assertSame('PAID|12345|t2', $basis);
+        $this->assertSame('UNPAID||t2', SquareSnapshotMapper::paymentIdsBasis('UNPAID', null));
+        $this->assertTrue(SquareSnapshotMapper::paymentIdsCurrent('PAID', 12_345, 'order_fixture_1', $basis));
+        $this->assertFalse(SquareSnapshotMapper::paymentIdsCurrent('PAID', 12_345, 'order_fixture_1', 'PAID|12345'), 'Read by older tender rules.');
+        $this->assertFalse(SquareSnapshotMapper::paymentIdsCurrent('PAID', 12_345, 'order_fixture_1', null));
+        $this->assertFalse(SquareSnapshotMapper::paymentIdsCurrent('PARTIALLY_REFUNDED', 12_345, 'order_fixture_1', $basis));
+        $this->assertFalse(SquareSnapshotMapper::paymentIdsCurrent('PAID', 1, 'order_fixture_1', $basis));
+        $this->assertTrue(SquareSnapshotMapper::paymentIdsCurrent('PAID', 12_345, null, null), 'No order to read.');
+        $this->assertTrue(SquareSnapshotMapper::paymentIdsCurrent('UNPAID', 0, 'order_fixture_1', null), 'Nothing paid.');
+        $this->assertTrue(SquareSnapshotMapper::paymentIdsCurrent('UNPAID', null, 'order_fixture_1', null));
+        $this->assertFalse(SquareSnapshotMapper::paymentIdsCurrent('PAID', 1, 'order_fixture_1', null), 'One minor unit paid is a payment.');
+    }
 }

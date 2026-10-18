@@ -11,8 +11,8 @@ namespace App\Services\Square\Audit;
  * an actively linked invoice, or an open one - up to the repository's bound.
  * `complete` is false when a bound was reached, and the counts are then a
  * floor. `seriesComplete` says every member of every billed-in-Square series
- * was loaded - members load first, under their own bound - so a series with
- * none loaded is truly absent from the mirror.
+ * was loaded - members load first, under their own bound - so each series is
+ * whole and one with none loaded is truly absent from the mirror.
  */
 final readonly class SquareBillingAuditFacts
 {

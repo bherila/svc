@@ -13,6 +13,7 @@ use App\Models\SquareInvoiceSnapshot;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Square\Audit\SquareBillingAudit;
+use App\Services\Square\Mirror\SquareMirrorRepository;
 use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Date;
@@ -174,6 +175,23 @@ final class SquareBillingAuditTest extends TestCase
         $this->assertFalse($report['complete']);
         $this->assertSame([['amount']], array_column($report['series_drift']['agreements'], 'codes'));
         $this->assertSame(5000, $report['unlinked_customer_balances']['count']);
+    }
+
+    public function test_payment_ids_read_by_older_tender_rules_are_re_read_and_leave_the_audit_incomplete_until_then(): void
+    {
+        [$workspace] = $this->fixture();
+        $this->snapshot($workspace, 'inv_audit_1', 1, '2030-01-15', 'PAID', ['paid_amount' => 12_345, 'square_order_id' => 'order_audit_1', 'payment_ids' => [], 'payment_ids_basis' => 'PAID|12345']);
+        $repository = app(SquareMirrorRepository::class);
+
+        $this->assertFalse(app(SquareBillingAudit::class)->report($workspace)['complete']);
+        $due = $repository->invoicesNeedingPaymentIds($workspace, 10);
+        $this->assertSame([['square_invoice_id' => 'inv_audit_1', 'square_order_id' => 'order_audit_1', 'basis' => 'PAID|12345|t2']], $due);
+
+        $this->assertTrue($repository->storePaymentIds($workspace, 'inv_audit_1', $due[0]['basis'], ['pay_audit_tender']));
+        $report = app(SquareBillingAudit::class)->report($workspace);
+        $this->assertTrue($report['complete']);
+        $this->assertSame(['pay_audit_tender'], array_column($report['unmatched_payments']['payments'], 'payment_id'));
+        $this->assertSame([], $repository->invoicesNeedingPaymentIds($workspace, 10));
     }
 
     public function test_an_imported_annual_series_mirrors_its_amount_once_per_cycle(): void

@@ -30,6 +30,9 @@ final class SquareSnapshotMapper
     /** Tenders read per order at most, as the order presenter caps them. */
     private const int MAX_TENDERS = 50;
 
+    /** The tender rules payment ids are read by; see {@see paymentIds()}. */
+    private const string TENDER_RULES = 't2';
+
     /** Card tender states in which no money moved. */
     private const array TENDERS_WITHOUT_MONEY = ['VOIDED', 'FAILED'];
 
@@ -131,11 +134,23 @@ final class SquareSnapshotMapper
     /**
      * The payment ids resolved for an invoice are good while its status and
      * paid amount are what they were then; either changing means a payment or
-     * refund happened since and the order is read again.
+     * refund happened since and the order is read again. The basis also names
+     * the rules tenders were read by, so a change to those rules re-reads
+     * every order once.
      */
     public static function paymentIdsBasis(string $status, ?int $paidAmount): string
     {
-        return $status.'|'.($paidAmount ?? '');
+        return $status.'|'.($paidAmount ?? '').'|'.self::TENDER_RULES;
+    }
+
+    /**
+     * Whether a mirrored invoice's payment ids are resolved for what it is
+     * now: an invoice with nothing paid, or no order to read, has none to
+     * resolve.
+     */
+    public static function paymentIdsCurrent(string $status, ?int $paidAmount, ?string $orderId, ?string $basis): bool
+    {
+        return $paidAmount === null || $paidAmount <= 0 || $orderId === null || $basis === self::paymentIdsBasis($status, $paidAmount);
     }
 
     /**

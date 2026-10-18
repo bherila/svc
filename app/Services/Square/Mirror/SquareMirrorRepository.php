@@ -72,10 +72,11 @@ final class SquareMirrorRepository
             ->lazy(min($limit, 100));
         $due = [];
         foreach ($rows as $row) {
-            $basis = SquareSnapshotMapper::paymentIdsBasis((string) $row->status, $row->paid_amount === null ? null : (int) $row->paid_amount);
-            if ($row->payment_ids_basis === $basis) {
+            $paid = $row->paid_amount === null ? null : (int) $row->paid_amount;
+            if (SquareSnapshotMapper::paymentIdsCurrent((string) $row->status, $paid, (string) $row->square_order_id, $row->payment_ids_basis === null ? null : (string) $row->payment_ids_basis)) {
                 continue;
             }
+            $basis = SquareSnapshotMapper::paymentIdsBasis((string) $row->status, $paid);
             $due[] = ['square_invoice_id' => (string) $row->square_invoice_id, 'square_order_id' => (string) $row->square_order_id, 'basis' => $basis];
             if (count($due) >= $limit) {
                 break;
@@ -94,7 +95,7 @@ final class SquareMirrorRepository
      */
     public function storePaymentIds(Workspace $workspace, string $invoiceId, string $basis, array $paymentIds): bool
     {
-        [$status, $paid] = explode('|', $basis, 2);
+        [$status, $paid] = explode('|', $basis, 3);
 
         return DB::table('square_invoice_snapshots')
             ->where('workspace_id', $workspace->id)
