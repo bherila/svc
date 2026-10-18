@@ -78,9 +78,7 @@ final readonly class DeferredBacklog
             $entries[] = $entry;
             $minutes += $entry->minutes_worked;
             $workedOn = $entry->worked_on->toDateString();
-            if ($oldest === null || $workedOn < $oldest) {
-                $oldest = $workedOn;
-            }
+            $oldest = $oldest === null ? $workedOn : min($oldest, $workedOn);
         }
 
         $issue = null;
@@ -111,7 +109,7 @@ final readonly class DeferredBacklog
             agreementRateMinutes: $agreementRateMinutes,
             flatHourlyMinutes: $flatHourlyMinutes,
             amount: $amount,
-            entryIds: array_map(static fn (ClientTimeEntry $entry): int => (int) $entry->id, $entries),
+            entryIds: array_map(static fn (ClientTimeEntry $entry): int => $entry->id, $entries),
             trend: self::trend($history, $periods),
         );
     }
@@ -152,8 +150,9 @@ final readonly class DeferredBacklog
         }
 
         $trend = [];
-        foreach ($months as $period => [$added, $applied, $billed]) {
-            $trend[] = new DeferredBacklogMonth((string) $period, $added, $applied, $billed);
+        foreach ($periods as $period) {
+            [$added, $applied, $billed] = $months[$period];
+            $trend[] = new DeferredBacklogMonth($period, $added, $applied, $billed);
         }
 
         return $trend;
@@ -190,7 +189,8 @@ final readonly class DeferredBacklog
 
     public function hasBacklog(): bool
     {
-        return $this->issue === DeferredBacklogIssue::ProjectChainMismatch || ($this->entryCount ?? 0) > 0;
+        // A withheld backlog states no count, and is listed so it gets corrected.
+        return $this->entryCount === null || $this->entryCount > 0;
     }
 
     private static function hoursOf(int $minutes): float

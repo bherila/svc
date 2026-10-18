@@ -24,10 +24,12 @@ final class FlatHourlyPricing
      */
     public static function groups(iterable $entries, string $invoiceCurrency, string $invoiceLabel): array
     {
-        /** @var array<string, non-empty-list<ClientTimeEntry>> $grouped */
+        /** @var array<string, array{rate: int, currency: string, entries: non-empty-list<ClientTimeEntry>}> $grouped */
         $grouped = [];
         foreach ($entries as $entry) {
-            if ($entry->subcontractor_cost_amount === null || trim((string) $entry->subcontractor_cost_currency) === '') {
+            $rate = $entry->subcontractor_cost_amount;
+            $currency = $entry->subcontractor_cost_currency ?? '';
+            if ($rate === null || trim($currency) === '') {
                 throw new RuntimeException('Flat-hourly subcontractor time requires a snapshotted amount and currency.');
             }
 
@@ -38,22 +40,17 @@ final class FlatHourlyPricing
             // costed at the same number in different currencies share a group,
             // and the check sees only the first one - so the other currency's
             // minutes bill at this one's rate.
-            $key = implode('|', [
-                $entry->user_id,
-                $entry->client_project_id,
-                (string) $entry->subcontractor_cost_amount,
-                (string) $entry->subcontractor_cost_currency,
-            ]);
-            $grouped[$key][] = $entry;
+            $key = implode('|', [$entry->user_id, $entry->client_project_id, $rate, $currency]);
+            $grouped[$key]['rate'] = $rate;
+            $grouped[$key]['currency'] = $currency;
+            $grouped[$key]['entries'][] = $entry;
         }
 
         $groups = [];
-        foreach ($grouped as $groupEntries) {
-            $sample = $groupEntries[0];
-            $rateAmount = (int) $sample->subcontractor_cost_amount;
+        foreach ($grouped as ['rate' => $rateAmount, 'currency' => $costCurrency, 'entries' => $groupEntries]) {
             $totalMinutes = 0;
             foreach ($groupEntries as $entry) {
-                $totalMinutes += (int) $entry->minutes;
+                $totalMinutes += $entry->minutes;
             }
             if ($totalMinutes <= 0) {
                 continue;
@@ -61,7 +58,6 @@ final class FlatHourlyPricing
 
             // The cost is stored in minor units of its own currency, so billing
             // it unconverted turns an EUR rate into that many USD cents.
-            $costCurrency = (string) $sample->subcontractor_cost_currency;
             if ($costCurrency !== $invoiceCurrency) {
                 throw new RuntimeException(sprintf(
                     'Subcontractor time is costed in %s but %s is in %s; convert it before billing.',

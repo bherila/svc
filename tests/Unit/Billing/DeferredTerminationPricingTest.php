@@ -96,6 +96,32 @@ final class DeferredTerminationPricingTest extends TestCase
         DeferredTerminationPricing::price([$this->entry(2, 60)], $this->agreement(null), 'USD', 'invoice SVC-TEST-4');
     }
 
+    public function test_hours_are_stated_to_four_places_as_the_ledger_states_them(): void
+    {
+        $pricing = DeferredTerminationPricing::price([
+            $this->entry(1, 1),
+            $this->entry(2, 1, mode: 'flat_hourly', cost: 6000),
+        ], $this->agreement(6000), 'USD', 'invoice SVC-TEST-11');
+
+        $this->assertSame(0.0167, $pricing->agreementRateHours());
+        $this->assertSame(0.0167, $pricing->flatHourlyGroups[0]->hours());
+        $this->assertSame(100 + 100, $pricing->totalAmount());
+    }
+
+    public function test_flat_hourly_work_without_a_currency_refuses(): void
+    {
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('requires a snapshotted amount and currency');
+
+        FlatHourlyPricing::groups([
+            (new ClientTimeEntry)->setRawAttributes([
+                'id' => 1, 'user_id' => 7, 'client_project_id' => 11, 'minutes' => 60,
+                'subcontractor_billing_mode' => 'flat_hourly', 'subcontractor_cost_amount' => 5000,
+                'subcontractor_cost_currency' => null,
+            ], true),
+        ], 'USD', 'invoice SVC-TEST-12');
+    }
+
     public function test_a_zero_rate_is_a_stated_rate(): void
     {
         $pricing = DeferredTerminationPricing::price([$this->entry(1, 60)], $this->agreement(0), 'USD', 'invoice SVC-TEST-5');

@@ -48,6 +48,50 @@ final class DeferredBacklogTest extends TestCase
         $this->assertTrue($backlog->hasBacklog());
     }
 
+    public function test_hours_are_stated_to_four_places(): void
+    {
+        $backlog = $this->calculate(outstanding: [
+            $this->entry(1, 1, '2026-03-01'),
+            $this->entry(2, 1, '2026-03-01', mode: 'flat_hourly', cost: 5000),
+        ]);
+
+        $this->assertSame(0.0333, $backlog->hours());
+        $this->assertSame(0.0167, $backlog->agreementRateHours());
+        $this->assertSame(0.0167, $backlog->flatHourlyHours());
+    }
+
+    public function test_an_agreement_without_a_currency_quotes_in_none(): void
+    {
+        $agreement = $this->agreement(15000);
+        $agreement->setRawAttributes(['currency' => null] + $agreement->getAttributes(), true);
+
+        $backlog = DeferredBacklog::calculate($agreement, CarbonImmutable::parse('2026-03-31'), true, [], [], []);
+
+        $this->assertSame('', $backlog->currency);
+    }
+
+    public function test_an_amount_beyond_the_integer_range_is_unpriced_rather_than_thrown(): void
+    {
+        $backlog = $this->calculate(outstanding: [$this->entry(1, 120, '2026-03-01')], rate: PHP_INT_MAX);
+
+        $this->assertSame(DeferredBacklogIssue::Unpriced, $backlog->issue);
+        $this->assertSame('Line total exceeds the supported integer range.', $backlog->issueDetail);
+        $this->assertSame(2.0, $backlog->hours());
+    }
+
+    public function test_scope_keys_read_as_strings_compare_as_numbers(): void
+    {
+        $agreement = $this->agreement(15000, projectId: 11);
+        $stringly = (new ClientAgreement)->setRawAttributes([
+            'workspace_id' => '3', 'client_company_id' => '5', 'client_project_id' => '11',
+        ], true);
+        $entry = $this->entry(1, 60, '2026-03-01');
+        $entry->setRawAttributes(['workspace_id' => '3', 'client_company_id' => '5', 'client_project_id' => '11'] + $entry->getAttributes(), true);
+
+        $this->assertTrue($entry->isWithinAgreementScope($agreement));
+        $this->assertTrue($this->entry(2, 60, '2026-03-01')->isWithinAgreementScope($stringly));
+    }
+
     public function test_an_empty_shelf_is_zero_rather_than_unknown(): void
     {
         $backlog = $this->calculate(outstanding: []);
