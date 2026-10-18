@@ -67,7 +67,7 @@ final class IssueAgentTokenCommand extends Command
         // Raw: the console formatter would otherwise read markup in the name
         // and strip it or splice escape codes into the JSON.
         $this->output->writeln((string) json_encode([
-            'token' => $issued->token,
+            'token' => $issued->token(),
             'expires_at' => $issued->expiresAt->toIso8601String(),
             'name' => $issued->label,
             'scopes' => $issued->scopes,

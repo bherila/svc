@@ -64,7 +64,7 @@ $agreement = ClientAgreement::query()->create([
  */
 $issue = static fn (string $label, array $scopes): string => app(AgentTokenIssuer::class)
     ->issue($user, AgentTokenRequest::of(AgentTokenKind::CiSmoke, $label, $scopes, AgentTokenRequest::MAX_TTL_MINUTES))
-    ->token;
+    ->token();
 
 echo json_encode([
     'token' => $issue('authorized', [

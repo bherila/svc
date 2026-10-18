@@ -132,8 +132,8 @@ final class DeploySmokeCredentialsCommand extends Command
         }
 
         $this->line((string) json_encode([
-            'authorized_token' => $authorized->token,
-            'wrong_scope_token' => $wrongScope->token,
+            'authorized_token' => $authorized->token(),
+            'wrong_scope_token' => $wrongScope->token(),
             'expires_at' => $authorized->expiresAt->toIso8601String(),
         ], JSON_THROW_ON_ERROR));
 

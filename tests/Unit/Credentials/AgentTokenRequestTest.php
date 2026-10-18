@@ -15,6 +15,11 @@ use App\Services\Credentials\InvalidAgentTokenRequest;
 use App\Services\Credentials\IssuedAgentToken;
 use App\Support\AgentApi\AgentApiScopes;
 use Carbon\CarbonImmutable;
+use DateTimeImmutable;
+use LogicException;
+use Monolog\Formatter\NormalizerFormatter;
+use Monolog\Level;
+use Monolog\LogRecord;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -174,6 +179,7 @@ final class AgentTokenRequestTest extends TestCase
             'scopes' => [AgentApiScopes::IDENTITY_READ],
             'resource' => 'https://svc.example.test/api/v1',
         ], $issued->__debugInfo());
+        $this->assertSame('bearer-value', $issued->token());
 
         $revocation = new AgentRevocation(['f1', 'f2'], 3, 4);
         $this->assertSame(2, $revocation->accessTokens());
@@ -182,6 +188,36 @@ final class AgentTokenRequestTest extends TestCase
         $ambiguous = new AmbiguousRevocation(3);
         $this->assertSame(3, $ambiguous->matched);
         $this->assertSame('3 live tokens share that name.', $ambiguous->getMessage());
+    }
+
+    /**
+     * Every ordinary way an object leaves the process - JSON, a log record's
+     * context, PHP serialization, var_export, print_r, var_dump - carries the
+     * redacted shape, never the bearer value.
+     */
+    public function test_an_issued_token_never_leaks_its_bearer_through_a_serializer(): void
+    {
+        $issued = new IssuedAgentToken('row-id', 'bearer-value-123', CarbonImmutable::parse('2026-01-01T00:00:00Z'), 'Label', [AgentApiScopes::IDENTITY_READ], 'https://svc.example.test/api/v1');
+        ob_start();
+        var_dump($issued);
+        $dumped = (string) ob_get_clean();
+        $normalized = (new NormalizerFormatter)->format(new LogRecord(new DateTimeImmutable, 'test', Level::Info, 'issued', ['issued' => $issued]));
+
+        foreach ([
+            'json' => (string) json_encode($issued),
+            'nested json' => (string) json_encode(['issued' => $issued]),
+            'monolog' => (string) json_encode($normalized),
+            'serialize' => serialize($issued),
+            'var_export' => var_export($issued, true),
+            'print_r' => print_r($issued, true),
+            'var_dump' => $dumped,
+        ] as $how => $output) {
+            $this->assertStringNotContainsString('bearer-value-123', $output, $how);
+        }
+        $this->assertSame('[redacted]', json_decode((string) json_encode($issued), true)['token']);
+
+        $this->expectException(LogicException::class);
+        unserialize(serialize($issued));
     }
 
     /** @param  array<array-key, mixed>  $scopes */
