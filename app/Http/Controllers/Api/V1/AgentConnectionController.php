@@ -30,7 +30,8 @@ final class AgentConnectionController extends Controller
         // The refresh credential is revoked before the access token, under the
         // access-token row lock, so the connection cannot mint a replacement.
         $revocation = $revoker->revoke(AgentCredentialSelection::token($user, $token), 'agent');
-        abort_unless($revocation->accessTokens() === 1, 404);
+        // The token itself, or what a refresh completed meanwhile rotated it into.
+        abort_unless($revocation->accessTokens() >= 1, 404);
 
         return response()->json(status: 204);
     }

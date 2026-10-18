@@ -46,14 +46,15 @@ final readonly class CredentialRevoker
     public function revoke(AgentCredentialSelection $selection, string $actor): AgentRevocation
     {
         $connection = Passport::token()->getConnection();
+        $family = $this->family($selection);
         // Raised first, so a grant that persists while this runs is caught too.
-        $this->raiseFences($selection);
+        $this->raiseFences($selection, $family);
 
-        return $connection->transaction(function () use ($selection, $actor, $connection): AgentRevocation {
+        return $connection->transaction(function () use ($selection, $actor, $connection, $family): AgentRevocation {
             // Raised again once this commits, so the whole window follows the
             // revocation however long the transaction took.
-            $connection->afterCommit(fn () => $this->raiseFences($selection));
-            $ids = array_values($this->accessTokenQuery($selection)
+            $connection->afterCommit(fn () => $this->raiseFences($selection, $family));
+            $ids = array_values($this->accessTokenQuery($selection, $family)
                 ->tap(Locks::forUpdate())
                 ->pluck('id')
                 ->map(static fn (mixed $id): string => (string) $id)
@@ -132,7 +133,8 @@ final readonly class CredentialRevoker
      * id, it needs no row, and another connection the same person holds with
      * the same client keeps refreshing.
      */
-    private function raiseFences(AgentCredentialSelection $selection): void
+    /** @param  list<string>  $family */
+    private function raiseFences(AgentCredentialSelection $selection, array $family): void
     {
         if (! $selection->fence) {
             return;
@@ -142,7 +144,7 @@ final readonly class CredentialRevoker
         try {
             match ($selection->scope) {
                 AgentCredentialScope::Connections => $this->fence->raise($selection->ownerId, $selection->clientId),
-                AgentCredentialScope::Token => $this->fence->raiseLineage((string) $selection->tokenId),
+                AgentCredentialScope::Token => array_map($this->fence->raiseLineage(...), $family),
                 AgentCredentialScope::Name => null,
             };
         } catch (Throwable $unavailable) {
@@ -207,15 +209,45 @@ final readonly class CredentialRevoker
         });
     }
 
-    /** @return Builder<Token> */
-    private function accessTokenQuery(AgentCredentialSelection $selection): Builder
+    /**
+     * A token selection's refresh family: the token, then each access token a
+     * refresh rotated it into within the fence's window. A refresh that
+     * completed between the caller authenticating and this revocation left
+     * the caller's token revoked and a live successor; the family reaches it.
+     * Bounded, and empty of successors if the cache cannot be read.
+     *
+     * @return list<string>
+     */
+    private function family(AgentCredentialSelection $selection): array
+    {
+        if ($selection->scope !== AgentCredentialScope::Token) {
+            return [];
+        }
+        $family = [(string) $selection->tokenId];
+        try {
+            while (count($family) < 8 && ($next = $this->fence->successorOf($family[count($family) - 1])) !== null && ! in_array($next, $family, true)) {
+                $family[] = $next;
+            }
+        } catch (Throwable) {
+            // The successors are a backstop, like the fence.
+        }
+
+        return $family;
+    }
+
+    /**
+     * @param  list<string>  $family
+     * @return Builder<Token>
+     */
+    private function accessTokenQuery(AgentCredentialSelection $selection, array $family): Builder
     {
         $query = Passport::token()->newQuery()
             ->where('user_id', $selection->ownerId)
             ->where('revoked', false);
 
         return match ($selection->scope) {
-            AgentCredentialScope::Token => $query->whereKey((string) $selection->tokenId),
+            // Owner-scoped like every selection, so a successor is only ever the owner's own.
+            AgentCredentialScope::Token => $query->whereKey($family),
             // Exact equality on the kind's reserved prefix, never a LIKE. An
             // expired token authenticates nothing, so it is neither a duplicate
             // of a live one nor something to report revoking.

@@ -4,6 +4,8 @@ namespace App\Services\Credentials;
 
 use App\Support\WorkspaceClock;
 use Illuminate\Contracts\Cache\Repository;
+use Illuminate\Contracts\Encryption\DecryptException;
+use Illuminate\Support\Facades\Crypt;
 
 /**
  * A short window, after a revocation, in which no new OAuth credential for the
@@ -64,6 +66,35 @@ final readonly class AgentCredentialFence
     public function coversLineage(string $accessTokenId): bool
     {
         return $this->active(self::lineageKey($accessTokenId));
+    }
+
+    /**
+     * Remember which access token a refresh rotated this one into, for the
+     * fence's window: a connection disconnecting itself with a token a refresh
+     * had just replaced follows the family to the replacement. The successor
+     * is stored encrypted under a digest key, so the cache holds no token id.
+     */
+    public function recordSuccessor(string $accessTokenId, string $successorId): void
+    {
+        $this->cache->put(self::successorKey($accessTokenId), Crypt::encryptString($successorId), self::SECONDS);
+    }
+
+    public function successorOf(string $accessTokenId): ?string
+    {
+        $sealed = $this->cache->get(self::successorKey($accessTokenId));
+        if (! is_string($sealed)) {
+            return null;
+        }
+        try {
+            return Crypt::decryptString($sealed);
+        } catch (DecryptException) {
+            return null;
+        }
+    }
+
+    private static function successorKey(string $accessTokenId): string
+    {
+        return 'agent-credential-fence:successor:'.hash('sha256', $accessTokenId);
     }
 
     private function active(string $key): bool

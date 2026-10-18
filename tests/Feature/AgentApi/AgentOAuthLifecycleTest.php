@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\AgentApi;
 
+use App\Http\Controllers\Api\V1\AgentConnectionController;
 use App\Models\AgentPrincipal;
 use App\Models\User;
 use App\Services\Credentials\AgentCredentialFence;
@@ -35,6 +36,7 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
+use Laravel\Passport\AccessToken;
 use Laravel\Passport\Bridge\AccessTokenRepository as PassportAccessTokenRepository;
 use Laravel\Passport\Bridge\AuthCodeRepository as PassportAuthCodeRepository;
 use Laravel\Passport\Bridge\RefreshTokenRepository as PassportRefreshTokenRepository;
@@ -689,6 +691,38 @@ final class AgentOAuthLifecycleTest extends TestCase
 
         $this->assertTrue((bool) Passport::token()->newQuery()->whereKey($replacement)->value('revoked'));
         $this->assertTrue((bool) Passport::refreshToken()->newQuery()->whereKey($refreshId)->value('revoked'));
+    }
+
+    /**
+     * A refresh completed - both replacement tokens persisted - between the
+     * guard authenticating the old bearer and the self-revocation: the old
+     * row is already revoked, and the revocation follows the family to the
+     * live successor. Another connection of the same person is untouched.
+     */
+    public function test_a_self_revocation_reaches_a_successor_a_completed_refresh_created(): void
+    {
+        $person = User::factory()->create();
+        $clientId = $this->registerClient();
+        $resource = OAuthResourceIndicator::resource(self::MCP);
+        $verifier = $this->verifier();
+        $old = $this->exchangeCode($clientId, $this->authorize($person, $clientId, $verifier), $verifier, $resource)->assertOk()->json();
+        $verifier = $this->verifier();
+        $sibling = $this->exchangeCode($clientId, $this->authorizeWithoutPrompt($person, $clientId, $verifier), $verifier, $resource)->assertOk()->json();
+        $oldId = OAuthResourceIndicator::tokenClaims($old['access_token'])['jti'];
+        // The guard has already authenticated the old bearer when the refresh completes.
+        $principal = AgentPrincipal::query()->findOrFail($person->id)->withAccessToken(new AccessToken(['oauth_access_token_id' => $oldId, 'oauth_client_id' => $clientId]));
+        $successor = $this->refresh($clientId, $old['refresh_token'], $resource)->assertOk()->json();
+        $this->assertTrue((bool) Passport::token()->newQuery()->whereKey($oldId)->value('revoked'));
+        $request = Request::create("/api/v1/connections/{$oldId}", 'DELETE');
+        $request->setUserResolver(static fn (): AgentPrincipal => $principal);
+
+        $this->assertSame(204, (new AgentConnectionController)->destroy($request, $oldId, app(CredentialRevoker::class))->getStatusCode());
+
+        Auth::forgetGuards();
+        $this->mcpInitialize($successor['access_token'])->assertUnauthorized();
+        $this->refresh($clientId, $successor['refresh_token'], $resource)->assertBadRequest()->assertJsonPath('error', 'invalid_grant');
+        Auth::forgetGuards();
+        $this->mcpInitialize($sibling['access_token'])->assertOk();
     }
 
     /**

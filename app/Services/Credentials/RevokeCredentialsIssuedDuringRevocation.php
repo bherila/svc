@@ -9,6 +9,7 @@ use Laravel\Passport\Events\AccessTokenCreated;
 use Laravel\Passport\Events\RefreshTokenCreated;
 use Laravel\Passport\Passport;
 use Psr\Log\LoggerInterface;
+use Throwable;
 
 /**
  * Closes the race a revocation cannot close with row locks alone (see
@@ -50,7 +51,18 @@ final class RevokeCredentialsIssuedDuringRevocation
     public function accessTokenCreated(AccessTokenCreated $event): void
     {
         $userId = filter_var($event->userId, FILTER_VALIDATE_INT);
-        if ($userId === false || ! $this->isFenced($userId, $event->clientId)) {
+        $redeemed = $this->lineage->redeemedAccessTokenId(app()->bound('request') ? request() : null);
+        // Every rotation is remembered for the window, fenced or not: a
+        // connection that disconnects itself with the token this replaced
+        // reaches this one too.
+        if ($redeemed !== null) {
+            try {
+                $this->fence->recordSuccessor($redeemed, $event->tokenId);
+            } catch (Throwable) {
+                // A backstop, like the fence: never a reason to fail the grant.
+            }
+        }
+        if ($userId === false || ! $this->isFenced($userId, $event->clientId, $redeemed)) {
             return;
         }
         // Personal access tokens too: an operator token issued for the person
@@ -71,14 +83,13 @@ final class RevokeCredentialsIssuedDuringRevocation
      * The person's fence on this client, or - for a refresh grant - the
      * lineage of the access token the presented refresh token belongs to.
      */
-    private function isFenced(int $userId, string $clientId): bool
+    private function isFenced(int $userId, string $clientId, ?string $redeemed): bool
     {
         if ($this->fence->covers($userId, $clientId)) {
             return true;
         }
-        $parent = $this->lineage->redeemedAccessTokenId(app()->bound('request') ? request() : null);
 
-        return $parent !== null && $this->fence->coversLineage($parent);
+        return $redeemed !== null && $this->fence->coversLineage($redeemed);
     }
 
     public function refreshTokenCreated(RefreshTokenCreated $event): void

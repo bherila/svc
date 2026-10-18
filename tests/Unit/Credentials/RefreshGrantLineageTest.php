@@ -62,6 +62,29 @@ final class RefreshGrantLineageTest extends TestCase
         $this->assertFalse($fence->coversLineage('access-1'));
     }
 
+    public function test_a_rotation_is_remembered_for_the_window_encrypted_under_a_digest_key(): void
+    {
+        $this->freezeSecond();
+        $cache = new Repository(new ArrayStore);
+        $fence = new AgentCredentialFence($cache, new WorkspaceClock);
+
+        $fence->recordSuccessor('access-1', 'access-2');
+
+        $this->assertSame('access-2', $fence->successorOf('access-1'));
+        $this->assertNull($fence->successorOf('access-2'));
+        $sealed = $cache->get('agent-credential-fence:successor:'.hash('sha256', 'access-1'));
+        $this->assertIsString($sealed);
+        $this->assertStringNotContainsString('access-2', $sealed);
+        // Anything not sealed by this application names no successor.
+        $cache->put('agent-credential-fence:successor:'.hash('sha256', 'access-3'), 'access-4', 60);
+        $this->assertNull($fence->successorOf('access-3'));
+        $cache->put('agent-credential-fence:successor:'.hash('sha256', 'access-5'), ['access-6'], 60);
+        $this->assertNull($fence->successorOf('access-5'));
+
+        $this->travel(AgentCredentialFence::SECONDS)->seconds();
+        $this->assertNull($fence->successorOf('access-1'));
+    }
+
     private function request(string $grant, string $refreshToken): Request
     {
         return Request::create('/oauth/token', 'POST', ['grant_type' => $grant, 'refresh_token' => $refreshToken]);

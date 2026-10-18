@@ -91,7 +91,9 @@ php artisan svc:auth:revoke-connections USER_PUBLIC_UUID --client=OAUTH_CLIENT_I
    that disconnects itself through `connections.revoke` fences only its own
    lineage: a refresh redeeming one of its refresh tokens is caught, while
    another connection the same person holds with the same client keeps
-   refreshing.
+   refreshing. Each refresh is remembered for the same window, so a
+   connection that disconnects itself with a token a refresh had just
+   replaced also revokes the replacement.
 
    The fence lives in the application cache. It is a backstop, never a
    precondition: if the cache cannot be written the revocation still happens
