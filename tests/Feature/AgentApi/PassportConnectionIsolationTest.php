@@ -5,6 +5,7 @@ namespace Tests\Feature\AgentApi;
 use App\Http\Controllers\Api\V1\AgentConnectionController;
 use App\Models\AgentPrincipal;
 use App\Models\User;
+use App\Services\Credentials\CredentialRevoker;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -12,6 +13,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use Laravel\Passport\AccessToken;
 use Laravel\Passport\Passport;
 use Tests\TestCase;
 
@@ -127,19 +129,25 @@ final class PassportConnectionIsolationTest extends TestCase
         ])->saveOrFail();
 
         $refreshUpdateTransactionLevels = [];
-        DB::listen(static function (QueryExecuted $query) use (&$refreshUpdateTransactionLevels): void {
-            if ($query->connectionName === 'passport_test'
-                && str_starts_with($query->sql, 'update')
-                && str_contains($query->sql, 'oauth_refresh_tokens')) {
+        $updates = [];
+        DB::listen(static function (QueryExecuted $query) use (&$refreshUpdateTransactionLevels, &$updates): void {
+            if ($query->connectionName !== 'passport_test' || ! str_starts_with($query->sql, 'update')) {
+                return;
+            }
+            $updates[] = str_contains($query->sql, 'oauth_refresh_tokens') ? 'refresh' : 'access';
+            if (str_contains($query->sql, 'oauth_refresh_tokens')) {
                 $refreshUpdateTransactionLevels[] = $query->connection->transactionLevel();
             }
         });
+        $principal->withAccessToken(new AccessToken(['oauth_access_token_id' => $tokenId]));
         $request = Request::create("/api/v1/connections/{$tokenId}", 'DELETE');
         $request->setUserResolver(static fn (): AgentPrincipal => $principal);
 
-        (new AgentConnectionController)->destroy($request, $tokenId);
+        (new AgentConnectionController)->destroy($request, $tokenId, app(CredentialRevoker::class));
 
         $this->assertSame([1], $refreshUpdateTransactionLevels);
+        // The refresh credential first, so the connection cannot mint a replacement.
+        $this->assertSame(['refresh', 'access'], $updates);
         $this->assertTrue((bool) Passport::token()->newQuery()->findOrFail($tokenId)->revoked);
         $this->assertTrue((bool) Passport::refreshToken()->newQuery()->where('access_token_id', $tokenId)->sole()->revoked);
     }

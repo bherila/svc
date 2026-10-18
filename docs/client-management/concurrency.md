@@ -285,7 +285,7 @@ gets a follow-up rather than an inline fix.
 | `WorkspaceExpenses::approve()` / `unapprove()` — only a status the lifecycle allows may move | The expense row lock, taken through the workspace-scoped query so the lock statement itself carries the tenant predicate; the status is then re-read from the **locked** row, never from the model the caller passed in |
 | `WorkspaceExpenses::update()` — only a draft's facts may be rewritten | The same expense row lock and the same re-read. An approved expense is refused, so the amount a manager passed is the amount that is billed |
 | `WorkspaceExpenses::discard()` — an invoiced expense is not withdrawn | The same lock, and `ExpenseStatus::hasBeenInvoicedValue()`, which answers yes to a status it does not recognise |
-| `AgentConnectionController::destroy()` — an unrevoked connection is revoked once | The access-token row lock, taken before the refresh credential is revoked so a concurrent refresh cannot mint a replacement between the read and the write |
+| `CredentialRevoker::revoke()` — an unrevoked agent credential is revoked once, whether a connection disconnects itself, an operator revokes a named token or every connection a person holds, or the deployment smoke ends its own | The selected access-token row locks, taken before any refresh credential is revoked so a concurrent refresh cannot mint a replacement between the read and the write; refresh tokens and authorization codes are then revoked before the access tokens themselves |
 
 ### The two cadence generators exclude each other on the agreement
 

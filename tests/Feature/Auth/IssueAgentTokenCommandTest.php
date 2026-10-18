@@ -2,10 +2,10 @@
 
 namespace Tests\Feature\Auth;
 
-use App\Console\Commands\IssueAgentTokenCommand;
 use App\Models\AgentPrincipal;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Credentials\AgentTokenKind;
 use App\Support\AgentApi\AgentApiScopes;
 use BWH\Auth\OAuth\Server\OAuthResourceIndicator;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -144,7 +144,7 @@ final class IssueAgentTokenCommandTest extends TestCase
             [$user->public_id, '   ', [AgentApiScopes::IDENTITY_READ]],
             [$user->public_id, "Line\nbreak", [AgentApiScopes::IDENTITY_READ]],
             // Within the stored column once the reserved prefix is added.
-            [$user->public_id, str_repeat('n', 256 - strlen(IssueAgentTokenCommand::NAME_PREFIX)), [AgentApiScopes::IDENTITY_READ]],
+            [$user->public_id, str_repeat('n', 256 - strlen(AgentTokenKind::Operator->namePrefix())), [AgentApiScopes::IDENTITY_READ]],
             ['not-a-uuid', 'Bad id', [AgentApiScopes::IDENTITY_READ]],
             [(string) $user->id, 'Internal id', [AgentApiScopes::IDENTITY_READ]],
         ];
@@ -310,6 +310,45 @@ final class IssueAgentTokenCommandTest extends TestCase
         $this->assertSame('Audited', $issued['name']);
         $this->assertSame([AgentApiScopes::IDENTITY_READ], $issued['scopes']);
         $this->assertSame(hash('sha256', $tokenId), $issued['credential_fingerprint']);
+    }
+
+    /**
+     * One issuer (#456): the deployment smoke and the operator draw on the
+     * same personal access client, so neither changes the client the other is
+     * issued from, and neither leaves its lifetime behind for the next issue.
+     */
+    public function test_the_deployment_smoke_and_the_operator_share_one_client_and_leave_the_lifetime_alone(): void
+    {
+        [$user] = $this->member('shared-client');
+        $lifetime = Passport::$personalAccessTokensExpireIn;
+
+        $this->assertSame(0, $this->issue($user, 'Before smoke', [AgentApiScopes::IDENTITY_READ])[0]);
+        $this->assertSame(0, Artisan::call('svc:mcp:deploy-smoke-credentials', ['--ttl' => '5']));
+        $smoke = json_decode(trim(Artisan::output()), true, flags: JSON_THROW_ON_ERROR);
+        $this->assertSame($lifetime, Passport::$personalAccessTokensExpireIn);
+        [$exit, $output] = $this->issue($user, 'After smoke', [AgentApiScopes::IDENTITY_READ]);
+        $this->assertSame(0, $exit);
+
+        $this->assertSame(1, Passport::client()->newQuery()->count());
+        $this->assertSame(1, Passport::token()->newQuery()->distinct()->count('client_id'));
+        // Each lifetime is the one its own issue asked for.
+        $this->assertEqualsWithDelta(time() + 300, Carbon::parse($smoke['expires_at'])->getTimestamp(), 5);
+        $this->assertEqualsWithDelta(time() + 3600, Carbon::parse($this->decode($output)['expires_at'])->getTimestamp(), 5);
+        $smokeExpiries = Passport::token()->newQuery()->where('user_id', '!=', $user->id)->pluck('expires_at');
+        $this->assertCount(2, $smokeExpiries);
+        foreach ($smokeExpiries as $expiresAt) {
+            $this->assertEqualsWithDelta(time() + 300, Carbon::parse($expiresAt)->getTimestamp(), 5);
+        }
+
+        $this->assertSame(2, Artisan::call('svc:mcp:deploy-smoke-credentials', ['--ttl' => '241']));
+        $this->assertSame(0, Artisan::call('svc:mcp:deploy-smoke-credentials', ['--ttl' => '5']));
+        $this->assertSame(1, Passport::client()->newQuery()->count());
+
+        // The smoke's audit names its own actor, by fingerprint only.
+        $smokeIssues = array_values(array_filter($this->logged, static fn (array $entry): bool => $entry['message'] === 'agent_token.issued' && $entry['context']['actor'] === 'deploy-smoke'));
+        $this->assertCount(4, $smokeIssues);
+        $this->assertSame('authorized', $smokeIssues[0]['context']['name']);
+        $this->assertStringNotContainsString($smoke['authorized_token'], json_encode($this->logged, JSON_THROW_ON_ERROR));
     }
 
     /** @return array{0: User, 1: Workspace} */

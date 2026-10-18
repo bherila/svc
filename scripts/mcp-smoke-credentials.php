@@ -2,17 +2,17 @@
 
 declare(strict_types=1);
 
-use App\Models\AgentPrincipal;
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientProject;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Models\WorkspaceMembership;
-use App\Services\Mcp\McpConnectionTokens;
+use App\Services\Credentials\AgentTokenIssuer;
+use App\Services\Credentials\AgentTokenKind;
+use App\Services\Credentials\AgentTokenRequest;
 use App\Support\AgentApi\AgentApiScopes;
 use Illuminate\Contracts\Console\Kernel;
-use Laravel\Passport\ClientRepository;
 
 require __DIR__.'/../vendor/autoload.php';
 
@@ -58,14 +58,16 @@ $agreement = ClientAgreement::query()->create([
     'billing_cadence' => 'monthly',
 ]);
 
-$client = app(ClientRepository::class)->createPersonalAccessGrantClient('SVC MCP smoke', 'agent-principals');
-$principal = AgentPrincipal::query()->findOrFail($user->id);
-
-/** Bound to the MCP resource: the MCP endpoint refuses a REST token. */
-$issue = static fn (string $name, array $scopes): string => app(McpConnectionTokens::class)->issue($principal, (string) $client->id, $name, $scopes);
+/**
+ * Through the one agent token issuer, like the deployment smoke's; `mcp:use`
+ * binds each to the MCP resource, and the MCP endpoint refuses a REST token.
+ */
+$issue = static fn (string $label, array $scopes): string => app(AgentTokenIssuer::class)
+    ->issue($user, AgentTokenRequest::of(AgentTokenKind::CiSmoke, $label, $scopes, AgentTokenRequest::MAX_TTL_MINUTES))
+    ->token;
 
 echo json_encode([
-    'token' => $issue('SVC MCP smoke', [
+    'token' => $issue('authorized', [
         AgentApiScopes::MCP_USE,
         AgentApiScopes::IDENTITY_READ,
         AgentApiScopes::BILLING_READ,
@@ -76,7 +78,7 @@ echo json_encode([
     // `projects:read` rather than nothing so the refusal proves operation
     // scopes are independent instead of relying only on an empty discovery
     // surface.
-    'wrong_scope_token' => $issue('SVC MCP smoke wrong scope', [
+    'wrong_scope_token' => $issue('wrong scope', [
         AgentApiScopes::MCP_USE,
         AgentApiScopes::PROJECTS_READ,
     ]),

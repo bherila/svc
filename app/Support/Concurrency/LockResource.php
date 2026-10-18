@@ -118,8 +118,9 @@ enum LockResource: string
     // under the invoice lock, then the reminder row.
     case InvoiceReminderLog = 'invoice_reminder_logs';
 
-    // Credentials. Disconnecting an agent revokes its refresh token and then
-    // its access token, and takes no other lock on the way; nothing else in the
+    // Credentials. Revoking an agent credential (CredentialRevoker) locks its access
+    // token rows, then revokes their refresh tokens and then the access tokens
+    // themselves, and takes no other lock on the way; nothing else in the
     // application locks either table, so this pair orders only against itself.
     case OAuthAccessToken = 'oauth_access_tokens';
 

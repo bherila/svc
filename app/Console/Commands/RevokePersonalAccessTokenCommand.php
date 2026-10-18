@@ -2,12 +2,20 @@
 
 namespace App\Console\Commands;
 
-use App\Models\User;
+use App\Console\Commands\Concerns\FindsUserByPublicId;
+use App\Services\Credentials\AmbiguousRevocation;
+use App\Services\Credentials\CredentialRevoker;
 use Illuminate\Console\Command;
-use Illuminate\Support\Str;
 
+/**
+ * Revoke an exact person's named Sanctum personal access token (the finance
+ * integration's) through {@see CredentialRevoker}, which audits it like every
+ * other credential revocation.
+ */
 class RevokePersonalAccessTokenCommand extends Command
 {
+    use FindsUserByPublicId;
+
     protected $signature = 'svc:auth:revoke-token
         {user_public_id : Exact user public UUID}
         {name : Exact personal access token name}
@@ -15,39 +23,33 @@ class RevokePersonalAccessTokenCommand extends Command
 
     protected $description = 'Revoke an exact user\'s named Sanctum personal access token';
 
-    public function handle(): int
+    public function handle(CredentialRevoker $revoker): int
     {
-        $publicId = trim((string) $this->argument('user_public_id'));
         $name = trim((string) $this->argument('name'));
-
-        if (! Str::isUuid($publicId) || $name === '') {
+        if ($name === '') {
             $this->error('An exact user public UUID and non-empty token name are required.');
 
             return self::INVALID;
         }
+        $user = $this->userByPublicId((string) $this->argument('user_public_id'));
+        if (is_int($user)) {
+            return $user;
+        }
 
-        $user = User::query()->where('public_id', $publicId)->first();
-        if ($user === null) {
-            $this->error('No user exists for that public UUID.');
+        try {
+            $revoked = $revoker->revokePersonalAccessTokens($user, $name, (bool) $this->option('all'), 'console');
+        } catch (AmbiguousRevocation $ambiguous) {
+            $this->error("{$ambiguous->matched} tokens share that name; rerun with --all to revoke all of them.");
 
             return self::FAILURE;
         }
-
-        $tokens = $user->tokens()->where('name', $name);
-        $count = (clone $tokens)->count();
-        if ($count === 0) {
+        if ($revoked === 0) {
             $this->error('No token exists with that exact name.');
 
             return self::FAILURE;
         }
-        if ($count > 1 && ! $this->option('all')) {
-            $this->error("{$count} tokens share that name; rerun with --all to revoke all of them.");
 
-            return self::FAILURE;
-        }
-
-        $deleted = $tokens->delete();
-        $this->info("Revoked {$deleted} personal access token(s).");
+        $this->info("Revoked {$revoked} personal access token(s).");
 
         return self::SUCCESS;
     }

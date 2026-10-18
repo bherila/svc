@@ -15,9 +15,11 @@ use BWH\Auth\OAuth\Server\ResourceClient;
 use BWH\Auth\OAuth\Server\ResourceRefreshTokenRepository;
 use Illuminate\Auth\Middleware\Authenticate;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
 use Laravel\Passport\Bridge\AccessTokenRepository as PassportAccessTokenRepository;
 use Laravel\Passport\Bridge\AuthCodeRepository as PassportAuthCodeRepository;
@@ -338,6 +340,42 @@ final class AgentOAuthLifecycleTest extends TestCase
         Auth::forgetGuards();
 
         $this->withToken($token)->getJson('/api/v1/context')->assertOk();
+    }
+
+    /**
+     * `connections.revoke` ends the calling connection and nothing else: not
+     * another of the same person's connections, and not anyone else's.
+     */
+    public function test_a_connection_can_revoke_only_itself(): void
+    {
+        $person = User::factory()->create();
+        $stranger = User::factory()->create();
+        $clientId = $this->registerClient();
+        $resource = OAuthResourceIndicator::resource(self::MCP);
+        $connect = function (User $user, string $clientId) use ($resource): array {
+            $verifier = $this->verifier();
+
+            return $this->exchangeCode($clientId, $this->authorize($user, $clientId, $verifier), $verifier, $resource)->assertOk()->json();
+        };
+        $caller = $connect($person, $clientId);
+        // Consent is asked once per person and client, so the sibling is another client's.
+        $sibling = $connect($person, $this->registerClient());
+        $theirs = $connect($stranger, $clientId);
+        $id = static fn (array $tokens): string => OAuthResourceIndicator::tokenClaims($tokens['access_token'])['jti'];
+
+        foreach ([$id($sibling), $id($theirs)] as $other) {
+            Auth::forgetGuards();
+            $this->withToken($caller['access_token'])->deleteJson("/api/v1/connections/{$other}")->assertNotFound();
+            $this->assertFalse((bool) Passport::token()->newQuery()->whereKey($other)->value('revoked'));
+        }
+        $this->assertSame(0, Passport::refreshToken()->newQuery()->where('revoked', true)->count());
+
+        Auth::forgetGuards();
+        $this->withToken($caller['access_token'])->deleteJson("/api/v1/connections/{$id($caller)}")->assertNoContent();
+        $this->refresh($clientId, $caller['refresh_token'], $resource)->assertBadRequest()->assertJsonPath('error', 'invalid_grant');
+        Auth::forgetGuards();
+        $this->mcpInitialize($sibling['access_token'])->assertOk();
+        $this->refresh($clientId, $theirs['refresh_token'], $resource)->assertOk();
     }
 
     private function registerClient(): string
