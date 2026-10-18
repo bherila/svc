@@ -1153,7 +1153,7 @@ final class AgentOperationCatalog
             $this->tool(
                 'clients.portal_access.grant',
                 'Grant portal access',
-                'Grant portal access to an existing account found by exact email and bound to the configured identity provider. Requires explicit confirmation and an idempotency key.',
+                'Grant portal access to an existing account found by exact email and bound to the configured identity provider. When nobody signs in with the address, invite it with clients.portal_invitations.create instead, where available. Requires explicit confirmation and an idempotency key.',
                 [AgentMcpPortalAccessTools::class, 'grant'],
                 Effect::LocalWrite,
                 true,
@@ -1662,10 +1662,14 @@ final class AgentOperationCatalog
             responseSchema: isset($documented['response']) ? SchemaRef::openApi($documented['response']) : null,
             responseDescriptions: isset($documented['response_description']) ? [$status => $documented['response_description']] : [],
             // A download answers with the file itself.
-            responses: isset($documented['binary']) ? [$status => [
+            responses: (isset($documented['binary']) ? [$status => [
                 'description' => $documented['binary'][1],
                 'content' => [$documented['binary'][0] => ['schema' => ['type' => 'string', 'format' => 'binary']]],
-            ]] : [],
+            ]] : []) + array_map(
+                // Refusals an operation documents by status, beside the shared default.
+                static fn (string $description): array => ['description' => $description, 'content' => ['application/json' => ['schema' => ['$ref' => '#/components/schemas/Error']]]],
+                $documented['errors'] ?? [],
+            ),
         );
     }
 

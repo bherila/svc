@@ -17,7 +17,7 @@ use App\Support\Square\SquareIdentifiers;
 final class AgentRestDocumentation
 {
     /**
-     * @return array<string, array{method: string, scopes: list<string>, description: string|false, parameters: list<string|array<string, mixed>>, request?: string, request_types?: list<string>, response?: string, response_description?: string, binary?: array{0: string, 1: string}, extensions?: array<string, mixed>}>
+     * @return array<string, array{method: string, scopes: list<string>, description: string|false, parameters: list<string|array<string, mixed>>, request?: string, request_types?: list<string>, response?: string, response_description?: string, binary?: array{0: string, 1: string}, errors?: array<int, string>, extensions?: array<string, mixed>}>
      */
     public static function operations(): array
     {
@@ -356,16 +356,18 @@ final class AgentRestDocumentation
                 'parameters' => ['WorkspaceId', self::uuidPath('client'), 'Limit', 'Cursor'],
                 'response' => 'PortalContactListResponse',
                 'response_description' => 'Authorized result',
+                'errors' => self::portalErrors('access.list'),
                 'extensions' => ['x-mcp-tool' => 'clients.portal_access.list', 'x-svc-flags' => []],
             ],
             'clients.portal_access.grant' => [
                 'method' => 'POST',
                 'scopes' => ['clients:write'],
-                'description' => 'Grant portal access to an existing account found by exact email and bound to the configured identity provider. Requires explicit confirmation and an idempotency key.',
+                'description' => 'Grant portal access to an existing account found by exact email (ignoring case) and bound to the configured identity provider. When nobody signs in with the address, the 422 names `email`, or `invite` while portal invitations are enabled: create a portal invitation for the address instead. Requires explicit confirmation and an idempotency key.',
                 'parameters' => ['WorkspaceId', self::uuidPath('client'), 'IdempotencyKey'],
                 'request' => 'clients_portal_access_grantRequest',
                 'response' => 'PortalContactResponse',
                 'response_description' => 'Authorized result',
+                'errors' => self::portalErrors('access.grant'),
                 'extensions' => ['x-mcp-tool' => 'clients.portal_access.grant', 'x-svc-flags' => ['AGENT_API_WRITES_ENABLED', 'AGENT_API_CLIENT_WRITES_ENABLED']],
             ],
             'clients.portal_access.update' => [
@@ -376,6 +378,7 @@ final class AgentRestDocumentation
                 'request' => 'clients_portal_access_updateRequest',
                 'response' => 'PortalContactResponse',
                 'response_description' => 'Authorized result',
+                'errors' => self::portalErrors('access.update'),
                 'extensions' => ['x-mcp-tool' => 'clients.portal_access.update', 'x-svc-flags' => ['AGENT_API_WRITES_ENABLED', 'AGENT_API_CLIENT_WRITES_ENABLED']],
             ],
             'clients.portal_access.revoke' => [
@@ -386,6 +389,7 @@ final class AgentRestDocumentation
                 'request' => 'clients_portal_access_revokeRequest',
                 'response' => 'PortalAccessRevokedResponse',
                 'response_description' => 'Authorized result',
+                'errors' => self::portalErrors('access.revoke'),
                 'extensions' => ['x-mcp-tool' => 'clients.portal_access.revoke', 'x-svc-flags' => ['AGENT_API_WRITES_ENABLED', 'AGENT_API_CLIENT_WRITES_ENABLED']],
             ],
             'clients.portal_invitations.list' => [
@@ -395,6 +399,7 @@ final class AgentRestDocumentation
                 'parameters' => ['WorkspaceId', self::uuidPath('client'), 'Limit', 'Cursor'],
                 'response' => 'PortalInvitationListResponse',
                 'response_description' => 'Authorized result',
+                'errors' => self::portalErrors('invitations.list'),
                 'extensions' => ['x-mcp-tool' => 'clients.portal_invitations.list', 'x-svc-flags' => ['SVC_PORTAL_INVITATIONS_ENABLED']],
             ],
             'clients.portal_invitations.create' => [
@@ -405,6 +410,7 @@ final class AgentRestDocumentation
                 'request' => 'clients_portal_invitations_createRequest',
                 'response' => 'PortalInvitationResponse',
                 'response_description' => 'Authorized result',
+                'errors' => self::portalErrors('invitations.create'),
                 'extensions' => ['x-mcp-tool' => 'clients.portal_invitations.create', 'x-svc-flags' => ['AGENT_API_WRITES_ENABLED', 'AGENT_API_CLIENT_WRITES_ENABLED', 'SVC_PORTAL_INVITATIONS_ENABLED']],
             ],
             'clients.portal_invitations.resend' => [
@@ -415,6 +421,7 @@ final class AgentRestDocumentation
                 'request' => 'clients_portal_invitations_resendRequest',
                 'response' => 'PortalInvitationResponse',
                 'response_description' => 'Authorized result',
+                'errors' => self::portalErrors('invitations.resend'),
                 'extensions' => ['x-mcp-tool' => 'clients.portal_invitations.resend', 'x-svc-flags' => ['AGENT_API_WRITES_ENABLED', 'AGENT_API_CLIENT_WRITES_ENABLED', 'SVC_PORTAL_INVITATIONS_ENABLED']],
             ],
             'clients.portal_invitations.revoke' => [
@@ -425,6 +432,7 @@ final class AgentRestDocumentation
                 'request' => 'clients_portal_invitations_revokeRequest',
                 'response' => 'PortalInvitationResponse',
                 'response_description' => 'Authorized result',
+                'errors' => self::portalErrors('invitations.revoke'),
                 'extensions' => ['x-mcp-tool' => 'clients.portal_invitations.revoke', 'x-svc-flags' => ['AGENT_API_WRITES_ENABLED', 'AGENT_API_CLIENT_WRITES_ENABLED', 'SVC_PORTAL_INVITATIONS_ENABLED']],
             ],
             'clients.restore' => [
@@ -1228,6 +1236,52 @@ final class AgentRestDocumentation
             ...self::square(),
             ...self::squareMirror(),
         ];
+    }
+
+    /**
+     * The refusals a portal access or invitation operation answers with, by
+     * status (#385). Each body is the shared `Error` schema; a 422 for a field
+     * carries its messages under `errors`.
+     *
+     * @return array<int, string>
+     */
+    private static function portalErrors(string $operation): array
+    {
+        [$family, $action] = explode('.', $operation, 2);
+        $read = $action === 'list';
+        $invitations = $family === 'invitations';
+        $target = match (true) {
+            $read => 'workspace or client',
+            $invitations && $action !== 'create' => 'workspace, client or invitation',
+            ! $invitations && $action !== 'grant' => 'workspace, client or contact',
+            default => 'workspace or client',
+        };
+
+        return array_filter([
+            401 => 'Not signed in, or the token is missing, expired or revoked.',
+            403 => $read
+                ? 'The caller is not a workspace owner or admin, or the token lacks clients:read.'
+                : 'The caller is not a workspace owner or admin (checked again under the access lock, also on a replay), or the token lacks the operation\'s scopes.'
+                    .($invitations ? ' Also when the identity provider will not let this account send invitations.' : ''),
+            404 => 'The '.$target.' is not visible to the caller'
+                .($read ? '' : ', or an agent write cutover is switched off')
+                .($invitations ? ', or portal invitations are disabled.' : '.'),
+            409 => $read ? null : match (true) {
+                $action === 'grant' => 'The Idempotency-Key was already used with a different request.',
+                $invitations => 'The Idempotency-Key was already used with a different request; the invitation was already accepted or withdrawn, or the identity provider no longer has it; or another change to this address is in progress (retry after Retry-After).',
+                default => 'expected_version is no longer current (read the contact again), or the Idempotency-Key was already used with a different request.',
+            },
+            422 => $read
+                ? 'limit is out of range, or the cursor is malformed or belongs to another client.'
+                : 'The Idempotency-Key header is missing, the body has an unknown field, confirm is not true, or a field is invalid (`errors` names it).'.match (true) {
+                    $action === 'grant' => ' Also when nobody signs in with the address (`email`, or `invite` while invitations are enabled), the person already has portal access, or a project does not belong to the client.',
+                    $action === 'update' => ' Also when a project does not belong to the client.',
+                    $action === 'create' => ' Also when the address already signs in here, a local account holds it unlinked, a project does not belong to the client, or the identity provider refuses the address.',
+                    default => '',
+                },
+            429 => $invitations && ! $read ? 'Too many requests, or the identity provider is limiting invitations (retry after Retry-After).' : 'Too many requests (retry after Retry-After).',
+            503 => $invitations && ! $read ? 'The identity provider is unavailable or misconfigured. For a withdrawal, access is already withdrawn: repeat the same request with the same Idempotency-Key to finish it.' : null,
+        ], static fn (?string $description): bool => $description !== null);
     }
 
     /**
