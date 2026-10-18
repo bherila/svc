@@ -811,7 +811,7 @@ final class AgentOperationCatalog
             $this->tool(
                 'invoices.create_draft',
                 'Create invoice draft',
-                'Create a draft from explicit manual lines and/or explicit approved time.',
+                'Create a draft from explicit manual lines and/or explicit approved time. Optionally set the invoice number, issue date, service period and client visibility as the invoice screen does; omitted, the next number is used and the draft stays hidden until issued.',
                 [AgentMcpWriteTools::class, 'invoicesCreateDraft'],
                 Effect::LocalWrite,
                 true,
@@ -990,7 +990,7 @@ final class AgentOperationCatalog
             $this->tool(
                 'invoices.send',
                 'Send invoice',
-                'Queue delivery to explicit recipients only after confirmation.',
+                'Email the invoice to explicit recipients only after confirmation, optionally with a subject, a covering message and a blind copy to your own address (bcc_self).',
                 [AgentMcpWriteTools::class, 'invoicesSend'],
                 Effect::LocalWrite,
                 true,

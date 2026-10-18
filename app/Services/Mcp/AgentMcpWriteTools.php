@@ -23,6 +23,7 @@ use App\Services\Mcp\Context\McpRequestContext;
 use App\Support\AgentApi\Presenters\AgentInvoicePresenter;
 use App\Support\AgentApi\Presenters\AgentTaskPresenter;
 use App\Support\AgentApi\Presenters\AgentTimeEntryPresenter;
+use App\Support\Billing\InvoiceEmailDraft;
 use App\Support\Billing\ReceivedPaymentData;
 use Bherila\McpLaravelBridge\Http\InternalAgentApiTransport;
 use Bherila\McpLaravelBridge\Mcp\RequestArguments;
@@ -507,9 +508,25 @@ final class AgentMcpWriteTools
     /** @param list<string> $time_entry_ids
      * @param list<array<string, mixed>> $manual_lines
      * @return array<string, mixed> */
-    public function invoicesCreateDraft(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $company_id, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key, #[Schema(maxItems: 100)] array $time_entry_ids = [], #[Schema(maxItems: 100)] array $manual_lines = [], ?string $currency = null, ?string $due_date = null, ?string $notes = null, ?string $scheduled_issue_date = null): array
-    {
-        return $this->send('POST', "workspaces/{$workspace_id}/invoices", array_filter(compact('company_id', 'time_entry_ids', 'manual_lines', 'currency', 'due_date', 'scheduled_issue_date', 'notes'), static fn (mixed $value): bool => $value !== null), $idempotency_key);
+    public function invoicesCreateDraft(
+        #[Schema(format: 'uuid')] string $workspace_id,
+        #[Schema(format: 'uuid')] string $company_id,
+        #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key,
+        #[Schema(maxItems: 100)] array $time_entry_ids = [],
+        #[Schema(maxItems: 100)] array $manual_lines = [],
+        ?string $currency = null,
+        ?string $due_date = null,
+        ?string $notes = null,
+        ?string $scheduled_issue_date = null,
+        #[Schema(maxLength: 80)] ?string $invoice_number = null,
+        #[Schema(format: 'date')] ?string $issue_date = null,
+        #[Schema(format: 'date')] ?string $service_period_start = null,
+        #[Schema(format: 'date')] ?string $service_period_end = null,
+        ?bool $is_visible_to_client = null,
+    ): array {
+        // Only what was sent joins the body, so a request hashes as it would
+        // over REST and a draft created before these fields existed replays.
+        return $this->send('POST', "workspaces/{$workspace_id}/invoices", array_filter(compact('company_id', 'time_entry_ids', 'manual_lines', 'currency', 'due_date', 'scheduled_issue_date', 'notes', 'invoice_number', 'issue_date', 'service_period_start', 'service_period_end', 'is_visible_to_client'), static fn (mixed $value): bool => $value !== null), $idempotency_key);
     }
 
     /** @param list<string> $time_entry_ids
@@ -639,9 +656,28 @@ final class AgentMcpWriteTools
 
     /** @param list<string> $recipients
      * @return array<string, mixed> */
-    public function invoicesSend(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $invoice_id, #[Schema] bool $confirm, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, #[Schema(minItems: 1, maxItems: 10)] array $recipients, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
-    {
-        return $this->send('POST', "workspaces/{$workspace_id}/invoices/{$invoice_id}/send", compact('expected_version', 'recipients', 'confirm'), $idempotency_key);
+    public function invoicesSend(
+        #[Schema(format: 'uuid')] string $workspace_id,
+        #[Schema(format: 'uuid')] string $invoice_id,
+        #[Schema] bool $confirm,
+        #[Schema(minLength: 64, maxLength: 64)] string $expected_version,
+        #[Schema(minItems: 1, maxItems: 10)] array $recipients,
+        #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key,
+        RequestContext $context,
+        #[Schema(maxLength: InvoiceEmailDraft::SUBJECT_MAX_LENGTH)] ?string $subject = null,
+        #[Schema(maxLength: InvoiceEmailDraft::MESSAGE_MAX_LENGTH)] ?string $message = null,
+        ?bool $bcc_self = null,
+    ): array {
+        // The compose fields join the body only when sent, so a plain send
+        // hashes exactly as it did before they existed.
+        $body = compact('expected_version', 'recipients', 'confirm');
+        foreach (compact('subject', 'message', 'bcc_self') as $name => $value) {
+            if ($this->requestArguments->has($context, $name)) {
+                $body[$name] = $value;
+            }
+        }
+
+        return $this->send('POST', "workspaces/{$workspace_id}/invoices/{$invoice_id}/send", $body, $idempotency_key);
     }
 
     /** @return array<string, mixed> */

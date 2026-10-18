@@ -753,6 +753,7 @@ export interface paths {
         };
         get: operations['invoices.list'];
         put?: never;
+        /** @description Create an ad-hoc draft invoice for a client from explicit manual lines and/or explicit approved time, with the fields of the invoice screen's form: invoice_number (default: the workspace's next number; a number already used is refused), issue_date (default: the day it is issued), a service period (both ends or neither), is_visible_to_client (default false; issuing makes it visible), currency, due and scheduled issue dates and notes. Nothing is issued or sent. */
         post: operations['invoices.create_draft'];
         delete?: never;
         options?: never;
@@ -935,6 +936,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** @description Email an issued invoice to explicit recipients, only with confirm: true and the current expected_version, with the invoice screen's compose fields: an optional subject (default: the invoice's own), an optional covering message, and bcc_self to blind-copy the signed-in user's own address - no other blind copy can be named. The delivery is registered with this request's receipt and sent once it commits; repeating the same idempotency key sends nothing more. */
         post: operations['invoices.send'];
         delete?: never;
         options?: never;
@@ -2173,6 +2175,28 @@ export interface components {
             notes?: string | null;
             time_entry_ids?: components['schemas']['Uuid'][];
             manual_lines?: components['schemas']['InvoiceManualLine'][];
+            /** @description The invoice's number. Omitted or null takes the workspace's next number; a number already used in the workspace is refused. */
+            invoice_number?: string | null;
+            /**
+             * Format: date
+             * @description The date the invoice will be issued as. Omitted or null means the day invoices.issue runs; issuing refuses a date still in the future.
+             */
+            issue_date?: string | null;
+            /**
+             * Format: date
+             * @description First day of the work this invoice bills. Give it with service_period_end, or neither.
+             */
+            service_period_start?: string | null;
+            /**
+             * Format: date
+             * @description Last day of the work this invoice bills, on or after service_period_start.
+             */
+            service_period_end?: string | null;
+            /**
+             * @description Whether the client portal shows the draft. Issuing always makes the invoice visible.
+             * @default false
+             */
+            is_visible_to_client: boolean;
         };
         InvoiceDeliveryHoldRequest: {
             expected_version: components['schemas']['Version'];
@@ -2504,6 +2528,15 @@ export interface components {
             /** @constant */
             confirm: true;
             recipients: string[];
+            /** @description Omitted or null uses the invoice's default subject. */
+            subject?: string | null;
+            /** @description A covering note shown above the invoice. Omitted or null uses the template's own words. */
+            message?: string | null;
+            /**
+             * @description Send a blind copy to the signed-in user's own address. No other blind copy can be named.
+             * @default false
+             */
+            bcc_self: boolean;
         };
         InvoiceSquare: {
             invoice_id: components['schemas']['Uuid'];

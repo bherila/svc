@@ -351,16 +351,14 @@ class InvoiceController extends Controller
         $recipients = $request->validated('recipients')
             ?? array_filter([$clientInvoice->clientCompany?->billing_email]);
 
-        // The sender's own address, and only theirs. See `SendInvoiceRequest`
-        // for why this is a flag rather than a field.
-        $bcc = $request->boolean('bcc_self') && $user instanceof User ? [$user->email] : [];
-
         $delivery = $service->send(
             $clientInvoice,
-            InvoiceEmailDraft::of(
-                $recipients,
-                $bcc,
-                $request->validated('subject') ?? $service->defaultSubject($clientInvoice),
+            InvoiceEmailDraft::composed(
+                array_values($recipients),
+                $user instanceof User ? (string) $user->email : null,
+                $request->boolean('bcc_self'),
+                $request->validated('subject'),
+                $service->defaultSubject($clientInvoice),
                 $request->validated('message'),
             ),
             $workspace,

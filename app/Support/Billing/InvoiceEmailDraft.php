@@ -19,6 +19,15 @@ use DomainException;
  */
 final class InvoiceEmailDraft
 {
+    /** What a subject line may hold, on the screen and through `invoices.send` alike. */
+    public const int SUBJECT_MAX_LENGTH = 255;
+
+    /**
+     * Long enough for a real covering note and short enough that the body of
+     * an invoice email cannot become a file transfer.
+     */
+    public const int MESSAGE_MAX_LENGTH = 5000;
+
     /**
      * @param  list<string>  $recipients  at least one, each a valid address
      * @param  list<string>  $bcc  blind copies, usually the sender themselves
@@ -71,6 +80,29 @@ final class InvoiceEmailDraft
         $note = $body === null ? null : trim($body);
 
         return new self($to, $blind, trim($subject), $note === '' ? null : $note);
+    }
+
+    /**
+     * The message an operator composed, sent from their own address.
+     *
+     * The one composition the invoice screen and `invoices.send` share (#454):
+     * a subject left out is the invoice's default, a note left out is the
+     * template's own words, and the only blind copy offered is the sender's
+     * own. `bcc_self` is a flag rather than an address everywhere, because
+     * taking an address would let a request blind-copy anyone - the one thing
+     * about a blind copy that would be visible neither to the recipient nor on
+     * the record.
+     *
+     * @param  list<string>  $recipients
+     *
+     * @throws DomainException
+     */
+    public static function composed(array $recipients, ?string $senderEmail, bool $bccSelf, ?string $subject, string $defaultSubject, ?string $message): self
+    {
+        $bcc = $bccSelf && $senderEmail !== null && $senderEmail !== '' ? [$senderEmail] : [];
+        $chosen = $subject === null || trim($subject) === '' ? $defaultSubject : $subject;
+
+        return self::of($recipients, $bcc, $chosen, $message);
     }
 
     /**

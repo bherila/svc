@@ -13,19 +13,24 @@ use App\Services\Billing\BillingCycleResolver;
 use App\Services\Billing\BillingMaintenance;
 use App\Services\Billing\ClientInvoicingService;
 use App\Services\Billing\InvoiceCorrectionService;
+use App\Services\Billing\InvoiceEmailService;
 use App\Services\Billing\InvoiceFromTimeService;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\AgentApi\AgentWriteCutover;
 use App\Support\AgentApi\ExplicitConfirmation;
 use App\Support\AgentApi\Presenters\AgentInvoicePresenter;
 use App\Support\Billing\BillingCadence;
+use App\Support\Billing\InvoiceEmailDraft;
 use App\Support\Billing\InvoiceKind;
+use App\Support\Billing\InvoiceLineType;
 use App\Support\Concurrency\Locks;
 use App\Support\WorkspaceClock;
 use Carbon\Carbon;
 use Closure;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use RuntimeException;
 
@@ -42,7 +47,101 @@ final class AgentInvoiceOperations
         private readonly WorkspaceClock $clock,
         private readonly AgentInvoicePresenter $presenter,
         private readonly CadencePreviewInvoiceChanges $previewChanges,
+        private readonly InvoiceEmailService $email,
     ) {}
+
+    /**
+     * `invoices.create_draft`: an ad-hoc draft from explicit manual lines
+     * and/or approved time, with the invoice screen's fields (#454) - its own
+     * number, issue date, service period and client visibility, each
+     * defaulting as the screen's form does.
+     *
+     * @param  array<string, mixed>  $body
+     */
+    public function createDraft(User $actor, Workspace $workspace, string $client, string $key, array $body): ClientInvoice
+    {
+        $ids = $this->run('invoices.create_draft', $actor, $workspace, $client, $key, $body, function () use ($workspace, $body): string {
+            $rules = $this->draftRules(updating: false);
+            // A number is unique within its workspace; asked here so a taken
+            // one is a field error rather than a constraint violation.
+            $rules['invoice_number'][] = Rule::unique('client_invoices', 'invoice_number')->where('workspace_id', $workspace->id);
+            $data = $this->validateFields($body, $rules);
+            $company = ClientCompany::query()->where('workspace_id', $workspace->id)->where('public_id', $data['company_id'])->firstOrFail();
+
+            return $this->fromTime->create(
+                $workspace,
+                $company,
+                Arr::only($data, ['currency', 'due_date', 'scheduled_issue_date', 'notes', 'invoice_number', 'issue_date', 'service_period_start', 'service_period_end', 'is_visible_to_client']),
+                $data['time_entry_ids'] ?? [],
+                $data['manual_lines'] ?? [],
+            )->public_id;
+        });
+
+        return $this->invoice($workspace, $ids[0]);
+    }
+
+    /**
+     * `invoices.update_draft`: replace an ad-hoc draft's selection and lines.
+     *
+     * @param  array<string, mixed>  $body
+     */
+    public function updateDraft(User $actor, Workspace $workspace, string $client, string $key, string $invoice, array $body): ClientInvoice
+    {
+        $ids = $this->run('invoices.update_draft', $actor, $workspace, $client, $key, ['invoice_id' => $invoice, 'body' => $body], function () use ($workspace, $invoice, $body): string {
+            $data = $this->validateFields($body, $this->draftRules(updating: true));
+
+            return $this->fromTime->updateDraft(
+                $this->invoice($workspace, $invoice),
+                $workspace,
+                $data['expected_version'],
+                Arr::only($data, ['currency', 'due_date', 'scheduled_issue_date', 'notes']),
+                $data['time_entry_ids'],
+                $data['manual_lines'],
+            )->public_id;
+        });
+
+        return $this->invoice($workspace, $ids[0]);
+    }
+
+    /**
+     * `invoices.send`: email the invoice to explicit recipients, with the
+     * invoice screen's compose fields (#454) - a subject, a covering note and
+     * a blind copy to the sender's own address.
+     *
+     * The delivery is registered with this mutation's receipt and sent once it
+     * commits: the receipt and the effect have to land together, and an email
+     * already gone is not something a rollback can take back.
+     *
+     * @param  array<string, mixed>  $body
+     */
+    public function send(User $actor, Workspace $workspace, string $client, string $key, string $invoice, array $body): ClientInvoice
+    {
+        $ids = $this->run('invoices.send', $actor, $workspace, $client, $key, ['invoice_id' => $invoice, 'body' => $body], function () use ($actor, $workspace, $invoice, $body): string {
+            $data = $this->validateFields($body, [
+                'expected_version' => ['required', 'string', 'size:64'],
+                'confirm' => ['required', new ExplicitConfirmation],
+                'recipients' => ['required', 'array', 'min:1', 'max:10'],
+                'recipients.*' => ['email', 'max:255'],
+                'subject' => ['sometimes', 'nullable', 'string', 'max:'.InvoiceEmailDraft::SUBJECT_MAX_LENGTH],
+                'message' => ['sometimes', 'nullable', 'string', 'max:'.InvoiceEmailDraft::MESSAGE_MAX_LENGTH],
+                'bcc_self' => ['sometimes', 'boolean:strict'],
+            ]);
+            $record = $this->invoice($workspace, $invoice);
+            abort_unless(AgentApiVersion::matches($record, $data['expected_version']), 409, 'The invoice has changed; read it and retry.');
+            $this->email->sendAfterCommit($record, InvoiceEmailDraft::composed(
+                array_values($data['recipients']),
+                (string) $actor->email,
+                ($data['bcc_self'] ?? false) === true,
+                $data['subject'] ?? null,
+                $this->email->defaultSubject($record),
+                $data['message'] ?? null,
+            ), $workspace);
+
+            return $record->public_id;
+        });
+
+        return $this->invoice($workspace, $ids[0]);
+    }
 
     /** @param array<string, mixed> $body */
     public function hold(User $actor, Workspace $workspace, string $client, string $key, string $invoice, array $body, bool $hold): ClientInvoice
@@ -214,6 +313,70 @@ final class AgentInvoiceOperations
         }
 
         return Validator::make(['body' => $body], $closed)->validate()['body'];
+    }
+
+    /**
+     * Validate a closed body with its errors keyed by field, as these
+     * operations have always reported them: a field the operation does not
+     * take is refused by name rather than ignored, and a rule may name a
+     * sibling field (`required_with`, `after_or_equal`) as written.
+     *
+     * @param  array<string, mixed>  $body
+     * @param  array<string, list<mixed>>  $rules
+     * @return array<string, mixed>
+     */
+    private function validateFields(array $body, array $rules): array
+    {
+        $fields = array_filter(array_keys($rules), static fn (string $field): bool => ! str_contains($field, '.'));
+        $unknown = array_diff(array_map('strval', array_keys($body)), $fields);
+        if ($unknown !== []) {
+            throw ValidationException::withMessages(array_fill_keys(array_values($unknown), 'This field is not accepted by this operation.'));
+        }
+
+        return Validator::make($body, $rules)->validate();
+    }
+
+    /**
+     * The draft body, for creation and for replacement. Creation also takes
+     * the screen form's own fields; a replacement keeps the ones it was
+     * created with.
+     *
+     * @return array<string, list<mixed>>
+     */
+    private function draftRules(bool $updating): array
+    {
+        $rules = [
+            'currency' => ['nullable', 'string', 'size:3'],
+            'due_date' => ['nullable', 'date'],
+            'scheduled_issue_date' => ['nullable', 'date_format:Y-m-d'],
+            'notes' => ['nullable', 'string', 'max:10000'],
+            'time_entry_ids' => [$updating ? 'present' : 'sometimes', 'array', 'max:100'],
+            'time_entry_ids.*' => ['uuid', 'distinct'],
+            'manual_lines' => [$updating ? 'present' : 'sometimes', 'array', 'max:100'],
+            'manual_lines.*' => ['array:project_id,type,description,quantity,unit_amount,tax_amount'],
+            'manual_lines.*.project_id' => ['nullable', 'uuid'],
+            'manual_lines.*.type' => ['required', 'string', 'max:40', Rule::notIn(InvoiceLineType::systemOnlyValues())],
+            'manual_lines.*.description' => ['required', 'string', 'max:10000'],
+            'manual_lines.*.quantity' => ['required'],
+            'manual_lines.*.unit_amount' => ['required', 'integer', 'min:0'],
+            'manual_lines.*.tax_amount' => ['nullable', 'integer', 'min:0'],
+        ];
+        if ($updating) {
+            return $rules + ['expected_version' => ['required', 'string', 'size:64']];
+        }
+
+        return $rules + [
+            'company_id' => ['required', 'uuid'],
+            // The screen form's fields. Each omitted one defaults as it does
+            // there: the workspace's next number, no issue date (issue() sets
+            // today), no service period, and hidden from the client until it
+            // is issued.
+            'invoice_number' => ['sometimes', 'nullable', 'string', 'max:80'],
+            'issue_date' => ['sometimes', 'nullable', 'date_format:Y-m-d'],
+            'service_period_start' => ['nullable', 'required_with:service_period_end', 'date_format:Y-m-d'],
+            'service_period_end' => ['nullable', 'required_with:service_period_start', 'date_format:Y-m-d', 'after_or_equal:service_period_start'],
+            'is_visible_to_client' => ['sometimes', 'boolean:strict'],
+        ];
     }
 
     private function authorize(User $actor, Workspace $workspace): void

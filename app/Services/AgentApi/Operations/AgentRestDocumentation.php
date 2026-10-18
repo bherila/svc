@@ -698,7 +698,7 @@ final class AgentRestDocumentation
             'invoices.create_draft' => [
                 'method' => 'POST',
                 'scopes' => ['billing:write'],
-                'description' => false,
+                'description' => 'Create an ad-hoc draft invoice for a client from explicit manual lines and/or explicit approved time, with the fields of the invoice screen\'s form: invoice_number (default: the workspace\'s next number; a number already used is refused), issue_date (default: the day it is issued), a service period (both ends or neither), is_visible_to_client (default false; issuing makes it visible), currency, due and scheduled issue dates and notes. Nothing is issued or sent.',
                 'parameters' => ['WorkspaceId', 'IdempotencyKey'],
                 'request' => 'InvoiceCreateRequest',
                 'response' => 'InvoiceMutationResponse',
@@ -841,7 +841,7 @@ final class AgentRestDocumentation
             'invoices.send' => [
                 'method' => 'POST',
                 'scopes' => ['billing:deliver'],
-                'description' => false,
+                'description' => 'Email an issued invoice to explicit recipients, only with confirm: true and the current expected_version, with the invoice screen\'s compose fields: an optional subject (default: the invoice\'s own), an optional covering message, and bcc_self to blind-copy the signed-in user\'s own address - no other blind copy can be named. The delivery is registered with this request\'s receipt and sent once it commits; repeating the same idempotency key sends nothing more.',
                 'parameters' => ['WorkspaceId', 'InvoiceId', 'IdempotencyKey'],
                 'request' => 'InvoiceSendRequest',
                 'response' => 'InvoiceMutationResponse',

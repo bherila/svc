@@ -221,7 +221,23 @@ flag and `AGENT_API_INVOICE_WRITES_ENABLED`, so enabling the broader flag alone
 registers `time_entries.approve` and no invoice tool. `invoices.issue` now runs
 through the tenant-scoped `IssueInvoiceAction` (see
 [Issuing an invoice](#issuing-an-invoice)); the others still enter the
-versioned Agent API through `InternalAgentApiTransport`. They are disabled by
+versioned Agent API through `InternalAgentApiTransport`, whose controllers are
+thin adapters: `invoices.create_draft`, `invoices.update_draft` and
+`invoices.send` are validated, authorized and carried out by
+`AgentInvoiceOperations`, one implementation for both transports.
+
+`invoices.create_draft` takes the invoice screen form's fields (#454):
+`invoice_number` (default: the workspace's next number; a number already used
+in the workspace is refused as a field error), `issue_date` (default: the day it
+is issued), `service_period_start` and `service_period_end` (both or neither,
+the end on or after the start) and `is_visible_to_client` (default `false`;
+issuing always makes the invoice visible). `invoices.send` takes the compose
+dialog's: an optional `subject` (default: the invoice's own), an optional
+covering `message`, and `bcc_self` to blind-copy the signed-in user's own address.
+No other blind copy can be named, on the screen or through the API, and the
+screen and the API compose the message through the same
+`InvoiceEmailDraft::composed()`. Fields a tool does not take are refused by name
+rather than ignored. They are disabled by
 default and are not a PR 6/7 production-ready write path: approval, invoice,
 and externally consequential workflows require their own application-action
 migration plus the approved confirmation design before general availability.

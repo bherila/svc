@@ -3645,6 +3645,7 @@
         "/workspaces/{workspace}/invoices": {
             "post": {
                 "operationId": "invoices.create_draft",
+                "description": "Create an ad-hoc draft invoice for a client from explicit manual lines and/or explicit approved time, with the fields of the invoice screen's form: invoice_number (default: the workspace's next number; a number already used is refused), issue_date (default: the day it is issued), a service period (both ends or neither), is_visible_to_client (default false; issuing makes it visible), currency, due and scheduled issue dates and notes. Nothing is issued or sent.",
                 "security": [
                     {
                         "oauth2": [
@@ -4529,6 +4530,7 @@
         "/workspaces/{workspace}/invoices/{invoice}/send": {
             "post": {
                 "operationId": "invoices.send",
+                "description": "Email an issued invoice to explicit recipients, only with confirm: true and the current expected_version, with the invoice screen's compose fields: an optional subject (default: the invoice's own), an optional covering message, and bcc_self to blind-copy the signed-in user's own address - no other blind copy can be named. The delivery is registered with this request's receipt and sent once it commits; repeating the same idempotency key sends nothing more.",
                 "security": [
                     {
                         "oauth2": [
@@ -9928,7 +9930,53 @@
                         "items": {
                             "$ref": "#/components/schemas/InvoiceManualLine"
                         }
+                    },
+                    "invoice_number": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "minLength": 1,
+                        "maxLength": 80,
+                        "description": "The invoice's number. Omitted or null takes the workspace's next number; a number already used in the workspace is refused."
+                    },
+                    "issue_date": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date",
+                        "description": "The date the invoice will be issued as. Omitted or null means the day invoices.issue runs; issuing refuses a date still in the future."
+                    },
+                    "service_period_start": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date",
+                        "description": "First day of the work this invoice bills. Give it with service_period_end, or neither."
+                    },
+                    "service_period_end": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date",
+                        "description": "Last day of the work this invoice bills, on or after service_period_start."
+                    },
+                    "is_visible_to_client": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Whether the client portal shows the draft. Issuing always makes the invoice visible."
                     }
+                },
+                "dependentRequired": {
+                    "service_period_start": [
+                        "service_period_end"
+                    ],
+                    "service_period_end": [
+                        "service_period_start"
+                    ]
                 }
             },
             "InvoiceDeliveryHoldRequest": {
@@ -11162,6 +11210,27 @@
                             "type": "string",
                             "format": "email"
                         }
+                    },
+                    "subject": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 255,
+                        "description": "Omitted or null uses the invoice's default subject."
+                    },
+                    "message": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 5000,
+                        "description": "A covering note shown above the invoice. Omitted or null uses the template's own words."
+                    },
+                    "bcc_self": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Send a blind copy to the signed-in user's own address. No other blind copy can be named."
                     }
                 }
             },
