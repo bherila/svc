@@ -238,6 +238,9 @@ class ClientPortalController extends Controller
                 'expires_on' => $item->expires_on?->toDateString(),
                 'is_active' => (bool) $item->is_active,
             ])->values()->all(),
+            // Not shown to a client until the agreement opts in (#366, a
+            // later slice). Null rather than omitted: one payload shape.
+            'deferred_backlog' => null,
         ]);
     }
 

@@ -39,6 +39,7 @@ const correctionOnly = process.argv.includes('--invoice-correction');
 const squareOnly = process.argv.includes('--square');
 const remindersOnly = process.argv.includes('--reminders');
 const timeOnly = process.argv.includes('--time');
+const backlogOnly = process.argv.includes('--deferred-backlog');
 const results = [];
 const failures = [];
 const serverLog = [];
@@ -128,6 +129,7 @@ try {
         // Shows the seeded portal invitations on client settings; nothing here asks a provider.
         SVC_PORTAL_INVITATIONS_ENABLED: 'true',
         SVC_LAYOUT_PORTAL_PAGES: portalOnly ? '1' : '0',
+        SVC_LAYOUT_DEFERRED_BACKLOG: backlogOnly ? '1' : '0',
     };
     run('php', ['scripts/layout/seed.php'], env);
     const fixture = JSON.parse(
@@ -285,22 +287,24 @@ try {
                   ? ['reminder_invoice', 'settings']
                   : timeOnly
                     ? ['time', 'draft_time']
-                    : [
-                          'mcp_setup',
-                          'invoice',
-                          'invoice_review',
-                          'reminder_invoice',
-                          'settings',
-                          'draft_invoice',
-                          'draft_time',
-                          'proposal',
-                          'proposal_acceptance',
-                          'operations',
-                          'time',
-                          'expenses',
-                          'receipts',
-                          'expense_schedules',
-                      ]) {
+                    : backlogOnly
+                      ? ['agreement']
+                      : [
+                            'mcp_setup',
+                            'invoice',
+                            'invoice_review',
+                            'reminder_invoice',
+                            'settings',
+                            'draft_invoice',
+                            'draft_time',
+                            'proposal',
+                            'proposal_acceptance',
+                            'operations',
+                            'time',
+                            'expenses',
+                            'receipts',
+                            'expense_schedules',
+                        ]) {
             const response = await page.goto(
                 origin + fixture[portalOnly ? 'portal_settings' : screen],
             );
@@ -713,7 +717,13 @@ try {
         }
     }
 
-    if (!portalOnly && !correctionOnly && !squareOnly && !remindersOnly) {
+    if (
+        !portalOnly &&
+        !correctionOnly &&
+        !squareOnly &&
+        !remindersOnly &&
+        !backlogOnly
+    ) {
         await page.setViewportSize({ width: 1440, height: 1000 });
         await page.goto(origin + fixture.project_log);
         await expect(page.getByRole('dialog')).toBeVisible();
@@ -746,7 +756,8 @@ try {
         !correctionOnly &&
         !squareOnly &&
         !remindersOnly &&
-        !timeOnly
+        !timeOnly &&
+        !backlogOnly
     ) {
         // Full operator correction path, all writes confined to the seeded records.
         await page.setViewportSize({ width: 1440, height: 1000 });
@@ -901,7 +912,9 @@ try {
                   ? 'Synthetic Square explore, linked operator invoice and linked client portal invoice at every required width.'
                   : remindersOnly
                     ? 'Synthetic payment reminders: an operator invoice with its reminder log and send confirmation, and the client cadence switch on settings, at every required width.'
-                    : 'Synthetic local fixtures only. Invoice review/settings/proposal/time/expenses are asserted; operations is a bounded measurement of known pre-existing layout problems.',
+                    : backlogOnly
+                      ? 'Synthetic deferred backlog on the operator agreement page, with an unbroken client and agreement name and a shelf priced in the millions, at every required width.'
+                      : 'Synthetic local fixtures only. Invoice review/settings/proposal/time/expenses are asserted; operations is a bounded measurement of known pre-existing layout problems.',
             '',
             '| Page/state | Viewport | Document width | Navbar height | Gate | Screenshot |',
             '| --- | --- | --- | --- | --- | --- |',

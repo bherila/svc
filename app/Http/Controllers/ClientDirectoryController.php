@@ -24,6 +24,7 @@ use App\Services\Access\PortalInvitations;
 use App\Services\AgentApi\AgentPortalContactReadService;
 use App\Services\Authorization\BillingRecordAccess;
 use App\Services\Authorization\ProjectAccess;
+use App\Services\Billing\DeferredBacklogReadService;
 use App\Services\Billing\InvoiceCorrectionReadService;
 use App\Services\Billing\InvoiceCorrectionService;
 use App\Services\Billing\InvoiceEmailService;
@@ -439,6 +440,7 @@ class ClientDirectoryController extends Controller
         WorkspaceAuthorization $authorization,
         ProjectAccess $access,
         BillingRecordAccess $billing,
+        DeferredBacklogReadService $deferredBacklogs,
     ): Response {
         Gate::authorize('view', $workspace);
         $authorization->assertOwnedBy($workspace, $clientCompany);
@@ -545,6 +547,9 @@ class ClientDirectoryController extends Controller
                 'expires_on' => $item->expires_on?->toDateString(),
                 'is_active' => (bool) $item->is_active,
             ])->values()->all(),
+            // What termination would collect and charge today (#366), priced
+            // at the agreement's rate, so a manager's alone.
+            'deferred_backlog' => $manages ? $deferredBacklogs->trailing($workspace, $clientAgreement) : null,
         ]);
     }
 
