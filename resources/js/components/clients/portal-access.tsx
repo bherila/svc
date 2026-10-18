@@ -69,17 +69,19 @@ type Failure = Extract<ApiResult<unknown>, { ok: false }>;
 
 /**
  * Send one change to the API, then reload the page's props so every row shows
- * what the server now holds.
+ * what the server now holds. `reloadOn` names refusals after which part of the
+ * change had already committed, so the page must show that too.
  */
 async function change(
     method: 'POST' | 'PATCH' | 'DELETE',
     url: string,
     body: object,
     key?: string,
+    reloadOn: number[] = [],
 ): Promise<Failure | null> {
     const result = await apiRequest(method, url, body, key);
 
-    if (!result.ok) {
+    if (!result.ok && !reloadOn.includes(result.status)) {
         return result;
     }
 
@@ -87,13 +89,14 @@ async function change(
         router.reload({ onFinish: () => resolve() }),
     );
 
-    return null;
+    return result.ok ? null : result;
 }
 
 /**
- * One idempotency key per attempt at an action that emails someone, kept
- * across retries of the same request, so a send whose answer was lost replays
- * rather than sending twice. A refusal or success ends the attempt.
+ * One idempotency key per attempt at an action no version can refuse twice -
+ * a grant, or anything that emails someone - kept across retries of the same
+ * request, so one whose answer was lost replays its result rather than acting
+ * again. A refusal or success ends the attempt.
  */
 function useAttemptKey() {
     const attempt = useRef<{ key: string; body: string } | null>(null);
@@ -146,7 +149,9 @@ export function PortalAccess({
                 <ul className="grid grid-cols-1 gap-3">
                     {portal.members.map((member) => (
                         <MemberRow
-                            key={member.id}
+                            // A new version is new state to edit from: never
+                            // pair fields read before it with its version.
+                            key={`${member.id}:${member.version}`}
                             clientName={clientName}
                             member={member}
                             projects={projects}
@@ -248,6 +253,9 @@ function InvitationRow({
             invitation.revoke_url,
             body,
             revokeKey.keyFor(body),
+            // Access is already withdrawn when only the provider's half
+            // fails: show that, and retry with the same key to finish it.
+            [503],
         );
         revokeKey.settle(failure);
         setMessage(failure?.message ?? null);
@@ -523,9 +531,11 @@ function AddContact({
     const [scope, setScope] = useState<PortalScope>('company');
     const [chosen, setChosen] = useState<string[]>([]);
     const [messages, setMessages] = useState<string[]>([]);
-    // Set only when adding was refused because nobody signs in with the address.
+    // Set when adding was refused because nobody signs in with the address,
+    // and kept while that invitation is retried.
     const [inviteOffered, setInviteOffered] = useState(false);
     const [busy, setBusy] = useState(false);
+    const grantKey = useAttemptKey();
     const inviteKey = useAttemptKey();
     const offerInvitation = inviteUrl !== null && inviteOffered;
 
@@ -536,15 +546,15 @@ function AddContact({
             projects: scope === 'projects' ? chosen : [],
             confirm: true,
         };
+        const attempt = invite && inviteUrl !== null ? inviteKey : grantKey;
         setBusy(true);
-        const failure =
-            invite && inviteUrl !== null
-                ? await change('POST', inviteUrl, body, inviteKey.keyFor(body))
-                : await change('POST', addUrl, body);
-
-        if (invite) {
-            inviteKey.settle(failure);
-        }
+        const failure = await change(
+            'POST',
+            invite && inviteUrl !== null ? inviteUrl : addUrl,
+            body,
+            attempt.keyFor(body),
+        );
+        attempt.settle(failure);
 
         if (failure === null) {
             setEmail('');
@@ -555,8 +565,10 @@ function AddContact({
         } else {
             const fields = Object.values(failure.errors ?? {}).flat();
             setMessages(fields.length > 0 ? fields : [failure.message]);
+            // A failed invitation keeps its button, to retry with the same
+            // key; a refused grant offers one only when nobody signs in.
             setInviteOffered(
-                !invite && (failure.errors?.invite ?? []).length > 0,
+                invite || (failure.errors?.invite ?? []).length > 0,
             );
         }
 

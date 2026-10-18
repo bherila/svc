@@ -261,6 +261,56 @@ describe('portal access', () => {
         expect(inertia.reload).toHaveBeenCalledOnce();
     });
 
+    it('retries a grant whose answer was lost with the same key', async () => {
+        fetchMock.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+        respond([201, { data: {} }]);
+        const user = userEvent.setup();
+        render(<PortalAccess {...props()} />);
+
+        await user.type(
+            screen.getByLabelText('Add a contact'),
+            'new@client.example.test',
+        );
+        await user.click(
+            screen.getByRole('button', { name: 'Give portal access' }),
+        );
+        expect(await screen.findByRole('alert')).toHaveTextContent(
+            'SVC could not be reached.',
+        );
+        await user.click(
+            screen.getByRole('button', { name: 'Give portal access' }),
+        );
+
+        await waitFor(() => expect(inertia.reload).toHaveBeenCalledOnce());
+        expect(request(1).key).toBe(request(0).key);
+    });
+
+    it('starts from the reloaded access when a contact changes elsewhere', () => {
+        const page = props();
+        const { rerender } = render(<PortalAccess {...page} />);
+        const name = `Portal access for ${'SyntheticContactName'.repeat(20)}`;
+        expect(screen.getByRole('combobox', { name })).toHaveValue('projects');
+
+        rerender(
+            <PortalAccess
+                {...page}
+                portal={{
+                    ...page.portal,
+                    members: [
+                        {
+                            ...page.portal.members[0],
+                            scope: 'company',
+                            projects: [],
+                            version: 'b'.repeat(64),
+                        },
+                    ],
+                }}
+            />,
+        );
+
+        expect(screen.getByRole('combobox', { name })).toHaveValue('company');
+    });
+
     it('offers selected projects only when the client has some', () => {
         render(
             <PortalAccess
@@ -511,6 +561,87 @@ describe('portal access', () => {
                     confirm: true,
                 },
             });
+        });
+
+        it('keeps offering a failed invitation, to retry with the same key', async () => {
+            respond(
+                [
+                    422,
+                    {
+                        message: 'The given data was invalid.',
+                        errors: {
+                            invite: ['Nobody signs in with that address yet.'],
+                        },
+                    },
+                ],
+                [
+                    503,
+                    {
+                        message:
+                            'The identity provider is unavailable. Try again later.',
+                    },
+                ],
+                [201, { data: {} }],
+            );
+            const user = userEvent.setup();
+            render(<PortalAccess {...invitationProps()} />);
+
+            await user.type(
+                screen.getByLabelText('Add a contact'),
+                'new@client.example.test',
+            );
+            await user.click(
+                screen.getByRole('button', { name: 'Give portal access' }),
+            );
+            await user.click(
+                await screen.findByRole('button', { name: 'Send invitation' }),
+            );
+            expect(
+                await screen.findByText(
+                    'The identity provider is unavailable. Try again later.',
+                ),
+            ).toBeInTheDocument();
+            await user.click(
+                screen.getByRole('button', { name: 'Send invitation' }),
+            );
+
+            await waitFor(() => expect(inertia.reload).toHaveBeenCalledOnce());
+            expect(request(2).key).toBe(request(1).key);
+            expect(request(2).url).toBe(`${api}/portal-invitations`);
+        });
+
+        it('shows a withdrawal whose provider half failed, and retries it with the same key', async () => {
+            respond(
+                [
+                    503,
+                    {
+                        message:
+                            'The identity provider is unavailable. Try again later.',
+                    },
+                ],
+                [200, { data: {} }],
+            );
+            const user = userEvent.setup();
+            render(<PortalAccess {...invitationProps()} />);
+
+            await user.click(screen.getByRole('button', { name: 'Withdraw' }));
+            await user.click(
+                screen.getByRole('button', { name: 'Withdraw invitation' }),
+            );
+            expect(await screen.findByRole('alert')).toHaveTextContent(
+                'The identity provider is unavailable.',
+            );
+            // Access was withdrawn locally, so the page reloads to say so.
+            expect(inertia.reload).toHaveBeenCalledOnce();
+
+            await user.click(screen.getByRole('button', { name: 'Withdraw' }));
+            await user.click(
+                screen.getByRole('button', { name: 'Withdraw invitation' }),
+            );
+            await waitFor(() =>
+                expect(inertia.reload).toHaveBeenCalledTimes(2),
+            );
+            expect(request(1).key).toBe(request(0).key);
         });
 
         it('never offers an invitation while invitations are off', async () => {
