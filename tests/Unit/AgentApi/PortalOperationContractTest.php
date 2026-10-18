@@ -93,6 +93,11 @@ final class PortalOperationContractTest extends TestCase
                 }
             }
             $this->assertStringContainsString('`invite`', $registry->find('clients.portal_access.grant')->rest->responses[422]['description']);
+            // Declared refusals sit beside, and never replace, a download's own success response.
+            $this->assertSame([200 => [
+                'description' => 'Authorized result',
+                'content' => ['application/pdf' => ['schema' => ['type' => 'string', 'format' => 'binary']]],
+            ]], $registry->find('invoices.download_pdf')?->rest?->responses);
         } finally {
             AgentApiResponseSchemaCatalog::flush();
             Container::setInstance($previous);

@@ -5155,7 +5155,7 @@ export interface operations {
                     'application/json': components['schemas']['Error'];
                 };
             };
-            /** @description The workspace or client is not visible to the caller, or an agent write cutover is switched off, or portal invitations are disabled. */
+            /** @description The workspace or client is not visible to the caller, an agent write cutover is switched off, or portal invitations are disabled. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -5164,7 +5164,7 @@ export interface operations {
                     'application/json': components['schemas']['Error'];
                 };
             };
-            /** @description The Idempotency-Key was already used with a different request; the invitation was already accepted or withdrawn, or the identity provider no longer has it; or another change to this address is in progress (retry after Retry-After). */
+            /** @description The Idempotency-Key was already used with a different request, or another invitation to this address is being sent (retry after Retry-After). */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -5191,7 +5191,7 @@ export interface operations {
                     'application/json': components['schemas']['Error'];
                 };
             };
-            /** @description The identity provider is unavailable or misconfigured. For a withdrawal, access is already withdrawn: repeat the same request with the same Idempotency-Key to finish it. */
+            /** @description The identity provider is unavailable or misconfigured; nothing was invited. */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -5249,7 +5249,7 @@ export interface operations {
                     'application/json': components['schemas']['Error'];
                 };
             };
-            /** @description The workspace, client or invitation is not visible to the caller, or an agent write cutover is switched off, or portal invitations are disabled. */
+            /** @description The workspace, client or invitation is not visible to the caller, an agent write cutover is switched off, or portal invitations are disabled. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -5267,7 +5267,7 @@ export interface operations {
                     'application/json': components['schemas']['Error'];
                 };
             };
-            /** @description The Idempotency-Key header is missing, the body has an unknown field, confirm is not true, or a field is invalid (`errors` names it). */
+            /** @description The Idempotency-Key header is missing, the body has an unknown field, or confirm is not true. */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -5285,7 +5285,7 @@ export interface operations {
                     'application/json': components['schemas']['Error'];
                 };
             };
-            /** @description The identity provider is unavailable or misconfigured. For a withdrawal, access is already withdrawn: repeat the same request with the same Idempotency-Key to finish it. */
+            /** @description The identity provider is unavailable or misconfigured; the invitation was not sent again. */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -5334,7 +5334,7 @@ export interface operations {
                     'application/json': components['schemas']['Error'];
                 };
             };
-            /** @description The caller is not a workspace owner or admin (checked again under the access lock, also on a replay), or the token lacks the operation's scopes. Also when the identity provider will not let this account send invitations. */
+            /** @description The caller is not a workspace owner or admin (checked again under the access lock, also on a replay), or the token lacks the operation's scopes. Also when the identity provider will not let this account withdraw invitations. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -5343,7 +5343,7 @@ export interface operations {
                     'application/json': components['schemas']['Error'];
                 };
             };
-            /** @description The workspace, client or invitation is not visible to the caller, or an agent write cutover is switched off, or portal invitations are disabled. */
+            /** @description The workspace, client or invitation is not visible to the caller, an agent write cutover is switched off, or portal invitations are disabled. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -5361,7 +5361,7 @@ export interface operations {
                     'application/json': components['schemas']['Error'];
                 };
             };
-            /** @description The Idempotency-Key header is missing, the body has an unknown field, confirm is not true, or a field is invalid (`errors` names it). */
+            /** @description The Idempotency-Key header is missing, the body has an unknown field, or confirm is not true. */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -5379,7 +5379,7 @@ export interface operations {
                     'application/json': components['schemas']['Error'];
                 };
             };
-            /** @description The identity provider is unavailable or misconfigured. For a withdrawal, access is already withdrawn: repeat the same request with the same Idempotency-Key to finish it. */
+            /** @description The identity provider withdrawal did not finish. Access is already withdrawn: repeat the same request with the same Idempotency-Key to finish it. */
             503: {
                 headers: {
                     [name: string]: unknown;
