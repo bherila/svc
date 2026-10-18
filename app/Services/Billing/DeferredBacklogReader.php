@@ -54,13 +54,11 @@ final class DeferredBacklogReader
             }
         }
         $companyIds = array_values(array_unique($agreements->map(static fn (ClientAgreement $agreement): int => (int) $agreement->client_company_id)->all()));
-        $upTo = $through->toDateString();
-
         $companyEntries = ClientTimeEntry::query()
             ->where('workspace_id', $workspaceId)
             ->whereIn('client_company_id', $companyIds)
             ->awaitingDeferredBilling()
-            ->where('worked_on', '<=', $upTo);
+            ->where('worked_on', '<=', $through->toDateString());
 
         // Checked over each client's whole deferred chain before any agreement
         // narrows it, as termination checks it, so a malformed row cannot
@@ -76,7 +74,7 @@ final class DeferredBacklogReader
 
         $history = $periods === []
             ? new Collection
-            : $this->history($workspaceId, $companyIds, $upTo, $periods[0].'-01');
+            : $this->history($workspaceId, $companyIds, $through, CarbonImmutable::parse($periods[0].'-01'));
 
         $backlogs = [];
         foreach ($agreements as $agreement) {
@@ -103,7 +101,7 @@ final class DeferredBacklogReader
      * @param  list<int>  $companyIds
      * @return Collection<int, ClientTimeEntry>
      */
-    private function history(int $workspaceId, array $companyIds, string $upTo, string $from): Collection
+    private function history(int $workspaceId, array $companyIds, CarbonImmutable $through, CarbonImmutable $from): Collection
     {
         return ClientTimeEntry::query()
             ->where('workspace_id', $workspaceId)
@@ -111,17 +109,17 @@ final class DeferredBacklogReader
             ->where('is_billable', true)
             ->where('is_deferred', true)
             ->billableForInvoicing()
-            ->where('worked_on', '<=', $upTo)
+            ->where('worked_on', '<=', $through->toDateString())
             ->where(fn (Builder $moved): Builder => $moved
-                ->where('worked_on', '>=', $from)
+                ->where('worked_on', '>=', $from->toDateString())
                 ->orWhereHas('invoiceLines', fn (Builder $lines): Builder => $lines
                     ->where('client_invoice_lines.workspace_id', $workspaceId)
                     ->where('client_invoice_line_time_entries.workspace_id', $workspaceId)
                     ->where(fn (Builder $dated): Builder => $dated
-                        ->where('client_invoice_lines.line_date', '>=', $from)
+                        ->where('client_invoice_lines.line_date', '>=', $from->toDateString())
                         ->orWhereHas('invoice', fn (Builder $invoice): Builder => $invoice
                             ->where('client_invoices.workspace_id', $workspaceId)
-                            ->where('client_invoices.service_period_end', '>=', $from)))))
+                            ->where('client_invoices.service_period_end', '>=', $from->toDateString())))))
             ->withCapacityPlacement($workspaceId)
             ->orderBy('worked_on')
             ->orderBy('id')
