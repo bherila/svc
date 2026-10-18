@@ -51,7 +51,7 @@ final class AgentSquareLinkController extends Controller
             $record = $this->invoice($workspace, $invoice, $context->user);
             $data = $this->validated($request, [
                 ...$this->confirmedVersion(),
-                'square_invoice_id' => ['required', 'string', 'max:191', 'regex:'.SquareIdentifiers::INVOICE_ID_PATTERN],
+                'square_invoice_id' => SquareIdentifiers::invoiceIdRule(),
                 'square_invoice_number' => ['required', 'string', 'max:191', 'regex:'.SquareIdentifiers::INVOICE_NUMBER_PATTERN],
                 'currency' => ['sometimes', 'string', 'regex:/^[A-Z]{3}$/D'],
                 'match_method' => ['sometimes', 'string', Rule::enum(SquareMatchMethod::class)],

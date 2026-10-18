@@ -24,6 +24,18 @@ final class SquareWebhookTest extends TestCase
     use FakesSquarePaymentSync;
     use RefreshDatabase;
 
+    public function test_opaque_invoice_hints_are_accepted_without_broadening_payment_hints(): void
+    {
+        $this->paymentFixture();
+        // Unlinked hints are acknowledged without payment or mapping changes.
+        foreach (['_synthetic_legacy_invoice', 'SyntheticLegacyInvoice=='] as $index => $id) {
+            $this->deliver(['event_id' => 'evt_synthetic_opaque_'.$index, 'type' => 'invoice.updated', 'data' => ['id' => $id]])->assertOk();
+            $this->deliver(['event_id' => 'evt_synthetic_payment_'.$index, 'type' => 'payment.updated', 'data' => ['id' => $id]])->assertBadRequest();
+        }
+        Http::assertNothingSent();
+        $this->assertSame(0, ClientInvoicePayment::query()->count());
+    }
+
     public function test_signature_is_required_before_parsing_or_work(): void
     {
         $this->paymentFixture();

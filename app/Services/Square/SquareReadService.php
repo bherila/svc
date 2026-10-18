@@ -6,6 +6,7 @@ use App\Models\AgentPrincipal;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\AgentAccess;
+use App\Support\Square\SquareIdentifiers;
 use Illuminate\Cache\RateLimiter;
 use Illuminate\Support\Facades\Validator;
 
@@ -133,7 +134,7 @@ final class SquareReadService
     /** @return array{data: array<string, mixed>} */
     public function invoice(User|AgentPrincipal $actor, Workspace $workspace, string $invoiceId): array
     {
-        $this->validate(['invoice_id' => $invoiceId], ['invoice_id' => self::idRule()]);
+        $this->validate(['invoice_id' => $invoiceId], ['invoice_id' => SquareIdentifiers::invoiceIdRule()]);
         $configuration = $this->admit($actor, $workspace);
 
         return $this->deliver($configuration, ['data' => $this->presenter->invoice(self::record($this->client->getInvoice($invoiceId), 'invoice'))]);

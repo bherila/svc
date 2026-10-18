@@ -71,6 +71,26 @@ final class SquarePassThroughTest extends TestCase
         parent::tearDown();
     }
 
+    public function test_opaque_invoice_retrieval_preserves_ids_and_workspace_isolation(): void
+    {
+        Http::fake(function (Request $request) {
+            $id = rawurldecode(basename((string) parse_url($request->url(), PHP_URL_PATH)));
+
+            return Http::response(['invoice' => self::squareInvoice($id)]);
+        });
+        $session = $this->initialize();
+        foreach (['_synthetic_legacy_invoice', 'SyntheticLegacyInvoice=='] as $id) {
+            $query = ['invoice_id' => $id];
+            $this->getJson($this->url('invoices/'.rawurlencode($id), $query))->assertOk()->assertJsonPath('data.id', $id);
+            $mcp = $this->callTool($session, 'square.invoices.get', ['workspace_id' => $this->workspace->public_id, ...$query]);
+            $this->assertSame($id, $mcp['result']['structuredContent']['data']['id'] ?? null);
+            Http::assertSent(static fn (Request $request): bool => $request->url() === self::SQUARE_BASE.'/v2/invoices/'.rawurlencode($id));
+            $calls = count(Http::recorded());
+            $this->getJson($this->url('invoices/'.rawurlencode($id), $query, $this->otherWorkspace))->assertNotFound();
+            $this->assertCount($calls, Http::recorded());
+        }
+    }
+
     public function test_rest_and_mcp_answer_every_read_with_the_same_allow_listed_shapes(): void
     {
         $this->fakeSquare();

@@ -7,6 +7,7 @@ use App\Models\SquareInvoiceSnapshot;
 use App\Models\SquareLocationSnapshot;
 use App\Models\SquareSyncRun;
 use App\Models\Workspace;
+use App\Services\Square\Mirror\SquareMirrorReadService;
 use App\Services\Square\Mirror\SquareMirrorRepository;
 use App\Services\Square\Mirror\SquareMirrorSync;
 use App\Services\Square\Mirror\SquareSnapshotMapper;
@@ -15,6 +16,7 @@ use Illuminate\Console\Scheduling\Event as ScheduledEvent;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Log\Events\MessageLogged;
 use Illuminate\Support\Facades\Date;
@@ -64,6 +66,91 @@ final class SquareMirrorSyncTest extends TestCase
         parent::tearDown();
     }
 
+    public function test_opaque_invoice_ids_survive_complete_pagination_and_repeat_runs(): void
+    {
+        $ids = ['inv:0-synthetic_normal', '_synthetic_legacy_invoice', 'SyntheticLegacyInvoice=='];
+        $mapper = app(SquareSnapshotMapper::class);
+        foreach ($ids as $id) {
+            $this->assertSame($id, $mapper->invoice(self::squareInvoice($id))['square_invoice_id'] ?? null);
+        }
+        $this->serveSquareAccount(invoicePages: [
+            [self::squareInvoice($ids[0]), self::squareInvoice($ids[1])],
+            [self::squareInvoice($ids[2])],
+        ]);
+        $freshness = app(SquareMirrorReadService::class);
+        $this->assertNull($freshness->freshness($this->workspace)['last_synced_at']);
+        $first = $this->sync();
+        $this->assertNotNull($freshness->freshness($this->workspace)['last_synced_at']);
+        $this->assertSame([SquareSyncRun::COMPLETED, 3, 3, false], [$first->status, $first->invoices_seen, $first->invoices_changed, $first->truncated]);
+        $before = SquareInvoiceSnapshot::query()->where('workspace_id', $this->workspace->id)->orderBy('id')->get()->toArray();
+        $fingerprints = SquareInvoiceSnapshot::query()->orderBy('id')->pluck('fingerprint')->all();
+        $this->assertSame($ids, array_column($before, 'square_invoice_id'));
+        Date::setTestNow('2026-10-12 18:15:00');
+        $second = $this->sync();
+        $this->assertSame([SquareSyncRun::COMPLETED, 3, 0], [$second->status, $second->invoices_seen, $second->invoices_changed]);
+        $this->assertSame($fingerprints, SquareInvoiceSnapshot::query()->orderBy('id')->pluck('fingerprint')->all());
+        $this->assertSame(3, SquareInvoiceSnapshot::query()->count());
+        Http::assertSent(static fn (Request $request): bool => str_contains($request->url(), '/v2/invoices') && ($request->data()['cursor'] ?? null) === 'cursor-2');
+
+        $lastSynced = $freshness->freshness($this->workspace)['last_synced_at'];
+        Date::setTestNow('2026-10-12 18:30:00');
+        // A bad later page must not retire the padded invoice absent from this run.
+        $this->serveSquareAccount(invoicePages: [[self::squareInvoice($ids[0])], [self::squareInvoice('synthetic/invalid')]]);
+        $failed = $this->sync();
+        $this->assertSame([SquareSyncRun::FAILED, 'UNREADABLE', 1], [$failed->status, $failed->error_code, $failed->invoices_seen]);
+        $this->assertSame(3, SquareInvoiceSnapshot::query()->count());
+        $this->assertSame(0, SquareInvoiceSnapshot::onlyTrashed()->count());
+        $this->assertSame($lastSynced, $freshness->freshness($this->workspace)['last_synced_at']);
+        $this->assertContains(['Square mirror sync failed', ['stage' => 'invoices', 'reason' => 'MAPPING_REJECTED']], $this->logged);
+    }
+
+    public function test_failed_invoice_reads_preserve_snapshots_and_freshness_with_bounded_diagnostics(): void
+    {
+        $body = ['invoices' => [self::squareInvoice()]];
+        $transport = false;
+        Http::fake(function (Request $request) use (&$body, &$transport) {
+            $path = parse_url($request->url(), PHP_URL_PATH);
+            if ($path === '/v2/locations') {
+                return Http::response(['locations' => [self::squareLocation()]]);
+            }
+            if ($path === '/v2/customers') {
+                return Http::response([]);
+            }
+            if ($transport) {
+                throw new ConnectionException('synthetic private transport detail');
+            }
+
+            return Http::response($body);
+        });
+        $this->assertSame(SquareSyncRun::COMPLETED, $this->sync()->status);
+        $before = SquareInvoiceSnapshot::query()->sole()->toArray();
+        $freshness = app(SquareMirrorReadService::class);
+        $lastSynced = $freshness->freshness($this->workspace)['last_synced_at'];
+        Date::setTestNow('2026-10-12 18:30:00');
+        foreach ([
+            'MALFORMED_JSON' => '{synthetic invalid json',
+            'MALFORMED_RECORDS' => ['invoices' => ['synthetic invalid record']],
+            'MAPPING_REJECTED' => ['invoices' => [self::squareInvoice('synthetic/invalid')]],
+            'INVALID_CURSOR' => ['invoices' => [], 'cursor' => ['synthetic-invalid']],
+            'REPEATED_CURSOR' => ['invoices' => [], 'cursor' => 'synthetic-repeated'],
+            'TRANSPORT' => [],
+        ] as $reason => $response) {
+            $body = $response;
+            $transport = $reason === 'TRANSPORT';
+            $run = $this->sync();
+            $this->assertSame(SquareSyncRun::FAILED, $run->status);
+            $this->assertSame($transport ? 'SERVICE_UNAVAILABLE' : 'UNREADABLE', $run->error_code);
+            $this->assertSame($before, SquareInvoiceSnapshot::query()->sole()->toArray());
+            $this->assertSame(0, SquareInvoiceSnapshot::onlyTrashed()->count());
+            $this->assertSame($lastSynced, $freshness->freshness($this->workspace)['last_synced_at']);
+            $this->assertContains(['Square mirror sync failed', ['stage' => 'invoices', 'reason' => $reason]], $this->logged);
+        }
+        $diagnostics = array_values(array_filter($this->logged, static fn (array $entry): bool => $entry[0] === 'Square mirror sync failed'));
+        foreach ($diagnostics as [, $context]) {
+            $this->assertSame(['stage', 'reason'], array_keys($context));
+        }
+    }
+
     public function test_payment_resolution_reads_bounded_pages_when_history_is_already_resolved(): void
     {
         $mapper = app(SquareSnapshotMapper::class);
@@ -99,7 +186,7 @@ final class SquareMirrorSyncTest extends TestCase
         $id = static fn (string $prefix): string => $prefix.str_repeat('x', 192 - strlen($prefix));
         $locationId = $id('LOCFIXTURE');
         $customerId = $id('cust_fixture_');
-        $invoiceId = $id('inv_fixture_');
+        $invoiceId = 'inv_fixture_'.str_repeat('x', 191 - strlen('inv_fixture_'));
         $orderId = $id('order_fixture_');
         $subscriptionId = $id('subscription_fixture_');
         $mapper = app(SquareSnapshotMapper::class);

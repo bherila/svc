@@ -14,6 +14,7 @@ use App\Models\Workspace;
 use App\Services\Square\SquareLinkService;
 use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
 use App\Support\AgentApi\AgentApiVersion;
+use App\Support\Square\SquareIdentifiers;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
@@ -59,6 +60,40 @@ final class SquareLinkApiTest extends TestCase
         $this->assertDatabaseCount('invoice_square_links', 0);
         $this->assertDatabaseCount('company_square_customers', 0);
         $this->assertDatabaseCount('agent_mutation_receipts', 0);
+    }
+
+    public function test_opaque_invoice_links_preserve_ids_over_rest_and_mcp(): void
+    {
+        foreach (['rest', 'mcp'] as $transport) {
+            foreach (['_synthetic_legacy_invoice', 'SyntheticLegacyInvoice=='] as $id) {
+                [$workspace, $owner, , $invoice] = $this->fixture();
+                $this->actingAsMcp($owner, self::SCOPES);
+                $linked = $this->success($transport, 'invoices.square_link', $workspace, ['invoice_id' => $invoice->public_id], [
+                    'expected_version' => AgentApiVersion::for($invoice),
+                    'square_invoice_id' => $id,
+                    'square_invoice_number' => '000001',
+                    'match_method' => 'manual',
+                ], 'synthetic-opaque-link');
+                $this->assertSame($id, $linked['data']['link']['square_invoice_id']);
+                $this->assertSame($id, InvoiceSquareLink::query()->where('workspace_id', $workspace->id)->sole()->square_invoice_id);
+            }
+        }
+    }
+
+    public function test_every_published_invoice_id_contract_is_the_shared_shape(): void
+    {
+        $expected = ['maxLength' => SquareIdentifiers::INVOICE_ID_MAX_LENGTH, 'pattern' => SquareIdentifiers::INVOICE_ID_SCHEMA_PATTERN];
+        $document = json_decode((string) file_get_contents(public_path('openapi/svc-agent-v1.json')), true, flags: JSON_THROW_ON_ERROR);
+        $this->assertSame($expected, array_intersect_key($document['components']['schemas']['SquareInvoiceId'], $expected));
+        $parameters = array_column($document['paths']['/workspaces/{workspace}/square/invoices/{invoice}']['get']['parameters'], null, 'name');
+        $this->assertSame($expected, array_intersect_key($parameters['invoice']['schema'], $expected));
+
+        [$workspace, $owner] = $this->fixture();
+        $this->actingAsMcp($owner, self::SCOPES);
+        $link = array_column($this->listTools($this->initialize()), null, 'name')['invoices.square_link']['inputSchema'];
+        $this->assertSame(['$ref' => '#/$defs/SquareInvoiceId'], $link['properties']['square_invoice_id']);
+        $this->assertSame($expected, array_intersect_key($link['$defs']['SquareInvoiceId'], $expected));
+        $this->assertSame(SquareIdentifiers::INVOICE_ID_SCHEMA_PATTERN, '^'.SquareIdentifiers::INVOICE_ID_ROUTE_PATTERN.'$');
     }
 
     /** @return iterable<string, array{string}> */

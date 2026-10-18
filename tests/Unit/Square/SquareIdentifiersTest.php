@@ -33,9 +33,16 @@ final class SquareIdentifiersTest extends TestCase
 
     public function test_identifier_shapes(): void
     {
+        $this->assertTrue(SquareIdentifiers::isInvoiceId('_synthetic_legacy_invoice'));
+        $this->assertTrue(SquareIdentifiers::isInvoiceId('SyntheticLegacyInvoice=='));
         $this->assertTrue(SquareIdentifiers::isInvoiceId('inv:0-fixture_1'));
         $this->assertTrue(SquareIdentifiers::isInvoiceId(str_repeat('a', 191)));
         $this->assertFalse(SquareIdentifiers::isInvoiceId(str_repeat('a', 192)));
+        foreach ([' synthetic', 'synthetic ', 'synthetic%3D', 'synthetic?x', 'synthetic#x', 'synthetic+id', 'synthetic/id', 'syntheticé', '='] as $invalid) {
+            $this->assertFalse(SquareIdentifiers::isInvoiceId($invalid));
+        }
+        $this->assertTrue(SquareIdentifiers::isInvoiceId('_'.str_repeat('x', 188).'=='));
+        $this->assertFalse(SquareIdentifiers::isInvoiceId('_'.str_repeat('x', 189).'=='));
         $this->assertFalse(SquareIdentifiers::isInvoiceId(''));
         $this->assertFalse(SquareIdentifiers::isInvoiceId(':leading'));
         $this->assertFalse(SquareIdentifiers::isInvoiceId('inv:0 fixture'));

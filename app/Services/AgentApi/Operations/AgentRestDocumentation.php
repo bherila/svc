@@ -2,6 +2,8 @@
 
 namespace App\Services\AgentApi\Operations;
 
+use App\Support\Square\SquareIdentifiers;
+
 /**
  * What the REST contract says about each agent operation beyond its schemas
  * (#408 item 3): method, scopes, prose, parameters, the request and response
@@ -1249,7 +1251,7 @@ final class AgentRestDocumentation
             ],
             'square.invoices.get' => [
                 'Get one Square invoice by its Square id, with series_key and series_occurrence derived from its number.',
-                ['WorkspaceId', $id('invoice')],
+                ['WorkspaceId', ['name' => 'invoice', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'string', 'minLength' => 1, 'maxLength' => SquareIdentifiers::INVOICE_ID_MAX_LENGTH, 'pattern' => SquareIdentifiers::INVOICE_ID_SCHEMA_PATTERN]]],
                 'SquareInvoiceResponse',
             ],
             'square.invoices.list' => [

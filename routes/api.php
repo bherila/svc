@@ -31,6 +31,7 @@ use App\Http\Middleware\EnsureOperationDeployed;
 use App\Http\Middleware\NoStoreAgentResponse;
 use App\Models\Workspace;
 use App\Support\AgentApi\AgentApiScopes;
+use App\Support\Square\SquareIdentifiers;
 use Bherila\McpLaravelBridge\Http\McpHttpSecurityMiddleware;
 use BWH\Auth\Http\Middleware\ExpectOAuthResource;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -328,7 +329,9 @@ Route::prefix('v1')
                 ->middleware(EnsureAgentWorkspaceVisible::class)
                 ->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']));
             if ($id !== null) {
-                $route->where($id, '[A-Za-z0-9][A-Za-z0-9:_\-]{0,191}');
+                $route->where($id, $id === 'invoice'
+                    ? SquareIdentifiers::INVOICE_ID_ROUTE_PATTERN
+                    : '[A-Za-z0-9][A-Za-z0-9:_\-]{0,191}');
             }
         }
         $operation('billing_schedules.list', [AgentBillingScheduleController::class, 'index'])
