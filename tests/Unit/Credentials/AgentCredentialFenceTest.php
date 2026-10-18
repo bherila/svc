@@ -3,9 +3,13 @@
 namespace Tests\Unit\Credentials;
 
 use App\Services\Credentials\AgentCredentialFence;
+use App\Services\Credentials\RevokeCredentialsIssuedDuringRevocation;
 use App\Support\WorkspaceClock;
 use Illuminate\Cache\ArrayStore;
 use Illuminate\Cache\Repository;
+use Illuminate\Support\Facades\Event;
+use Laravel\Passport\Events\AccessTokenCreated;
+use Laravel\Passport\Events\RefreshTokenCreated;
 use Tests\TestCase;
 
 /** The revocation fence's window and reach, on an in-memory cache. */
@@ -47,6 +51,36 @@ final class AgentCredentialFenceTest extends TestCase
         $this->assertTrue($fence->covers(7, 'client-a'));
         $this->travel(29)->seconds();
         $this->assertFalse($fence->covers(7, 'client-a'));
+    }
+
+    /**
+     * The entry's own expiry decides, not only the cache's: a store that keeps
+     * an entry past its TTL still fences nothing from the stated second on.
+     */
+    public function test_a_fence_ends_at_its_stated_second_under_its_documented_key(): void
+    {
+        $this->freezeSecond();
+        $cache = new Repository(new ArrayStore);
+        $cache->forever('agent-credential-fence:7:client-a', now()->getTimestamp() + 5);
+        $fence = new AgentCredentialFence($cache, new WorkspaceClock);
+
+        $this->assertTrue($fence->covers(7, 'client-a'));
+        $this->assertFalse($fence->covers(7, 'client-b'));
+        $this->travel(4)->seconds();
+        $this->assertTrue($fence->covers(7, 'client-a'));
+        $this->travel(1)->seconds();
+        $this->assertFalse($fence->covers(7, 'client-a'));
+
+        $fence->raise(9, null);
+        $this->assertSame(now()->getTimestamp() + AgentCredentialFence::SECONDS, $cache->get('agent-credential-fence:9:*'));
+    }
+
+    public function test_the_fence_listens_to_every_credential_passport_persists(): void
+    {
+        $listeners = Event::getRawListeners();
+
+        $this->assertContains([RevokeCredentialsIssuedDuringRevocation::class, 'accessTokenCreated'], $listeners[AccessTokenCreated::class] ?? []);
+        $this->assertContains([RevokeCredentialsIssuedDuringRevocation::class, 'refreshTokenCreated'], $listeners[RefreshTokenCreated::class] ?? []);
     }
 
     public function test_a_value_that_is_not_an_expiry_covers_nothing(): void
