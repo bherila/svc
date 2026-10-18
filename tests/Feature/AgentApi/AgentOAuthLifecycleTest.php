@@ -717,6 +717,8 @@ final class AgentOAuthLifecycleTest extends TestCase
         $listener = app(RevokeCredentialsIssuedDuringRevocation::class);
         $listener->accessTokenCreated(new AccessTokenCreated($accessId, (string) $person->id, $clientId));
         $this->assertTrue((bool) Passport::token()->newQuery()->whereKey($accessId)->value('revoked'));
+        // A catch raises no fence of its own, so catching never prolongs the window.
+        $this->assertFalse(app(AgentCredentialFence::class)->coversLineage($accessId));
         Passport::token()->newQuery()->whereKey($accessId)->delete();
         $refreshId = Str::random(80);
         Passport::refreshToken()->forceFill(['id' => $refreshId, 'access_token_id' => $accessId, 'revoked' => false, 'expires_at' => now()->addDay()])->saveOrFail();

@@ -62,7 +62,8 @@ final class RevokeCredentialsIssuedDuringRevocation
                 self::$fenced = [];
             }
             self::$fenced[$event->tokenId] = ['user' => $userId, 'client' => $event->clientId];
-            $this->revoker->revoke(AgentCredentialSelection::token($owner, $event->tokenId), self::ACTOR);
+            // Unfenced: a catch must never extend the window it was caught in.
+            $this->revoker->revoke(AgentCredentialSelection::token($owner, $event->tokenId, fence: false), self::ACTOR);
         }
     }
 
