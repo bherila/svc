@@ -140,7 +140,7 @@ final class AgentTokenRequestTest extends TestCase
 
         $all = AgentCredentialSelection::connections($owner);
         $this->assertSame([41, AgentCredentialScope::Connections, null, null, null], [$all->ownerId, $all->scope, $all->clientId, $all->atMost, $all->storedName]);
-        $this->assertSame('client-id', AgentCredentialSelection::connections($owner, 'client-id')->clientId);
+        $this->assertSame('client-id', AgentCredentialSelection::connections($owner, 'Client-ID')->clientId);
         $this->assertSame(['token', 'name', 'connections'], array_map(static fn (AgentCredentialScope $scope): string => $scope->value, AgentCredentialScope::cases()));
     }
 

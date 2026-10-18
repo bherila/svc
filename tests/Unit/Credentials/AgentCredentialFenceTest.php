@@ -74,6 +74,12 @@ final class AgentCredentialFenceTest extends TestCase
 
         $fence->raise(9, null);
         $this->assertSame(now()->getTimestamp() + AgentCredentialFence::SECONDS, $cache->get('agent-credential-fence:9:*'));
+
+        // Keys are in Passport's lower case, whichever casing names the client.
+        $fence->raise(10, 'CLIENT-B');
+        $this->assertTrue($fence->covers(10, 'client-b'));
+        $this->assertTrue($fence->covers(10, 'Client-B'));
+        $this->assertNotNull($cache->get('agent-credential-fence:10:client-b'));
     }
 
     public function test_the_fence_listens_to_every_credential_passport_persists(): void

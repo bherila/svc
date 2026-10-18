@@ -40,7 +40,8 @@ final class RevokeAgentConnectionsCommand extends Command
     public function handle(CredentialRevoker $revoker): int
     {
         $clientId = $this->option('client');
-        $clientId = is_string($clientId) ? trim($clientId) : null;
+        // Passport stores client ids in lower case; so does every fence key.
+        $clientId = is_string($clientId) ? strtolower(trim($clientId)) : null;
         if ($clientId !== null && ! Str::isUuid($clientId)) {
             $this->error('--client must be an exact OAuth client id.');
 

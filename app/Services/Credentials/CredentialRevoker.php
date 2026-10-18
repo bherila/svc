@@ -49,22 +49,30 @@ final readonly class CredentialRevoker
         if ($selection->scope === AgentCredentialScope::Connections) {
             $this->fence->raise($selection->ownerId, $selection->clientId);
         }
+        // A refresh of this connection that passed its check may already have
+        // revoked the token (a refresh grant revokes the old access token
+        // before it issues the new one), or be waiting on the lock below; it
+        // persists its replacement after this either way. So the client comes
+        // from the owner's row whatever its state, and the fence catches the
+        // replacement.
+        if ($selection->scope === AgentCredentialScope::Token) {
+            $clientId = Passport::token()->newQuery()
+                ->where('user_id', $selection->ownerId)
+                ->whereKey((string) $selection->tokenId)
+                ->value('client_id');
+            if ($clientId !== null) {
+                $this->fence->raise($selection->ownerId, (string) $clientId);
+            }
+        }
 
         return $connection->transaction(function () use ($selection, $actor, $connection): AgentRevocation {
-            $rows = $this->accessTokenQuery($selection)
+            $ids = array_values($this->accessTokenQuery($selection)
                 ->tap(Locks::forUpdate())
-                ->get(['id', 'client_id']);
-            $ids = array_values($rows->map(static fn (Token $token): string => (string) $token->getKey())->all());
+                ->pluck('id')
+                ->map(static fn (mixed $id): string => (string) $id)
+                ->all());
             if ($selection->atMost !== null && count($ids) > $selection->atMost) {
                 throw new AmbiguousRevocation(count($ids));
-            }
-            // A refresh of this connection that passed its check before the
-            // lock is waiting on it, and persists its replacement once this
-            // commits: the fence catches that replacement.
-            if ($selection->scope === AgentCredentialScope::Token) {
-                foreach ($rows->pluck('client_id')->unique() as $clientId) {
-                    $this->fence->raise($selection->ownerId, (string) $clientId);
-                }
             }
 
             // Refresh tokens first: revoking the access token alone would leave
@@ -218,16 +226,30 @@ final readonly class CredentialRevoker
             ->where('user_id', $selection->ownerId)
             ->when($selection->clientId !== null, static fn (Builder $tokens) => $tokens->where('client_id', $selection->clientId));
 
-        return $query->where(static function (Builder $refresh) use ($parents, $selection, $ownerColumn, $clientColumn): void {
+        $everyAccessToken = Passport::token()->newQuery()->select('id')->toBase();
+
+        return $query->where(static function (Builder $refresh) use ($parents, $selection, $ownerColumn, $clientColumn, $everyAccessToken): void {
             $refresh->whereIn('access_token_id', $parents->toBase());
-            // Without its own client record an orphan cannot be told apart by
-            // client, so a client-scoped revocation leaves it to its parent.
-            if ($ownerColumn && ($selection->clientId === null || $clientColumn)) {
-                $refresh->orWhere(static function (Builder $orphan) use ($selection): void {
-                    $orphan->where(ProviderIdentityTokens::OWNER_COLUMN, (string) $selection->ownerId)
-                        ->when($selection->clientId !== null, static fn (Builder $scoped) => $scoped->where('client_id', $selection->clientId));
-                });
+            if (! $ownerColumn) {
+                return;
             }
+            $refresh->orWhere(static function (Builder $orphan) use ($selection, $clientColumn, $everyAccessToken): void {
+                $orphan->where(ProviderIdentityTokens::OWNER_COLUMN, (string) $selection->ownerId);
+                if ($selection->clientId === null) {
+                    return;
+                }
+                // An orphan of this owner that records no client cannot be told
+                // apart by client, so a client-scoped revocation takes it too
+                // rather than report a clean sweep that missed it.
+                $orphan->where(static function (Builder $client) use ($selection, $clientColumn, $everyAccessToken): void {
+                    if ($clientColumn) {
+                        $client->where('client_id', $selection->clientId)
+                            ->orWhere(static fn (Builder $unknown) => $unknown->whereNull('client_id')->whereNotIn('access_token_id', $everyAccessToken));
+                    } else {
+                        $client->whereNotIn('access_token_id', $everyAccessToken);
+                    }
+                });
+            });
         })->update(['revoked' => true]);
     }
 

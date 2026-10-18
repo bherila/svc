@@ -69,7 +69,10 @@ php artisan svc:auth:revoke-connections USER_PUBLIC_UUID --client=OAUTH_CLIENT_I
    every refresh token (including one whose expired access token Passport has
    already purged) and then every access token the person holds - OAuth and
    MCP connections, operator-issued agent tokens and personal API tokens alike -
-   or only those issued to `--client`. Rows are revoked, never deleted, so they
+   or only those issued to `--client` (in any letter case). A refresh token of
+   the person's that records no client and whose access token is gone cannot be
+   told apart by client, so a `--client` run revokes it too rather than miss
+   it. Rows are revoked, never deleted, so they
    remain for the investigation. Another person's credentials are never
    selected, even for the same client.
 4. A refresh or code exchange already in flight can pass its own check just

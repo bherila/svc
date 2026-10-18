@@ -2,8 +2,10 @@
 
 namespace Tests\Feature\AgentApi;
 
+use App\Models\AgentPrincipal;
 use App\Models\User;
 use App\Services\Credentials\AgentCredentialFence;
+use App\Services\Credentials\AgentCredentialSelection;
 use App\Services\Credentials\CredentialRevoker;
 use App\Services\Credentials\RevocationRefused;
 use App\Support\AgentApi\AgentApiScopes;
@@ -416,7 +418,7 @@ final class AgentOAuthLifecycleTest extends TestCase
             $logged[] = ['message' => $event->message, 'context' => $event->context];
         });
 
-        $this->assertSame(0, Artisan::call('svc:auth:revoke-connections', ['user_public_id' => $person->public_id, '--client' => $fenced]));
+        $this->assertSame(0, Artisan::call('svc:auth:revoke-connections', ['user_public_id' => $person->public_id, '--client' => strtoupper($fenced)]));
         // The code itself was revoked; restore it to play the grant that had already passed its check.
         Passport::authCode()->newQuery()->where('client_id', $fenced)->update(['revoked' => false]);
         $raced = $this->exchangeCode($fenced, $inFlight, $verifier, $resource)->assertOk()->json();
@@ -502,6 +504,65 @@ final class AgentOAuthLifecycleTest extends TestCase
 
         $this->assertSame((string) $person->id, (string) (clone $refresh)->value('provider_user_id'));
         $this->assertSame(1, Passport::refreshToken()->newQuery()->whereNull('provider_user_id')->count());
+    }
+
+    /**
+     * A refresh grant revokes the old access token before it issues the new
+     * one, so a self-revocation can find its token already revoked. It still
+     * fences that token's client, so the replacement the refresh persists next
+     * is revoked.
+     */
+    public function test_a_self_revocation_racing_a_refresh_still_fences_the_replacement(): void
+    {
+        $person = User::factory()->create();
+        $clientId = $this->registerClient();
+        $resource = OAuthResourceIndicator::resource(self::MCP);
+        $verifier = $this->verifier();
+        $tokens = $this->exchangeCode($clientId, $this->authorize($person, $clientId, $verifier), $verifier, $resource)->assertOk()->json();
+        $accessId = OAuthResourceIndicator::tokenClaims($tokens['access_token'])['jti'];
+        // The refresh grant got here first: the old access token is revoked, its refresh token not yet replaced.
+        Passport::token()->newQuery()->whereKey($accessId)->update(['revoked' => true]);
+
+        $revocation = app(CredentialRevoker::class)->revoke(AgentCredentialSelection::token(AgentPrincipal::query()->findOrFail($person->id), $accessId), 'agent');
+        $this->assertSame(0, $revocation->accessTokens());
+
+        // The refresh now persists its replacement, which lands inside the fence.
+        Passport::token()->newQuery()->whereKey($accessId)->update(['revoked' => false]);
+        $replacement = $this->refresh($clientId, $tokens['refresh_token'], $resource)->assertOk()->json();
+        Auth::forgetGuards();
+        $this->mcpInitialize($replacement['access_token'])->assertUnauthorized();
+        $this->refresh($clientId, $replacement['refresh_token'], $resource)->assertBadRequest()->assertJsonPath('error', 'invalid_grant');
+    }
+
+    /**
+     * A refresh token that records its owner but not its client, whose access
+     * token is gone, may be any of the owner's clients: a client-scoped
+     * revocation takes it rather than miss it, and never another person's.
+     */
+    public function test_a_client_scoped_revocation_takes_the_owner_s_orphans_of_unknown_client(): void
+    {
+        $person = User::factory()->create();
+        $stranger = User::factory()->create();
+        $clientId = $this->registerClient();
+        $resource = OAuthResourceIndicator::resource(self::MCP);
+        $orphan = function (User $user) use ($clientId, $resource): string {
+            $verifier = $this->verifier();
+            $tokens = $this->exchangeCode($clientId, $this->authorize($user, $clientId, $verifier), $verifier, $resource)->assertOk()->json();
+            $accessId = OAuthResourceIndicator::tokenClaims($tokens['access_token'])['jti'];
+            Passport::refreshToken()->newQuery()->where('access_token_id', $accessId)->update(['client_id' => null]);
+            Passport::token()->newQuery()->whereKey($accessId)->delete();
+
+            return $accessId;
+        };
+        $mine = $orphan($person);
+        $theirs = $orphan($stranger);
+        $elsewhere = $this->registerClient();
+
+        // Upper case, as an operator may paste it.
+        $this->assertSame(0, Artisan::call('svc:auth:revoke-connections', ['user_public_id' => $person->public_id, '--client' => strtoupper($elsewhere)]));
+        $this->assertSame(['access_tokens' => 0, 'refresh_tokens' => 1, 'authorization_codes' => 0, 'unattributed_refresh_tokens' => 0], json_decode(trim(Artisan::output()), true));
+        $this->assertTrue((bool) Passport::refreshToken()->newQuery()->where('access_token_id', $mine)->value('revoked'));
+        $this->assertFalse((bool) Passport::refreshToken()->newQuery()->where('access_token_id', $theirs)->value('revoked'));
     }
 
     public function test_emergency_revocation_refuses_what_is_not_an_exact_person_or_client(): void

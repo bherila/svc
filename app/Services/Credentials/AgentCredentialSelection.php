@@ -58,6 +58,9 @@ final readonly class AgentCredentialSelection
      */
     public static function connections(User|AgentPrincipal $owner, ?string $clientId = null): self
     {
-        return new self($owner, AgentCredentialScope::Connections, clientId: $clientId);
+        // Passport stores client ids in lower case and announces them so; a fence
+        // keyed on another casing would never match, though a case-insensitive
+        // collation would still select the rows.
+        return new self($owner, AgentCredentialScope::Connections, clientId: $clientId === null ? null : strtolower($clientId));
     }
 }

@@ -57,6 +57,6 @@ final readonly class AgentCredentialFence
 
     private static function key(int $userId, string $clientId): string
     {
-        return 'agent-credential-fence:'.$userId.':'.$clientId;
+        return 'agent-credential-fence:'.$userId.':'.strtolower($clientId);
     }
 }
