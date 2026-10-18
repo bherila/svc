@@ -250,7 +250,7 @@ final class SquareCollectionGuardTest extends TestCase
         $this->makeSquareCollected($reason, $workspace, $invoice);
 
         if ($transport === 'web') {
-            $this->actingAs($owner)->postJson("/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/issue")->assertOk();
+            $this->actingAs($owner)->postJson("/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/issue")->assertRedirect()->assertSessionHasNoErrors();
         } else {
             $this->actingAsMcp($owner, self::SCOPES);
             $this->postJson("/api/v1/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/issue", ['expected_version' => AgentApiVersion::for($invoice->refresh()), 'confirm' => true], ['Idempotency-Key' => 'synthetic-issue'])->assertOk();
@@ -310,7 +310,7 @@ final class SquareCollectionGuardTest extends TestCase
 
         $this->actingAs($owner)
             ->postJson("/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/send", ['recipients' => ['billing@synthetic.example.test']])
-            ->assertOk();
+            ->assertRedirect()->assertSessionHasNoErrors();
 
         $this->assertSame(1, ClientInvoiceEmailDelivery::query()->where('workspace_id', $workspace->id)->where('status', 'sent')->count());
     }
@@ -330,7 +330,7 @@ final class SquareCollectionGuardTest extends TestCase
         $this->assertNull(app(SquareCollectionGuard::class)->refusal($invoice->refresh()));
         $this->actingAs($owner)
             ->postJson("/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/send", ['recipients' => ['billing@synthetic.example.test']])
-            ->assertOk();
+            ->assertRedirect()->assertSessionHasNoErrors();
     }
 
     /** Recording a payment Square collected is bookkeeping, not collection. */
@@ -343,7 +343,7 @@ final class SquareCollectionGuardTest extends TestCase
             ->postJson("/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/payments", [
                 'amount' => 5000, 'currency' => 'USD', 'received_on' => '2026-10-08', 'method' => 'card', 'reference' => 'Synthetic Square payment',
             ])
-            ->assertCreated();
+            ->assertRedirect()->assertSessionHasNoErrors();
 
         $this->assertSame('paid', $invoice->refresh()->status);
     }

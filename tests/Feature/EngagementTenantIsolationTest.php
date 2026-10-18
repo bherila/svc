@@ -65,7 +65,7 @@ class EngagementTenantIsolationTest extends TestCase
 
         $this->actingAs($clientUser)->postJson("/portal/{$company->public_id}/proposals/{$visible->public_id}/accept", [
             'signer_name' => 'Synthetic Client',
-        ])->assertOk();
+        ])->assertRedirect();
         $this->actingAs($clientUser)->postJson("/portal/{$company->public_id}/proposals/{$hidden->public_id}/accept", [
             'signer_name' => 'Synthetic Client',
         ])->assertNotFound();

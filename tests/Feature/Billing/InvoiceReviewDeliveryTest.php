@@ -484,7 +484,7 @@ final class InvoiceReviewDeliveryTest extends TestCase
 
         $this->actingAs($owner)->postJson(
             "/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/send",
-        )->assertOk();
+        )->assertRedirect()->assertSessionHasNoErrors();
         Date::setTestNow('2026-09-17 12:00:00 UTC');
         Artisan::call('svc:billing:dispatch-invoice-emails');
 
@@ -506,8 +506,8 @@ final class InvoiceReviewDeliveryTest extends TestCase
             'idempotency_key' => '11111111-1111-4111-8111-111111111111',
         ];
 
-        $this->actingAs($owner)->postJson($url, $payload)->assertOk();
-        $this->actingAs($owner)->postJson($url, $payload)->assertOk();
+        $this->actingAs($owner)->postJson($url, $payload)->assertRedirect()->assertSessionHasNoErrors();
+        $this->actingAs($owner)->postJson($url, $payload)->assertRedirect()->assertSessionHasNoErrors();
 
         Mail::assertSent(InvoiceMail::class, 1);
         $this->assertSame(1, ClientInvoiceEmailDelivery::query()->count());
@@ -518,10 +518,10 @@ final class InvoiceReviewDeliveryTest extends TestCase
         $secondKey = 'opaque-agent-retry-key';
         $this->actingAs($owner)->withHeader('Idempotency-Key', $secondKey)
             ->postJson($url, ['subject' => 'Another delivery'])
-            ->assertOk();
+            ->assertRedirect()->assertSessionHasNoErrors();
         $this->actingAs($owner)->withHeader('Idempotency-Key', $secondKey)
             ->postJson($url, ['subject' => 'Another delivery'])
-            ->assertOk();
+            ->assertRedirect()->assertSessionHasNoErrors();
         Mail::assertSent(InvoiceMail::class, 2);
     }
 
@@ -689,7 +689,7 @@ final class InvoiceReviewDeliveryTest extends TestCase
                     'tax_amount' => 0,
                 ]],
             ],
-        )->assertOk();
+        )->assertRedirect()->assertSessionHasNoErrors();
 
         $corrected = $invoice->fresh();
         $this->assertSame(2, $corrected->document_revision);
@@ -705,7 +705,7 @@ final class InvoiceReviewDeliveryTest extends TestCase
 
         $this->actingAs($owner)->postJson(
             "/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}/send",
-        )->assertOk();
+        )->assertRedirect()->assertSessionHasNoErrors();
         $delivery = ClientInvoiceEmailDelivery::query()->where('origin', 'manual')->sole();
         $this->assertSame(2, $delivery->invoice_revision);
         Mail::assertSent(InvoiceMail::class, fn (InvoiceMail $mail): bool => $mail->invoice->total_amount === 13000);
@@ -771,7 +771,7 @@ final class InvoiceReviewDeliveryTest extends TestCase
                     'tax_amount' => 0,
                 ]],
             ],
-        )->assertOk();
+        )->assertRedirect()->assertSessionHasNoErrors();
 
         $this->assertSame(2, $invoice->fresh()->document_revision);
         $this->assertSame('Corrected retainer wording', $line->fresh()->description);
@@ -820,7 +820,7 @@ final class InvoiceReviewDeliveryTest extends TestCase
                     'tax_amount' => (int) $line->tax_amount,
                 ])->all(),
             ],
-        )->assertOk();
+        )->assertRedirect()->assertSessionHasNoErrors();
 
         $corrected = $invoice->fresh();
         $this->assertSame(-2500, $credit->fresh()->unit_amount);

@@ -60,7 +60,7 @@ class InvoiceEmailTest extends TestCase
                 'message' => "Hello,\n\nThe usual monthly work.",
                 'bcc_self' => true,
             ])
-            ->assertOk();
+            ->assertRedirect()->assertSessionHasNoErrors();
 
         Mail::assertSent(InvoiceMail::class, function (InvoiceMail $mail) use ($owner, $invoice): bool {
             $attachments = $mail->attachments();
@@ -95,7 +95,7 @@ class InvoiceEmailTest extends TestCase
         Mail::fake();
         [$owner, $workspace, $invoice] = $this->issuedInvoice();
 
-        $this->actingAs($owner)->postJson($this->sendUrl($workspace, $invoice))->assertOk();
+        $this->actingAs($owner)->postJson($this->sendUrl($workspace, $invoice))->assertRedirect()->assertSessionHasNoErrors();
 
         Mail::assertSent(
             InvoiceMail::class,
@@ -110,7 +110,7 @@ class InvoiceEmailTest extends TestCase
 
         $this->actingAs($owner)
             ->postJson($this->sendUrl($workspace, $invoice), ['bcc_self' => false])
-            ->assertOk();
+            ->assertRedirect()->assertSessionHasNoErrors();
 
         $this->assertSame([], ClientInvoiceEmailDelivery::query()->sole()->bcc ?? []);
     }
@@ -125,7 +125,7 @@ class InvoiceEmailTest extends TestCase
                 'recipients' => [$owner->email],
                 'bcc_self' => true,
             ])
-            ->assertOk();
+            ->assertRedirect()->assertSessionHasNoErrors();
 
         // Otherwise the sender receives the same message twice and cannot tell
         // which copy is which.
@@ -190,7 +190,7 @@ class InvoiceEmailTest extends TestCase
         Mail::fake();
         $this->actingAs($owner)
             ->postJson($this->sendUrl($workspace, $invoice), $payload)
-            ->assertOk();
+            ->assertRedirect()->assertSessionHasNoErrors();
 
         Mail::assertSent(InvoiceMail::class, 1);
         $retried = ClientInvoiceEmailDelivery::query()->sole();
@@ -313,7 +313,7 @@ class InvoiceEmailTest extends TestCase
 
         $this->actingAs($owner)
             ->postJson($this->sendUrl($workspace, $invoice))
-            ->assertStatus($refused ? 422 : 200);
+            ->assertStatus($refused ? 422 : 302);
 
         $this->assertSame($before + 2, (int) $invoice->fresh()->lock_version);
         $this->assertNotSame($before, (int) $invoice->fresh()->lock_version);

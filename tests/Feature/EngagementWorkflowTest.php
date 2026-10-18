@@ -56,22 +56,22 @@ class EngagementWorkflowTest extends TestCase
                 'cadence' => 'monthly',
                 'sort_order' => 0,
             ]],
-        ])->assertCreated();
+        ])->assertRedirect();
 
         $proposal = ClientProposal::query()->sole();
         $this->actingAs($owner)->postJson("/workspaces/{$workspace->public_id}/proposals/{$proposal->public_id}/send")
-            ->assertOk();
+            ->assertRedirect();
 
         $acceptPath = "/portal/{$company->public_id}/proposals/{$proposal->public_id}/accept";
         $this->actingAs($clientUser)->postJson($acceptPath, [
             'signer_name' => 'Synthetic Signer',
             'signer_title' => 'Synthetic Buyer',
-        ])->assertOk();
+        ])->assertRedirect();
 
         $this->actingAs($clientUser)->postJson($acceptPath, [
             'signer_name' => 'Synthetic Signer',
             'signer_title' => 'Synthetic Buyer',
-        ])->assertOk();
+        ])->assertRedirect();
 
         $this->actingAs($clientUser)->postJson($acceptPath, [
             'signer_name' => 'Different Replay Value',
@@ -143,7 +143,7 @@ class EngagementWorkflowTest extends TestCase
         $owner = User::factory()->create();
         [$workspace, $company] = $this->clientFor($owner);
 
-        $response = $this->actingAs($owner)->postJson("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/agreements", [
+        $this->actingAs($owner)->postJson("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/agreements", [
             'title' => 'Synthetic agreement',
             'starts_on' => '2026-08-15',
             'ends_on' => '2027-08-14',
@@ -154,17 +154,17 @@ class EngagementWorkflowTest extends TestCase
             'hourly_rate_amount' => 18000,
             'retainer_amount' => 72000,
             'retainer_minutes' => 240,
-        ])->assertCreated();
+        ])->assertRedirect();
 
-        $agreement = ClientAgreement::query()->sole();
-        $this->assertSame('Synthetic agreement', $response->json('data.title'));
+        $agreement = ClientAgreement::query()->where('workspace_id', $workspace->id)->sole();
+        $this->assertSame('Synthetic agreement', $agreement->title);
 
         $this->actingAs($owner)->postJson("/workspaces/{$workspace->public_id}/agreements/{$agreement->public_id}/activate")
-            ->assertOk();
+            ->assertRedirect();
 
         $this->actingAs($owner)->postJson("/workspaces/{$workspace->public_id}/agreements/{$agreement->public_id}/sign", [
             'signer_name' => 'Synthetic Owner',
-        ])->assertOk();
+        ])->assertRedirect();
 
         $agreement = $agreement->fresh();
         $this->assertSame('active', $agreement->status);
@@ -298,9 +298,9 @@ class EngagementWorkflowTest extends TestCase
             'currency' => 'USD',
             'is_visible_to_client' => true,
             'items' => [['description' => 'Support', 'quantity' => '1.000', 'unit_amount' => 10000, 'cadence' => 'monthly', 'sort_order' => 0]],
-        ])->assertCreated();
+        ])->assertRedirect();
         $proposal = ClientProposal::query()->sole();
-        $this->actingAs($owner)->postJson("/workspaces/{$workspace->public_id}/proposals/{$proposal->public_id}/send")->assertOk();
+        $this->actingAs($owner)->postJson("/workspaces/{$workspace->public_id}/proposals/{$proposal->public_id}/send")->assertRedirect();
 
         $acceptPath = "/portal/{$company->public_id}/proposals/{$proposal->public_id}/accept";
         $this->actingAs($member)->postJson($acceptPath, [
@@ -313,7 +313,7 @@ class EngagementWorkflowTest extends TestCase
         // own portal user path is pinned by the acceptance test above.
         $this->actingAs($owner)->postJson($acceptPath, [
             'signer_name' => 'Recorded Offline Signer',
-        ])->assertOk();
+        ])->assertRedirect();
         $this->assertSame('accepted', $proposal->fresh()->status);
     }
 
@@ -340,11 +340,11 @@ class EngagementWorkflowTest extends TestCase
                 'cadence' => 'monthly',
                 'sort_order' => 0,
             ]],
-        ])->assertCreated();
+        ])->assertRedirect();
 
         $proposal = ClientProposal::query()->sole();
         $this->actingAs($owner)->postJson("/workspaces/{$workspace->public_id}/proposals/{$proposal->public_id}/send")
-            ->assertOk();
+            ->assertRedirect();
 
         // The agreement this proposal may already have produced, with its link
         // lost. There is no safe evidence here that lets acceptance repair it.
@@ -368,8 +368,8 @@ class EngagementWorkflowTest extends TestCase
         $this->actingAs($clientUser)->postJson(
             "/portal/{$company->public_id}/proposals/{$proposal->public_id}/accept",
             ['signer_name' => 'Synthetic Signer', 'signer_title' => 'Synthetic Buyer'],
-        )->assertUnprocessable()->assertExactJson([
-            'message' => 'This proposal cannot be accepted automatically. Ask an operator to verify its agreement link.',
+        )->assertUnprocessable()->assertJsonValidationErrors([
+            'engagement' => 'This proposal cannot be accepted automatically. Ask an operator to verify its agreement link.',
         ]);
 
         $proposal->refresh();
@@ -410,7 +410,7 @@ class EngagementWorkflowTest extends TestCase
         $this->actingAs($clientUser)->postJson(
             "/portal/{$company->public_id}/proposals/{$proposal->public_id}/accept",
             ['signer_name' => 'Synthetic Signer'],
-        )->assertOk();
+        )->assertRedirect();
 
         $this->assertSame('accepted', $proposal->fresh()->status);
         $this->assertSame(1, ClientAgreement::query()->where('status', 'active')->count());
@@ -438,7 +438,7 @@ class EngagementWorkflowTest extends TestCase
         $this->actingAs($clientUser)->postJson(
             "/portal/{$company->public_id}/proposals/{$proposal->public_id}/accept",
             ['signer_name' => 'Synthetic Signer'],
-        )->assertOk();
+        )->assertRedirect();
 
         $this->assertSame('accepted', $proposal->fresh()->status);
         $this->assertSame($proposal->id, ClientAgreement::query()->where('source_proposal_id', $proposal->id)->sole()->source_proposal_id);
@@ -471,8 +471,8 @@ class EngagementWorkflowTest extends TestCase
         $this->actingAs($clientUser)->postJson(
             "/portal/{$company->public_id}/proposals/{$proposal->public_id}/accept",
             ['signer_name' => 'Synthetic Signer'],
-        )->assertUnprocessable()->assertExactJson([
-            'message' => 'This proposal cannot be accepted automatically. Ask an operator to verify its agreement link.',
+        )->assertUnprocessable()->assertJsonValidationErrors([
+            'engagement' => 'This proposal cannot be accepted automatically. Ask an operator to verify its agreement link.',
         ]);
 
         $this->assertSame('sent', $proposal->fresh()->status);
@@ -539,7 +539,7 @@ class EngagementWorkflowTest extends TestCase
         $this->actingAs($clientUser)->postJson(
             "/portal/{$company->public_id}/proposals/{$proposal->public_id}/accept",
             ['signer_name' => 'Synthetic Signer'],
-        )->assertOk();
+        )->assertRedirect();
 
         $created = ClientAgreement::query()->where('source_proposal_id', $proposal->id)->sole();
         $this->assertSame($proposalProject->id, $created->client_project_id);
@@ -574,8 +574,8 @@ class EngagementWorkflowTest extends TestCase
         $response = $this->actingAs($clientUser)->postJson(
             "/portal/{$company->public_id}/proposals/{$proposal->public_id}/accept",
             ['signer_name' => 'Synthetic Signer'],
-        )->assertUnprocessable()->assertExactJson([
-            'message' => 'This proposal cannot be accepted automatically. Ask an operator to verify its agreement link.',
+        )->assertUnprocessable()->assertJsonValidationErrors([
+            'engagement' => 'This proposal cannot be accepted automatically. Ask an operator to verify its agreement link.',
         ]);
 
         $this->assertStringNotContainsString($foreign->title, $response->getContent());
@@ -612,8 +612,8 @@ class EngagementWorkflowTest extends TestCase
 
         $this->actingAs($owner)->postJson(
             "/workspaces/{$workspace->public_id}/agreements/{$draft->public_id}/activate",
-        )->assertUnprocessable()->assertExactJson([
-            'message' => 'This agreement cannot overlap another active agreement. Ask an operator to verify its terms.',
+        )->assertUnprocessable()->assertJsonValidationErrors([
+            'engagement' => 'This agreement cannot overlap another active agreement. Ask an operator to verify its terms.',
         ]);
 
         $this->assertSame('draft', $draft->fresh()->status);
@@ -658,7 +658,7 @@ class EngagementWorkflowTest extends TestCase
 
         $this->actingAs($owner)->postJson(
             "/workspaces/{$workspace->public_id}/agreements/{$draft->public_id}/activate",
-        )->assertOk();
+        )->assertRedirect();
 
         $this->assertSame('active', $draft->fresh()->status);
         $this->assertSame(1, ClientCompanyActivity::query()->where('subject_public_id', $draft->public_id)->count());
@@ -710,7 +710,7 @@ class EngagementWorkflowTest extends TestCase
 
         $this->actingAs($owner)->postJson(
             "/workspaces/{$workspace->public_id}/agreements/{$draft->public_id}/activate",
-        )->assertOk();
+        )->assertRedirect();
 
         $this->assertSame('active', $draft->fresh()->status);
     }
@@ -736,7 +736,7 @@ class EngagementWorkflowTest extends TestCase
         $this->actingAs($clientUser)->postJson(
             "/portal/{$company->public_id}/proposals/{$proposal->public_id}/accept",
             ['signer_name' => 'Synthetic Signer'],
-        )->assertOk();
+        )->assertRedirect();
 
         $this->assertSame($proposal->id, ClientAgreement::query()->where('source_proposal_id', $proposal->id)->sole()->source_proposal_id);
     }
@@ -770,7 +770,7 @@ class EngagementWorkflowTest extends TestCase
         $this->actingAs($clientUser)->postJson(
             "/portal/{$company->public_id}/proposals/{$proposal->public_id}/accept",
             ['signer_name' => 'Synthetic Signer'],
-        )->assertOk();
+        )->assertRedirect();
 
         $created = ClientAgreement::query()
             ->where('workspace_id', $workspace->id)
@@ -818,7 +818,7 @@ class EngagementWorkflowTest extends TestCase
         $this->actingAs($clientUser)->postJson(
             "/portal/{$company->public_id}/proposals/{$proposal->public_id}/accept",
             ['signer_name' => 'Synthetic Signer'],
-        )->assertOk();
+        )->assertRedirect();
 
         $this->assertSame($proposal->id, ClientAgreement::query()
             ->where('workspace_id', $workspace->id)
@@ -868,8 +868,8 @@ class EngagementWorkflowTest extends TestCase
             ['signer_name' => 'Synthetic Signer'],
         )->assertUnprocessable();
 
-        $response->assertExactJson([
-            'message' => 'This proposal cannot be accepted automatically. Ask an operator to verify its agreement link.',
+        $response->assertJsonValidationErrors([
+            'engagement' => 'This proposal cannot be accepted automatically. Ask an operator to verify its agreement link.',
         ]);
         $this->assertStringNotContainsString('Private foreign linked agreement', $response->getContent());
         $this->assertSame('sent', $proposal->fresh()->status);

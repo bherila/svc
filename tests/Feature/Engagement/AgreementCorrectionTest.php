@@ -48,7 +48,7 @@ class AgreementCorrectionTest extends TestCase
 
         $this->actingAs($owner)
             ->patchJson($this->url($workspace, $agreement), ['title' => 'Support retainer, 2026'])
-            ->assertOk();
+            ->assertRedirect();
 
         $agreement->refresh();
 
@@ -67,7 +67,7 @@ class AgreementCorrectionTest extends TestCase
 
         $this->actingAs($owner)
             ->patchJson($this->url($workspace, $agreement), ['hourly_rate_amount' => null])
-            ->assertOk();
+            ->assertRedirect();
 
         // Null is "this agreement states no rate", and the rate lookup refuses
         // rather than pricing the work at nothing. A zero would be a price.
@@ -80,7 +80,7 @@ class AgreementCorrectionTest extends TestCase
 
         $this->actingAs($owner)
             ->patchJson($this->url($workspace, $agreement), ['title' => 'Named at last'])
-            ->assertOk();
+            ->assertRedirect();
 
         $activity = ClientCompanyActivity::query()
             ->where('action', 'agreement.updated')
@@ -98,7 +98,7 @@ class AgreementCorrectionTest extends TestCase
 
         $this->actingAs($owner)
             ->patchJson($this->url($workspace, $agreement), ['title' => 'Already right'])
-            ->assertOk();
+            ->assertRedirect();
 
         $this->assertSame(
             0,
@@ -158,8 +158,8 @@ class AgreementCorrectionTest extends TestCase
         $this->actingAs($owner)
             ->patchJson($this->url($workspace, $agreement), ['ends_on' => '2026-07-31'])
             ->assertUnprocessable()
-            ->assertExactJson([
-                'message' => 'This agreement cannot overlap another active agreement. Ask an operator to verify its terms.',
+            ->assertJsonValidationErrors([
+                'engagement' => 'This agreement cannot overlap another active agreement. Ask an operator to verify its terms.',
             ]);
 
         $this->assertSame('2026-06-30', $agreement->fresh()->ends_on?->toDateString());

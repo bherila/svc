@@ -17,6 +17,22 @@ final class RetiredWebMutationRoutesTest extends TestCase
         $this->assertTrue(Route::has('svc.billing.invoices.store'));
     }
 
+    /**
+     * A browser route answers the page that called it and has no JSON shape
+     * of its own (#454): the bare-model JSON branches were a third shape
+     * beside the Inertia props and the API presenters. A program uses /api/v1.
+     */
+    public function test_browser_controllers_have_no_json_branch(): void
+    {
+        $violations = [];
+        foreach ((new Finder)->files()->in(app_path('Http/Controllers'))->exclude('Api')->name('*.php') as $file) {
+            if (preg_match('/->\s*(?:expectsJson|wantsJson)\s*\(/', $file->getContents()) === 1) {
+                $violations[] = $file->getRelativePathname();
+            }
+        }
+        $this->assertSame([], $violations, 'Browser controllers branching on JSON: '.implode(', ', $violations));
+    }
+
     public function test_frontend_does_not_reference_retired_mutation_routes(): void
     {
         $violations = [];

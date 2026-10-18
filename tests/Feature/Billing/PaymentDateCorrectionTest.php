@@ -139,7 +139,7 @@ final class PaymentDateCorrectionTest extends TestCase
                 'refunded_amount' => 999999,
                 'method' => 'cash',
             ])
-            ->assertOk();
+            ->assertRedirect()->assertSessionHasNoErrors();
 
         $fresh = $payment->fresh();
         $this->assertSame('2026-08-18', $fresh?->received_on?->toDateString());
@@ -299,7 +299,7 @@ final class PaymentDateCorrectionTest extends TestCase
 
         $this->actingAs($owner)
             ->postJson($this->correctionUrl($workspace, $invoice, $payment), ['received_on' => '2026-08-18', 'reason' => 'Synthetic bank statement'])
-            ->assertOk();
+            ->assertRedirect()->assertSessionHasNoErrors();
 
         // The binding layer really was exercised, so an empty capture cannot be
         // mistaken for a clean one: both records are named in the URL by a

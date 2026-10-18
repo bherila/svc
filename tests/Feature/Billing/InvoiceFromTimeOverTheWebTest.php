@@ -66,7 +66,7 @@ final class InvoiceFromTimeOverTheWebTest extends TestCase
             'time_entry_ids' => [$first->public_id, $second->public_id],
         ]);
 
-        $response->assertCreated();
+        $response->assertRedirect()->assertSessionHasNoErrors();
 
         $invoice = ClientInvoice::query()->firstOrFail();
         $this->assertCount(2, $invoice->lines);
@@ -92,7 +92,7 @@ final class InvoiceFromTimeOverTheWebTest extends TestCase
                 'type' => 'adjustment', 'description' => 'Travel',
                 'quantity' => '1', 'unit_amount' => 5000, 'tax_amount' => 0, 'sort_order' => 0,
             ]],
-        ])->assertCreated();
+        ])->assertRedirect()->assertSessionHasNoErrors();
 
         $invoice = ClientInvoice::query()->firstOrFail();
         $this->assertCount(2, $invoice->lines);
@@ -105,7 +105,7 @@ final class InvoiceFromTimeOverTheWebTest extends TestCase
 
         $this->actingAs($this->owner, 'web')->postJson($this->url(), [
             'invoice_number' => 'SVC-00003', 'currency' => 'USD', 'time_entry_ids' => [$entry->public_id],
-        ])->assertCreated();
+        ])->assertRedirect()->assertSessionHasNoErrors();
 
         $this->actingAs($this->owner, 'web')->postJson($this->url(), [
             'invoice_number' => 'SVC-00004', 'currency' => 'USD', 'time_entry_ids' => [$entry->public_id],
@@ -130,7 +130,7 @@ final class InvoiceFromTimeOverTheWebTest extends TestCase
                 'type' => 'service', 'description' => 'Advisory',
                 'quantity' => '1', 'unit_amount' => 25000, 'tax_amount' => 0, 'sort_order' => 0,
             ]],
-        ])->assertCreated();
+        ])->assertRedirect()->assertSessionHasNoErrors();
 
         $this->assertSame(25000, (int) ClientInvoice::query()->firstOrFail()->total_amount);
     }

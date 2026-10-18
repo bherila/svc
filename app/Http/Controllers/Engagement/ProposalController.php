@@ -12,7 +12,6 @@ use App\Services\Engagement\EngagementAuthorization;
 use App\Services\Engagement\EngagementException;
 use App\Services\Engagement\ProposalMutationAction;
 use App\Services\WorkspaceAuthorization;
-use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Gate;
 
@@ -24,24 +23,18 @@ class ProposalController extends EngagementController
         ClientCompany $clientCompany,
         WorkspaceAuthorization $workspaceAuthorization,
         ProposalMutationAction $workflow,
-    ): JsonResponse|RedirectResponse {
+    ): RedirectResponse {
         $user = $request->user();
         abort_unless($user instanceof User, 401);
         Gate::forUser($user)->authorize('manage', $workspace);
         $workspaceAuthorization->assertOwnedBy($workspace, $clientCompany);
 
         try {
-            $proposal = $workflow->create($user, $workspace, $clientCompany, $request->validated());
+            $workflow->create($user, $workspace, $clientCompany, $request->validated());
 
-            return $this->respond(
-                $request,
-                ['data' => $proposal],
-                'svc.engagement.proposals.store',
-                'Proposal created.',
-                201,
-            );
+            return $this->respond('Proposal created.');
         } catch (EngagementException $exception) {
-            return $this->reportFailure($request, $exception);
+            return $this->reportFailure($exception);
         }
     }
 
@@ -50,7 +43,7 @@ class ProposalController extends EngagementController
         ClientProposal $clientProposal,
         WorkspaceAuthorization $workspaceAuthorization,
         ProposalMutationAction $workflow,
-    ): JsonResponse|RedirectResponse {
+    ): RedirectResponse {
         $request = request();
         $user = $request->user();
         abort_unless($user instanceof User, 401);
@@ -58,16 +51,11 @@ class ProposalController extends EngagementController
         $workspaceAuthorization->assertOwnedBy($workspace, $clientProposal);
 
         try {
-            $proposal = $workflow->send($user, $workspace, $clientProposal);
+            $workflow->send($user, $workspace, $clientProposal);
 
-            return $this->respond(
-                $request,
-                ['data' => $proposal],
-                'svc.engagement.proposals.store',
-                'Proposal sent.',
-            );
+            return $this->respond('Proposal sent.');
         } catch (EngagementException $exception) {
-            return $this->reportFailure($request, $exception);
+            return $this->reportFailure($exception);
         }
     }
 
@@ -78,7 +66,7 @@ class ProposalController extends EngagementController
         EngagementAuthorization $engagementAuthorization,
         WorkspaceAuthorization $workspaceAuthorization,
         ProposalMutationAction $workflow,
-    ): JsonResponse|RedirectResponse {
+    ): RedirectResponse {
         $user = $request->user();
         abort_unless($user instanceof User, 401);
         $workspace = Workspace::query()->findOrFail($clientProposal->workspace_id);
@@ -91,7 +79,7 @@ class ProposalController extends EngagementController
         abort_unless($engagementAuthorization->canActAsClient($user, $workspace, $clientCompany), 403);
 
         try {
-            $proposal = $workflow->accept(
+            $workflow->accept(
                 $user,
                 $workspace,
                 $clientProposal,
@@ -99,14 +87,9 @@ class ProposalController extends EngagementController
                 $request->validated('signer_title'),
             );
 
-            return $this->respond(
-                $request,
-                ['data' => $proposal],
-                'svc.engagement.proposals.store',
-                'Proposal accepted.',
-            );
+            return $this->respond('Proposal accepted.');
         } catch (EngagementException $exception) {
-            return $this->reportFailure($request, $exception);
+            return $this->reportFailure($exception);
         }
     }
 }
