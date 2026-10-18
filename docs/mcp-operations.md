@@ -77,7 +77,7 @@ php artisan svc:auth:revoke-connections USER_PUBLIC_UUID --client=OAUTH_CLIENT_I
    selected, even for the same client.
 4. A refresh or code exchange already in flight can pass its own check just
    before the revocation and persist its replacement just after. For
-   `AgentCredentialFence::SECONDS` (60 seconds) after any revocation, every
+   `AgentCredentialFence::SECONDS` (two minutes, counted from the commit) after any revocation, every
    access token Passport persists for that person (and client, or
    every client) is revoked as it is created, as is every authorization code
    (a consent approved just before the revocation cannot be exchanged later)

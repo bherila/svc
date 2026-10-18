@@ -24,8 +24,13 @@ use Illuminate\Contracts\Cache\Repository;
  */
 final readonly class AgentCredentialFence
 {
-    /** Long enough for an in-flight token request to finish after the revocation commits. */
-    public const int SECONDS = 60;
+    /**
+     * Counted from the revocation's commit (raised again then), and far longer
+     * than a token request takes to persist once its checks have passed. A
+     * request stalled beyond it is outside what a fence closes; turning OAuth
+     * issuance off first, as the runbook says, closes that too.
+     */
+    public const int SECONDS = 120;
 
     private const string EVERY_CLIENT = '*';
 

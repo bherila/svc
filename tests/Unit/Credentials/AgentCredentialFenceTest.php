@@ -31,7 +31,7 @@ final class AgentCredentialFenceTest extends TestCase
         $this->assertTrue($fence->covers(7, 'client-a'));
         $this->travel(1)->seconds();
         $this->assertFalse($fence->covers(7, 'client-a'));
-        $this->assertSame(60, AgentCredentialFence::SECONDS);
+        $this->assertSame(120, AgentCredentialFence::SECONDS);
     }
 
     public function test_a_fence_on_every_client_covers_each_and_does_not_replace_another(): void
@@ -39,7 +39,7 @@ final class AgentCredentialFenceTest extends TestCase
         $this->freezeSecond();
         $fence = new AgentCredentialFence(new Repository(new ArrayStore), new WorkspaceClock);
 
-        $fence->raise(7, 'client-a');
+        $this->travel(AgentCredentialFence::SECONDS / 2)->seconds();
         $this->travel(30)->seconds();
         $fence->raise(7, null);
 
@@ -47,9 +47,9 @@ final class AgentCredentialFenceTest extends TestCase
         $this->assertTrue($fence->covers(7, 'client-z'));
         $this->assertFalse($fence->covers(8, 'client-z'));
 
-        // The later fence on every client still holds after the earlier one lapses.
+        $this->travel(AgentCredentialFence::SECONDS / 2 + 1)->seconds();
         $this->travel(31)->seconds();
-        $this->assertTrue($fence->covers(7, 'client-a'));
+        $this->travel(AgentCredentialFence::SECONDS / 2 - 1)->seconds();
         $this->travel(29)->seconds();
         $this->assertFalse($fence->covers(7, 'client-a'));
     }

@@ -8,6 +8,7 @@ use App\Services\Credentials\AgentCredentialFence;
 use App\Services\Credentials\AgentCredentialSelection;
 use App\Services\Credentials\CredentialRevoker;
 use App\Services\Credentials\RevocationRefused;
+use App\Services\Credentials\RevokeCredentialsIssuedDuringRevocation;
 use App\Support\AgentApi\AgentApiScopes;
 use BWH\Auth\Http\Middleware\EnforceOAuthPkce;
 use BWH\Auth\Http\Middleware\EnforceOAuthResourceIndicator;
@@ -23,6 +24,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Log\Events\MessageLogged;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
@@ -31,6 +33,7 @@ use Illuminate\Testing\TestResponse;
 use Laravel\Passport\Bridge\AccessTokenRepository as PassportAccessTokenRepository;
 use Laravel\Passport\Bridge\AuthCodeRepository as PassportAuthCodeRepository;
 use Laravel\Passport\Bridge\RefreshTokenRepository as PassportRefreshTokenRepository;
+use Laravel\Passport\Events\RefreshTokenCreated;
 use Laravel\Passport\Passport;
 use League\OAuth2\Server\AuthorizationServer;
 use League\OAuth2\Server\ResourceServer;
@@ -563,6 +566,61 @@ final class AgentOAuthLifecycleTest extends TestCase
         $this->assertSame(['access_tokens' => 0, 'refresh_tokens' => 1, 'authorization_codes' => 0, 'unattributed_refresh_tokens' => 0], json_decode(trim(Artisan::output()), true));
         $this->assertTrue((bool) Passport::refreshToken()->newQuery()->where('access_token_id', $mine)->value('revoked'));
         $this->assertFalse((bool) Passport::refreshToken()->newQuery()->where('access_token_id', $theirs)->value('revoked'));
+    }
+
+    /** The window follows the commit, however long the revocation's transaction took. */
+    public function test_the_fence_is_counted_from_the_revocation_s_commit(): void
+    {
+        $person = User::factory()->create();
+        $owner = AgentPrincipal::query()->findOrFail($person->id);
+        $fence = app(AgentCredentialFence::class);
+
+        DB::transaction(function () use ($owner): void {
+            app(CredentialRevoker::class)->revoke(AgentCredentialSelection::connections($owner), 'test');
+            $this->travel(AgentCredentialFence::SECONDS - 10)->seconds();
+        });
+        $this->travel(AgentCredentialFence::SECONDS - 10)->seconds();
+
+        $this->assertTrue($fence->covers($person->id, 'any-client'));
+        $this->travel(11)->seconds();
+        $this->assertFalse($fence->covers($person->id, 'any-client'));
+    }
+
+    /**
+     * A purge between the fence revoking a racing grant's access token and
+     * Passport persisting its refresh token removes the parent; the refresh
+     * token, which keeps its own owner and client, is revoked all the same.
+     */
+    public function test_a_refresh_token_persisted_after_its_parent_was_purged_is_revoked(): void
+    {
+        $person = User::factory()->create();
+        $refreshId = Str::random(80);
+        Passport::refreshToken()->forceFill([
+            'id' => $refreshId,
+            'access_token_id' => Str::random(80),
+            'revoked' => false,
+            'expires_at' => now()->addDay(),
+            'provider_user_id' => (string) $person->id,
+            'client_id' => 'purged-parent-client',
+        ])->saveOrFail();
+        $logged = [];
+        Event::listen(MessageLogged::class, static function (MessageLogged $event) use (&$logged): void {
+            $logged[] = ['message' => $event->message, 'context' => $event->context];
+        });
+
+        app(RevokeCredentialsIssuedDuringRevocation::class)->refreshTokenCreated(new RefreshTokenCreated($refreshId, Str::random(80)));
+
+        $this->assertTrue((bool) Passport::refreshToken()->newQuery()->whereKey($refreshId)->value('revoked'));
+        $this->assertSame([[
+            'message' => 'agent_token.revoked_in_fence',
+            'context' => [
+                'actor' => 'revocation-fence',
+                'subject_id' => $person->public_id,
+                'credential' => 'refresh_token',
+                'client_id' => 'purged-parent-client',
+                'credential_fingerprint' => hash('sha256', $refreshId),
+            ],
+        ]], $logged);
     }
 
     public function test_emergency_revocation_refuses_what_is_not_an_exact_person_or_client(): void

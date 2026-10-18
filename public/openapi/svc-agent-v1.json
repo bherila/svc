@@ -3025,7 +3025,7 @@
         "/connections/{token}": {
             "delete": {
                 "operationId": "connections.revoke",
-                "description": "Disconnects the calling connection: token is the id of the access token making the request. Its refresh tokens are revoked before the access token itself, in one transaction, so the connection cannot mint a replacement; the token stops working on the next request. Any other token id, including another of the same person's connections, is a 404 and revokes nothing. For 60 seconds afterwards, an OAuth credential the same client obtains for the same person is revoked as it is issued, so a refresh already in flight cannot keep the connection; reconnect after that. Every connection a person holds is revoked by an operator with svc:auth:revoke-connections.",
+                "description": "Disconnects the calling connection: token is the id of the access token making the request. Its refresh tokens are revoked before the access token itself, in one transaction, so the connection cannot mint a replacement; the token stops working on the next request. Any other token id, including another of the same person's connections, is a 404 and revokes nothing. For two minutes afterwards, an OAuth credential the same client obtains for the same person is revoked as it is issued, so a refresh already in flight cannot keep the connection; reconnect after that. Every connection a person holds is revoked by an operator with svc:auth:revoke-connections.",
                 "security": [
                     {
                         "oauth2": [

@@ -3,6 +3,7 @@
 namespace App\Services\Credentials;
 
 use App\Models\AgentPrincipal;
+use BWH\Auth\OAuth\Server\ProviderIdentityTokens;
 use Laravel\Passport\AuthCode;
 use Laravel\Passport\Events\AccessTokenCreated;
 use Laravel\Passport\Events\RefreshTokenCreated;
@@ -51,12 +52,21 @@ final readonly class RevokeCredentialsIssuedDuringRevocation
     public function refreshTokenCreated(RefreshTokenCreated $event): void
     {
         $parent = Passport::token()->newQuery()->whereKey($event->accessTokenId)->first(['user_id', 'client_id', 'revoked']);
-        if ($parent === null || ! (bool) $parent->getAttribute('revoked')) {
+        // A parent that is already gone was revoked and purged in between (a
+        // purge takes revoked rows): the refresh token is no more legitimate.
+        if ($parent !== null && ! (bool) $parent->getAttribute('revoked')) {
             return;
         }
-        if (Passport::refreshToken()->newQuery()->whereKey($event->refreshTokenId)->where('revoked', false)->update(['revoked' => true]) > 0) {
-            $this->audit('refresh_token', $parent->getAttribute('user_id'), (string) $parent->getAttribute('client_id'), $event->refreshTokenId);
+        $refresh = Passport::refreshToken()->newQuery()->whereKey($event->refreshTokenId)->first();
+        if ($refresh === null || Passport::refreshToken()->newQuery()->whereKey($event->refreshTokenId)->where('revoked', false)->update(['revoked' => true]) === 0) {
+            return;
         }
+        $this->audit(
+            'refresh_token',
+            $parent?->getAttribute('user_id') ?? $refresh->getAttribute(ProviderIdentityTokens::OWNER_COLUMN),
+            (string) ($parent?->getAttribute('client_id') ?? $refresh->getAttribute('client_id')),
+            $event->refreshTokenId,
+        );
     }
 
     public function authCodeCreated(AuthCode $code): void
