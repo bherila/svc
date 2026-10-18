@@ -596,6 +596,37 @@ An option left out is left alone; one given empty (`--reference=`) clears it.
 The output carries the payment's version for a following `--expected-version`.
 
 
+### Withdrawing, failing or refunding a recorded payment
+
+`payments.set_status` (`POST .../payments/{payment}/status`) and
+`payments.refund` (`POST .../payments/{payment}/refunds`) change what a payment
+recorded by hand is worth (#455). Both are gated as the other payment writes
+are - an owner/admin, both `AGENT_API_WRITES_ENABLED` and
+`AGENT_API_PAYMENT_WRITES_ENABLED`, the MCP kill switch - and require
+`payments:record` with `payments:read`, which supplies the version. Both need
+`confirm: true`, the payment's `version` from `payments.list` as
+`expected_version`, a `reason` kept in the client history, and an idempotency
+key; every gate is rechecked before a receipt replays.
+
+- `payments.set_status` takes `status`: `succeeded` when a pending payment
+  cleared, `failed` when it bounced or was reversed, `canceled` when it was
+  recorded in error. A partly refunded payment is refunded in full instead, and
+  `failed`, `canceled`, `refunded` and `disputed` are final - money that arrives
+  later is recorded with `payments.record`.
+- `payments.refund` takes `amount`: what was returned to the client now, in
+  minor units, at most what is left. SVC never sends the money; it records that
+  it was returned.
+- The invoice is recomputed, so a paid invoice reopens by the amount that
+  stopped counting. Correct or void it separately if nothing is owed.
+- A payment recorded by a processor (`manual: false`), a reconciled amount, and
+  any transition outside the table in
+  [payments.md](client-management/payments.md#withdrawing-failing-or-refunding-a-payment-recorded-by-hand)
+  are refused. The response is the payment exactly as `payments.list` returns it.
+
+Operators use the same rules without the agent gates through
+`svc:billing:payment-status` and `svc:billing:refund-payment`, each with
+`--expected-version` and `--dry-run`.
+
 ### Changing a due date or scheduled issue date
 
 A draft and an issued invoice take different doors, because changing one is

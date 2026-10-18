@@ -219,6 +219,82 @@ The console door is `svc:billing:correct-payment` and the API door is
 take the same four fields, and `payments.list` returns the note to the managers
 who may write it.
 
+## Withdrawing, failing or refunding a payment recorded by hand
+
+A cheque that bounces, a transfer that is reversed, a payment entered twice and
+money handed back to the client are each a change to what a recorded payment is
+worth. They are made by transitioning the payment, never by editing it, so the
+history says what happened (#455). `ManualPaymentChange` is the whole rule and
+is unit tested without a database; `InvoiceLifecycleService::changeManualPayment()`
+applies it under the payment and invoice locks, through the same write a
+processor's events take (`setPaymentStatus()` / `setRefundedAmount()`).
+
+**Only a payment recorded by hand.** A Stripe or Square payment follows its
+processor, which reports its own failures, disputes and refunds; a change made
+here would contradict the next event, so it is refused. `payments.list` marks a
+hand-recorded payment `manual: true`.
+
+**Status changes** (`payments.set_status`, `svc:billing:payment-status`) move a
+payment to one of three statuses:
+
+| from | → `succeeded` (it cleared) | → `failed` (it bounced or was reversed) | → `canceled` (recorded in error, withdrawn) |
+| --- | --- | --- | --- |
+| `pending` | yes | yes | yes |
+| `succeeded`, nothing refunded | no change | yes | yes |
+| `succeeded`, partly refunded | no change | no - refund the rest | no - refund the rest |
+| `failed`, `canceled`, `refunded`, `disputed` | no | no (or no change) | no (or no change) |
+
+`failed`, `canceled`, `refunded` and `disputed` are final for a hand-recorded
+payment: money that arrives after all is recorded as a new payment, so both
+facts stay in the history. `refunded` is reached only by refunding the whole
+amount, `disputed` is a processor's word, and nothing returns to `pending`.
+Setting the status a payment already has writes and records nothing.
+
+**Refunds** (`payments.refund`, `svc:billing:refund-payment`) record money
+already returned to the client outside SVC - SVC never sends money. `amount` is
+what was returned now, in minor units, and the refunds of a payment may not
+exceed its amount. Only a succeeded payment can be refunded; refunding all of it
+makes it `refunded`, otherwise it stays `succeeded` with its `refunded_amount`
+raised. A refund cannot be reduced: a refund entered in error is corrected by an
+operator, not by this operation.
+
+**Balances and issued invoices.** The invoice's paid amount, balance and status
+are recomputed as for any payment change, so a paid invoice reopens: to
+`partially_paid` or `issued` by the amount that stopped counting. The invoice
+document is not changed, a void invoice stays void, and automatic delivery is
+not rescheduled. If the client no longer owes the reopened balance, correct or
+void the invoice separately - voiding still requires that nothing is paid and
+nothing is pending. Moving a payment to `succeeded` is refused if successful
+payments would exceed the invoice total, or on a void invoice. Leaving
+`succeeded` changes the money the overpayment credit pool is derived from, so
+the pool change is recorded under the company lock as a processor's refund is.
+
+**Corrections and reconciliation.** Descriptive fields (method, reference, note,
+date) stay correctable in every status, through `payments.correct`. Money that
+stops counting cannot stay allocated to a finance transaction: failing,
+withdrawing or refunding a payment beyond what its active reconciliation
+allocations leave is refused, and the allocation is deactivated in the finance
+system first.
+
+**Reason and audit.** A reason (at most 500 characters) is required and kept in
+the activity the transition records - `invoice.payment_received`,
+`invoice.payment_failed`, `invoice.payment_canceled` or
+`invoice.payment_refunded` - with the status it replaced (and, for a refund, the
+previous refunded amount). The API requires the payment's `version` from
+`payments.list` as `expected_version`, explicit confirmation and an idempotency
+key; a payment that moved since it was read is refused with a conflict. The
+console commands take `--expected-version`, and `--dry-run` runs the whole
+change in a transaction that is always rolled back:
+
+```
+php artisan svc:billing:payment-status <payment> --workspace=<workspace> \
+    --status=succeeded|failed|canceled --reason=<text> \
+    [--expected-version=<version>] [--dry-run] [--format=json]
+php artisan svc:billing:refund-payment <payment> --workspace=<workspace> \
+    --amount=<minor-units> --reason=<text> \
+    [--expected-version=<version>] [--dry-run] [--format=json]
+```
+
 ## Payment Workflow
 
 Recording a payment is the main write the screen offers, through **Record
@@ -244,7 +320,10 @@ refunded with nothing in its history saying how.
 There is no edit or delete of money. A payment's value is corrected by
 transitioning its status or its refunded amount through
 `InvoiceLifecycleService`, which recomputes the invoice and records the
-corresponding activity — history is preserved rather than rewritten. Its
+corresponding activity — history is preserved rather than rewritten. A payment
+recorded by hand is transitioned as described above;
+`svc:billing:payment --status=failed` records a new failed row and does not
+change an existing payment. Its
 descriptive fields are bookkeeping rather than money and have their own audited
 correction, above. The console equivalent of recording one is:
 

@@ -5110,6 +5110,128 @@
                 "x-agent-mcp-tool": "payments.record"
             }
         },
+        "/workspaces/{workspace}/payments/{payment}/refunds": {
+            "post": {
+                "operationId": "payments.refund",
+                "description": "Owner/admin record of money already returned to the client outside SVC, against a succeeded payment that was recorded by hand. amount is what was returned now, in minor units, at most what is left unrefunded; refunding the whole amount makes the payment refunded, otherwise it stays succeeded with its refunded_amount raised. The invoice's paid amount, balance and status are recomputed, so a paid invoice reopens by the amount; correct or void the invoice separately if the client no longer owes it. Requires confirm: true, the version from payments.list and a reason, which is kept in the client history. A stale version is refused with 409. Refused with 422: a payment recorded by a processor (Stripe, Square), which reports its own refunds; a pending, failed, canceled, disputed or fully refunded payment; more than is left; or a refund that would exceed the payment's active finance reconciliation allocations. SVC never sends money. Requires both outer workflow and payment write flags.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "payments:record",
+                            "payments:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ReceivedPaymentRefundRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/PaymentId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Payment with the refund recorded",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ReceivedPaymentResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "destructive",
+                "x-agent-idempotent": true,
+                "x-agent-write-safety": {
+                    "idempotency_key": "header_and_argument",
+                    "expected_version": true,
+                    "confirm": true
+                },
+                "x-agent-mcp-tool": "payments.refund"
+            }
+        },
+        "/workspaces/{workspace}/payments/{payment}/status": {
+            "post": {
+                "operationId": "payments.set_status",
+                "description": "Owner/admin change of the status of a payment that was recorded by hand: succeeded when money recorded as pending cleared; failed when it bounced or was reversed; canceled when it was recorded in error and is withdrawn. Allowed from pending to any of the three, and from succeeded with nothing refunded to failed or canceled. failed, canceled, refunded and disputed are final - money that arrives later is recorded as a new payment - and a partly refunded payment is refunded in full instead. Setting the status it already has changes nothing. The invoice's paid amount, balance and status are recomputed, so withdrawing a succeeded payment reopens the balance; a succeeded payment cannot exceed the invoice total and cannot succeed on a void invoice. Requires confirm: true, the version from payments.list and a reason, which is kept in the client history. A stale version is refused with 409. Refused with 422: a payment recorded by a processor (Stripe, Square), which reports its own status; a transition outside these; or leaving succeeded while the payment holds active finance reconciliation allocations. Never initiates a charge or a refund. Requires both outer workflow and payment write flags.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "payments:record",
+                            "payments:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ReceivedPaymentStatusRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/PaymentId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Payment with its new status",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ReceivedPaymentResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "destructive",
+                "x-agent-idempotent": true,
+                "x-agent-write-safety": {
+                    "idempotency_key": "header_and_argument",
+                    "expected_version": true,
+                    "confirm": true
+                },
+                "x-agent-mcp-tool": "payments.set_status"
+            }
+        },
         "/workspaces/{workspace}/projects/{project}/archive": {
             "post": {
                 "operationId": "projects.archive",
@@ -12871,6 +12993,37 @@
                     }
                 }
             },
+            "ReceivedPaymentRefundRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "expected_version",
+                    "confirm",
+                    "reason",
+                    "amount"
+                ],
+                "properties": {
+                    "expected_version": {
+                        "$ref": "#/components/schemas/Version"
+                    },
+                    "confirm": {
+                        "type": "boolean",
+                        "const": true,
+                        "description": "Explicit user confirmation is required."
+                    },
+                    "reason": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 500,
+                        "description": "Why, kept in the client history."
+                    },
+                    "amount": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "What was returned to the client now, in minor units; at most what is left unrefunded."
+                    }
+                }
+            },
             "ReceivedPaymentResponse": {
                 "type": "object",
                 "additionalProperties": false,
@@ -12880,6 +13033,41 @@
                 "properties": {
                     "data": {
                         "$ref": "#/components/schemas/ReceivedPayment"
+                    }
+                }
+            },
+            "ReceivedPaymentStatusRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "expected_version",
+                    "confirm",
+                    "reason",
+                    "status"
+                ],
+                "properties": {
+                    "expected_version": {
+                        "$ref": "#/components/schemas/Version"
+                    },
+                    "confirm": {
+                        "type": "boolean",
+                        "const": true,
+                        "description": "Explicit user confirmation is required."
+                    },
+                    "reason": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 500,
+                        "description": "Why, kept in the client history."
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "succeeded",
+                            "failed",
+                            "canceled"
+                        ],
+                        "description": "succeeded: money recorded as pending cleared. failed: it bounced or was reversed. canceled: it was recorded in error and is withdrawn."
                     }
                 }
             },

@@ -970,6 +970,32 @@
             "mcp.switch:payments.record"
         ]
     },
+    "payments.refund": {
+        "scopes": [
+            "payments:record",
+            "payments:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.payments",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:payments.refund"
+        ]
+    },
+    "payments.set_status": {
+        "scopes": [
+            "payments:record",
+            "payments:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.payments",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:payments.set_status"
+        ]
+    },
     "projects.archive": {
         "scopes": [
             "projects:write",

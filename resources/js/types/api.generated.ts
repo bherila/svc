@@ -1064,6 +1064,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    '/workspaces/{workspace}/payments/{payment}/refunds': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Owner/admin record of money already returned to the client outside SVC, against a succeeded payment that was recorded by hand. amount is what was returned now, in minor units, at most what is left unrefunded; refunding the whole amount makes the payment refunded, otherwise it stays succeeded with its refunded_amount raised. The invoice's paid amount, balance and status are recomputed, so a paid invoice reopens by the amount; correct or void the invoice separately if the client no longer owes it. Requires confirm: true, the version from payments.list and a reason, which is kept in the client history. A stale version is refused with 409. Refused with 422: a payment recorded by a processor (Stripe, Square), which reports its own refunds; a pending, failed, canceled, disputed or fully refunded payment; more than is left; or a refund that would exceed the payment's active finance reconciliation allocations. SVC never sends money. Requires both outer workflow and payment write flags. */
+        post: operations['payments.refund'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/payments/{payment}/status': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Owner/admin change of the status of a payment that was recorded by hand: succeeded when money recorded as pending cleared; failed when it bounced or was reversed; canceled when it was recorded in error and is withdrawn. Allowed from pending to any of the three, and from succeeded with nothing refunded to failed or canceled. failed, canceled, refunded and disputed are final - money that arrives later is recorded as a new payment - and a partly refunded payment is refunded in full instead. Setting the status it already has changes nothing. The invoice's paid amount, balance and status are recomputed, so withdrawing a succeeded payment reopens the balance; a succeeded payment cannot exceed the invoice total and cannot succeed on a void invoice. Requires confirm: true, the version from payments.list and a reason, which is kept in the client history. A stale version is refused with 409. Refused with 422: a payment recorded by a processor (Stripe, Square), which reports its own status; a transition outside these; or leaving succeeded while the payment holds active finance reconciliation allocations. Never initiates a charge or a refund. Requires both outer workflow and payment write flags. */
+        post: operations['payments.set_status'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     '/workspaces/{workspace}/projects/{project}/archive': {
         parameters: {
             query?: never;
@@ -2986,8 +3020,35 @@ export interface components {
             /** @description Current invoice version from invoices.get. */
             expected_version: string;
         };
+        ReceivedPaymentRefundRequest: {
+            expected_version: components['schemas']['Version'];
+            /**
+             * @description Explicit user confirmation is required.
+             * @constant
+             */
+            confirm: true;
+            /** @description Why, kept in the client history. */
+            reason: string;
+            /** @description What was returned to the client now, in minor units; at most what is left unrefunded. */
+            amount: number;
+        };
         ReceivedPaymentResponse: {
             data: components['schemas']['ReceivedPayment'];
+        };
+        ReceivedPaymentStatusRequest: {
+            expected_version: components['schemas']['Version'];
+            /**
+             * @description Explicit user confirmation is required.
+             * @constant
+             */
+            confirm: true;
+            /** @description Why, kept in the client history. */
+            reason: string;
+            /**
+             * @description succeeded: money recorded as pending cleared. failed: it bounced or was reversed. canceled: it was recorded in error and is withdrawn.
+             * @enum {string}
+             */
+            status: 'succeeded' | 'failed' | 'canceled';
         };
         SearchResponse: {
             data: components['schemas']['SearchResult'][];
@@ -6293,6 +6354,66 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['ReceivedPaymentBatchResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'payments.refund': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                payment: components['parameters']['PaymentId'];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['ReceivedPaymentRefundRequest'];
+            };
+        };
+        responses: {
+            /** @description Payment with the refund recorded */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ReceivedPaymentResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'payments.set_status': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                payment: components['parameters']['PaymentId'];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['ReceivedPaymentStatusRequest'];
+            };
+        };
+        responses: {
+            /** @description Payment with its new status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ReceivedPaymentResponse'];
                 };
             };
             default: components['responses']['Error'];

@@ -12,6 +12,7 @@ use App\Services\AgentApi\AgentExpenseReadService;
 use App\Services\AgentApi\AgentPaymentReadService;
 use App\Services\AgentApi\AgentReadService;
 use App\Services\AgentApi\AgentTaskMutationAction;
+use App\Services\AgentApi\ChangeManualPaymentAction;
 use App\Services\AgentApi\CorrectPaymentAction;
 use App\Services\AgentApi\DeleteTimeEntryAction;
 use App\Services\AgentApi\IssueInvoiceAction;
@@ -183,6 +184,55 @@ final class AgentMcpWriteTools
         $ids = app(CorrectPaymentAction::class)->run($actor, $workspace, $context->principal->clientId, $idempotency_key, $payment_id, $body);
 
         return ['data' => app(AgentPaymentReadService::class)->result($actor, $workspace, $ids)['data'][0]];
+    }
+
+    /**
+     * Move a payment recorded by hand to succeeded, failed or canceled.
+     *
+     * @return array<string, mixed>
+     */
+    public function paymentsSetStatus(
+        #[Schema(format: 'uuid')] string $workspace_id,
+        #[Schema(format: 'uuid')] string $payment_id,
+        #[Schema(enum: ['succeeded', 'failed', 'canceled'])] string $status,
+        #[Schema(minLength: 64, maxLength: 64)] string $expected_version,
+        #[Schema(minLength: 1, maxLength: 500)] string $reason,
+        #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key,
+        #[Schema] bool $confirm,
+    ): array {
+        [$actor, $workspace, $client] = $this->paymentWriter($workspace_id);
+        $ids = app(ChangeManualPaymentAction::class)->setStatus($actor, $workspace, $client, $idempotency_key, $payment_id, compact('status', 'expected_version', 'reason', 'confirm'));
+
+        return ['data' => app(AgentPaymentReadService::class)->result($actor, $workspace, $ids)['data'][0]];
+    }
+
+    /**
+     * Record money returned to the client against a payment recorded by hand.
+     *
+     * @return array<string, mixed>
+     */
+    public function paymentsRefund(
+        #[Schema(format: 'uuid')] string $workspace_id,
+        #[Schema(format: 'uuid')] string $payment_id,
+        #[Schema(minimum: 1)] int $amount,
+        #[Schema(minLength: 64, maxLength: 64)] string $expected_version,
+        #[Schema(minLength: 1, maxLength: 500)] string $reason,
+        #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key,
+        #[Schema] bool $confirm,
+    ): array {
+        [$actor, $workspace, $client] = $this->paymentWriter($workspace_id);
+        $ids = app(ChangeManualPaymentAction::class)->refund($actor, $workspace, $client, $idempotency_key, $payment_id, compact('amount', 'expected_version', 'reason', 'confirm'));
+
+        return ['data' => app(AgentPaymentReadService::class)->result($actor, $workspace, $ids)['data'][0]];
+    }
+
+    /** @return array{User, Workspace, string} */
+    private function paymentWriter(string $workspaceId): array
+    {
+        $context = $this->accounts->resolve($this->context('payments:record'), $workspaceId);
+        $workspace = $this->workspace($context);
+
+        return [User::query()->findOrFail($context->principal->subject->id), $workspace, $context->principal->clientId];
     }
 
     public function forContext(McpRequestContext $context): self
