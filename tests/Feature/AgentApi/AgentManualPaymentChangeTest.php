@@ -153,6 +153,32 @@ final class AgentManualPaymentChangeTest extends TestCase
         $this->assertSame(0, $payment->fresh()?->refunded_amount);
     }
 
+    /**
+     * A change made from a stale view of the invoice is a conflict, not a
+     * total over money that is no longer there. MariaDB's REPEATABLE READ is
+     * what produces the stale view; here the invoice's revision moves between
+     * the locked read and the plain one, which is the difference the guard
+     * looks for.
+     */
+    public function test_an_invoice_that_moved_while_the_change_waited_is_a_conflict(): void
+    {
+        [$user, $workspace, $invoice] = $this->fixture(paid: false);
+        $pending = app(InvoiceLifecycleService::class)->applyPayment($invoice, ['amount' => 10000, 'currency' => 'USD', 'method' => 'check', 'status' => 'pending'], $workspace);
+        $moved = false;
+        DB::listen(function (QueryExecuted $event) use ($invoice, &$moved): void {
+            $sql = str_replace(['"', '`'], '', strtolower($event->sql));
+            if (! $moved && str_starts_with($sql, 'select * from client_invoices') && in_array($invoice->id, $event->bindings, false)) {
+                $moved = true;
+                DB::table('client_invoices')->where('workspace_id', $invoice->workspace_id)->where('id', $invoice->id)->increment('lock_version');
+            }
+        });
+
+        $this->change('rest', 'payments.set_status', $user, $workspace, $pending->public_id, $this->statusBody($pending, 'succeeded'), 'synthetic-moved', 409);
+        $this->assertTrue($moved);
+        $this->assertSame('pending', $pending->fresh()?->status);
+        $this->assertSame('issued', $invoice->fresh()?->status);
+    }
+
     /** @return iterable<string, array{string, array<string, mixed>}> */
     public static function refusedBodies(): iterable
     {
@@ -302,6 +328,22 @@ final class AgentManualPaymentChangeTest extends TestCase
         $this->assertSame('canceled', $payment->fresh()?->status);
         $this->assertSame('issued', $invoice->fresh()?->status);
         $this->assertSame('Synthetic duplicate entry', ClientCompanyActivity::query()->where('workspace_id', $workspace->id)->where('action', 'invoice.payment_canceled')->sole()->payload['reason'] ?? null);
+    }
+
+    /** The finance transaction is part of what a keyed payment is: a retry naming another is refused. */
+    public function test_a_keyed_retry_naming_another_finance_transaction_is_refused(): void
+    {
+        [, $workspace, $invoice] = $this->fixture(paid: false);
+        $record = fn (string $transaction): int => $this->artisan('svc:billing:payment', [
+            'invoice' => $invoice->public_id, 'amount' => '1000', 'currency' => 'USD', 'method' => 'wire',
+            '--workspace' => $workspace->public_id, '--idempotency-key' => 'synthetic-finance-key', '--external-finance-transaction' => $transaction,
+        ])->run();
+
+        $this->assertSame(0, $record('33333333-3333-4333-8333-333333333333'));
+        $this->assertSame(0, $record('33333333-3333-4333-8333-333333333333'));
+        $this->assertSame(1, $record('44444444-4444-4444-8444-444444444444'));
+        $payment = ClientInvoicePayment::query()->where('workspace_id', $workspace->id)->sole();
+        $this->assertSame('33333333-3333-4333-8333-333333333333', $payment->external_finance_transaction_uuid);
     }
 
     public function test_the_console_refund_is_bounded_and_scoped(): void

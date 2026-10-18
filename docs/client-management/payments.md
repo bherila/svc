@@ -282,7 +282,11 @@ the activity the transition records - `invoice.payment_received`,
 `invoice.payment_refunded` - with the status it replaced (and, for a refund, the
 previous refunded amount). The API requires the payment's `version` from
 `payments.list` as `expected_version`, explicit confirmation and an idempotency
-key; a payment that moved since it was read is refused with a conflict. The
+key; a payment that moved since it was read is refused with a conflict, and so
+is a change whose transaction began from an older view of the invoice than the
+one it locked (a payment recorded or changed on that invoice in the meantime).
+The reconciliation capacity is read with a share lock, so an allocation
+committed while the change waited is counted. The
 console commands take `--expected-version`, and `--dry-run` runs the whole
 change in a transaction that is always rolled back:
 
@@ -339,5 +343,8 @@ the three accept exactly the same payments (`PaymentRecordingStatusParityTest`).
 points at `svc:billing:payment-status` (to mark a recorded payment failed or
 canceled) and `svc:billing:refund-payment` (to record a refund), because those
 states are reached by changing the payment, never by recording a new row.
-`--received-on` is bounded by the same rule the screens are: `YYYY-MM-DD`, not
+A retry with the same idempotency key must name the same amount, currency,
+method, status, finance transaction and (when given) date; anything else is a
+different payment and is refused. `--received-on` is bounded by the same rule
+the screens are: `YYYY-MM-DD`, not
 in the future, not more than two years back, on the workspace's calendar.
