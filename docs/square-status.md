@@ -76,9 +76,41 @@ receipt expires.
 When an invoice paid through another source remains open in the Square mirror,
 the operator invoice and `billing_audit.stale_and_missing` show
 `paid_outside_square`, with a finished dashboard link. The owner closes the Square
-invoice there; svc does not write to Square. Other phase-two audit flags are a
-separate slice: missing series periods, unmatched payments, unlinked open balances
-and amount or cadence drift.
+invoice there; svc does not write to Square.
+
+## Billing-audit flags
+
+`billing_audit.stale_and_missing` also carries `square_billing_audit`, read from
+svc's mirror as of its last sync and empty where Square does not serve the
+workspace. Each flag has a full `count`, at most 100 entries with finished svc and
+Square dashboard URLs, and `truncated`:
+
+- `unmirrored_series_periods`: a member of a series an agreement is billed in
+  (`square_series_key`), on or after the agreement's start, that no svc invoice is
+  linked to. `SCHEDULED` members are not billed yet, and `DRAFT`, `CANCELED` and
+  `FAILED` ones are no bill, so none of them is flagged.
+- `unmatched_payments`: a Square payment id on an invoice in svc's reach (actively
+  linked, in a billed-in-Square series, or of a confirmed customer) that svc has
+  not recorded under provider `square`. `not_recorded` means the invoice is linked
+  and the sweep has not recorded the payment, for example because it failed
+  closed; `invoice_not_linked` means no svc invoice is linked to receive it. A
+  payment recorded against another svc invoice still matches.
+- `unlinked_customer_balances`: Square customers with no client company mapped
+  and an open invoice, most owed first - the customers `square.customers.unlinked`
+  lists with `with_open_balance`.
+- `series_drift`: a billed-in-Square agreement whose series differs in `cadence`,
+  `currency` or latest billed `amount`, or which the mirror does not hold
+  (`series_not_mirrored`). The agreement's amount is its retainer fee for one
+  whole cycle; an agreement that sells no retainer fee is not compared on amount,
+  and a series with fewer than two dated members has no cadence to compare.
+
+The audit loads the agreements, mirrored invoices within its reach, their active
+links, customers and recorded payment ids once, with every query bounded and
+scoped to the workspace, and classifies them in `SquareBillingAuditPolicy`
+without the database. `complete` is false when that bound (5,000 mirrored
+invoices or 500 agreements) was reached; the counts are then a floor. Every flag
+is resolved in svc or in the Square dashboard by a person: nothing here links,
+records, imports or writes to Square.
 
 Payment reminders for linked invoices carry the mirrored Square payment page;
 see [payment reminders](client-management/invoice-delivery.md#payment-reminders).

@@ -2944,7 +2944,7 @@
                         ],
                         "additionalProperties": false
                     },
-                    "description": "Workspace managers only. Count drafts whose due date or scheduled issue date has passed and active recurring agreements lacking a non-void invoice for their current retainer period, with balances per currency and up to 100 identifiers per category. Flags only: nothing is issued, sent or generated.",
+                    "description": "Workspace managers only. Count drafts whose due date or scheduled issue date has passed and active recurring agreements lacking a non-void invoice for their current retainer period, with balances per currency and up to 100 identifiers per category. Where Square serves the workspace, also flags invoices paid outside Square, billed Square series periods with no linked svc invoice, unrecorded Square payments, unlinked Square customers with an open balance, and series drift from the agreement. Flags only: nothing is issued, sent or generated, and nothing is written to Square.",
                     "annotations": {
                         "readOnlyHint": true,
                         "destructiveHint": false,
@@ -2988,6 +2988,128 @@
                                         "format": "date"
                                     }
                                 }
+                            },
+                            "SquareBillingAudit": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "complete",
+                                    "unmirrored_series_periods",
+                                    "unmatched_payments",
+                                    "unlinked_customer_balances",
+                                    "series_drift"
+                                ],
+                                "properties": {
+                                    "complete": {
+                                        "type": "boolean",
+                                        "description": "False when the audit reached its bound of mirrored invoices or agreements; every count is then a floor."
+                                    },
+                                    "unmirrored_series_periods": {
+                                        "type": "object",
+                                        "additionalProperties": false,
+                                        "required": [
+                                            "count",
+                                            "periods",
+                                            "truncated"
+                                        ],
+                                        "properties": {
+                                            "count": {
+                                                "type": "integer",
+                                                "minimum": 0
+                                            },
+                                            "periods": {
+                                                "type": "array",
+                                                "maxItems": 100,
+                                                "items": {
+                                                    "$ref": "#/$defs/SquareUnmirroredSeriesPeriod"
+                                                }
+                                            },
+                                            "truncated": {
+                                                "type": "boolean"
+                                            }
+                                        },
+                                        "description": "Billed members of a series an agreement is billed in, on or after the agreement starts, with no svc invoice linked. SCHEDULED, DRAFT, CANCELED and FAILED members are not flagged."
+                                    },
+                                    "unmatched_payments": {
+                                        "type": "object",
+                                        "additionalProperties": false,
+                                        "required": [
+                                            "count",
+                                            "payments",
+                                            "truncated"
+                                        ],
+                                        "properties": {
+                                            "count": {
+                                                "type": "integer",
+                                                "minimum": 0
+                                            },
+                                            "payments": {
+                                                "type": "array",
+                                                "maxItems": 100,
+                                                "items": {
+                                                    "$ref": "#/$defs/SquareUnmatchedPayment"
+                                                }
+                                            },
+                                            "truncated": {
+                                                "type": "boolean"
+                                            }
+                                        },
+                                        "description": "Square payments on invoices in svc's reach - linked, in a billed-in-Square series, or of a confirmed customer - that svc has not recorded under provider square."
+                                    },
+                                    "unlinked_customer_balances": {
+                                        "type": "object",
+                                        "additionalProperties": false,
+                                        "required": [
+                                            "count",
+                                            "customers",
+                                            "truncated"
+                                        ],
+                                        "properties": {
+                                            "count": {
+                                                "type": "integer",
+                                                "minimum": 0
+                                            },
+                                            "customers": {
+                                                "type": "array",
+                                                "maxItems": 100,
+                                                "items": {
+                                                    "$ref": "#/$defs/SquareUnlinkedCustomerBalance"
+                                                }
+                                            },
+                                            "truncated": {
+                                                "type": "boolean"
+                                            }
+                                        },
+                                        "description": "Square customers with no client company mapped and an open invoice, most owed first: the customers square.customers.unlinked lists with an open balance."
+                                    },
+                                    "series_drift": {
+                                        "type": "object",
+                                        "additionalProperties": false,
+                                        "required": [
+                                            "count",
+                                            "agreements",
+                                            "truncated"
+                                        ],
+                                        "properties": {
+                                            "count": {
+                                                "type": "integer",
+                                                "minimum": 0
+                                            },
+                                            "agreements": {
+                                                "type": "array",
+                                                "maxItems": 100,
+                                                "items": {
+                                                    "$ref": "#/$defs/SquareSeriesDrift"
+                                                }
+                                            },
+                                            "truncated": {
+                                                "type": "boolean"
+                                            }
+                                        },
+                                        "description": "Billed-in-Square agreements whose series differs in cadence, currency or latest billed amount, or is not in the mirror."
+                                    }
+                                },
+                                "description": "Phase-two Square billing-audit flags, read from svc's mirror as of its last sync. Empty where Square does not serve the workspace. Nothing here writes to Square."
                             },
                             "SquarePaymentMismatchAudit": {
                                 "type": "object",
@@ -3043,6 +3165,301 @@
                                     }
                                 }
                             },
+                            "SquareSeriesDrift": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "agreement_id",
+                                    "agreement_url",
+                                    "series_key",
+                                    "codes",
+                                    "agreement_cadence",
+                                    "series_cadence",
+                                    "agreement_currency",
+                                    "series_currency",
+                                    "agreement_amount",
+                                    "series_amount",
+                                    "explore_url"
+                                ],
+                                "properties": {
+                                    "agreement_id": {
+                                        "$ref": "#/$defs/Uuid"
+                                    },
+                                    "agreement_url": {
+                                        "type": "string",
+                                        "format": "uri"
+                                    },
+                                    "series_key": {
+                                        "$ref": "#/$defs/SquareSeriesKey"
+                                    },
+                                    "codes": {
+                                        "type": "array",
+                                        "minItems": 1,
+                                        "uniqueItems": true,
+                                        "items": {
+                                            "type": "string",
+                                            "enum": [
+                                                "cadence",
+                                                "currency",
+                                                "amount",
+                                                "series_not_mirrored"
+                                            ]
+                                        }
+                                    },
+                                    "agreement_cadence": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "enum": [
+                                            "monthly",
+                                            "quarterly",
+                                            "semi_annual",
+                                            "annual",
+                                            null
+                                        ],
+                                        "description": "Null when the agreement does not bill on a repeating cycle."
+                                    },
+                                    "series_cadence": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "enum": [
+                                            "weekly",
+                                            "monthly",
+                                            "quarterly",
+                                            "semi_annual",
+                                            "annual",
+                                            "irregular",
+                                            "unknown",
+                                            null
+                                        ],
+                                        "description": "Read from the spacing of the series' due dates; unknown with fewer than two dated members, and null when the mirror holds no member."
+                                    },
+                                    "agreement_currency": {
+                                        "type": "string",
+                                        "pattern": "^[A-Z]{3}$"
+                                    },
+                                    "series_currency": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "pattern": "^[A-Z]{3}$"
+                                    },
+                                    "agreement_amount": {
+                                        "type": [
+                                            "integer",
+                                            "null"
+                                        ],
+                                        "minimum": 1,
+                                        "description": "The retainer fee for one whole cycle, in minor units; null when the agreement sells none, and it is then not compared."
+                                    },
+                                    "series_amount": {
+                                        "type": [
+                                            "integer",
+                                            "null"
+                                        ],
+                                        "description": "The latest billed member's amount, in minor units."
+                                    },
+                                    "explore_url": {
+                                        "type": "string",
+                                        "format": "uri"
+                                    }
+                                }
+                            },
+                            "SquareSeriesKey": {
+                                "type": "string",
+                                "pattern": "^[0-9]{6}$",
+                                "description": "A Square recurring series: the six-digit prefix of its invoices' NNNNNN-R-NNNN numbers."
+                            },
+                            "SquareUnlinkedCustomerBalance": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "customer_id",
+                                    "recipient_name",
+                                    "open_invoice_count",
+                                    "currency",
+                                    "open_amount",
+                                    "explore_url"
+                                ],
+                                "properties": {
+                                    "customer_id": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 192
+                                    },
+                                    "recipient_name": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 255
+                                    },
+                                    "open_invoice_count": {
+                                        "type": "integer",
+                                        "minimum": 1
+                                    },
+                                    "currency": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "pattern": "^[A-Z]{3}$",
+                                        "description": "Null when the open invoices are in more than one currency."
+                                    },
+                                    "open_amount": {
+                                        "type": [
+                                            "integer",
+                                            "null"
+                                        ],
+                                        "minimum": 0,
+                                        "description": "Minor units; null when the open invoices are in more than one currency."
+                                    },
+                                    "explore_url": {
+                                        "type": "string",
+                                        "format": "uri"
+                                    }
+                                }
+                            },
+                            "SquareUnmatchedPayment": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "payment_id",
+                                    "reason",
+                                    "square_invoice_id",
+                                    "invoice_number",
+                                    "invoice_id",
+                                    "invoice_url",
+                                    "dashboard_url"
+                                ],
+                                "properties": {
+                                    "payment_id": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 255
+                                    },
+                                    "reason": {
+                                        "type": "string",
+                                        "enum": [
+                                            "not_recorded",
+                                            "invoice_not_linked"
+                                        ],
+                                        "description": "not_recorded: the Square invoice is linked, but svc holds no Square payment with this id. invoice_not_linked: the Square invoice is in a billed-in-Square series or belongs to a confirmed customer, and no svc invoice is linked to it."
+                                    },
+                                    "square_invoice_id": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 192
+                                    },
+                                    "invoice_number": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 192
+                                    },
+                                    "invoice_id": {
+                                        "oneOf": [
+                                            {
+                                                "$ref": "#/$defs/Uuid"
+                                            },
+                                            {
+                                                "type": "null"
+                                            }
+                                        ]
+                                    },
+                                    "invoice_url": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "uri"
+                                    },
+                                    "dashboard_url": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "uri"
+                                    }
+                                }
+                            },
+                            "SquareUnmirroredSeriesPeriod": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "agreement_id",
+                                    "agreement_url",
+                                    "series_key",
+                                    "square_invoice_id",
+                                    "invoice_number",
+                                    "status",
+                                    "due_on",
+                                    "currency",
+                                    "total_amount",
+                                    "dashboard_url"
+                                ],
+                                "properties": {
+                                    "agreement_id": {
+                                        "$ref": "#/$defs/Uuid"
+                                    },
+                                    "agreement_url": {
+                                        "type": "string",
+                                        "format": "uri"
+                                    },
+                                    "series_key": {
+                                        "$ref": "#/$defs/SquareSeriesKey"
+                                    },
+                                    "square_invoice_id": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 192
+                                    },
+                                    "invoice_number": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 192
+                                    },
+                                    "status": {
+                                        "type": "string",
+                                        "maxLength": 32
+                                    },
+                                    "due_on": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date",
+                                        "description": "The due date, else the scheduled date."
+                                    },
+                                    "currency": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "pattern": "^[A-Z]{3}$"
+                                    },
+                                    "total_amount": {
+                                        "type": [
+                                            "integer",
+                                            "null"
+                                        ]
+                                    },
+                                    "dashboard_url": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "uri"
+                                    }
+                                }
+                            },
                             "StaleAndMissingInvoiceAudit": {
                                 "type": "object",
                                 "additionalProperties": false,
@@ -3055,7 +3472,8 @@
                                     "missing_period_count",
                                     "missing_periods",
                                     "missing_periods_truncated",
-                                    "square_payment_mismatches"
+                                    "square_payment_mismatches",
+                                    "square_billing_audit"
                                 ],
                                 "properties": {
                                     "as_of": {
@@ -3099,6 +3517,9 @@
                                     },
                                     "square_payment_mismatches": {
                                         "$ref": "#/$defs/SquarePaymentMismatchAudit"
+                                    },
+                                    "square_billing_audit": {
+                                        "$ref": "#/$defs/SquareBillingAudit"
                                     }
                                 }
                             },
@@ -26441,7 +26862,7 @@
                 "billing.audit_opening_rollover": "cb425f17e9208282",
                 "billing.audit_undated_collectible_invoices": "084b292db36f8292",
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
-                "billing_audit.stale_and_missing": "bc4d411827f77c27",
+                "billing_audit.stale_and_missing": "3ced5f8c2a19ecc7",
                 "billing_schedules.create": "ce808d037fdc2ee7",
                 "billing_schedules.generate": "b1849c503fd5dc21",
                 "billing_schedules.get": "fbb225cb7a29d6a7",
@@ -27285,7 +27706,7 @@
                 "billing.audit_opening_rollover": "cb425f17e9208282",
                 "billing.audit_undated_collectible_invoices": "084b292db36f8292",
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
-                "billing_audit.stale_and_missing": "bc4d411827f77c27",
+                "billing_audit.stale_and_missing": "3ced5f8c2a19ecc7",
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
                 "capacity_ledger.get": "b58961097fbfe33e",
@@ -27390,7 +27811,7 @@
                 "billing.audit_opening_rollover": "cb425f17e9208282",
                 "billing.audit_undated_collectible_invoices": "084b292db36f8292",
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
-                "billing_audit.stale_and_missing": "bc4d411827f77c27",
+                "billing_audit.stale_and_missing": "3ced5f8c2a19ecc7",
                 "billing_schedules.create": "ce808d037fdc2ee7",
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
@@ -27961,7 +28382,7 @@
                 "billing.audit_opening_rollover": "cb425f17e9208282",
                 "billing.audit_undated_collectible_invoices": "084b292db36f8292",
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
-                "billing_audit.stale_and_missing": "bc4d411827f77c27",
+                "billing_audit.stale_and_missing": "3ced5f8c2a19ecc7",
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
                 "capacity_ledger.get": "b58961097fbfe33e",
@@ -28118,7 +28539,7 @@
                 "billing.audit_opening_rollover": "cb425f17e9208282",
                 "billing.audit_undated_collectible_invoices": "084b292db36f8292",
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
-                "billing_audit.stale_and_missing": "bc4d411827f77c27",
+                "billing_audit.stale_and_missing": "3ced5f8c2a19ecc7",
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
                 "capacity_ledger.get": "b58961097fbfe33e",
@@ -28884,7 +29305,7 @@
                 "billing.audit_opening_rollover": "cb425f17e9208282",
                 "billing.audit_undated_collectible_invoices": "084b292db36f8292",
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
-                "billing_audit.stale_and_missing": "bc4d411827f77c27",
+                "billing_audit.stale_and_missing": "3ced5f8c2a19ecc7",
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
                 "capacity_ledger.get": "b58961097fbfe33e",
@@ -29039,7 +29460,7 @@
                 "billing.audit_opening_rollover": "cb425f17e9208282",
                 "billing.audit_undated_collectible_invoices": "084b292db36f8292",
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
-                "billing_audit.stale_and_missing": "bc4d411827f77c27",
+                "billing_audit.stale_and_missing": "3ced5f8c2a19ecc7",
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
                 "capacity_ledger.get": "b58961097fbfe33e",
@@ -29805,7 +30226,7 @@
                 "billing.audit_opening_rollover": "cb425f17e9208282",
                 "billing.audit_undated_collectible_invoices": "084b292db36f8292",
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
-                "billing_audit.stale_and_missing": "bc4d411827f77c27",
+                "billing_audit.stale_and_missing": "3ced5f8c2a19ecc7",
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
                 "capacity_ledger.get": "b58961097fbfe33e",
@@ -29962,7 +30383,7 @@
                 "billing.audit_opening_rollover": "cb425f17e9208282",
                 "billing.audit_undated_collectible_invoices": "084b292db36f8292",
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
-                "billing_audit.stale_and_missing": "bc4d411827f77c27",
+                "billing_audit.stale_and_missing": "3ced5f8c2a19ecc7",
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
                 "capacity_ledger.get": "b58961097fbfe33e",
@@ -30701,7 +31122,7 @@
                 "billing.audit_opening_rollover": "cb425f17e9208282",
                 "billing.audit_undated_collectible_invoices": "084b292db36f8292",
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
-                "billing_audit.stale_and_missing": "bc4d411827f77c27",
+                "billing_audit.stale_and_missing": "3ced5f8c2a19ecc7",
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
                 "capacity_ledger.get": "b58961097fbfe33e",
@@ -30858,7 +31279,7 @@
                 "billing.audit_opening_rollover": "cb425f17e9208282",
                 "billing.audit_undated_collectible_invoices": "084b292db36f8292",
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
-                "billing_audit.stale_and_missing": "bc4d411827f77c27",
+                "billing_audit.stale_and_missing": "3ced5f8c2a19ecc7",
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
                 "capacity_ledger.get": "b58961097fbfe33e",
@@ -31669,7 +32090,7 @@
                 "billing.audit_opening_rollover": "cb425f17e9208282",
                 "billing.audit_undated_collectible_invoices": "084b292db36f8292",
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
-                "billing_audit.stale_and_missing": "bc4d411827f77c27",
+                "billing_audit.stale_and_missing": "3ced5f8c2a19ecc7",
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
                 "capacity_ledger.get": "b58961097fbfe33e",
@@ -31824,7 +32245,7 @@
                 "billing.audit_opening_rollover": "cb425f17e9208282",
                 "billing.audit_undated_collectible_invoices": "084b292db36f8292",
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
-                "billing_audit.stale_and_missing": "bc4d411827f77c27",
+                "billing_audit.stale_and_missing": "3ced5f8c2a19ecc7",
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
                 "capacity_ledger.get": "b58961097fbfe33e",
@@ -32544,7 +32965,7 @@
                 "billing.audit_opening_rollover": "cb425f17e9208282",
                 "billing.audit_undated_collectible_invoices": "084b292db36f8292",
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
-                "billing_audit.stale_and_missing": "bc4d411827f77c27",
+                "billing_audit.stale_and_missing": "3ced5f8c2a19ecc7",
                 "billing_schedules.create": "ce808d037fdc2ee7",
                 "billing_schedules.generate": "b1849c503fd5dc21",
                 "billing_schedules.get": "fbb225cb7a29d6a7",
@@ -32700,7 +33121,7 @@
                 "billing.audit_opening_rollover": "cb425f17e9208282",
                 "billing.audit_undated_collectible_invoices": "084b292db36f8292",
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
-                "billing_audit.stale_and_missing": "bc4d411827f77c27",
+                "billing_audit.stale_and_missing": "3ced5f8c2a19ecc7",
                 "billing_schedules.create": "ce808d037fdc2ee7",
                 "billing_schedules.generate": "b1849c503fd5dc21",
                 "billing_schedules.get": "fbb225cb7a29d6a7",
@@ -33485,7 +33906,7 @@
                 "billing.audit_opening_rollover": "cb425f17e9208282",
                 "billing.audit_undated_collectible_invoices": "084b292db36f8292",
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
-                "billing_audit.stale_and_missing": "bc4d411827f77c27",
+                "billing_audit.stale_and_missing": "3ced5f8c2a19ecc7",
                 "billing_schedules.create": "ce808d037fdc2ee7",
                 "billing_schedules.generate": "b1849c503fd5dc21",
                 "billing_schedules.get": "fbb225cb7a29d6a7",
@@ -33640,7 +34061,7 @@
                 "billing.audit_opening_rollover": "cb425f17e9208282",
                 "billing.audit_undated_collectible_invoices": "084b292db36f8292",
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
-                "billing_audit.stale_and_missing": "bc4d411827f77c27",
+                "billing_audit.stale_and_missing": "3ced5f8c2a19ecc7",
                 "billing_schedules.create": "ce808d037fdc2ee7",
                 "billing_schedules.generate": "b1849c503fd5dc21",
                 "billing_schedules.get": "fbb225cb7a29d6a7",
@@ -35216,7 +35637,7 @@
                 "billing.audit_opening_rollover": "cb425f17e9208282",
                 "billing.audit_undated_collectible_invoices": "084b292db36f8292",
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
-                "billing_audit.stale_and_missing": "bc4d411827f77c27",
+                "billing_audit.stale_and_missing": "3ced5f8c2a19ecc7",
                 "billing_schedules.create": "ce808d037fdc2ee7",
                 "billing_schedules.generate": "b1849c503fd5dc21",
                 "billing_schedules.get": "fbb225cb7a29d6a7",
@@ -35374,7 +35795,7 @@
                 "billing.audit_opening_rollover": "cb425f17e9208282",
                 "billing.audit_undated_collectible_invoices": "084b292db36f8292",
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
-                "billing_audit.stale_and_missing": "bc4d411827f77c27",
+                "billing_audit.stale_and_missing": "3ced5f8c2a19ecc7",
                 "billing_schedules.create": "ce808d037fdc2ee7",
                 "billing_schedules.generate": "b1849c503fd5dc21",
                 "billing_schedules.get": "fbb225cb7a29d6a7",

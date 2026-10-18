@@ -216,7 +216,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Workspace managers only. A stale draft is a draft whose due date or scheduled issue date is before today in the workspace's calendar; a missing period is the started current period of an active recurring agreement with no non-void invoice. This read only flags them: nothing issues, sends or generates an invoice. */
+        /** @description Workspace managers only. A stale draft is a draft whose due date or scheduled issue date is before today in the workspace's calendar; a missing period is the started current period of an active recurring agreement with no non-void invoice. Where Square serves the workspace, square_payment_mismatches lists invoices paid outside Square while Square is still open, and square_billing_audit flags billed series periods with no linked svc invoice, Square payments svc has not recorded, unlinked Square customers with an open balance, and series whose cadence, currency or amount drifted from the agreement, from svc's mirror as of its last sync. This read only flags them: nothing issues, sends or generates an invoice, and nothing is written to Square. */
         get: operations['billing_audit.stale_and_missing'];
         put?: never;
         post?: never;
@@ -3357,6 +3357,35 @@ export interface components {
             href: string;
             workspace: string;
         };
+        /** @description Phase-two Square billing-audit flags, read from svc's mirror as of its last sync. Empty where Square does not serve the workspace. Nothing here writes to Square. */
+        SquareBillingAudit: {
+            /** @description False when the audit reached its bound of mirrored invoices or agreements; every count is then a floor. */
+            complete: boolean;
+            /** @description Billed members of a series an agreement is billed in, on or after the agreement starts, with no svc invoice linked. SCHEDULED, DRAFT, CANCELED and FAILED members are not flagged. */
+            unmirrored_series_periods: {
+                count: number;
+                periods: components['schemas']['SquareUnmirroredSeriesPeriod'][];
+                truncated: boolean;
+            };
+            /** @description Square payments on invoices in svc's reach - linked, in a billed-in-Square series, or of a confirmed customer - that svc has not recorded under provider square. */
+            unmatched_payments: {
+                count: number;
+                payments: components['schemas']['SquareUnmatchedPayment'][];
+                truncated: boolean;
+            };
+            /** @description Square customers with no client company mapped and an open invoice, most owed first: the customers square.customers.unlinked lists with an open balance. */
+            unlinked_customer_balances: {
+                count: number;
+                customers: components['schemas']['SquareUnlinkedCustomerBalance'][];
+                truncated: boolean;
+            };
+            /** @description Billed-in-Square agreements whose series differs in cadence, currency or latest billed amount, or is not in the mirror. */
+            series_drift: {
+                count: number;
+                agreements: components['schemas']['SquareSeriesDrift'][];
+                truncated: boolean;
+            };
+        };
         SquareCandidate: {
             square_invoice_id: string;
             invoice_number: string | null;
@@ -3840,6 +3869,42 @@ export interface components {
             members: components['schemas']['SquareMirrorInvoice'][];
             members_truncated: boolean;
         };
+        SquareSeriesDrift: {
+            agreement_id: components['schemas']['Uuid'];
+            /** Format: uri */
+            agreement_url: string;
+            series_key: components['schemas']['SquareSeriesKey'];
+            codes: (
+                'cadence' | 'currency' | 'amount' | 'series_not_mirrored'
+            )[];
+            /**
+             * @description Null when the agreement does not bill on a repeating cycle.
+             * @enum {string|null}
+             */
+            agreement_cadence:
+                'monthly' | 'quarterly' | 'semi_annual' | 'annual' | null;
+            /**
+             * @description Read from the spacing of the series' due dates; unknown with fewer than two dated members, and null when the mirror holds no member.
+             * @enum {string|null}
+             */
+            series_cadence:
+                | 'weekly'
+                | 'monthly'
+                | 'quarterly'
+                | 'semi_annual'
+                | 'annual'
+                | 'irregular'
+                | 'unknown'
+                | null;
+            agreement_currency: string;
+            series_currency: string | null;
+            /** @description The retainer fee for one whole cycle, in minor units; null when the agreement sells none, and it is then not compared. */
+            agreement_amount: number | null;
+            /** @description The latest billed member's amount, in minor units. */
+            series_amount: number | null;
+            /** Format: uri */
+            explore_url: string;
+        };
         /** @description A Square recurring series: the six-digit prefix of its invoices' NNNNNN-R-NNNN numbers. */
         SquareSeriesKey: string;
         SquareSeriesListResponse: {
@@ -3918,6 +3983,17 @@ export interface components {
             last_due_on: string | null;
             series_keys: string[];
         };
+        SquareUnlinkedCustomerBalance: {
+            customer_id: string;
+            recipient_name: string | null;
+            open_invoice_count: number;
+            /** @description Null when the open invoices are in more than one currency. */
+            currency: string | null;
+            /** @description Minor units; null when the open invoices are in more than one currency. */
+            open_amount: number | null;
+            /** Format: uri */
+            explore_url: string;
+        };
         SquareUnlinkedCustomerListResponse: {
             data: components['schemas']['SquareUnlinkedCustomer'][];
             meta: {
@@ -3929,6 +4005,39 @@ export interface components {
                 last_run: components['schemas']['SquareSyncRun'] | null;
                 truncated: boolean;
             };
+        };
+        SquareUnmatchedPayment: {
+            payment_id: string;
+            /**
+             * @description not_recorded: the Square invoice is linked, but svc holds no Square payment with this id. invoice_not_linked: the Square invoice is in a billed-in-Square series or belongs to a confirmed customer, and no svc invoice is linked to it.
+             * @enum {string}
+             */
+            reason: 'not_recorded' | 'invoice_not_linked';
+            square_invoice_id: string;
+            invoice_number: string | null;
+            invoice_id: components['schemas']['Uuid'] | null;
+            /** Format: uri */
+            invoice_url: string | null;
+            /** Format: uri */
+            dashboard_url: string | null;
+        };
+        SquareUnmirroredSeriesPeriod: {
+            agreement_id: components['schemas']['Uuid'];
+            /** Format: uri */
+            agreement_url: string;
+            series_key: components['schemas']['SquareSeriesKey'];
+            square_invoice_id: string;
+            invoice_number: string | null;
+            status: string;
+            /**
+             * Format: date
+             * @description The due date, else the scheduled date.
+             */
+            due_on: string | null;
+            currency: string | null;
+            total_amount: number | null;
+            /** Format: uri */
+            dashboard_url: string | null;
         };
         StaleAndMissingInvoiceAudit: {
             /** Format: date */
@@ -3942,6 +4051,7 @@ export interface components {
             missing_periods: components['schemas']['InvoiceMissingPeriod'][];
             missing_periods_truncated: boolean;
             square_payment_mismatches: components['schemas']['SquarePaymentMismatchAudit'];
+            square_billing_audit: components['schemas']['SquareBillingAudit'];
         };
         StaleAndMissingInvoiceAuditResponse: {
             data: components['schemas']['StaleAndMissingInvoiceAudit'];
