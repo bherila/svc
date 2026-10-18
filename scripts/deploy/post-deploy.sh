@@ -15,8 +15,9 @@ cd "$HOME/$app_dir"
 
 "$php" artisan svc:storage:status --write --format=json
 
-# The Stripe and Brevo probes exit 1 for "not configured", which is not a deploy failure; anything else is.
-for probe in svc:stripe:status svc:brevo:status; do
+# The Stripe, Brevo and Square probes exit 1 for "not configured" (Square also for a failed last sync),
+# which is not a deploy failure; anything else is.
+for probe in svc:stripe:status svc:brevo:status svc:square:status; do
     status=0
     output=$("$php" artisan "$probe" --format=json) || status=$?
     if [ "$status" -ne 0 ] && [ "$status" -ne 1 ]; then
