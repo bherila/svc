@@ -229,8 +229,8 @@ thin adapters: `invoices.create_draft`, `invoices.update_draft` and
 `invoices.create_draft` takes the invoice screen form's fields (#454):
 `invoice_number` (default: the workspace's next number; a number already used
 in the workspace is refused as a field error), `issue_date` (default: the day it
-is issued), `service_period_start` and `service_period_end` (both or neither,
-the end on or after the start) and `is_visible_to_client` (default `false`;
+is issued), `service_period_start` and `service_period_end` (either alone, as
+on the screen; the end on or after the start when both are given) and `is_visible_to_client` (default `false`;
 issuing always makes the invoice visible). `invoices.send` takes the compose
 dialog's: an optional `subject` (default: the invoice's own), an optional
 covering `message`, and `bcc_self` to blind-copy the signed-in user's own address.

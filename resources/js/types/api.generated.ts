@@ -753,7 +753,7 @@ export interface paths {
         };
         get: operations['invoices.list'];
         put?: never;
-        /** @description Create an ad-hoc draft invoice for a client from explicit manual lines and/or explicit approved time, with the fields of the invoice screen's form: invoice_number (default: the workspace's next number; a number already used is refused), issue_date (default: the day it is issued), a service period (both ends or neither), is_visible_to_client (default false; issuing makes it visible), currency, due and scheduled issue dates and notes. Nothing is issued or sent. */
+        /** @description Create an ad-hoc draft invoice for a client from explicit manual lines and/or explicit approved time, with the fields of the invoice screen's form: invoice_number (default: the workspace's next number; a number already used is refused), issue_date (default: the day it is issued), a service period (either end may be given alone), is_visible_to_client (default false; issuing makes it visible), currency, due and scheduled issue dates and notes. Nothing is issued or sent. */
         post: operations['invoices.create_draft'];
         delete?: never;
         options?: never;
@@ -2218,12 +2218,12 @@ export interface components {
             issue_date?: string | null;
             /**
              * Format: date
-             * @description First day of the work this invoice bills. Give it with service_period_end, or neither.
+             * @description First day of the work this invoice bills. Either end may be given alone.
              */
             service_period_start?: string | null;
             /**
              * Format: date
-             * @description Last day of the work this invoice bills, on or after service_period_start.
+             * @description Last day of the work this invoice bills; on or after service_period_start when both are given.
              */
             service_period_end?: string | null;
             /**

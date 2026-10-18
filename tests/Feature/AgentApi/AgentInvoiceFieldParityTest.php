@@ -84,11 +84,20 @@ final class AgentInvoiceFieldParityTest extends TestCase
         $this->assertFalse($draft->is_visible_to_client);
     }
 
+    /** Either end of the service period may be given alone, as the screen's form allows. */
+    public function test_an_open_ended_service_period_is_accepted(): void
+    {
+        foreach ([['service_period_start' => '2026-09-01'], ['service_period_end' => '2026-09-30']] as $index => $period) {
+            $created = $this->createDraft('rest', ['company_id' => $this->company->public_id, 'manual_lines' => [$this->line()], ...$period], 'synthetic-parity-open-'.$index);
+            $draft = ClientInvoice::query()->where('workspace_id', $this->workspace->id)->where('public_id', $created['id'])->sole();
+            $this->assertSame($period['service_period_start'] ?? null, $draft->service_period_start?->toDateString());
+            $this->assertSame($period['service_period_end'] ?? null, $draft->service_period_end?->toDateString());
+        }
+    }
+
     /** @return iterable<string, array{array<string, mixed>}> */
     public static function refusedDrafts(): iterable
     {
-        yield 'half a service period' => [['service_period_start' => '2026-09-01']];
-        yield 'the other half' => [['service_period_end' => '2026-09-30']];
         yield 'a period ending before it starts' => [['service_period_start' => '2026-09-30', 'service_period_end' => '2026-09-01']];
         yield 'an ambiguous issue date' => [['issue_date' => '09/30/2026']];
         yield 'a number too long' => [['invoice_number' => str_repeat('n', 81)]];

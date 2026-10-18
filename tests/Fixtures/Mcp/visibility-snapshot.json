@@ -9259,7 +9259,7 @@
                                     "null"
                                 ],
                                 "format": "date",
-                                "description": "First day of the work this invoice bills. Give it with service_period_end, or neither."
+                                "description": "First day of the work this invoice bills. Either end may be given alone."
                             },
                             "service_period_end": {
                                 "type": [
@@ -9267,7 +9267,7 @@
                                     "null"
                                 ],
                                 "format": "date",
-                                "description": "Last day of the work this invoice bills, on or after service_period_start."
+                                "description": "Last day of the work this invoice bills; on or after service_period_start when both are given."
                             },
                             "is_visible_to_client": {
                                 "type": "boolean",
@@ -9333,14 +9333,6 @@
                                 "type": "string",
                                 "format": "uuid"
                             }
-                        },
-                        "dependentRequired": {
-                            "service_period_start": [
-                                "service_period_end"
-                            ],
-                            "service_period_end": [
-                                "service_period_start"
-                            ]
                         }
                     },
                     "description": "Create a draft from explicit manual lines and/or explicit approved time. Optionally set the invoice number, issue date, service period and client visibility as the invoice screen does; omitted, the next number is used and the draft stays hidden until issued.",
@@ -25131,7 +25123,7 @@
                 "invoices.add_time": "ee27431f3eebdb38",
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.corrections.get": "aa93da895756b80b",
-                "invoices.create_draft": "346e77b04790d09d",
+                "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.generate_period": "a736a25f33ed9607",
                 "invoices.get": "790ff02f4ec45336",
@@ -25323,7 +25315,7 @@
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
                 "invoices.correct": "51b0c12ec9b5d762",
-                "invoices.create_draft": "346e77b04790d09d",
+                "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.get": "790ff02f4ec45336",
                 "invoices.issue": "e8284c71f5ed3751",
@@ -25476,7 +25468,7 @@
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
                 "invoices.correct": "51b0c12ec9b5d762",
-                "invoices.create_draft": "346e77b04790d09d",
+                "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.get": "790ff02f4ec45336",
                 "invoices.issue": "e8284c71f5ed3751",
@@ -25629,7 +25621,7 @@
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
                 "invoices.correct": "51b0c12ec9b5d762",
-                "invoices.create_draft": "346e77b04790d09d",
+                "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.get": "790ff02f4ec45336",
                 "invoices.issue": "e8284c71f5ed3751",
@@ -25782,7 +25774,7 @@
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
                 "invoices.correct": "51b0c12ec9b5d762",
-                "invoices.create_draft": "346e77b04790d09d",
+                "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.get": "790ff02f4ec45336",
                 "invoices.issue": "e8284c71f5ed3751",
@@ -26032,7 +26024,7 @@
                 "companies.square_customer.set": "a9409bef2f9474ef",
                 "invoices.add_time": "ee27431f3eebdb38",
                 "invoices.corrections.get": "aa93da895756b80b",
-                "invoices.create_draft": "346e77b04790d09d",
+                "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.generate_period": "a736a25f33ed9607",
                 "invoices.get": "790ff02f4ec45336",
@@ -26260,7 +26252,7 @@
             },
             "instructions": "Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
-                "invoices.create_draft": "346e77b04790d09d",
+                "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.get": "790ff02f4ec45336",
                 "invoices.list": "07979ef323922adf",
@@ -26462,7 +26454,7 @@
             },
             "instructions": "Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
-                "invoices.create_draft": "346e77b04790d09d",
+                "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.get": "790ff02f4ec45336",
                 "invoices.list": "07979ef323922adf",
@@ -31120,7 +31112,7 @@
                 "invoices.add_time": "ee27431f3eebdb38",
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.corrections.get": "aa93da895756b80b",
-                "invoices.create_draft": "346e77b04790d09d",
+                "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.generate_period": "a736a25f33ed9607",
                 "invoices.get": "790ff02f4ec45336",
@@ -31273,7 +31265,7 @@
                 "invoices.add_time": "ee27431f3eebdb38",
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.corrections.get": "aa93da895756b80b",
-                "invoices.create_draft": "346e77b04790d09d",
+                "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.generate_period": "a736a25f33ed9607",
                 "invoices.get": "790ff02f4ec45336",
@@ -31463,7 +31455,7 @@
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
                 "invoices.correct": "51b0c12ec9b5d762",
-                "invoices.create_draft": "346e77b04790d09d",
+                "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.get": "790ff02f4ec45336",
                 "invoices.issue": "e8284c71f5ed3751",
@@ -31616,7 +31608,7 @@
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
                 "invoices.correct": "51b0c12ec9b5d762",
-                "invoices.create_draft": "346e77b04790d09d",
+                "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.get": "790ff02f4ec45336",
                 "invoices.issue": "e8284c71f5ed3751",
@@ -31769,7 +31761,7 @@
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
                 "invoices.correct": "51b0c12ec9b5d762",
-                "invoices.create_draft": "346e77b04790d09d",
+                "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.get": "790ff02f4ec45336",
                 "invoices.issue": "e8284c71f5ed3751",
@@ -31922,7 +31914,7 @@
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
                 "invoices.correct": "51b0c12ec9b5d762",
-                "invoices.create_draft": "346e77b04790d09d",
+                "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.get": "790ff02f4ec45336",
                 "invoices.issue": "e8284c71f5ed3751",
@@ -32042,7 +32034,7 @@
                 "invoices.add_time": "ee27431f3eebdb38",
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.corrections.get": "aa93da895756b80b",
-                "invoices.create_draft": "346e77b04790d09d",
+                "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.generate_period": "a736a25f33ed9607",
                 "invoices.hold_delivery": "5d5d70aa02fac988",
@@ -32194,7 +32186,7 @@
                 "invoices.add_time": "ee27431f3eebdb38",
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.corrections.get": "aa93da895756b80b",
-                "invoices.create_draft": "346e77b04790d09d",
+                "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.generate_period": "a736a25f33ed9607",
                 "invoices.hold_delivery": "5d5d70aa02fac988",
@@ -32383,7 +32375,7 @@
             "tools": {
                 "expenses.list": "444aff51ddc70e0d",
                 "invoices.correct": "51b0c12ec9b5d762",
-                "invoices.create_draft": "346e77b04790d09d",
+                "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.issue": "e8284c71f5ed3751",
                 "invoices.list": "07979ef323922adf",
@@ -32533,7 +32525,7 @@
             "tools": {
                 "expenses.list": "444aff51ddc70e0d",
                 "invoices.correct": "51b0c12ec9b5d762",
-                "invoices.create_draft": "346e77b04790d09d",
+                "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.issue": "e8284c71f5ed3751",
                 "invoices.list": "07979ef323922adf",
@@ -32683,7 +32675,7 @@
             "tools": {
                 "expenses.list": "444aff51ddc70e0d",
                 "invoices.correct": "51b0c12ec9b5d762",
-                "invoices.create_draft": "346e77b04790d09d",
+                "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.issue": "e8284c71f5ed3751",
                 "invoices.list": "07979ef323922adf",
@@ -32833,7 +32825,7 @@
             "tools": {
                 "expenses.list": "444aff51ddc70e0d",
                 "invoices.correct": "51b0c12ec9b5d762",
-                "invoices.create_draft": "346e77b04790d09d",
+                "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.issue": "e8284c71f5ed3751",
                 "invoices.list": "07979ef323922adf",
@@ -33734,7 +33726,7 @@
                 "invoices.add_time": "ee27431f3eebdb38",
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.corrections.get": "aa93da895756b80b",
-                "invoices.create_draft": "346e77b04790d09d",
+                "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.generate_period": "a736a25f33ed9607",
                 "invoices.get": "790ff02f4ec45336",
@@ -33889,7 +33881,7 @@
                 "invoices.add_time": "ee27431f3eebdb38",
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.corrections.get": "aa93da895756b80b",
-                "invoices.create_draft": "346e77b04790d09d",
+                "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.generate_period": "a736a25f33ed9607",
                 "invoices.get": "790ff02f4ec45336",
@@ -34081,7 +34073,7 @@
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
                 "invoices.correct": "51b0c12ec9b5d762",
-                "invoices.create_draft": "346e77b04790d09d",
+                "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.get": "790ff02f4ec45336",
                 "invoices.issue": "e8284c71f5ed3751",
@@ -34234,7 +34226,7 @@
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
                 "invoices.correct": "51b0c12ec9b5d762",
-                "invoices.create_draft": "346e77b04790d09d",
+                "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.get": "790ff02f4ec45336",
                 "invoices.issue": "e8284c71f5ed3751",
@@ -34387,7 +34379,7 @@
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
                 "invoices.correct": "51b0c12ec9b5d762",
-                "invoices.create_draft": "346e77b04790d09d",
+                "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.get": "790ff02f4ec45336",
                 "invoices.issue": "e8284c71f5ed3751",
@@ -34540,7 +34532,7 @@
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
                 "invoices.correct": "51b0c12ec9b5d762",
-                "invoices.create_draft": "346e77b04790d09d",
+                "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.get": "790ff02f4ec45336",
                 "invoices.issue": "e8284c71f5ed3751",

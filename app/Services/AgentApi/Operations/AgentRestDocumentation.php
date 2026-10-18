@@ -698,7 +698,7 @@ final class AgentRestDocumentation
             'invoices.create_draft' => [
                 'method' => 'POST',
                 'scopes' => ['billing:write'],
-                'description' => 'Create an ad-hoc draft invoice for a client from explicit manual lines and/or explicit approved time, with the fields of the invoice screen\'s form: invoice_number (default: the workspace\'s next number; a number already used is refused), issue_date (default: the day it is issued), a service period (both ends or neither), is_visible_to_client (default false; issuing makes it visible), currency, due and scheduled issue dates and notes. Nothing is issued or sent.',
+                'description' => 'Create an ad-hoc draft invoice for a client from explicit manual lines and/or explicit approved time, with the fields of the invoice screen\'s form: invoice_number (default: the workspace\'s next number; a number already used is refused), issue_date (default: the day it is issued), a service period (either end may be given alone), is_visible_to_client (default false; issuing makes it visible), currency, due and scheduled issue dates and notes. Nothing is issued or sent.',
                 'parameters' => ['WorkspaceId', 'IdempotencyKey'],
                 'request' => 'InvoiceCreateRequest',
                 'response' => 'InvoiceMutationResponse',

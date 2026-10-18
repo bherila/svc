@@ -65,6 +65,11 @@ final class AgentInvoiceOperations
             // A number is unique within its workspace; asked here so a taken
             // one is a field error rather than a constraint violation.
             $rules['invoice_number'][] = Rule::unique('client_invoices', 'invoice_number')->where('workspace_id', $workspace->id);
+            // A period that has both ends runs forwards; one with a single end
+            // has nothing to compare.
+            if (($body['service_period_start'] ?? null) !== null) {
+                $rules['service_period_end'][] = 'after_or_equal:service_period_start';
+            }
             $data = $this->validateFields($body, $rules);
             $company = ClientCompany::query()->where('workspace_id', $workspace->id)->where('public_id', $data['company_id'])->firstOrFail();
 
@@ -373,8 +378,10 @@ final class AgentInvoiceOperations
             // is issued.
             'invoice_number' => ['sometimes', 'nullable', 'string', 'max:80'],
             'issue_date' => ['sometimes', 'nullable', 'date_format:Y-m-d'],
-            'service_period_start' => ['nullable', 'required_with:service_period_end', 'date_format:Y-m-d'],
-            'service_period_end' => ['nullable', 'required_with:service_period_start', 'date_format:Y-m-d', 'after_or_equal:service_period_start'],
+            // Either end may be given alone, as on the screen: an ad-hoc
+            // invoice may bill from a day, or up to one.
+            'service_period_start' => ['sometimes', 'nullable', 'date_format:Y-m-d'],
+            'service_period_end' => ['sometimes', 'nullable', 'date_format:Y-m-d'],
             'is_visible_to_client' => ['sometimes', 'boolean:strict'],
         ];
     }
