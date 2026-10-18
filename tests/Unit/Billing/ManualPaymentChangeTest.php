@@ -164,6 +164,44 @@ final class ManualPaymentChangeTest extends TestCase
         ManualPaymentChange::refund($amount, 'Synthetic');
     }
 
+    /**
+     * Each refusal says why, and names what it is about: the message is what
+     * an operator, an agent and the console read to decide what to do next.
+     *
+     * @return iterable<string, array{callable(): mixed, string}>
+     */
+    public static function refusals(): iterable
+    {
+        yield 'an unknown status' => [static fn () => ManualPaymentChange::status('paid', 'Synthetic'), 'A payment can be set to one of: succeeded, failed, canceled. Nothing has been changed.'];
+        yield 'a processor payment' => [static fn () => ManualPaymentChange::status('failed', 'Synthetic')->decide('succeeded', 1000, 0, 'square'), 'This payment was recorded by square, and its status and refunds follow square. Only a payment recorded by hand can be changed here. Nothing has been changed.'];
+        yield 'an unreadable status' => [static fn () => ManualPaymentChange::status('failed', 'Synthetic')->decide('paid', 1000, 0, null), 'The payment carries the unrecognised status "paid", so what it is worth cannot be established. Classify or correct it first. Nothing has been changed.'];
+        yield 'a partly refunded payment' => [static fn () => ManualPaymentChange::status('canceled', 'Synthetic')->decide('succeeded', 1000, 100, null), 'Part of this payment has been refunded, so it cannot be marked canceled. Record the rest of the refund instead. Nothing has been changed.'];
+        yield 'a final status' => [static fn () => ManualPaymentChange::status('succeeded', 'Synthetic')->decide('failed', 1000, 0, null), 'A failed payment is final. If the money arrives after all, record it as a new payment. Nothing has been changed.'];
+        yield 'a fully refunded payment' => [static fn () => ManualPaymentChange::refund(1, 'Synthetic')->decide('refunded', 1000, 1000, null), 'This payment has already been refunded in full. Nothing has been changed.'];
+        yield 'a payment with no money' => [static fn () => ManualPaymentChange::refund(1, 'Synthetic')->decide('canceled', 1000, 0, null), 'A canceled payment holds no money to refund. Nothing has been changed.'];
+        yield 'more than is left' => [static fn () => ManualPaymentChange::refund(700, 'Synthetic')->decide('succeeded', 1000, 400, null), 'At most 600 of this payment is left to refund. Nothing has been changed.'];
+        yield 'a reason too long' => [static fn () => ManualPaymentChange::status('failed', str_repeat('r', ManualPaymentChange::REASON_MAX_LENGTH + 1)), 'The reason may not be longer than 500 characters. Nothing has been changed.'];
+    }
+
+    /** @param callable(): mixed $attempt */
+    #[DataProvider('refusals')]
+    public function test_each_refusal_says_why(callable $attempt, string $message): void
+    {
+        try {
+            $attempt();
+            $this->fail('The change must be refused.');
+        } catch (DomainException $exception) {
+            $this->assertSame($message, $exception->getMessage());
+        }
+    }
+
+    /** The bound is in characters, not bytes: a reason in any script may be its full length. */
+    public function test_the_reason_is_bounded_in_characters(): void
+    {
+        $reason = str_repeat('é', ManualPaymentChange::REASON_MAX_LENGTH);
+        $this->assertSame($reason, ManualPaymentChange::status('failed', $reason)->reason);
+    }
+
     public function test_the_settable_statuses_are_listed_for_the_contract(): void
     {
         $this->assertSame(['succeeded', 'failed', 'canceled'], ManualPaymentChange::settableValues());

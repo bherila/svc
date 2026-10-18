@@ -121,6 +121,7 @@ final readonly class ManualPaymentChange
     /** @return array{status: InvoicePaymentStatus, refunded_amount: int}|null */
     private function decideStatus(InvoicePaymentStatus $current, int $refundedAmount): ?array
     {
+        // @infection-ignore-all Unreachable: status() always names one and refund() is decided by decideRefund(); the throw only guards the type.
         $next = $this->status ?? throw new LogicException('A status change names its status.');
         if ($current === $next) {
             return null;
