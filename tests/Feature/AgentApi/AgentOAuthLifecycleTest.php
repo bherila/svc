@@ -18,8 +18,10 @@ use BWH\Auth\OAuth\Server\ResourceClient;
 use BWH\Auth\OAuth\Server\ResourceRefreshTokenRepository;
 use Illuminate\Auth\Middleware\Authenticate;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Log\Events\MessageLogged;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
@@ -409,6 +411,10 @@ final class AgentOAuthLifecycleTest extends TestCase
         $resource = OAuthResourceIndicator::resource(self::MCP);
         $verifier = $this->verifier();
         $inFlight = $this->authorize($person, $fenced, $verifier);
+        $logged = [];
+        Event::listen(MessageLogged::class, static function (MessageLogged $event) use (&$logged): void {
+            $logged[] = ['message' => $event->message, 'context' => $event->context];
+        });
 
         $this->assertSame(0, Artisan::call('svc:auth:revoke-connections', ['user_public_id' => $person->public_id, '--client' => $fenced]));
         // The code itself was revoked; restore it to play the grant that had already passed its check.
@@ -421,6 +427,16 @@ final class AgentOAuthLifecycleTest extends TestCase
         Auth::forgetGuards();
         $this->mcpInitialize($raced['access_token'])->assertUnauthorized();
         $this->refresh($fenced, $raced['refresh_token'], $resource)->assertBadRequest()->assertJsonPath('error', 'invalid_grant');
+        // Both are audited: the access token through the revoker, the refresh token as it lands.
+        $fenceEntries = array_values(array_filter($logged, static fn (array $entry): bool => ($entry['context']['actor'] ?? null) === 'revocation-fence'));
+        $this->assertSame(['agent_token.revoked', 'agent_token.revoked_in_fence'], array_column($fenceEntries, 'message'));
+        $this->assertSame([hash('sha256', $raceId)], $fenceEntries[0]['context']['credential_fingerprints']);
+        $this->assertSame(['refresh_token', $person->public_id, $fenced], [$fenceEntries[1]['context']['credential'], $fenceEntries[1]['context']['subject_id'], $fenceEntries[1]['context']['client_id']]);
+
+        // A consent approved inside the fence leaves a dead code, even once the fence lapses.
+        $codeVerifier = $this->verifier();
+        $approvedInFence = $this->authorize($person, $fenced, $codeVerifier);
+        $this->assertTrue((bool) Passport::authCode()->newQuery()->where('client_id', $fenced)->where('revoked', false)->doesntExist());
 
         // Another client of the same person is not fenced.
         $verifier = $this->verifier();
@@ -430,6 +446,7 @@ final class AgentOAuthLifecycleTest extends TestCase
 
         // After the window the person reconnects normally.
         $this->travel(AgentCredentialFence::SECONDS + 1)->seconds();
+        $this->exchangeCode($fenced, $approvedInFence, $codeVerifier, $resource)->assertBadRequest()->assertJsonPath('error', 'invalid_grant');
         $verifier = $this->verifier();
         $later = $this->exchangeCode($fenced, $this->authorize($person, $fenced, $verifier), $verifier, $resource)->assertOk()->json();
         Auth::forgetGuards();

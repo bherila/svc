@@ -76,9 +76,12 @@ php artisan svc:auth:revoke-connections USER_PUBLIC_UUID --client=OAUTH_CLIENT_I
    before the revocation and persist its replacement just after. For
    `AgentCredentialFence::SECONDS` (60 seconds) after any revocation, every
    OAuth-grant access token Passport persists for that person (and client, or
-   every client) is revoked as it is created, and so is any refresh token whose
-   access token is already revoked; the racing connector receives credentials
-   that are already dead. Personal access tokens are not fenced. A person who
+   every client) is revoked as it is created, as is every authorization code
+   (a consent approved just before the revocation cannot be exchanged later)
+   and any refresh token whose access token is already revoked; the racing
+   connector receives credentials that are already dead. Each is audited:
+   access tokens as `agent_token.revoked` with `actor: revocation-fence`,
+   codes and refresh tokens as `agent_token.revoked_in_fence`. Personal access tokens are not fenced. A person who
    reconnects inside the window must reconnect again once it lapses - one more
    reason to keep issuance off until the investigation allows it. A connection
    that disconnects itself through `connections.revoke` fences its own client

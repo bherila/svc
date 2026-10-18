@@ -8,6 +8,7 @@ use App\Support\WorkspaceClock;
 use Illuminate\Cache\ArrayStore;
 use Illuminate\Cache\Repository;
 use Illuminate\Support\Facades\Event;
+use Laravel\Passport\AuthCode;
 use Laravel\Passport\Events\AccessTokenCreated;
 use Laravel\Passport\Events\RefreshTokenCreated;
 use Tests\TestCase;
@@ -81,6 +82,7 @@ final class AgentCredentialFenceTest extends TestCase
 
         $this->assertContains([RevokeCredentialsIssuedDuringRevocation::class, 'accessTokenCreated'], $listeners[AccessTokenCreated::class] ?? []);
         $this->assertContains([RevokeCredentialsIssuedDuringRevocation::class, 'refreshTokenCreated'], $listeners[RefreshTokenCreated::class] ?? []);
+        $this->assertContains([RevokeCredentialsIssuedDuringRevocation::class, 'authCodeCreated'], $listeners['eloquent.created: '.AuthCode::class] ?? []);
     }
 
     /** Redis without value serialization returns a stored number as a numeric string. */

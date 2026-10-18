@@ -130,6 +130,8 @@ class AppServiceProvider extends ServiceProvider
         // in flight during a revocation mints is revoked before it is returned.
         Event::listen(AccessTokenCreated::class, [RevokeCredentialsIssuedDuringRevocation::class, 'accessTokenCreated']);
         Event::listen(RefreshTokenCreated::class, [RevokeCredentialsIssuedDuringRevocation::class, 'refreshTokenCreated']);
+        // Passport announces no authorization code, so the model's own created event.
+        Event::listen('eloquent.created: '.Passport::$authCodeModel, [RevokeCredentialsIssuedDuringRevocation::class, 'authCodeCreated']);
         HandleCors::skipWhen(fn (Request $request): bool => $request->is('api/v1/mcp'));
         // Sanctum personal access tokens follow their owner's provider identity
         // (a no-op until provider identity enforcement is enabled).
