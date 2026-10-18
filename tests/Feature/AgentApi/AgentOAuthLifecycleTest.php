@@ -568,6 +568,23 @@ final class AgentOAuthLifecycleTest extends TestCase
         $this->assertFalse((bool) Passport::refreshToken()->newQuery()->where('access_token_id', $theirs)->value('revoked'));
     }
 
+    /**
+     * A racing refresh revoked the token and a purge removed the row before the
+     * self-revocation looked: the client the guard authenticated is fenced all the same.
+     */
+    public function test_a_self_revocation_fences_the_authenticated_client_when_the_row_is_gone(): void
+    {
+        $person = User::factory()->create();
+        $owner = AgentPrincipal::query()->findOrFail($person->id);
+        $fence = app(AgentCredentialFence::class);
+
+        $revocation = app(CredentialRevoker::class)->revoke(AgentCredentialSelection::token($owner, Str::random(80), clientId: 'PURGED-CLIENT'), 'agent');
+
+        $this->assertSame(0, $revocation->accessTokens());
+        $this->assertTrue($fence->covers($person->id, 'purged-client'));
+        $this->assertFalse($fence->covers($person->id, 'another-client'));
+    }
+
     /** The window follows the commit, however long the revocation's transaction took. */
     public function test_the_fence_is_counted_from_the_revocation_s_commit(): void
     {

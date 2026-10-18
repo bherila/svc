@@ -58,7 +58,7 @@ final readonly class CredentialRevoker
         // from the owner's row whatever its state, and the fence catches the
         // replacement.
         if ($selection->fence && $selection->scope === AgentCredentialScope::Token) {
-            $clientId = Passport::token()->newQuery()
+            $clientId = $selection->clientId ?? Passport::token()->newQuery()
                 ->where('user_id', $selection->ownerId)
                 ->whereKey((string) $selection->tokenId)
                 ->value('client_id');

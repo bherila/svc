@@ -41,11 +41,13 @@ final readonly class AgentCredentialSelection
     /**
      * One unrevoked access token of this owner, by id, and its refresh tokens,
      * fencing its client unless `$fence` is false - for a token the caller has
-     * just minted itself, which no grant can be racing.
+     * just minted itself, which no grant can be racing. A caller that knows
+     * the token's client (the authenticated connection does) passes it, so
+     * the client is fenced even if the row has meanwhile been purged.
      */
-    public static function token(User|AgentPrincipal $owner, string $tokenId, bool $fence = true): self
+    public static function token(User|AgentPrincipal $owner, string $tokenId, bool $fence = true, ?string $clientId = null): self
     {
-        return new self($owner, AgentCredentialScope::Token, tokenId: $tokenId, fence: $fence);
+        return new self($owner, AgentCredentialScope::Token, tokenId: $tokenId, clientId: $clientId === null ? null : strtolower($clientId), fence: $fence);
     }
 
     /**
