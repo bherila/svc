@@ -92,6 +92,14 @@ php artisan svc:auth:revoke-connections USER_PUBLIC_UUID --client=OAUTH_CLIENT_I
    lineage: a refresh redeeming one of its refresh tokens is caught, while
    another connection the same person holds with the same client keeps
    refreshing.
+
+   The fence lives in the application cache. It is a backstop, never a
+   precondition: if the cache cannot be written the revocation still happens
+   in full and logs a `agent_token.fence_unavailable` warning, and only the
+   fence is missing. Likewise `php artisan cache:clear` (or a cache flush or
+   eviction) inside the window lifts the fence early. If either happens
+   during an incident, keep OAuth issuance off (step 1) and run the command
+   again once the cache is back.
 5. It prints one JSON line, for example
    `{"access_tokens":2,"refresh_tokens":1,"authorization_codes":0,"unattributed_refresh_tokens":0}`,
    and logs `agent_token.revoked` with `actor: console`, the person's public
@@ -106,7 +114,13 @@ php artisan svc:auth:revoke-connections USER_PUBLIC_UUID --client=OAUTH_CLIENT_I
    normally zero. If it is not and the compromise could involve one of them,
    turn OAuth issuance off (step 1; the command refuses `--unattributed`
    otherwise, since no fence can name an unattributed token's owner and a
-   refresh in flight could replace it) and rerun with `--unattributed`: it
+   refresh in flight could replace it) and rerun with `--unattributed`.
+   Issuance must be off on the serving tier, deployed and with its
+   configuration cache cleared, not only in the shell running the command:
+   the command can check only its own process's configuration, so an
+   `AGENT_API_OAUTH_SERVER_ENABLED=false` set just for the CLI passes the
+   check while the web servers keep refreshing. Confirm that
+   `/.well-known/oauth-authorization-server` answers 404 first. It
    revokes every one of them, for whoever holds it, reports `unattributed_refresh_tokens_revoked`, and logs
    `agent_token.unattributed_refresh_tokens_revoked`. Their connectors must
    authorize again.
