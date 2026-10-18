@@ -309,6 +309,16 @@ final class SquareBillingAuditPolicyTest extends TestCase
         $this->assertFalse($findings->complete);
     }
 
+    public function test_a_truncated_mirror_claims_no_absence_and_a_bounded_reach_states_no_balance(): void
+    {
+        $open = self::invoice('inv_a1', null, '2030-01-10', 'UNPAID', series: null, customer: 'cust_a', total: 5_000);
+        $truncated = SquareBillingAuditPolicy::classify(new SquareBillingAuditFacts('2030-10-01', [self::agreement()], [$open], [], [], [], true, true, true, false));
+        $bounded = SquareBillingAuditPolicy::classify(new SquareBillingAuditFacts('2030-10-01', [self::agreement()], [$open], [], [], [], false, true, false, true));
+
+        $this->assertSame([[], false, 1], [$truncated->seriesDrift, $truncated->complete, count($truncated->unlinkedCustomerBalances)]);
+        $this->assertSame([[SquareBillingAuditPolicy::DRIFT_SERIES_NOT_MIRRORED], [], false], [$bounded->seriesDrift[0]['codes'], $bounded->unlinkedCustomerBalances, $bounded->complete]);
+    }
+
     public function test_absence_is_not_claimed_when_the_series_load_was_bounded(): void
     {
         $facts = new SquareBillingAuditFacts('2030-10-01', [self::agreement()], [], [], [], [], false, false);

@@ -13,6 +13,10 @@ namespace App\Services\Square\Audit;
  * floor. `seriesComplete` says every member of every billed-in-Square series
  * was loaded - members load first, under their own bound - so each series is
  * whole and one with none loaded is truly absent from the mirror.
+ * `reachComplete` says every other invoice in reach was loaded, so a
+ * customer's open invoices are all there. `mirrorComplete` says the last
+ * completed sync listed every Square invoice; without it nothing missing
+ * from the mirror is missing from Square.
  */
 final readonly class SquareBillingAuditFacts
 {
@@ -32,5 +36,7 @@ final readonly class SquareBillingAuditFacts
         public array $recordedPaymentIds,
         public bool $complete,
         public bool $seriesComplete = true,
+        public bool $reachComplete = true,
+        public bool $mirrorComplete = true,
     ) {}
 }

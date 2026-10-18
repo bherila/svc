@@ -21,10 +21,12 @@ use Carbon\CarbonImmutable;
  *   mirror has yet to read an invoice's payment ids, the audit is incomplete.
  * - **Unlinked customer balance:** a Square customer no client company is
  *   mapped to, still listed by Square, with an open invoice - the same
- *   customers `square.customers.unlinked` lists with an open balance.
+ *   customers `square.customers.unlinked` lists with an open balance. None
+ *   is stated when the reach was bounded, since a balance could be short.
  * - **Series drift:** a billed-in-Square series whose billed members differ
  *   from its agreement in cadence, currency (another one, or more than one)
- *   or latest amount, or which the mirror does not hold at all - none of it
+ *   or latest amount, or which the mirror does not hold although the last
+ *   sync listed every Square invoice - none of it
  *   when the member load was bounded, since any series may then be partial,
  *   and the audit then says it is incomplete. SCHEDULED members are not
  *   billed yet and are left out. An agreement that sells no retainer fee is
@@ -62,7 +64,7 @@ final class SquareBillingAuditPolicy
             $payments,
             self::unlinkedCustomerBalances($facts),
             self::drift($facts),
-            $facts->complete && $paymentsResolved,
+            $facts->complete && $facts->mirrorComplete && $paymentsResolved,
         );
     }
 
@@ -128,6 +130,10 @@ final class SquareBillingAuditPolicy
     /** @return list<array{customer_id: string, recipient_name: string|null, open_invoice_count: int, currency: string|null, open_amount: int|null}> */
     private static function unlinkedCustomerBalances(SquareBillingAuditFacts $facts): array
     {
+        // A customer's balance is only stated over all of its open invoices.
+        if (! $facts->reachComplete) {
+            return [];
+        }
         $customers = [];
         foreach ($facts->invoices as $invoice) {
             $id = $invoice->customerId;
@@ -184,7 +190,11 @@ final class SquareBillingAuditPolicy
         foreach ($facts->agreements as $agreement) {
             $series = $members[$agreement->seriesKey] ?? [];
             if ($series === []) {
-                $drift[] = ['agreement' => $agreement, 'codes' => [self::DRIFT_SERIES_NOT_MIRRORED], 'series_cadence' => null, 'series_currency' => null, 'series_amount' => null];
+                // Absent from the mirror is absent from Square only after a
+                // sync that listed every Square invoice.
+                if ($facts->mirrorComplete) {
+                    $drift[] = ['agreement' => $agreement, 'codes' => [self::DRIFT_SERIES_NOT_MIRRORED], 'series_cadence' => null, 'series_currency' => null, 'series_amount' => null];
+                }
 
                 continue;
             }

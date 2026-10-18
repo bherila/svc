@@ -147,6 +147,18 @@ final class SquareSnapshotMapper
     }
 
     /**
+     * The basis an invoice is stamped with when its order could not be read
+     * into payment ids for this state - more tenders than the reconciler
+     * accepts. It is never current, so the audit stays incomplete, but the
+     * lookup queue skips it until the invoice changes, so one such order
+     * cannot take every lookup slot of every run.
+     */
+    public static function unresolvableBasis(string $status, ?int $paidAmount): string
+    {
+        return self::paymentIdsBasis($status, $paidAmount).'|x';
+    }
+
+    /**
      * Whether a mirrored invoice's payment ids are resolved for what it is
      * now. An invoice with nothing paid, or no order to read, has none to
      * resolve; one whose paid amount is unknown may hold a payment when its

@@ -116,11 +116,14 @@ invoices within its reach, their active links, customers and recorded payment id
 once, with every query bounded and scoped to the workspace, and classifies them in
 `SquareBillingAuditPolicy` without the database. Series members load first under
 their own bound, so a large mirror never hides a billed-in-Square series.
-`complete` is false when a bound (5,000 series members, 5,000 other mirrored
-invoices or 500 agreements) was reached, or while the sync has yet to read the
-payment ids of a paid invoice in reach (it reads a bounded number of orders per
-run); the counts are then a floor, and no series drift is reported when series
-members were bounded, since any series could then be partial. Payment ids record
+`complete` is false when the last completed sync was truncated (or none has
+completed), when a bound (5,000 series members, 5,000 other mirrored invoices or
+500 agreements) was reached, or while the sync has yet to read the payment ids of
+a paid invoice in reach (it reads a bounded number of orders per run, and stamps
+an order too large to read so it does not hold up the rest). The counts are then
+a floor: a series is reported absent only after a complete sync, no series drift
+is reported when series members were bounded, and no customer balance is stated
+when the other invoices were, since any of them could then be partial. Payment ids record
 the tender rules they were read by, so a change to those rules re-reads each
 paid invoice's order once. Every flag
 is resolved in svc or in the Square dashboard by a person: nothing here links,

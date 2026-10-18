@@ -8,6 +8,7 @@ use App\Models\CompanySquareCustomer;
 use App\Models\InvoiceSquareLink;
 use App\Models\SquareCustomerSnapshot;
 use App\Models\SquareInvoiceSnapshot;
+use App\Models\SquareSyncRun;
 use App\Models\Workspace;
 use App\Services\Square\Mirror\SquareSeriesSummary;
 use App\Services\Square\Mirror\SquareSnapshotMapper;
@@ -64,7 +65,11 @@ final class SquareBillingAuditRepository
             ->orderByDesc('id')
             ->limit(self::MAX_INVOICES + 1)
             ->get($columns);
-        $complete = $complete && $seriesComplete && $reach->count() <= self::MAX_INVOICES;
+        $reachComplete = $reach->count() <= self::MAX_INVOICES;
+        $complete = $complete && $seriesComplete && $reachComplete;
+        $lastSync = SquareSyncRun::query()->where('workspace_id', $workspace->id)->where('status', SquareSyncRun::COMPLETED)
+            ->orderByDesc('finished_at')->orderByDesc('id')->first(['truncated']);
+        $mirrorComplete = $lastSync !== null && ! $lastSync->truncated;
         $snapshots = [];
         foreach ([...$members->all(), ...$reach->take(self::MAX_INVOICES)->all()] as $snapshot) {
             $snapshots[$snapshot->square_invoice_id] ??= $snapshot;
@@ -116,6 +121,8 @@ final class SquareBillingAuditRepository
             $this->recordedPayments($workspace, array_map(strval(...), array_keys($paymentIds))),
             $complete,
             $seriesComplete,
+            $reachComplete,
+            $mirrorComplete,
         );
     }
 

@@ -74,7 +74,9 @@ final class SquareMirrorRepository
         $due = [];
         foreach ($rows as $row) {
             $paid = $row->paid_amount === null ? null : (int) $row->paid_amount;
-            if (SquareSnapshotMapper::paymentIdsCurrent((string) $row->status, $paid, (string) $row->square_order_id, $row->payment_ids_basis === null ? null : (string) $row->payment_ids_basis)) {
+            $stamped = $row->payment_ids_basis === null ? null : (string) $row->payment_ids_basis;
+            if (SquareSnapshotMapper::paymentIdsCurrent((string) $row->status, $paid, (string) $row->square_order_id, $stamped)
+                || $stamped === SquareSnapshotMapper::unresolvableBasis((string) $row->status, $paid)) {
                 continue;
             }
             $basis = SquareSnapshotMapper::paymentIdsBasis((string) $row->status, $paid);
@@ -107,6 +109,27 @@ final class SquareMirrorRepository
             ->update([
                 'payment_ids' => json_encode($paymentIds, JSON_THROW_ON_ERROR),
                 'payment_ids_basis' => $basis,
+            ]) > 0;
+    }
+
+    /**
+     * Stamps an invoice whose order could not be read into payment ids for
+     * the state named by `$basis`, so the lookup queue moves past it until
+     * the invoice changes. Its payment ids stay unresolved.
+     */
+    public function markPaymentIdsUnresolvable(Workspace $workspace, string $invoiceId, string $basis): bool
+    {
+        [$status, $paid] = explode('|', $basis, 3);
+
+        return DB::table('square_invoice_snapshots')
+            ->where('workspace_id', $workspace->id)
+            ->where('square_invoice_id', $invoiceId)
+            ->whereNull('deleted_at')
+            ->where('status', $status)
+            ->when($paid === '', static fn (Builder $query) => $query->whereNull('paid_amount'), static fn (Builder $query) => $query->where('paid_amount', (int) $paid))
+            ->update([
+                'payment_ids' => null,
+                'payment_ids_basis' => $basis.'|x',
             ]) > 0;
     }
 

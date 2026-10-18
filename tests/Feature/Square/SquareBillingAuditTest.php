@@ -10,6 +10,7 @@ use App\Models\CompanySquareCustomer;
 use App\Models\InvoiceSquareLink;
 use App\Models\SquareCustomerSnapshot;
 use App\Models\SquareInvoiceSnapshot;
+use App\Models\SquareSyncRun;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Square\Audit\SquareBillingAudit;
@@ -174,7 +175,8 @@ final class SquareBillingAuditTest extends TestCase
 
         $this->assertFalse($report['complete']);
         $this->assertSame([['amount']], array_column($report['series_drift']['agreements'], 'codes'));
-        $this->assertSame(5000, $report['unlinked_customer_balances']['count']);
+        // A bounded reach could cut a customer's open invoices short, so no balance is stated.
+        $this->assertSame(0, $report['unlinked_customer_balances']['count']);
     }
 
     public function test_payment_ids_read_by_older_tender_rules_are_re_read_and_leave_the_audit_incomplete_until_then(): void
@@ -201,6 +203,40 @@ final class SquareBillingAuditTest extends TestCase
         $this->assertSame([['square_invoice_id' => 'inv_audit_2', 'square_order_id' => 'order_audit_2', 'basis' => 'PAID||t2']], $repository->invoicesNeedingPaymentIds($workspace, 10));
         $this->assertTrue($repository->storePaymentIds($workspace, 'inv_audit_2', 'PAID||t2', []));
         $this->assertTrue(app(SquareBillingAudit::class)->report($workspace)['complete']);
+    }
+
+    public function test_a_truncated_mirror_claims_no_absence_and_is_incomplete(): void
+    {
+        [$workspace] = $this->fixture();
+        $this->assertSame([['series_not_mirrored']], array_column(app(SquareBillingAudit::class)->report($workspace)['series_drift']['agreements'], 'codes'));
+
+        SquareSyncRun::query()->create(['workspace_id' => $workspace->id, 'trigger' => SquareSyncRun::TRIGGER_SCHEDULE, 'status' => SquareSyncRun::COMPLETED, 'api_version' => '2026-09-16', 'started_at' => '2030-03-20 11:30:00', 'finished_at' => '2030-03-20 11:31:00', 'truncated' => true]);
+        $report = app(SquareBillingAudit::class)->report($workspace);
+
+        $this->assertFalse($report['complete']);
+        $this->assertSame(0, $report['series_drift']['count']);
+        SquareSyncRun::query()->where('workspace_id', $workspace->id)->delete();
+        $this->assertFalse(app(SquareBillingAudit::class)->report($workspace)['complete'], 'Never synced.');
+    }
+
+    public function test_an_order_too_large_to_read_is_stamped_and_skipped_but_stays_unresolved(): void
+    {
+        [$workspace] = $this->fixture();
+        $this->snapshot($workspace, 'inv_audit_1', 1, '2030-01-15', 'PAID', ['paid_amount' => 12_345, 'square_order_id' => 'order_audit_1']);
+        $this->snapshot($workspace, 'inv_audit_2', 2, '2030-02-15', 'PAID', ['paid_amount' => 12_345, 'square_order_id' => 'order_audit_2']);
+        $repository = app(SquareMirrorRepository::class);
+
+        $this->assertSame(['inv_audit_1'], array_column($repository->invoicesNeedingPaymentIds($workspace, 1), 'square_invoice_id'));
+        $this->assertTrue($repository->markPaymentIdsUnresolvable($workspace, 'inv_audit_1', 'PAID|12345|t2'));
+        $this->assertFalse($repository->markPaymentIdsUnresolvable($workspace, 'inv_audit_1', 'UNPAID||t2'), 'Stamped only for the state it was read in.');
+
+        $this->assertSame(['inv_audit_2'], array_column($repository->invoicesNeedingPaymentIds($workspace, 1), 'square_invoice_id'));
+        $this->assertTrue($repository->storePaymentIds($workspace, 'inv_audit_2', 'PAID|12345|t2', []));
+        $this->assertSame([], $repository->invoicesNeedingPaymentIds($workspace, 10));
+        $this->assertFalse(app(SquareBillingAudit::class)->report($workspace)['complete']);
+        // A change to the invoice queues it again.
+        SquareInvoiceSnapshot::query()->where('workspace_id', $workspace->id)->where('square_invoice_id', 'inv_audit_1')->update(['status' => 'PARTIALLY_REFUNDED']);
+        $this->assertSame(['inv_audit_1'], array_column($repository->invoicesNeedingPaymentIds($workspace, 10), 'square_invoice_id'));
     }
 
     public function test_an_imported_annual_series_mirrors_its_amount_once_per_cycle(): void
@@ -234,6 +270,7 @@ final class SquareBillingAuditTest extends TestCase
         $agreement->forceFill(['square_series_key' => '000123'])->save();
         CompanySquareCustomer::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'square_customer_id' => 'cust_audit_series', 'active_company_slot' => $company->id, 'active_customer_slot' => 'cust_audit_series', 'confirmed_at' => now()]);
         $this->connectSquare($workspace);
+        SquareSyncRun::query()->create(['workspace_id' => $workspace->id, 'trigger' => SquareSyncRun::TRIGGER_SCHEDULE, 'status' => SquareSyncRun::COMPLETED, 'api_version' => '2026-09-16', 'started_at' => '2030-03-20 11:00:00', 'finished_at' => '2030-03-20 11:01:00']);
 
         return [$workspace, $owner, $company, $agreement];
     }
