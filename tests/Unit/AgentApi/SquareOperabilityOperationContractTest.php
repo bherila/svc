@@ -6,6 +6,8 @@ use App\Services\AgentApi\Operations\AgentDeploymentFlags;
 use App\Services\AgentApi\Operations\AgentInlineSchemas;
 use App\Services\AgentApi\Operations\AgentOperationCatalog;
 use App\Services\AgentApi\Operations\AgentRestDocumentation;
+use App\Services\Mcp\AgentMcpBillingAuditTools;
+use App\Services\Mcp\AgentMcpSquareMirrorTools;
 use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
 use App\Support\Billing\PeriodRefusalReason;
 use App\Support\Billing\ScheduleDefect;
@@ -53,7 +55,16 @@ final class SquareOperabilityOperationContractTest extends TestCase
                 $this->assertSame(AgentInlineSchemas::billingAuditOutput($properties), $operation->output, $id);
                 $this->assertStringStartsWith('Workspace managers only.', $operation->description, $id);
             }
+            $this->assertSame([AgentMcpBillingAuditTools::class, 'scheduleGenerationPreflight'], $catalog->registry()->find('billing.preflight_schedule_generation')?->mcp?->handler);
+            $this->assertSame([AgentMcpBillingAuditTools::class, 'unlinkedProposalAgreements'], $catalog->registry()->find('billing.audit_unlinked_proposal_agreements')?->mcp?->handler);
         });
+    }
+
+    public function test_an_audit_with_no_declared_output_is_refused(): void
+    {
+        $this->expectException(\LogicException::class);
+
+        AgentInlineSchemas::billingAuditProperties('billing.audit_unknown');
     }
 
     public function test_square_reconcile_is_a_manager_only_idempotent_write_that_reads_square(): void
@@ -66,6 +77,7 @@ final class SquareOperabilityOperationContractTest extends TestCase
             $this->assertTrue($operation->isIdempotent());
             $this->assertTrue($catalog->isManagerOnly($id));
             $this->assertTrue($catalog->readsExternalSystem($id));
+            $this->assertSame([AgentMcpSquareMirrorTools::class, 'reconcileInvoice'], $operation->mcp?->handler);
             $this->assertSame([AgentDeploymentFlags::WRITES, AgentDeploymentFlags::SQUARE, AgentDeploymentFlags::MCP, AgentDeploymentFlags::MCP_SWITCH.'mcp.write', AgentDeploymentFlags::MCP_SWITCH.$id], $operation->requirement->flags);
             $this->assertNotNull($operation->rest);
             $this->assertSame(['POST', '/workspaces/{workspace}/invoices/{invoice}/square-reconcile', [200]], [$operation->rest->method, $operation->rest->path, $operation->rest->successStatuses]);
