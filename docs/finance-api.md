@@ -28,6 +28,10 @@ php artisan svc:auth:revoke-token USER_PUBLIC_UUID "Finance integration"
 ```
 
 If duplicate names exist, the command fails closed unless `--all` is supplied.
+Sanctum tokens have no revoked flag, so revoking deletes the row, effective on the
+next request. Each revocation logs `personal_access_token.revoked` with the user's
+public UUID, the name, the count and SHA-256 fingerprints of the token ids, never
+the token.
 
 For a user bound to the identity provider, the token records the provider subject
 and the credential generation it was issued under, and issuing is refused when the
