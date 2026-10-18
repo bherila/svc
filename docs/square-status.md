@@ -18,6 +18,12 @@ client.
 No raw webhook body or signature key is stored in a receipt.
 
 `svc:square:reconcile-payments` runs every fifteen minutes without overlapping.
+`svc:square:reconcile-payments --invoice=INVOICE_PUBLIC_ID` reconciles one linked
+invoice now instead, and `invoices.square_reconcile` (REST and MCP, workspace
+managers, `billing:write`) does the same for an agent - for example right after
+`invoices.square_link`, rather than waiting up to fifteen minutes. All three use
+`SquareInvoiceReconciliation`, which runs the sweep's own read-only refetch; an
+invoice with no active link is refused. Repeating it records nothing twice.
 It visits active links in bounded database batches, including paid invoices so
 refunds missed by webhooks are recovered. Both transports finish their work in
 the request or command; neither dispatches jobs. The sweep works without the
@@ -138,6 +144,17 @@ the tender rules they were read by, so a change to those rules re-reads each
 paid invoice's order once. Every flag
 is resolved in svc or in the Square dashboard by a person: nothing here links,
 records, imports or writes to Square.
+
+## Status probe
+
+`php artisan svc:square:status --format=json` reports whether Square is
+configured, its environment and pinned `Square-Version`, whether its workspace
+exists and the webhook signature key is installed, the last completed sync and
+the latest sync run (status, trigger, counts and error code). It never prints a
+credential and never calls Square. It exits 0 when Square is configured, its
+workspace exists and the latest run did not fail, and 1 otherwise. The
+post-deploy probe runs it beside `svc:stripe:status` and `svc:brevo:status`, and,
+as for those, treats exit 1 as a report rather than a deploy failure.
 
 Payment reminders for linked invoices carry the mirrored Square payment page;
 see [payment reminders](client-management/invoice-delivery.md#payment-reminders).
