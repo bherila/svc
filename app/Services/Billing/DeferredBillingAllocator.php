@@ -87,9 +87,7 @@ class DeferredBillingAllocator
         $companyEntries = ClientTimeEntry::query()
             ->where('workspace_id', $company->workspace_id)
             ->where('client_company_id', $company->id)
-            ->where('is_billable', true)
-            ->where('is_deferred', true)
-            ->whereDoesntHave('invoiceLines')
+            ->awaitingDeferredBilling()
             ->when($upToDate !== null, fn ($query) => $query->where('worked_on', '<=', $upToDate));
 
         // Validate the complete deferred chain before applying an agreement's
@@ -124,9 +122,7 @@ class DeferredBillingAllocator
         $companyEntries = ClientTimeEntry::query()
             ->where('workspace_id', $company->workspace_id)
             ->where('client_company_id', $company->id)
-            ->where('is_billable', true)
-            ->where('is_deferred', true)
-            ->whereDoesntHave('invoiceLines')
+            ->awaitingDeferredBilling()
             ->where('worked_on', '<=', $upTo->toDateString());
 
         // Validate before narrowing to this agreement, so a malformed project
