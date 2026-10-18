@@ -87,7 +87,7 @@ final class AgentMcpSquareTools
     /** @return array<string, mixed> */
     public function invoice(
         #[Schema(format: 'uuid')] string $workspace_id,
-        #[Schema(minLength: 1, maxLength: 191, pattern: SquareIdentifiers::INVOICE_ID_SCHEMA_PATTERN)] string $invoice_id,
+        #[Schema(minLength: 1, maxLength: SquareIdentifiers::INVOICE_ID_MAX_LENGTH, pattern: SquareIdentifiers::INVOICE_ID_SCHEMA_PATTERN)] string $invoice_id,
     ): array {
         return $this->read($workspace_id, fn (McpRequestContext $context): array => $this->square->invoice($context->principal->subject, $context->workspace, $invoice_id));
     }

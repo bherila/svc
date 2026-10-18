@@ -134,7 +134,7 @@ final class SquareReadService
     /** @return array{data: array<string, mixed>} */
     public function invoice(User|AgentPrincipal $actor, Workspace $workspace, string $invoiceId): array
     {
-        $this->validate(['invoice_id' => $invoiceId], ['invoice_id' => ['required', 'string', 'regex:'.SquareIdentifiers::INVOICE_ID_PATTERN]]);
+        $this->validate(['invoice_id' => $invoiceId], ['invoice_id' => SquareIdentifiers::invoiceIdRule()]);
         $configuration = $this->admit($actor, $workspace);
 
         return $this->deliver($configuration, ['data' => $this->presenter->invoice(self::record($this->client->getInvoice($invoiceId), 'invoice'))]);

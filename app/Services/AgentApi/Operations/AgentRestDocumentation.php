@@ -1251,7 +1251,7 @@ final class AgentRestDocumentation
             ],
             'square.invoices.get' => [
                 'Get one Square invoice by its Square id, with series_key and series_occurrence derived from its number.',
-                ['WorkspaceId', ['name' => 'invoice', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 191, 'pattern' => SquareIdentifiers::INVOICE_ID_SCHEMA_PATTERN]]],
+                ['WorkspaceId', ['name' => 'invoice', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'string', 'minLength' => 1, 'maxLength' => SquareIdentifiers::INVOICE_ID_MAX_LENGTH, 'pattern' => SquareIdentifiers::INVOICE_ID_SCHEMA_PATTERN]]],
                 'SquareInvoiceResponse',
             ],
             'square.invoices.list' => [

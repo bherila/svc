@@ -330,7 +330,7 @@ Route::prefix('v1')
                 ->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']));
             if ($id !== null) {
                 $route->where($id, $id === 'invoice'
-                    ? substr(SquareIdentifiers::INVOICE_ID_SCHEMA_PATTERN, 1, -1)
+                    ? SquareIdentifiers::INVOICE_ID_ROUTE_PATTERN
                     : '[A-Za-z0-9][A-Za-z0-9:_\-]{0,191}');
             }
         }
