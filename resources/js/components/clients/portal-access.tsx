@@ -1,5 +1,5 @@
 import { Link, router } from '@inertiajs/react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
     AlertDialog,
     AlertDialogAction,
@@ -13,25 +13,23 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { apiRequest, newIdempotencyKey } from '@/lib/api';
+import type { ApiResult, ApiSchema } from '@/lib/api';
 import { statusLabel } from '@/lib/labels';
 
-export type PortalScope = 'company' | 'projects';
+export type PortalScope = ApiSchema<'PortalContact'>['scope'];
 
-export interface PortalMember {
-    id: string;
-    name: string;
-    email: string;
-    scope: PortalScope;
-    /** Public ids of the projects a `projects` scope is limited to. */
-    projects: string[];
-    /** Where this person's access is changed (PUT) or removed (DELETE). */
-    url: string;
-}
+/**
+ * A portal contact as `/api/v1` presents it (#385), with same-origin
+ * `update_href` (PATCH) and `revoke_href` (DELETE), and the `version` either
+ * must name.
+ */
+export type PortalMember = ApiSchema<'PortalContact'>;
 
 /**
  * An invitation to an address nobody signs in with yet. Applied at that
  * person's first sign-in; `link` is the identity provider's acceptance link,
- * sent only while it can still be accepted.
+ * sent only to this page and only while it can still be accepted.
  */
 export interface PortalInvitation {
     id: string;
@@ -44,18 +42,19 @@ export interface PortalInvitation {
     expires_at: string | null;
     email_sent: boolean;
     link: string | null;
-    /** POST to send it again; null once it can no longer be sent. */
+    /** The API's resend URL (POST); null once it can no longer be sent. */
     resend_url: string | null;
-    /** DELETE to withdraw it, or to dismiss one that was not applied. */
+    /** The API's URL (DELETE) to withdraw it, or dismiss one that was not applied. */
     revoke_url: string;
 }
 
 export interface PortalAccessProps {
     clientName: string;
     portal: {
+        /** The API's grant URL (POST). */
         add_url: string;
         members: PortalMember[];
-        /** Null while portal invitations are switched off. */
+        /** The API's invitation URL (POST); null while invitations are off. */
         invite_url?: string | null;
         invitations?: PortalInvitation[];
         invitation_pagination?: {
@@ -66,14 +65,67 @@ export interface PortalAccessProps {
     projects: { id: string; name: string }[];
 }
 
-type Errors = Record<string, string>;
+type Failure = Extract<ApiResult<unknown>, { ok: false }>;
+
+/**
+ * Send one change to the API, then reload the page's props so every row shows
+ * what the server now holds.
+ */
+async function change(
+    method: 'POST' | 'PATCH' | 'DELETE',
+    url: string,
+    body: object,
+    key?: string,
+): Promise<Failure | null> {
+    const result = await apiRequest(method, url, body, key);
+
+    if (!result.ok) {
+        return result;
+    }
+
+    await new Promise<void>((resolve) =>
+        router.reload({ onFinish: () => resolve() }),
+    );
+
+    return null;
+}
+
+/**
+ * One idempotency key per attempt at an action that emails someone, kept
+ * across retries of the same request, so a send whose answer was lost replays
+ * rather than sending twice. A refusal or success ends the attempt.
+ */
+function useAttemptKey() {
+    const attempt = useRef<{ key: string; body: string } | null>(null);
+
+    return {
+        keyFor(body: object): string {
+            const signature = JSON.stringify(body);
+
+            if (attempt.current?.body !== signature) {
+                attempt.current = { key: newIdempotencyKey(), body: signature };
+            }
+
+            return attempt.current.key;
+        },
+        settle(failure: Failure | null) {
+            if (
+                failure === null ||
+                (failure.status >= 400 && failure.status < 500)
+            ) {
+                attempt.current = null;
+            }
+        },
+    };
+}
 
 /**
  * Who can use this client's portal, and how much of it each of them reaches.
  *
  * Portal access is separate from staff access: a contact reaches the whole
  * client or only the projects chosen here, and changing it never touches
- * anyone's staff role or project assignments.
+ * anyone's staff role or project assignments. Every change goes to the same
+ * `/api/v1` operations agents use.
  */
 export function PortalAccess({
     clientName,
@@ -158,11 +210,12 @@ function InvitationRow({
     invitation: PortalInvitation;
     projects: { id: string; name: string }[];
 }) {
-    const [errors, setErrors] = useState<Errors>({});
+    const [message, setMessage] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
     const [revoking, setRevoking] = useState(false);
     const [copied, setCopied] = useState(false);
-    const message = errors[`invitation.${invitation.id}`];
+    const resendKey = useAttemptKey();
+    const revokeKey = useAttemptKey();
     const reach =
         invitation.scope === 'company'
             ? 'The whole client'
@@ -172,6 +225,35 @@ function InvitationRow({
                   .join(', ');
     const notApplied = invitation.status === 'not_applied';
     const retryWithdrawal = invitation.status === 'revoked';
+
+    const resend = async (url: string) => {
+        const body = { confirm: true };
+        setBusy(true);
+        const failure = await change('POST', url, body, resendKey.keyFor(body));
+        resendKey.settle(failure);
+        setMessage(failure?.message ?? null);
+
+        if (failure === null) {
+            setCopied(false);
+        }
+
+        setBusy(false);
+    };
+
+    const revoke = async () => {
+        const body = { confirm: true };
+        setBusy(true);
+        const failure = await change(
+            'DELETE',
+            invitation.revoke_url,
+            body,
+            revokeKey.keyFor(body),
+        );
+        revokeKey.settle(failure);
+        setMessage(failure?.message ?? null);
+        setBusy(false);
+        setRevoking(false);
+    };
 
     return (
         <li className="grid grid-cols-1 gap-2 rounded-lg border p-3">
@@ -228,7 +310,7 @@ function InvitationRow({
                     </p>
                 </div>
             )}
-            {message !== undefined && (
+            {message !== null && (
                 <p
                     role="alert"
                     className="text-sm wrap-anywhere text-destructive"
@@ -243,20 +325,7 @@ function InvitationRow({
                         variant="outline"
                         disabled={busy}
                         onClick={() => {
-                            setBusy(true);
-                            router.post(
-                                invitation.resend_url ?? '',
-                                {},
-                                {
-                                    preserveScroll: true,
-                                    onSuccess: () => {
-                                        setErrors({});
-                                        setCopied(false);
-                                    },
-                                    onError: (next) => setErrors(next),
-                                    onFinish: () => setBusy(false),
-                                },
-                            );
+                            void resend(invitation.resend_url ?? '');
                         }}
                     >
                         Send again
@@ -304,15 +373,7 @@ function InvitationRow({
                             disabled={busy}
                             onClick={(event) => {
                                 event.preventDefault();
-                                setBusy(true);
-                                router.delete(invitation.revoke_url, {
-                                    preserveScroll: true,
-                                    onError: (next) => setErrors(next),
-                                    onFinish: () => {
-                                        setBusy(false);
-                                        setRevoking(false);
-                                    },
-                                });
+                                void revoke();
                             }}
                         >
                             {notApplied ? 'Dismiss' : 'Withdraw invitation'}
@@ -334,12 +395,36 @@ function MemberRow({
     projects: { id: string; name: string }[];
 }) {
     const [scope, setScope] = useState<PortalScope>(member.scope);
-    const [chosen, setChosen] = useState<string[]>(member.projects);
-    const [errors, setErrors] = useState<Errors>({});
+    const [chosen, setChosen] = useState<string[]>(
+        member.projects.map((project) => project.id),
+    );
+    const [message, setMessage] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
     const [removing, setRemoving] = useState(false);
-    const errorKey = `portal.${member.id}`;
-    const message = errors[errorKey] ?? errors.projects ?? errors.scope;
+
+    const save = async () => {
+        setBusy(true);
+        const failure = await change('PATCH', member.update_href, {
+            scope,
+            projects: scope === 'projects' ? chosen : [],
+            expected_version: member.version,
+            confirm: true,
+        });
+        setMessage(failure?.message ?? null);
+        setBusy(false);
+    };
+
+    const remove = async () => {
+        setBusy(true);
+        const failure = await change('DELETE', member.revoke_href, {
+            expected_version: member.version,
+            confirm: true,
+        });
+        // A removed contact's row is gone once the page reloads.
+        setMessage(failure?.message ?? null);
+        setBusy(false);
+        setRemoving(false);
+    };
 
     return (
         <li className="grid grid-cols-1 gap-2 rounded-lg border p-3">
@@ -358,7 +443,7 @@ function MemberRow({
                 onScope={setScope}
                 onChosen={setChosen}
             />
-            {message !== undefined && (
+            {message !== null && (
                 <p
                     role="alert"
                     className="text-sm wrap-anywhere text-destructive"
@@ -372,20 +457,7 @@ function MemberRow({
                     variant="outline"
                     disabled={busy}
                     onClick={() => {
-                        setBusy(true);
-                        router.put(
-                            member.url,
-                            {
-                                scope,
-                                projects: scope === 'projects' ? chosen : [],
-                            },
-                            {
-                                preserveScroll: true,
-                                onSuccess: () => setErrors({}),
-                                onError: (next) => setErrors(next),
-                                onFinish: () => setBusy(false),
-                            },
-                        );
+                        void save();
                     }}
                 >
                     Save access
@@ -426,15 +498,7 @@ function MemberRow({
                             disabled={busy}
                             onClick={(event) => {
                                 event.preventDefault();
-                                setBusy(true);
-                                router.delete(member.url, {
-                                    preserveScroll: true,
-                                    onError: (next) => setErrors(next),
-                                    onFinish: () => {
-                                        setBusy(false);
-                                        setRemoving(false);
-                                    },
-                                });
+                                void remove();
                             }}
                         >
                             Remove access
@@ -458,31 +522,45 @@ function AddContact({
     const [email, setEmail] = useState('');
     const [scope, setScope] = useState<PortalScope>('company');
     const [chosen, setChosen] = useState<string[]>([]);
-    const [errors, setErrors] = useState<Errors>({});
+    const [messages, setMessages] = useState<string[]>([]);
+    // Set only when adding was refused because nobody signs in with the address.
+    const [inviteOffered, setInviteOffered] = useState(false);
     const [busy, setBusy] = useState(false);
-    // Offered only after adding was refused because nobody signs in with the address.
-    const offerInvitation = inviteUrl !== null && errors.invite !== undefined;
-    const submit = (url: string) => {
+    const inviteKey = useAttemptKey();
+    const offerInvitation = inviteUrl !== null && inviteOffered;
+
+    const submit = async (invite: boolean) => {
+        const body = {
+            email,
+            scope,
+            projects: scope === 'projects' ? chosen : [],
+            confirm: true,
+        };
         setBusy(true);
-        router.post(
-            url,
-            {
-                email,
-                scope,
-                projects: scope === 'projects' ? chosen : [],
-            },
-            {
-                preserveScroll: true,
-                onSuccess: () => {
-                    setEmail('');
-                    setScope('company');
-                    setChosen([]);
-                    setErrors({});
-                },
-                onError: (next) => setErrors(next),
-                onFinish: () => setBusy(false),
-            },
-        );
+        const failure =
+            invite && inviteUrl !== null
+                ? await change('POST', inviteUrl, body, inviteKey.keyFor(body))
+                : await change('POST', addUrl, body);
+
+        if (invite) {
+            inviteKey.settle(failure);
+        }
+
+        if (failure === null) {
+            setEmail('');
+            setScope('company');
+            setChosen([]);
+            setMessages([]);
+            setInviteOffered(false);
+        } else {
+            const fields = Object.values(failure.errors ?? {}).flat();
+            setMessages(fields.length > 0 ? fields : [failure.message]);
+            setInviteOffered(
+                !invite && (failure.errors?.invite ?? []).length > 0,
+            );
+        }
+
+        setBusy(false);
     };
 
     return (
@@ -490,7 +568,7 @@ function AddContact({
             className="grid grid-cols-1 gap-3 border-t pt-4"
             onSubmit={(event) => {
                 event.preventDefault();
-                submit(addUrl);
+                void submit(false);
             }}
         >
             <div className="grid max-w-md grid-cols-1 gap-2">
@@ -501,7 +579,8 @@ function AddContact({
                     value={email}
                     onChange={(event) => {
                         setEmail(event.target.value);
-                        setErrors({});
+                        setMessages([]);
+                        setInviteOffered(false);
                     }}
                     placeholder="The address they sign in with"
                     required
@@ -521,27 +600,27 @@ function AddContact({
                 onScope={setScope}
                 onChosen={setChosen}
             />
-            {[errors.email, errors.invite, errors.projects, errors.scope]
-                .filter((message): message is string => message !== undefined)
-                .map((message) => (
-                    <p
-                        key={message}
-                        role="alert"
-                        className="text-sm wrap-anywhere text-destructive"
-                    >
-                        {message}
-                    </p>
-                ))}
+            {messages.map((message) => (
+                <p
+                    key={message}
+                    role="alert"
+                    className="text-sm wrap-anywhere text-destructive"
+                >
+                    {message}
+                </p>
+            ))}
             <div className="flex flex-wrap gap-2">
                 <Button type="submit" disabled={busy}>
                     Give portal access
                 </Button>
-                {offerInvitation && inviteUrl !== null && (
+                {offerInvitation && (
                     <Button
                         type="button"
                         variant="outline"
                         disabled={busy}
-                        onClick={() => submit(inviteUrl)}
+                        onClick={() => {
+                            void submit(true);
+                        }}
                     >
                         Send invitation
                     </Button>
