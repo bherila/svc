@@ -1276,6 +1276,65 @@
                 "x-mcp-tool": "billing_schedules.get"
             }
         },
+        "/workspaces/{workspace}/agreements/{agreement}/capacity-ledger": {
+            "get": {
+                "operationId": "capacity_ledger.get",
+                "description": "Manager-only trailing window of the computed agreement capacity ledger, and the agreement's deferred backlog: the outstanding deferred work the termination invoice would collect today, its amount at the hourly rate as that invoice would price it, and its monthly trend over the same months.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "billing:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "agreement",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "months",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 60,
+                            "default": 12
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CapacityLedgerResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "read",
+                "x-agent-idempotent": true,
+                "x-agent-mcp-tool": "capacity_ledger.get",
+                "x-mcp-tool": "capacity_ledger.get"
+            }
+        },
         "/workspaces/{workspace}/clients/{client}/archive": {
             "post": {
                 "operationId": "clients.archive",
@@ -5388,7 +5447,7 @@
         "/workspaces/{workspace}/summary": {
             "get": {
                 "operationId": "operations.summary",
-                "description": "Always returns workspace_id; project, time, and invoice sections are omitted unless the token has their corresponding read scope.",
+                "description": "Always returns workspace_id; project, time, and invoice sections are omitted unless the token has their corresponding read scope. With billing:read, a workspace manager also receives deferred_backlog: the agreements with deferred work outstanding and what termination would charge for it.",
                 "security": [
                     {
                         "oauth2": [
@@ -9103,6 +9162,124 @@
                     }
                 }
             },
+            "CapacityLedger": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "agreement_id",
+                    "through",
+                    "months",
+                    "deferred_backlog"
+                ],
+                "properties": {
+                    "agreement_id": {
+                        "$ref": "#/components/schemas/Uuid"
+                    },
+                    "through": {
+                        "type": "string",
+                        "format": "date"
+                    },
+                    "months": {
+                        "type": "array",
+                        "maxItems": 60,
+                        "items": {
+                            "$ref": "#/components/schemas/CapacityLedgerMonth"
+                        }
+                    },
+                    "deferred_backlog": {
+                        "$ref": "#/components/schemas/DeferredBacklog"
+                    }
+                }
+            },
+            "CapacityLedgerMonth": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "period",
+                    "cycle_start",
+                    "bill_excess_immediately",
+                    "retainer_hours",
+                    "hours_worked",
+                    "opening_retainer_hours",
+                    "opening_rollover_hours",
+                    "opening_expired_hours",
+                    "opening_available_hours",
+                    "hours_used_from_retainer",
+                    "hours_used_from_rollover",
+                    "unused_hours",
+                    "excess_hours",
+                    "negative_hours",
+                    "signed_available_hours",
+                    "remaining_rollover_hours"
+                ],
+                "properties": {
+                    "period": {
+                        "type": "string",
+                        "pattern": "^\\d{4}-\\d{2}$"
+                    },
+                    "cycle_start": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date"
+                    },
+                    "bill_excess_immediately": {
+                        "type": "boolean"
+                    },
+                    "retainer_hours": {
+                        "type": "number"
+                    },
+                    "hours_worked": {
+                        "type": "number"
+                    },
+                    "opening_retainer_hours": {
+                        "type": "number"
+                    },
+                    "opening_rollover_hours": {
+                        "type": "number"
+                    },
+                    "opening_expired_hours": {
+                        "type": "number"
+                    },
+                    "opening_available_hours": {
+                        "type": "number"
+                    },
+                    "hours_used_from_retainer": {
+                        "type": "number"
+                    },
+                    "hours_used_from_rollover": {
+                        "type": "number"
+                    },
+                    "unused_hours": {
+                        "type": "number"
+                    },
+                    "excess_hours": {
+                        "type": "number"
+                    },
+                    "negative_hours": {
+                        "type": "number"
+                    },
+                    "signed_available_hours": {
+                        "type": "number"
+                    },
+                    "remaining_rollover_hours": {
+                        "type": "number"
+                    }
+                }
+            },
+            "CapacityLedgerResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data"
+                ],
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/CapacityLedger"
+                    }
+                }
+            },
             "ClientCompany": {
                 "type": "object",
                 "additionalProperties": false,
@@ -9457,6 +9634,157 @@
                     },
                     "amount": {
                         "type": "integer"
+                    }
+                }
+            },
+            "DeferredBacklog": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "through",
+                    "hours",
+                    "entry_count",
+                    "oldest_worked_on",
+                    "agreement_rate_hours",
+                    "flat_hourly_hours",
+                    "amount_at_hourly_rate",
+                    "issue",
+                    "issue_message",
+                    "issue_detail",
+                    "net_hours_per_month",
+                    "trend"
+                ],
+                "properties": {
+                    "through": {
+                        "type": "string",
+                        "format": "date",
+                        "description": "The workspace day the backlog is read as of; later work is not on it."
+                    },
+                    "hours": {
+                        "type": [
+                            "number",
+                            "null"
+                        ],
+                        "minimum": 0,
+                        "description": "Outstanding deferred hours the termination invoice would collect today. Null only when withheld."
+                    },
+                    "entry_count": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "minimum": 0
+                    },
+                    "oldest_worked_on": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date"
+                    },
+                    "agreement_rate_hours": {
+                        "type": [
+                            "number",
+                            "null"
+                        ],
+                        "minimum": 0,
+                        "description": "Consultant and retainer-mode hours, priced at the agreement's hourly rate. Null when withheld or unpriced."
+                    },
+                    "flat_hourly_hours": {
+                        "type": [
+                            "number",
+                            "null"
+                        ],
+                        "minimum": 0,
+                        "description": "Flat-hourly subcontractor hours, priced at each entry's snapshotted rate. Null when withheld or unpriced."
+                    },
+                    "amount_at_hourly_rate": {
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/CurrencyAmount"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "description": "What the termination invoice would charge for these hours, in minor units of the agreement currency. Direct subcontractor work is never included."
+                    },
+                    "issue": {
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/DeferredBacklogIssue"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "issue_message": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "issue_detail": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "The pricing refusal termination would raise, when issue is unpriced."
+                    },
+                    "net_hours_per_month": {
+                        "type": [
+                            "number",
+                            "null"
+                        ],
+                        "description": "Average of added minus applied minus billed over the trend months; positive means the shelf is growing. Null without a trend."
+                    },
+                    "trend": {
+                        "type": "array",
+                        "maxItems": 60,
+                        "items": {
+                            "$ref": "#/components/schemas/DeferredBacklogMonth"
+                        }
+                    }
+                }
+            },
+            "DeferredBacklogIssue": {
+                "type": "string",
+                "enum": [
+                    "project_chain_mismatch",
+                    "unpriced"
+                ],
+                "description": "project_chain_mismatch: a deferred entry points to a project outside the client, so termination would refuse and every figure is withheld. unpriced: the hours stand but termination would refuse to price them; the amount is null and issue_detail says why."
+            },
+            "DeferredBacklogMonth": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "period",
+                    "hours_added",
+                    "hours_applied",
+                    "hours_billed"
+                ],
+                "properties": {
+                    "period": {
+                        "type": "string",
+                        "pattern": "^\\d{4}-\\d{2}$",
+                        "description": "Calendar month, as the capacity ledger names it."
+                    },
+                    "hours_added": {
+                        "type": "number",
+                        "minimum": 0,
+                        "description": "Deferred work done this month, whatever has happened to it since."
+                    },
+                    "hours_applied": {
+                        "type": "number",
+                        "minimum": 0,
+                        "description": "Deferred work a retainer pool of this month absorbed, booked on the ledger's capacity date."
+                    },
+                    "hours_billed": {
+                        "type": "number",
+                        "minimum": 0,
+                        "description": "Deferred work that left the shelf this month at an hourly price instead: on termination, as flat-hourly work, or by a buy-down."
                     }
                 }
             },
@@ -16676,6 +17004,62 @@
                     },
                     "invoices": {
                         "$ref": "#/components/schemas/SummaryInvoices"
+                    },
+                    "deferred_backlog": {
+                        "$ref": "#/components/schemas/SummaryDeferredBacklog"
+                    }
+                }
+            },
+            "SummaryDeferredBacklog": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "agreement_count",
+                    "truncated",
+                    "agreements"
+                ],
+                "properties": {
+                    "agreement_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Active or terminated agreements with deferred work outstanding, or with a withheld backlog."
+                    },
+                    "truncated": {
+                        "type": "boolean",
+                        "description": "True when more agreements have a backlog than are listed, or the scan reached its bound."
+                    },
+                    "agreements": {
+                        "type": "array",
+                        "maxItems": 25,
+                        "items": {
+                            "$ref": "#/components/schemas/SummaryDeferredBacklogAgreement"
+                        },
+                        "description": "Withheld backlogs first, then the largest. No trend."
+                    }
+                }
+            },
+            "SummaryDeferredBacklogAgreement": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "agreement_id",
+                    "client_id",
+                    "web_url",
+                    "backlog"
+                ],
+                "properties": {
+                    "agreement_id": {
+                        "$ref": "#/components/schemas/Uuid"
+                    },
+                    "client_id": {
+                        "$ref": "#/components/schemas/Uuid"
+                    },
+                    "web_url": {
+                        "type": "string",
+                        "format": "uri"
+                    },
+                    "backlog": {
+                        "$ref": "#/components/schemas/DeferredBacklog"
                     }
                 }
             },

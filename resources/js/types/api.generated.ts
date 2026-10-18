@@ -278,6 +278,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    '/workspaces/{workspace}/agreements/{agreement}/capacity-ledger': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Manager-only trailing window of the computed agreement capacity ledger, and the agreement's deferred backlog: the outstanding deferred work the termination invoice would collect today, its amount at the hourly rate as that invoice would price it, and its monthly trend over the same months. */
+        get: operations['capacity_ledger.get'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     '/workspaces/{workspace}/clients/{client}/archive': {
         parameters: {
             query?: never;
@@ -1020,7 +1037,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Always returns workspace_id; project, time, and invoice sections are omitted unless the token has their corresponding read scope. */
+        /** @description Always returns workspace_id; project, time, and invoice sections are omitted unless the token has their corresponding read scope. With billing:read, a workspace manager also receives deferred_backlog: the agreements with deferred work outstanding and what termination would charge for it. */
         get: operations['operations.summary'];
         put?: never;
         post?: never;
@@ -1850,6 +1867,35 @@ export interface components {
         BillingScheduleResponse: {
             data: components['schemas']['BillingSchedule'];
         };
+        CapacityLedger: {
+            agreement_id: components['schemas']['Uuid'];
+            /** Format: date */
+            through: string;
+            months: components['schemas']['CapacityLedgerMonth'][];
+            deferred_backlog: components['schemas']['DeferredBacklog'];
+        };
+        CapacityLedgerMonth: {
+            period: string;
+            /** Format: date */
+            cycle_start: string | null;
+            bill_excess_immediately: boolean;
+            retainer_hours: number;
+            hours_worked: number;
+            opening_retainer_hours: number;
+            opening_rollover_hours: number;
+            opening_expired_hours: number;
+            opening_available_hours: number;
+            hours_used_from_retainer: number;
+            hours_used_from_rollover: number;
+            unused_hours: number;
+            excess_hours: number;
+            negative_hours: number;
+            signed_available_hours: number;
+            remaining_rollover_hours: number;
+        };
+        CapacityLedgerResponse: {
+            data: components['schemas']['CapacityLedger'];
+        };
         ClientCompany: {
             version: string;
             /** Format: uuid */
@@ -1936,6 +1982,47 @@ export interface components {
         CurrencyAmount: {
             currency: components['schemas']['Currency'];
             amount: number;
+        };
+        DeferredBacklog: {
+            /**
+             * Format: date
+             * @description The workspace day the backlog is read as of; later work is not on it.
+             */
+            through: string;
+            /** @description Outstanding deferred hours the termination invoice would collect today. Null only when withheld. */
+            hours: number | null;
+            entry_count: number | null;
+            /** Format: date */
+            oldest_worked_on: string | null;
+            /** @description Consultant and retainer-mode hours, priced at the agreement's hourly rate. Null when withheld or unpriced. */
+            agreement_rate_hours: number | null;
+            /** @description Flat-hourly subcontractor hours, priced at each entry's snapshotted rate. Null when withheld or unpriced. */
+            flat_hourly_hours: number | null;
+            /** @description What the termination invoice would charge for these hours, in minor units of the agreement currency. Direct subcontractor work is never included. */
+            amount_at_hourly_rate:
+                components['schemas']['CurrencyAmount'] | null;
+            issue: components['schemas']['DeferredBacklogIssue'] | null;
+            issue_message: string | null;
+            /** @description The pricing refusal termination would raise, when issue is unpriced. */
+            issue_detail: string | null;
+            /** @description Average of added minus applied minus billed over the trend months; positive means the shelf is growing. Null without a trend. */
+            net_hours_per_month: number | null;
+            trend: components['schemas']['DeferredBacklogMonth'][];
+        };
+        /**
+         * @description project_chain_mismatch: a deferred entry points to a project outside the client, so termination would refuse and every figure is withheld. unpriced: the hours stand but termination would refuse to price them; the amount is null and issue_detail says why.
+         * @enum {string}
+         */
+        DeferredBacklogIssue: 'project_chain_mismatch' | 'unpriced';
+        DeferredBacklogMonth: {
+            /** @description Calendar month, as the capacity ledger names it. */
+            period: string;
+            /** @description Deferred work done this month, whatever has happened to it since. */
+            hours_added: number;
+            /** @description Deferred work a retainer pool of this month absorbed, booked on the ledger's capacity date. */
+            hours_applied: number;
+            /** @description Deferred work that left the shelf this month at an hourly price instead: on termination, as flat-hourly work, or by a buy-down. */
+            hours_billed: number;
         };
         DeletionReceipt: {
             deleted_id: components['schemas']['Uuid'];
@@ -3662,6 +3749,22 @@ export interface components {
             active_projects?: number;
             time?: components['schemas']['SummaryTime'];
             invoices?: components['schemas']['SummaryInvoices'];
+            deferred_backlog?: components['schemas']['SummaryDeferredBacklog'];
+        };
+        SummaryDeferredBacklog: {
+            /** @description Active or terminated agreements with deferred work outstanding, or with a withheld backlog. */
+            agreement_count: number;
+            /** @description True when more agreements have a backlog than are listed, or the scan reached its bound. */
+            truncated: boolean;
+            /** @description Withheld backlogs first, then the largest. No trend. */
+            agreements: components['schemas']['SummaryDeferredBacklogAgreement'][];
+        };
+        SummaryDeferredBacklogAgreement: {
+            agreement_id: components['schemas']['Uuid'];
+            client_id: components['schemas']['Uuid'];
+            /** Format: uri */
+            web_url: string;
+            backlog: components['schemas']['DeferredBacklog'];
         };
         SummaryInvoices: {
             draft_count: number;
@@ -4568,6 +4671,32 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['BillingScheduleResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'capacity_ledger.get': {
+        parameters: {
+            query?: {
+                months?: number;
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                agreement: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['CapacityLedgerResponse'];
                 };
             };
             default: components['responses']['Error'];

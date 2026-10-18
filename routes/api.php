@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\V1\AgentBillingScheduleController;
+use App\Http\Controllers\Api\V1\AgentCapacityLedgerController;
 use App\Http\Controllers\Api\V1\AgentClientController;
 use App\Http\Controllers\Api\V1\AgentConnectionController;
 use App\Http\Controllers\Api\V1\AgentExpenseController;
@@ -350,6 +351,10 @@ Route::prefix('v1')
             ->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']));
         $operation('billing_schedules.generate', [AgentBillingScheduleController::class, 'generate'])
             ->whereUuid('schedule')
+            ->middleware(EnsureAgentWorkspaceVisible::class)
+            ->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']));
+        $operation('capacity_ledger.get', [AgentCapacityLedgerController::class, 'show'])
+            ->whereUuid('agreement')
             ->middleware(EnsureAgentWorkspaceVisible::class)
             ->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']));
         $operation('invoices.create_draft', [AgentInvoiceMutationController::class, 'createDraft']);

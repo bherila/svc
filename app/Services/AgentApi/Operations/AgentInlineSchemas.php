@@ -111,28 +111,6 @@ final class AgentInlineSchemas
     }
 
     /** @return array<string, mixed> */
-    public static function capacityLedgerOutput(): array
-    {
-        return [
-            'type' => 'object',
-            'additionalProperties' => false,
-            'required' => ['data'],
-            'properties' => [
-                'data' => [
-                    'type' => 'object',
-                    'additionalProperties' => false,
-                    'required' => ['agreement_id', 'through', 'months'],
-                    'properties' => [
-                        'agreement_id' => ['type' => 'string', 'format' => 'uuid'],
-                        'through' => ['type' => 'string', 'format' => 'date'],
-                        'months' => ['type' => 'array', 'maxItems' => 60, 'items' => self::capacityLedgerMonth()],
-                    ],
-                ],
-            ],
-        ];
-    }
-
-    /** @return array<string, mixed> */
     public static function promptOutput(): array
     {
         return ['type' => 'object', 'additionalProperties' => false, 'required' => ['user'], 'properties' => ['user' => ['type' => 'string', 'maxLength' => 4096]]];
@@ -219,27 +197,6 @@ final class AgentInlineSchemas
                 'is_active' => ['type' => 'boolean'],
             ],
         ];
-    }
-
-    /** @return array<string, mixed> */
-    public static function capacityLedgerMonth(): array
-    {
-        $numbers = [
-            'retainer_hours', 'hours_worked', 'opening_retainer_hours', 'opening_rollover_hours',
-            'opening_expired_hours', 'opening_available_hours', 'hours_used_from_retainer',
-            'hours_used_from_rollover', 'unused_hours', 'excess_hours', 'negative_hours',
-            'signed_available_hours', 'remaining_rollover_hours',
-        ];
-        $properties = [
-            'period' => ['type' => 'string', 'pattern' => '^\\d{4}-\\d{2}$'],
-            'cycle_start' => ['type' => ['string', 'null'], 'format' => 'date'],
-            'bill_excess_immediately' => ['type' => 'boolean'],
-        ];
-        foreach ($numbers as $name) {
-            $properties[$name] = ['type' => 'number'];
-        }
-
-        return ['type' => 'object', 'additionalProperties' => false, 'required' => array_keys($properties), 'properties' => $properties];
     }
 
     /**

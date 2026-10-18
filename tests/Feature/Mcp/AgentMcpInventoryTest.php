@@ -277,7 +277,7 @@ final class AgentMcpInventoryTest extends TestCase
         $this->enableAll();
         // These historical read tools predate REST parity and are outside the
         // remaining operations named in #386. Every added tool is mapped.
-        $legacy = ['capacity_ledger.get', 'billing.audit_unplaceable_invoices', 'billing.audit_undated_collectible_invoices', 'billing.audit_missing_billed_overage', 'billing.audit_opening_rollover'];
+        $legacy = ['billing.audit_unplaceable_invoices', 'billing.audit_undated_collectible_invoices', 'billing.audit_missing_billed_overage', 'billing.audit_opening_rollover'];
         $spec = json_decode((string) file_get_contents(public_path('openapi/svc-agent-v1.json')), true, flags: JSON_THROW_ON_ERROR);
         $mapped = [];
         $definitions = collect($this->mcpTools())->keyBy(fn (Operation $operation): string => (string) $operation->mcpName());

@@ -19,9 +19,10 @@ the work independently of every retainer pool.
 `deferred_buydown` is reserved for the forthcoming buy-down writer (#366).
 Manual invoice, agent and billing-template inputs refuse it. It is excluded
 from the cadence generator's replaceable line types, so a cadence rebuild
-cannot release its reservation. This first slice establishes the accounting
-rule using synthetic test allocations; backlog reporting, settlement creation
-and its void/delete lifecycle are subsequent slices of #366.
+cannot release its reservation. The first slice established the accounting
+rule using synthetic test allocations and the second reports the backlog (see
+[Deferred backlog](#deferred-backlog)); settlement creation, its void/delete
+lifecycle and portal visibility are subsequent slices of #366.
 
 ## What it does
 
@@ -69,6 +70,61 @@ Deferred work draws only on capacity the month's ordinary work left free. When a
 ## Termination path
 
 When generating a post-termination invoice (`isRetainerMonthPostTermination = true`), the allocator switches modes and selects all outstanding deferred entries that the agreement may invoice, without a capacity filter. Consultant and `retainer`-mode hours attach to an `additional_hours` line priced at `agreement.hourly_rate`; `flat_hourly` hours keep their snapshotted rate on separate `subcontractor` lines; `direct` hours remain tracked and unbilled because the subcontractor invoices the client. A project-scoped agreement collects only its project. This termination-only deferred-billing path does **not** increment `hours_billed_at_rate` — that counter tracks the regular catch-up/overage pool used by the cumulative balance snapshot, which is a separate concept. The dollar amount is captured entirely by the generated lines' totals.
+
+## Deferred backlog
+
+The backlog is what an agreement still has on the shelf: the outstanding
+deferred work and what the termination invoice would charge for it today. It
+is a read model and never changes anything.
+
+| Piece | Role |
+| --- | --- |
+| `DeferredBacklogReader` | Workspace-scoped load for one or many agreements in a fixed number of queries: the project-chain check, the outstanding set, and (when a trend is asked for) the history with `withCapacityPlacement()`. |
+| `DeferredBacklog` | Database-free calculation over what was loaded: hours, entry count, oldest day worked, the agreement-rate and flat-hourly split, the amount, and the trend. |
+| `DeferredTerminationPricing` | The termination price, shared by `InvoiceLineComposer::addDeferredTerminationLine()` and the backlog. Flat-hourly grouping is `FlatHourlyPricing`, shared with the period's subcontractor lines. |
+
+**The same set as termination.** The outstanding entries use the termination
+collection's own predicates: `awaitingDeferredBilling()` (billable, deferred,
+linked to no line at all), `billableForInvoicing()`, the work date on or before
+the day read, and the agreement's project scope
+(`ClientTimeEntry::isWithinAgreementScope()`, the in-memory form of
+`forAgreementScope()`). The project chain is checked over the client's whole
+deferred chain before any agreement narrows it, as termination checks it.
+Where termination would refuse, the backlog is withheld (`issue:
+project_chain_mismatch`, every figure null) instead of throwing, so a screen
+that shows it still renders.
+
+**The same price as termination.** Consultant and `retainer`-mode minutes are
+pooled and priced once at `agreement.hourly_rate`; `flat_hourly` minutes keep
+the snapshotted rate, one group per person, project, rate and currency;
+`direct` work is excluded (it never reaches the set). Where the invoice would
+refuse to price, for example an agreement with no hourly rate, or a flat-hourly
+snapshot in another currency, the hours stand and the amount is null
+(`issue: unpriced`, with the refusal as `issue_detail`). Both rules are
+pinned by `DeferredBacklogParityTest`, which compares the backlog with
+`collectForTermination()` and with the lines `addDeferredTerminationLine()`
+writes for a fixture with mixed modes, two project scopes and rows of another
+workspace.
+
+**Trend.** For each requested month (`Y-m`): `hours_added` is deferred work
+done that month; `hours_applied` is deferred work a retainer pool of that month
+absorbed, booked on `capacityDate()` exactly as the ledger books it; and
+`hours_billed` is deferred work that left the shelf at an hourly price (on
+termination, as flat-hourly work, or by a future buy-down), booked on
+`allocatedOn()`. `net_hours_per_month` averages added minus applied minus
+billed over the months read. `capacity_ledger.get` reads the trend over the
+same months as its `months` rows; the admin agreement page reads the last three
+calendar months.
+
+Where it is shown:
+
+- `capacity_ledger.get` (MCP) and `GET /api/v1/workspaces/{workspace}/agreements/{agreement}/capacity-ledger`: a `deferred_backlog` object next to `months`.
+- `operations.summary`: for managers with `billing:read`, `deferred_backlog` lists the agreements with work on the shelf.
+- The admin agreement page: one line, for managers only.
+- `php artisan svc:billing:deferred-backlog {workspace} {agreement}`: the same presented object, for operators.
+
+All four call the same reader and presenter. The client portal does not show
+the backlog; that is the per-agreement visibility flag of a later slice.
 
 ## Regeneration
 

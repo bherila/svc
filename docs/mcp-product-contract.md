@@ -63,7 +63,11 @@ IDs. `operations.summary` always returns the workspace ID and conditionally incl
 project, time, and billing sections only when their respective read scopes are
 present. Invoice amounts are grouped by currency and distinguish drafts,
 collectible balances, and overdue balances; invoice-ready time excludes deferred,
-nonbillable, unrated, and already allocated entries.
+nonbillable, unrated, and already allocated entries. With `billing:read`, a
+workspace manager also receives `deferred_backlog`: the active or terminated
+agreements with deferred work outstanding, largest first, each with the hours
+and the amount the termination invoice would charge for them (see
+[deferred billing](client-management/deferred-billing.md#deferred-backlog)).
 
 Time follows `draft -> approved -> invoiced`. Approval snapshots the hourly rate and
 currency from the most recently effective active agreement, preferring a
