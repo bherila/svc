@@ -85,9 +85,11 @@ final readonly class AgentCredentialFence
             if (! in_array($successorId, $successors, true)) {
                 $successors[] = $successorId;
             }
+            /** @infection-ignore-all Equivalent: json_encode of a list of strings never returns false, so the cast changes nothing. */
             $this->cache->put($key, Crypt::encryptString((string) json_encode($successors)), self::SECONDS);
         };
         $store = $this->cache->getStore();
+        /** @infection-ignore-all The lock's name and timings decide only how two concurrent appends interleave, which a single-process test cannot observe; any name derived from the key serialises them alike. */
         $store instanceof LockProvider
             ? $store->lock($key.':lock', 10)->block(5, $append)
             : $append();
