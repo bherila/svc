@@ -251,6 +251,49 @@ final class SquareBillingAuditPolicyTest extends TestCase
         ], $invoice->seriesMember());
     }
 
+    public function test_a_scheduled_member_does_not_drift_a_series_before_it_is_billed(): void
+    {
+        $members = self::monthly(12_345);
+        $members[] = self::invoice('inv_next', 9, '2030-12-15', 'SCHEDULED', total: 20_000, currency: 'EUR');
+
+        $this->assertSame([], self::classify($members)->seriesDrift);
+    }
+
+    public function test_a_series_with_only_unbilled_members_is_neither_drift_nor_absent(): void
+    {
+        $this->assertSame([], self::classify([self::invoice('inv_next', 1, '2030-12-15', 'SCHEDULED', total: 1)])->seriesDrift);
+    }
+
+    public function test_a_series_billed_in_two_currencies_drifts_on_currency_and_not_amount(): void
+    {
+        $members = self::monthly(12_345);
+        $members[] = self::invoice('inv_eur', 9, '2030-09-15', 'PAID', total: 99_000, currency: 'EUR');
+
+        $drift = self::classify($members)->seriesDrift;
+
+        $this->assertSame([SquareBillingAuditPolicy::DRIFT_CURRENCY], $drift[0]['codes']);
+        $this->assertNull($drift[0]['series_currency']);
+    }
+
+    public function test_a_member_with_no_currency_does_not_make_a_series_multi_currency(): void
+    {
+        $members = self::monthly(12_345);
+        $members[0] = self::invoice('inv_fixture_1', 1, '2030-01-15', 'PAID', linked: true, total: 12_345, currency: null);
+        $members[] = self::invoice('inv_fixture_9', 9, '2030-09-15', 'PAID', linked: true, total: 13_000);
+
+        $drift = self::classify($members)->seriesDrift;
+
+        $this->assertSame([SquareBillingAuditPolicy::DRIFT_AMOUNT], $drift[0]['codes']);
+        $this->assertSame('USD', $drift[0]['series_currency']);
+    }
+
+    public function test_absence_is_not_claimed_when_the_series_load_was_bounded(): void
+    {
+        $facts = new SquareBillingAuditFacts('2030-10-01', [self::agreement()], [], [], [], [], false, false);
+
+        $this->assertSame([], SquareBillingAuditPolicy::classify($facts)->seriesDrift);
+    }
+
     /** @return list<SquareAuditInvoice> */
     private static function monthly(int $amount, string $currency = 'USD'): array
     {
@@ -297,7 +340,7 @@ final class SquareBillingAuditPolicyTest extends TestCase
         ?string $customer = 'cust_series',
         ?int $total = 12_345,
         ?int $paid = 0,
-        string $currency = 'USD',
+        ?string $currency = 'USD',
         ?string $name = null,
     ): SquareAuditInvoice {
         return new SquareAuditInvoice(

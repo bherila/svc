@@ -94,21 +94,28 @@ Square dashboard URLs, and `truncated`:
   not recorded under provider `square`. `not_recorded` means the invoice is linked
   and the sweep has not recorded the payment, for example because it failed
   closed; `invoice_not_linked` means no svc invoice is linked to receive it. A
-  payment recorded against another svc invoice still matches.
+  payment recorded against another svc invoice still matches. The mirror takes
+  payment ids from the order's tenders - `payment_id`, else the tender's own `id`
+  - and leaves out card tenders Square voided or failed, which took no money.
 - `unlinked_customer_balances`: Square customers with no client company mapped
   and an open invoice, most owed first - the customers `square.customers.unlinked`
   lists with `with_open_balance`.
-- `series_drift`: a billed-in-Square agreement whose series differs in `cadence`,
-  `currency` or latest billed `amount`, or which the mirror does not hold
-  (`series_not_mirrored`). The agreement's amount is its retainer fee for one
-  whole cycle; an agreement that sells no retainer fee is not compared on amount,
-  and a series with fewer than two dated members has no cadence to compare.
+- `series_drift`: a billed-in-Square agreement whose billed series members differ
+  in `cadence`, `currency` (another one, or more than one) or latest billed
+  `amount`, or whose series the mirror does not hold (`series_not_mirrored`).
+  `SCHEDULED` members are not billed yet and are left out. The agreement's amount
+  is its retainer fee for one whole cycle; an agreement that sells no retainer fee
+  is not compared on amount, and a series with fewer than two dated billed members
+  has no cadence to compare.
 
-The audit loads the agreements, mirrored invoices within its reach, their active
-links, customers and recorded payment ids once, with every query bounded and
-scoped to the workspace, and classifies them in `SquareBillingAuditPolicy`
-without the database. `complete` is false when that bound (5,000 mirrored
-invoices or 500 agreements) was reached; the counts are then a floor. Every flag
+The audit loads the agreements, the members of their series, the other mirrored
+invoices within its reach, their active links, customers and recorded payment ids
+once, with every query bounded and scoped to the workspace, and classifies them in
+`SquareBillingAuditPolicy` without the database. Series members load first under
+their own bound, so a large mirror never hides a billed-in-Square series.
+`complete` is false when a bound (5,000 series members, 5,000 other mirrored
+invoices or 500 agreements) was reached; the counts are then a floor, and a series
+is only reported absent when its members were loaded in full. Every flag
 is resolved in svc or in the Square dashboard by a person: nothing here links,
 records, imports or writes to Square.
 

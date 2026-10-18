@@ -23,8 +23,11 @@ use Illuminate\Support\Facades\DB;
  */
 final class SquareBillingAuditRepository
 {
-    /** Mirrored invoices read at most: decades of a small practice's billing. */
+    /** Mirrored invoices in reach read at most, besides series members: decades of a small practice's billing. */
     public const int MAX_INVOICES = 5000;
+
+    /** Members of billed-in-Square series read at most. */
+    public const int MAX_SERIES_MEMBERS = 5000;
 
     /** Billed-in-Square agreements read at most. */
     public const int MAX_AGREEMENTS = 500;
@@ -39,24 +42,31 @@ final class SquareBillingAuditRepository
         $agreements = array_slice($agreements, 0, self::MAX_AGREEMENTS);
         $seriesKeys = array_map(static fn (SquareAuditAgreement $agreement): string => $agreement->seriesKey, $agreements);
 
+        $columns = ['id', 'square_invoice_id', 'invoice_number', 'series_key', 'series_occurrence', 'square_customer_id', 'recipient_name', 'square_location_id',
+            'status', 'currency', 'total_amount', 'paid_amount', 'due_on', 'scheduled_at', 'autopay', 'payment_ids'];
+        // Series members first, under their own bound and newest first, so a
+        // large mirror never hides a billed-in-Square series: drift reads the
+        // latest members, and absence is only claimed of a complete load.
+        $members = $seriesKeys === [] ? collect() : SquareInvoiceSnapshot::query()->where('workspace_id', $workspace->id)->whereIn('series_key', $seriesKeys)
+            ->orderByDesc('id')->limit(self::MAX_SERIES_MEMBERS + 1)->get($columns);
+        $seriesComplete = $members->count() <= self::MAX_SERIES_MEMBERS;
+        $members = $members->take(self::MAX_SERIES_MEMBERS);
+
         $mapped = CompanySquareCustomer::query()->where('workspace_id', $workspace->id)->whereNotNull('active_customer_slot')->select('active_customer_slot');
         $linked = InvoiceSquareLink::query()->where('workspace_id', $workspace->id)->whereNotNull('active_square_invoice_slot')->select('active_square_invoice_slot');
-        $snapshots = SquareInvoiceSnapshot::query()->where('workspace_id', $workspace->id)
-            ->where(static function (Builder $reach) use ($seriesKeys, $mapped, $linked): void {
+        $reach = SquareInvoiceSnapshot::query()->where('workspace_id', $workspace->id)
+            ->where(static function (Builder $reach) use ($mapped, $linked): void {
                 $reach->whereIn('status', SquareSeriesSummary::OPEN_STATUSES)
                     ->orWhereIn('square_customer_id', $mapped)
                     ->orWhereIn('square_invoice_id', $linked);
-                if ($seriesKeys !== []) {
-                    $reach->orWhereIn('series_key', $seriesKeys);
-                }
             })
-            ->orderBy('id')
+            ->orderByDesc('id')
             ->limit(self::MAX_INVOICES + 1)
-            ->get(['id', 'square_invoice_id', 'invoice_number', 'series_key', 'series_occurrence', 'square_customer_id', 'recipient_name', 'square_location_id',
-                'status', 'currency', 'total_amount', 'paid_amount', 'due_on', 'scheduled_at', 'autopay', 'payment_ids']);
-        if ($snapshots->count() > self::MAX_INVOICES) {
-            $snapshots->pop();
-            $complete = false;
+            ->get($columns);
+        $complete = $complete && $seriesComplete && $reach->count() <= self::MAX_INVOICES;
+        $snapshots = [];
+        foreach ([...$members->all(), ...$reach->take(self::MAX_INVOICES)->all()] as $snapshot) {
+            $snapshots[$snapshot->square_invoice_id] ??= $snapshot;
         }
 
         $squareInvoiceIds = [];
@@ -99,10 +109,11 @@ final class SquareBillingAuditRepository
             $today,
             $agreements,
             $invoices,
-            self::set(CompanySquareCustomer::query()->where('workspace_id', $workspace->id)->whereNotNull('active_customer_slot')->pluck('active_customer_slot')->all()),
+            $this->mappedCustomers($workspace, array_map(strval(...), array_keys($customerIds))),
             $this->retiredCustomers($workspace, array_map(strval(...), array_keys($customerIds))),
             $this->recordedPayments($workspace, array_map(strval(...), array_keys($paymentIds))),
             $complete,
+            $seriesComplete,
         );
     }
 
@@ -153,6 +164,20 @@ final class SquareBillingAuditRepository
         }
 
         return $links;
+    }
+
+    /**
+     * @param  list<string>  $customerIds
+     * @return array<string, true>
+     */
+    private function mappedCustomers(Workspace $workspace, array $customerIds): array
+    {
+        $mapped = [];
+        foreach (array_chunk($customerIds, self::CHUNK) as $chunk) {
+            $mapped = [...$mapped, ...CompanySquareCustomer::query()->where('workspace_id', $workspace->id)->whereIn('active_customer_slot', $chunk)->pluck('active_customer_slot')->all()];
+        }
+
+        return self::set($mapped);
     }
 
     /**

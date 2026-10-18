@@ -27,6 +27,12 @@ final class SquareSnapshotMapper
 
     private const string STATUS = '/^[A-Z][A-Z_]{0,31}$/D';
 
+    /** Tenders read per order at most, as the order presenter caps them. */
+    private const int MAX_TENDERS = 50;
+
+    /** Card tender states in which no money moved. */
+    private const array TENDERS_WITHOUT_MONEY = ['VOIDED', 'FAILED'];
+
     public function __construct(private readonly SquarePresenter $presenter) {}
 
     /**
@@ -135,14 +141,26 @@ final class SquareSnapshotMapper
     /**
      * Payment ids from an order's tenders, as Square sent the order.
      *
+     * A tender names its payment in `payment_id`, or only by its own `id` -
+     * the reconciler reads both the same way. A card tender Square voided or
+     * failed took no money, so it is not a payment to account for.
+     *
      * @param  array<mixed>  $order
      * @return list<string>
      */
     public function paymentIds(array $order): array
     {
         $ids = [];
-        foreach ($this->presenter->order($order)['tenders'] as $tender) {
-            $id = self::id($tender['payment_id'] ?? null);
+        $tenders = $order['tenders'] ?? [];
+        foreach (is_array($tenders) ? array_slice($tenders, 0, self::MAX_TENDERS) : [] as $tender) {
+            if (! is_array($tender)) {
+                continue;
+            }
+            $card = $tender['card_details'] ?? null;
+            if (is_array($card) && in_array($card['status'] ?? null, self::TENDERS_WITHOUT_MONEY, true)) {
+                continue;
+            }
+            $id = self::id($tender['payment_id'] ?? null) ?? self::id($tender['id'] ?? null);
             if ($id !== null && ! in_array($id, $ids, true)) {
                 $ids[] = $id;
             }

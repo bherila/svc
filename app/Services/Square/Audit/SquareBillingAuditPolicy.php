@@ -21,11 +21,13 @@ use Carbon\CarbonImmutable;
  * - **Unlinked customer balance:** a Square customer no client company is
  *   mapped to, still listed by Square, with an open invoice - the same
  *   customers `square.customers.unlinked` lists with an open balance.
- * - **Series drift:** a billed-in-Square series whose cadence, currency or
- *   latest billed amount differs from its agreement's, or which the mirror
- *   does not hold at all. An agreement that sells no retainer fee is not
- *   compared on amount, and a series with fewer than two dated members has no
- *   cadence to compare.
+ * - **Series drift:** a billed-in-Square series whose billed members differ
+ *   from its agreement in cadence, currency (another one, or more than one)
+ *   or latest amount, or which the mirror does not hold at all - the last
+ *   only when the load held every series member. SCHEDULED members are not
+ *   billed yet and are left out. An agreement that sells no retainer fee is
+ *   not compared on amount, and a series with fewer than two dated billed
+ *   members has no cadence to compare.
  */
 final class SquareBillingAuditPolicy
 {
@@ -169,20 +171,31 @@ final class SquareBillingAuditPolicy
         foreach ($facts->agreements as $agreement) {
             $series = $members[$agreement->seriesKey] ?? [];
             if ($series === []) {
-                $drift[] = ['agreement' => $agreement, 'codes' => [self::DRIFT_SERIES_NOT_MIRRORED], 'series_cadence' => null, 'series_currency' => null, 'series_amount' => null];
+                // Absence is a finding only when the load held every member.
+                if ($facts->seriesComplete) {
+                    $drift[] = ['agreement' => $agreement, 'codes' => [self::DRIFT_SERIES_NOT_MIRRORED], 'series_cadence' => null, 'series_currency' => null, 'series_amount' => null];
+                }
 
                 continue;
             }
-            usort($series, static fn (SquareAuditInvoice $a, SquareAuditInvoice $b): int => [$a->seriesOccurrence ?? PHP_INT_MAX, $a->squareInvoiceId] <=> [$b->seriesOccurrence ?? PHP_INT_MAX, $b->squareInvoiceId]);
-            $summary = SquareSeriesSummary::of($agreement->seriesKey, array_map(static fn (SquareAuditInvoice $invoice): array => $invoice->seriesMember(), $series), $today);
+            // Only what Square has billed: a SCHEDULED member is not a bill yet.
+            $billed = array_filter($series, static fn (SquareAuditInvoice $invoice): bool => ! in_array($invoice->status, self::UNBILLED_STATUSES, true));
+            if ($billed === []) {
+                continue;
+            }
+            usort($billed, static fn (SquareAuditInvoice $a, SquareAuditInvoice $b): int => [$a->seriesOccurrence ?? PHP_INT_MAX, $a->squareInvoiceId] <=> [$b->seriesOccurrence ?? PHP_INT_MAX, $b->squareInvoiceId]);
+            $summary = SquareSeriesSummary::of($agreement->seriesKey, array_map(static fn (SquareAuditInvoice $invoice): array => $invoice->seriesMember(), $billed), $today);
             $cadence = is_string($summary['cadence']) ? $summary['cadence'] : null;
-            $currency = is_string($summary['currency']) ? $summary['currency'] : null;
+            $currencies = array_values(array_unique(array_filter(array_map(static fn (SquareAuditInvoice $invoice): ?string => $invoice->currency, $billed), 'is_string')));
+            $currency = count($currencies) === 1 ? $currencies[0] : null;
             $amount = is_int($summary['amount']) ? $summary['amount'] : null;
             $codes = [];
             if ($agreement->cadence === null || ($cadence !== null && $cadence !== 'unknown' && $cadence !== $agreement->cadence->value)) {
                 $codes[] = self::DRIFT_CADENCE;
             }
-            if ($currency !== null && $currency !== $agreement->currency) {
+            // Billed in several currencies, or in another one: an amount in
+            // another currency is not comparable, so it is not compared.
+            if (count($currencies) > 1 || ($currency !== null && $currency !== $agreement->currency)) {
                 $codes[] = self::DRIFT_CURRENCY;
             } elseif ($agreement->periodAmount !== null && $amount !== null && $amount !== $agreement->periodAmount) {
                 $codes[] = self::DRIFT_AMOUNT;

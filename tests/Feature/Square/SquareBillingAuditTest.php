@@ -152,6 +152,30 @@ final class SquareBillingAuditTest extends TestCase
         $this->assertFalse(app(SquareBillingAudit::class)->report($workspace)['complete']);
     }
 
+    public function test_a_full_reach_never_hides_a_billed_in_square_series(): void
+    {
+        [$workspace] = $this->fixture();
+        $this->snapshot($workspace, 'inv_audit_1', 1, '2030-01-15', 'PAID', ['total_amount' => 15_000]);
+        $this->snapshot($workspace, 'inv_audit_2', 2, '2030-02-15', 'PAID', ['total_amount' => 15_000]);
+        $rows = [];
+        for ($index = 1; $index <= 5001; $index++) {
+            $rows[] = [
+                'workspace_id' => $workspace->id, 'square_invoice_id' => 'inv_open_'.$index, 'invoice_number' => sprintf('%06d', $index), 'square_customer_id' => 'cust_open_'.$index,
+                'status' => 'UNPAID', 'currency' => 'USD', 'total_amount' => 100, 'autopay' => false, 'payment_requests' => '[]',
+                'fingerprint' => str_repeat('a', 64), 'synced_at' => '2030-03-01 00:00:00', 'last_seen_at' => '2030-03-01 00:00:00',
+            ];
+        }
+        foreach (array_chunk($rows, 500) as $chunk) {
+            DB::table('square_invoice_snapshots')->insert($chunk);
+        }
+
+        $report = app(SquareBillingAudit::class)->report($workspace);
+
+        $this->assertFalse($report['complete']);
+        $this->assertSame([['amount']], array_column($report['series_drift']['agreements'], 'codes'));
+        $this->assertSame(5000, $report['unlinked_customer_balances']['count']);
+    }
+
     public function test_an_imported_annual_series_mirrors_its_amount_once_per_cycle(): void
     {
         [$workspace, $owner] = $this->fixture();

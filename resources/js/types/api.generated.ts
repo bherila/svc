@@ -3359,7 +3359,7 @@ export interface components {
         };
         /** @description Phase-two Square billing-audit flags, read from svc's mirror as of its last sync. Empty where Square does not serve the workspace. Nothing here writes to Square. */
         SquareBillingAudit: {
-            /** @description False when the audit reached its bound of mirrored invoices or agreements; every count is then a floor. */
+            /** @description False when the audit reached a bound (5,000 members of billed-in-Square series, 5,000 other mirrored invoices, or 500 agreements); every count is then a floor, and series_not_mirrored is not claimed when series members were bounded. */
             complete: boolean;
             /** @description Billed members of a series an agreement is billed in, on or after the agreement starts, with no svc invoice linked. SCHEDULED, DRAFT, CANCELED and FAILED members are not flagged. */
             unmirrored_series_periods: {
@@ -3379,7 +3379,7 @@ export interface components {
                 customers: components['schemas']['SquareUnlinkedCustomerBalance'][];
                 truncated: boolean;
             };
-            /** @description Billed-in-Square agreements whose series differs in cadence, currency or latest billed amount, or is not in the mirror. */
+            /** @description Billed-in-Square agreements whose billed members (SCHEDULED ones are not yet billed) differ in cadence, currency (another, or more than one) or latest amount, or whose series the mirror does not hold. */
             series_drift: {
                 count: number;
                 agreements: components['schemas']['SquareSeriesDrift'][];
@@ -3884,7 +3884,7 @@ export interface components {
             agreement_cadence:
                 'monthly' | 'quarterly' | 'semi_annual' | 'annual' | null;
             /**
-             * @description Read from the spacing of the series' due dates; unknown with fewer than two dated members, and null when the mirror holds no member.
+             * @description Read from the spacing of the billed members' due dates; unknown with fewer than two dated billed members, and null when the mirror holds no member.
              * @enum {string|null}
              */
             series_cadence:
@@ -3897,6 +3897,7 @@ export interface components {
                 | 'unknown'
                 | null;
             agreement_currency: string;
+            /** @description The billed members' one currency; null when they were billed in more than one, which is currency drift. */
             series_currency: string | null;
             /** @description The retainer fee for one whole cycle, in minor units; null when the agreement sells none, and it is then not compared. */
             agreement_amount: number | null;
