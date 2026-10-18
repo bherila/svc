@@ -152,6 +152,22 @@ final class SquareBillingAuditTest extends TestCase
         $this->assertFalse(app(SquareBillingAudit::class)->report($workspace)['complete']);
     }
 
+    public function test_an_imported_annual_series_mirrors_its_amount_once_per_cycle(): void
+    {
+        [$workspace, $owner] = $this->fixture();
+        config(['agent_api.writes_enabled' => true, 'agent_api.client_writes_enabled' => true]);
+        foreach ([1 => '2029-03-01', 2 => '2030-03-01'] as $occurrence => $due) {
+            $this->snapshot($workspace, 'inv_annual_'.$occurrence, $occurrence, $due, 'PAID', ['series_key' => '000777', 'invoice_number' => sprintf('000777-R-%04d', $occurrence), 'square_customer_id' => 'cust_audit_annual', 'total_amount' => 120_000, 'paid_amount' => 120_000]);
+        }
+        $this->actingAsMcp($owner, [...self::SCOPES, 'billing:write']);
+
+        $imported = $this->postJson('/api/v1/workspaces/'.$workspace->public_id.'/square/customers/cust_audit_annual/import', ['confirm' => true, 'company_name' => 'Synthetic annual client', 'series_key' => '000777'], ['Idempotency-Key' => 'synthetic-annual-import'])->assertOk();
+
+        $agreement = ClientAgreement::query()->where('workspace_id', $workspace->id)->where('public_id', $imported->json('data.agreement_id'))->firstOrFail();
+        $this->assertSame(['annual', null, 120_000, 1_200.0], [$agreement->billing_cadence, $agreement->retainer_amount, $agreement->period_retainer_amount, $agreement->periodRetainerFee()]);
+        $this->assertNotContains('000777', array_column(app(SquareBillingAudit::class)->report($workspace)['series_drift']['agreements'], 'series_key'));
+    }
+
     /** @return array{Workspace, User, ClientCompany, ClientAgreement} */
     private function fixture(): array
     {
