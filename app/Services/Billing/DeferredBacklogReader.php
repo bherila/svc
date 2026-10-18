@@ -70,6 +70,7 @@ final class DeferredBacklogReader
         // allocated is no longer awaiting billing, but would still be read.
         $history = $periods === [] ? null : $this->history($workspaceId, $companyIds, $through, CarbonImmutable::parse($periods[0].'-01'));
         $disagreeing = array_flip([
+            ...$this->projectChainGuard->companiesClaimedOutsideWorkspace($workspaceId, $companyIds),
             ...$this->projectChainGuard->companiesWithDisagreeingChains($workspaceId, $companyEntries),
             ...($history === null ? [] : $this->projectChainGuard->companiesWithDisagreeingChains($workspaceId, $history)),
         ]);
@@ -103,8 +104,9 @@ final class DeferredBacklogReader
     /**
      * The last day an agreement's backlog runs to.
      *
-     * A successor for the same project scope takes over the work from the day
-     * it starts, exactly as invoice generation hands one segment to the next
+     * The workspace's today, the agreement's own end - where its capacity
+     * ledger stops - and, where a successor for the same project scope takes
+     * over, the day before it starts, exactly as invoice generation hands one segment to the next
      * ({@see AgreementSelector::successorAgreementForGeneration()}); without
      * the bound, both agreements would quote the same later hours, the
      * outgoing one at a rate nobody bills any more.
@@ -113,14 +115,18 @@ final class DeferredBacklogReader
      */
     private function segmentThrough(ClientAgreement $agreement, Collection $segments, CarbonImmutable $through): CarbonImmutable
     {
+        $bounds = [$through];
+        // The agreement's own end, where its ledger stops too.
+        $end = $agreement->termination_date;
+        if ($end instanceof CarbonImmutable) {
+            $bounds[] = $end->startOfDay();
+        }
         $successor = $this->agreements->successorAgreementForGeneration($segments, $agreement);
-        if (! $successor instanceof ClientAgreement) {
-            return $through;
+        if ($successor instanceof ClientAgreement) {
+            $bounds[] = $successor->starts_on->startOfDay()->subDay();
         }
 
-        $handover = $successor->starts_on->startOfDay()->subDay();
-
-        return $handover->lt($through) ? $handover : $through;
+        return min($bounds);
     }
 
     /**

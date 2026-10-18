@@ -4,6 +4,7 @@ namespace App\Support\Billing;
 
 use App\Models\ClientAgreement;
 use App\Models\ClientTimeEntry;
+use App\Services\Billing\MoneyService;
 use Carbon\CarbonImmutable;
 use DomainException;
 use InvalidArgumentException;
@@ -104,7 +105,7 @@ final readonly class DeferredBacklog
         $flatHourlyMinutes = null;
         try {
             $pricing = DeferredTerminationPricing::price($entries, $agreement, $currency, 'the termination invoice');
-            $amount = $pricing->totalAmount() + DeferredTerminationPricing::carriedTotal($carriedMinutes ?? 0, $agreement);
+            $amount = MoneyService::sum($pricing->totalAmount(), DeferredTerminationPricing::carriedTotal($carriedMinutes ?? 0, $agreement));
             $agreementRateMinutes = $pricing->agreementRateMinutes;
             $flatHourlyMinutes = $pricing->flatHourlyMinutes();
         } catch (DomainException|RuntimeException|InvalidArgumentException $refused) {

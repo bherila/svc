@@ -141,6 +141,21 @@ final class MoneyService
         );
     }
 
+    /**
+     * Integer minor units added without overflowing into a float.
+     *
+     * @throws InvalidArgumentException when the total exceeds the integer range
+     */
+    public static function sum(int ...$amounts): int
+    {
+        $total = 0;
+        foreach ($amounts as $amount) {
+            $total = self::safeAdd($total, $amount);
+        }
+
+        return $total;
+    }
+
     private static function safeAdd(int $left, int $right): int
     {
         if ($right > PHP_INT_MAX - $left) {

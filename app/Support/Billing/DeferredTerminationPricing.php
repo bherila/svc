@@ -6,6 +6,7 @@ use App\Models\ClientAgreement;
 use App\Models\ClientTimeEntry;
 use App\Services\Billing\MoneyService;
 use DomainException;
+use InvalidArgumentException;
 use RuntimeException;
 
 /**
@@ -119,14 +120,16 @@ final readonly class DeferredTerminationPricing
         return $minutes;
     }
 
-    /** Every line's total, in minor units of {@see $currency}. */
+    /**
+     * Every line's total, in minor units of {@see $currency}.
+     *
+     * @throws InvalidArgumentException when the lines together exceed the integer range
+     */
     public function totalAmount(): int
     {
-        $total = $this->agreementRateTotal;
-        foreach ($this->flatHourlyGroups as $group) {
-            $total += $group->totalAmount;
-        }
-
-        return $total;
+        return MoneyService::sum(
+            $this->agreementRateTotal,
+            ...array_map(static fn (FlatHourlyGroup $group): int => $group->totalAmount, $this->flatHourlyGroups),
+        );
     }
 }

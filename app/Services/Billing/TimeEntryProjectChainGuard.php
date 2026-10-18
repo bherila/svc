@@ -93,6 +93,25 @@ final class TimeEntryProjectChainGuard
     }
 
     /**
+     * The companies, among several of one workspace, that a time entry of
+     * another workspace claims: the explicitly scoped integrity scan
+     * {@see companyProjectChainsAgree()} makes outside the workspace, batched.
+     *
+     * @param  list<int>  $companyIds
+     * @return list<int>
+     */
+    public function companiesClaimedOutsideWorkspace(int $workspaceId, array $companyIds): array
+    {
+        return array_values(ClientTimeEntry::query()
+            ->where('workspace_id', '!=', $workspaceId)
+            ->whereIn('client_company_id', $companyIds)
+            ->distinct()
+            ->get(['client_company_id'])
+            ->map(static fn (ClientTimeEntry $entry): int => $entry->client_company_id)
+            ->all());
+    }
+
+    /**
      * @param  Builder<ClientTimeEntry>  $entries
      */
     public function assertProjectChainsAgree(ClientCompany $company, Builder $entries): void

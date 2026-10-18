@@ -155,6 +155,23 @@ final class DeferredBacklogTest extends TestCase
         $this->assertSame(2.0, $backlog->hours());
     }
 
+    public function test_a_total_beyond_the_integer_range_is_unpriced_rather_than_a_type_error(): void
+    {
+        $rate = intdiv(PHP_INT_MAX, 2) + 1;
+        $backlog = $this->calculate(outstanding: [
+            $this->entry(1, 60, '2026-03-01', mode: 'flat_hourly', cost: $rate),
+            $this->entry(2, 60, '2026-03-02', mode: 'flat_hourly', cost: $rate, projectId: 12),
+        ]);
+
+        $this->assertSame(DeferredBacklogIssue::Unpriced, $backlog->issue);
+        $this->assertSame('Money total exceeds the supported integer range.', $backlog->issueDetail);
+
+        $carried = DeferredBacklog::calculate($this->agreement(PHP_INT_MAX), CarbonImmutable::parse('2026-03-31'), true, [], [], [], 60);
+        $this->assertSame(PHP_INT_MAX, $carried->amount);
+        $overflowing = DeferredBacklog::calculate($this->agreement(PHP_INT_MAX), CarbonImmutable::parse('2026-03-31'), true, [$this->entry(1, 60, '2026-03-01')], [], [], 60);
+        $this->assertSame(DeferredBacklogIssue::Unpriced, $overflowing->issue);
+    }
+
     public function test_scope_keys_read_as_strings_compare_as_numbers(): void
     {
         $agreement = $this->agreement(15000, projectId: 11);

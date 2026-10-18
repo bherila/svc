@@ -133,9 +133,10 @@ final class DeferredBacklogParityTest extends TestCase
         $queries = count(DB::getQueryLog());
         DB::disableQueryLog();
 
-        // Two chain checks (shelf and history), the outstanding set, the agreement
+        // The outside-workspace claim scan, two chain checks (shelf and history),
+        // the outstanding set, the agreement
         // segments, and the history with its two eager loads - however many agreements.
-        $this->assertLessThanOrEqual(7, $queries);
+        $this->assertLessThanOrEqual(8, $queries);
     }
 
     public function test_a_disagreeing_project_chain_withholds_the_backlog_where_termination_refuses(): void
@@ -207,6 +208,37 @@ final class DeferredBacklogParityTest extends TestCase
             app(DeferredBillingAllocator::class)->collectForTermination($this->company, Carbon::parse('2026-03-31'), $outgoing)->modelKeys(),
             $backlogs[$outgoing->id]->entryIds,
         );
+    }
+
+    public function test_a_terminated_agreement_reads_its_backlog_through_its_own_end(): void
+    {
+        $agreement = $this->agreement('Ended', null, 15000);
+        $agreement->forceFill(['status' => 'terminated', 'ends_on' => '2026-03-31'])->save();
+        $this->entry(60, '2026-03-31');
+        $this->entry(30, '2026-04-01');
+
+        $backlog = app(DeferredBacklogReader::class)->forAgreement($this->workspace, $agreement, CarbonImmutable::parse(self::THROUGH), ['2026-03', '2026-04']);
+
+        $this->assertSame('2026-03-31', $backlog->through);
+        $this->assertSame(60, $backlog->minutes);
+        $this->assertSame([60, 0], array_map(static fn ($month): int => $month->minutesAdded, $backlog->trend));
+    }
+
+    public function test_an_entry_of_another_workspace_claiming_the_client_withholds_the_backlog(): void
+    {
+        $agreement = $this->agreement('Company-wide', null, 15000);
+        $this->entry(60, '2026-03-01');
+        $other = Workspace::query()->create(['name' => 'Claiming tenant', 'slug' => 'backlog-claiming-tenant']);
+        $otherCompany = ClientCompany::query()->create(['workspace_id' => $other->id, 'name' => 'Claiming Client', 'slug' => 'claiming-client']);
+        $otherProject = ClientProject::query()->create(['workspace_id' => $other->id, 'client_company_id' => $otherCompany->id, 'name' => 'Claiming Project']);
+        $this->writingLegacyCrossTenantRows(fn () => ClientTimeEntry::query()->create([
+            'workspace_id' => $other->id, 'client_project_id' => $otherProject->id, 'is_deferred' => false,
+        ] + $this->attributes(60, '2026-03-02')));
+
+        $backlog = app(DeferredBacklogReader::class)->forAgreement($this->workspace, $agreement, CarbonImmutable::parse(self::THROUGH));
+
+        $this->assertSame(DeferredBacklogIssue::ProjectChainMismatch, $backlog->issue);
+        $this->assertNull($backlog->minutes);
     }
 
     public function test_an_allocated_entry_with_a_disagreeing_chain_withholds_the_trend_too(): void
@@ -298,9 +330,9 @@ final class DeferredBacklogParityTest extends TestCase
         $other = Workspace::query()->create(['name' => 'Other tenant', 'slug' => 'backlog-other-tenant']);
         $otherCompany = ClientCompany::query()->create(['workspace_id' => $other->id, 'name' => 'Other Tenant Client', 'slug' => 'other-tenant-client']);
         $otherProject = ClientProject::query()->create(['workspace_id' => $other->id, 'client_company_id' => $otherCompany->id, 'name' => 'Other Tenant Project']);
-        ClientTimeEntry::query()->create($this->attributes(600, '2026-03-01') + [
+        ClientTimeEntry::query()->create([
             'workspace_id' => $other->id, 'client_company_id' => $otherCompany->id, 'client_project_id' => $otherProject->id,
-        ]);
+        ] + $this->attributes(600, '2026-03-01'));
         $crossLinked = $this->entry(90, '2026-03-11');
         $this->writingLegacyCrossTenantRows(fn () => $this->allocate($crossLinked, 'time', '2026-03-31', $other, $otherCompany));
     }

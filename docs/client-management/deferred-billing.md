@@ -91,16 +91,20 @@ the day read, and the agreement's project scope
 `forAgreementScope()`). The project chain is checked over the client's whole
 deferred chain before any agreement narrows it, as termination checks it.
 The history the trend reads is checked the same way, since an allocated entry
-is no longer awaiting billing but would still be counted. Where termination
+is no longer awaiting billing but would still be counted, and so is any entry
+of another workspace claiming the client, as invoice generation's
+`assertCompanyProjectChainsAgree()` checks. Amounts are added with
+`MoneyService::sum()`, so a total past the integer range is unpriced rather
+than an error. Where termination
 would refuse, the backlog is withheld (`issue: project_chain_mismatch`, every
 figure null) instead of throwing, so a screen that shows it still renders.
 
 **One segment, one backlog.** Agreements for the same project scope hand over
 to each other as invoice generation walks them
-(`AgreementSelector::successorAgreementForGeneration()`). An agreement with a
-successor reads its backlog through the day before the successor starts
-(`through` says which day), and one with a predecessor reads it from its own
-start. The same hours are never quoted by two agreements, and never at a rate
+(`AgreementSelector::successorAgreementForGeneration()`). An agreement reads
+its backlog through the earliest of today, its own end (where its capacity
+ledger stops) and the day before a successor starts (`through` says which day),
+and one with a predecessor reads it from its own start. The same hours are never quoted by two agreements, and never at a rate
 that has been superseded.
 
 **The re-carried balance.** Deferred work an invoice applied beyond free
