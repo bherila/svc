@@ -50,6 +50,7 @@ final class AgentCapacityLedgerReadService
                 $agreement,
                 array_map(static fn (MonthSummary $row): string => $row->yearMonth, $rows),
                 $today,
+                DeferredBacklogReadService::carriedMinutesOf($ledger),
             ),
         ];
     }

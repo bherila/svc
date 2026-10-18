@@ -27,22 +27,25 @@ final class DeferredBacklogReader
 {
     public function __construct(
         private readonly TimeEntryProjectChainGuard $projectChainGuard = new TimeEntryProjectChainGuard,
+        private readonly AgreementSelector $agreements = new AgreementSelector,
     ) {}
 
     /**
      * @param  list<string>  $periods  `Y-m` months for the trend, oldest first
+     * @param  int|null  $carriedMinutes  the ledger's re-carried deferred balance; null where it was not read
      */
-    public function forAgreement(Workspace $workspace, ClientAgreement $agreement, CarbonImmutable $through, array $periods = []): DeferredBacklog
+    public function forAgreement(Workspace $workspace, ClientAgreement $agreement, CarbonImmutable $through, array $periods = [], ?int $carriedMinutes = null): DeferredBacklog
     {
-        return $this->forAgreements($workspace, collect([$agreement]), $through, $periods)[(int) $agreement->id];
+        return $this->forAgreements($workspace, collect([$agreement]), $through, $periods, [(int) $agreement->id => $carriedMinutes])[(int) $agreement->id];
     }
 
     /**
      * @param  Collection<int, ClientAgreement>  $agreements  every one of them in $workspace
      * @param  list<string>  $periods  `Y-m` months for the trend, oldest first
+     * @param  array<int, int|null>  $carriedMinutes  re-carried balances by agreement id; absent is not read
      * @return array<int, DeferredBacklog> keyed by agreement id
      */
-    public function forAgreements(Workspace $workspace, Collection $agreements, CarbonImmutable $through, array $periods = []): array
+    public function forAgreements(Workspace $workspace, Collection $agreements, CarbonImmutable $through, array $periods = [], array $carriedMinutes = []): array
     {
         if ($agreements->isEmpty()) {
             return [];
@@ -63,32 +66,100 @@ final class DeferredBacklogReader
         // Checked over each client's whole deferred chain before any agreement
         // narrows it, as termination checks it, so a malformed row cannot
         // disappear behind a project scope. A refusal there is a withheld
-        // figure here.
-        $disagreeing = array_flip($this->projectChainGuard->companiesWithDisagreeingChains($workspaceId, $companyEntries));
+        // figure here. The trend's history is checked too: an entry already
+        // allocated is no longer awaiting billing, but would still be read.
+        $history = $periods === [] ? null : $this->history($workspaceId, $companyIds, $through, CarbonImmutable::parse($periods[0].'-01'));
+        $disagreeing = array_flip([
+            ...$this->projectChainGuard->companiesWithDisagreeingChains($workspaceId, $companyEntries),
+            ...($history === null ? [] : $this->projectChainGuard->companiesWithDisagreeingChains($workspaceId, $history)),
+        ]);
 
         $outstanding = (clone $companyEntries)
             ->billableForInvoicing()
             ->orderBy('worked_on')
             ->orderBy('id')
             ->get();
-
-        $history = $periods === []
-            ? new Collection
-            : $this->history($workspaceId, $companyIds, $through, CarbonImmutable::parse($periods[0].'-01'));
+        $moved = $history === null ? new Collection : $history->withCapacityPlacement($workspaceId)->get();
+        $segments = $this->segments($workspaceId, $companyIds);
 
         $backlogs = [];
         foreach ($agreements as $agreement) {
+            $clientSegments = $segments[(int) $agreement->client_company_id] ?? new Collection;
             $backlogs[(int) $agreement->id] = DeferredBacklog::calculate(
                 $agreement,
-                $through,
+                $this->segmentThrough($agreement, $clientSegments, $through),
                 ! isset($disagreeing[(int) $agreement->client_company_id]),
                 $outstanding->filter(static fn (ClientTimeEntry $entry): bool => $entry->isWithinAgreementScope($agreement))->values(),
-                $history->filter(static fn (ClientTimeEntry $entry): bool => $entry->isWithinAgreementScope($agreement))->values(),
+                $moved->filter(static fn (ClientTimeEntry $entry): bool => $entry->isWithinAgreementScope($agreement))->values(),
                 $periods,
+                $carriedMinutes[(int) $agreement->id] ?? null,
+                $this->segmentFrom($agreement, $clientSegments),
             );
         }
 
         return $backlogs;
+    }
+
+    /**
+     * The last day an agreement's backlog runs to.
+     *
+     * A successor for the same project scope takes over the work from the day
+     * it starts, exactly as invoice generation hands one segment to the next
+     * ({@see AgreementSelector::successorAgreementForGeneration()}); without
+     * the bound, both agreements would quote the same later hours, the
+     * outgoing one at a rate nobody bills any more.
+     *
+     * @param  Collection<int, ClientAgreement>  $segments  the client's agreements, in generation order
+     */
+    private function segmentThrough(ClientAgreement $agreement, Collection $segments, CarbonImmutable $through): CarbonImmutable
+    {
+        $successor = $this->agreements->successorAgreementForGeneration($segments, $agreement);
+        if (! $successor instanceof ClientAgreement) {
+            return $through;
+        }
+
+        $handover = $successor->starts_on->startOfDay()->subDay();
+
+        return $handover->lt($through) ? $handover : $through;
+    }
+
+    /**
+     * The first day an agreement's backlog runs from: its own start, where a
+     * predecessor for the same scope owns the work before it; otherwise no
+     * bound, as termination applies none.
+     *
+     * @param  Collection<int, ClientAgreement>  $segments  the client's agreements, in generation order
+     */
+    private function segmentFrom(ClientAgreement $agreement, Collection $segments): ?CarbonImmutable
+    {
+        $hasPredecessor = $segments->contains(fn (ClientAgreement $segment): bool => $segment->id !== $agreement->id
+            && $this->agreements->successorAgreementForGeneration($segments, $segment)?->id === $agreement->id);
+
+        return $hasPredecessor ? $agreement->starts_on->startOfDay() : null;
+    }
+
+    /**
+     * Every agreement of the clients read that invoice generation walks, in
+     * its order, by client.
+     *
+     * @param  list<int>  $companyIds
+     * @return array<int, Collection<int, ClientAgreement>>
+     */
+    private function segments(int $workspaceId, array $companyIds): array
+    {
+        $segments = [];
+        foreach (ClientAgreement::query()
+            ->where('workspace_id', $workspaceId)
+            ->whereIn('client_company_id', $companyIds)
+            ->whereIn('status', ['active', 'paused', 'terminated', 'expired'])
+            ->orderBy('starts_on')
+            ->orderBy('id')
+            ->get() as $segment) {
+            $segments[(int) $segment->client_company_id] ??= new Collection;
+            $segments[(int) $segment->client_company_id]->push($segment);
+        }
+
+        return $segments;
     }
 
     /**
@@ -99,9 +170,9 @@ final class DeferredBacklogReader
      * worked before it.
      *
      * @param  list<int>  $companyIds
-     * @return Collection<int, ClientTimeEntry>
+     * @return Builder<ClientTimeEntry>
      */
-    private function history(int $workspaceId, array $companyIds, CarbonImmutable $through, CarbonImmutable $from): Collection
+    private function history(int $workspaceId, array $companyIds, CarbonImmutable $through, CarbonImmutable $from): Builder
     {
         return ClientTimeEntry::query()
             ->where('workspace_id', $workspaceId)
@@ -120,9 +191,7 @@ final class DeferredBacklogReader
                         ->orWhereHas('invoice', fn (Builder $invoice): Builder => $invoice
                             ->where('client_invoices.workspace_id', $workspaceId)
                             ->where('client_invoices.service_period_end', '>=', $from->toDateString())))))
-            ->withCapacityPlacement($workspaceId)
             ->orderBy('worked_on')
-            ->orderBy('id')
-            ->get();
+            ->orderBy('id');
     }
 }

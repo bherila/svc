@@ -90,9 +90,28 @@ the day read, and the agreement's project scope
 (`ClientTimeEntry::isWithinAgreementScope()`, the in-memory form of
 `forAgreementScope()`). The project chain is checked over the client's whole
 deferred chain before any agreement narrows it, as termination checks it.
-Where termination would refuse, the backlog is withheld (`issue:
-project_chain_mismatch`, every figure null) instead of throwing, so a screen
-that shows it still renders.
+The history the trend reads is checked the same way, since an allocated entry
+is no longer awaiting billing but would still be counted. Where termination
+would refuse, the backlog is withheld (`issue: project_chain_mismatch`, every
+figure null) instead of throwing, so a screen that shows it still renders.
+
+**One segment, one backlog.** Agreements for the same project scope hand over
+to each other as invoice generation walks them
+(`AgreementSelector::successorAgreementForGeneration()`). An agreement with a
+successor reads its backlog through the day before the successor starts
+(`through` says which day), and one with a predecessor reads it from its own
+start. The same hours are never quoted by two agreements, and never at a rate
+that has been superseded.
+
+**The re-carried balance.** Deferred work an invoice applied beyond free
+capacity stays linked to that invoice, but the ledger carries the excess
+forward as a quantity (`MonthSummary::recarriedDeferredHours`), and
+termination bills it on its own `carried_deferred_billed` line. The backlog
+adds the ledger's closing balance as `carried_hours`, included in `hours` and
+priced by `DeferredTerminationPricing::carriedTotal()`, the function that line
+is priced by. Only an agreement's own ledger states it: `capacity_ledger.get`,
+the agreement page and the CLI read it, and `operations.summary` reports
+`carried_hours: null` rather than building a ledger per agreement.
 
 **The same price as termination.** Consultant and `retainer`-mode minutes are
 pooled and priced once at `agreement.hourly_rate`; `flat_hourly` minutes keep
@@ -106,7 +125,8 @@ pinned by `DeferredBacklogParityTest`, which compares the backlog with
 writes for a fixture with mixed modes, two project scopes and rows of another
 workspace.
 
-**Trend.** For each requested month (`Y-m`): `hours_added` is deferred work
+**Trend.** Nothing dated after the day read counts, neither work nor an
+allocation, as the capacity ledger counts neither. For each requested month (`Y-m`): `hours_added` is deferred work
 done that month; `hours_applied` is deferred work a retainer pool of that month
 absorbed, booked on `capacityDate()` exactly as the ledger books it; and
 `hours_billed` is deferred work that left the shelf at an hourly price (on

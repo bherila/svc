@@ -88,6 +88,22 @@ final readonly class DeferredTerminationPricing
         );
     }
 
+    /**
+     * The termination charge for the ledger's re-carried deferred balance,
+     * which is billed on its own line at the agreement's rate
+     * ({@see CarriedDeferredLine::BilledOnTermination}).
+     *
+     * @throws DomainException when there is a balance and the agreement states no hourly rate
+     */
+    public static function carriedTotal(int $minutes, ClientAgreement $agreement): int
+    {
+        if ($minutes <= 0) {
+            return 0;
+        }
+
+        return MoneyService::hourlyAmount($minutes, $agreement->hourlyRateAmountOrFail());
+    }
+
     public function agreementRateHours(): float
     {
         return round($this->agreementRateMinutes / 60, 4);

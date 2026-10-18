@@ -15,6 +15,7 @@ function backlog(overrides: Partial<DeferredBacklog> = {}): DeferredBacklog {
         oldest_worked_on: '2025-09-03',
         agreement_rate_hours: 40,
         flat_hourly_hours: 2,
+        carried_hours: 0,
         amount_at_hourly_rate: { currency: 'USD', amount: 610000 },
         issue: null,
         issue_message: null,

@@ -5,10 +5,14 @@ namespace App\Services\Billing;
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\Workspace;
+use App\Services\Billing\Balances\MonthSummary;
 use App\Support\AgentApi\Presenters\DeferredBacklogPresenter;
 use App\Support\Billing\DeferredBacklog;
 use App\Support\WorkspaceClock;
+use Carbon\Carbon;
 use Carbon\CarbonImmutable;
+use DomainException;
+use RuntimeException;
 
 /**
  * The one read workflow behind every surface that shows a deferred backlog.
@@ -33,6 +37,7 @@ final class DeferredBacklogReadService
     public function __construct(
         private readonly DeferredBacklogReader $reader,
         private readonly DeferredBacklogPresenter $presenter,
+        private readonly InvoiceLedgerBuilder $ledgers,
         private readonly WorkspaceClock $clock = new WorkspaceClock,
     ) {}
 
@@ -40,11 +45,26 @@ final class DeferredBacklogReadService
      * One agreement's backlog as of a given day, its trend over given months.
      *
      * @param  list<string>  $periods  `Y-m` trend months, oldest first
+     * @param  int|null  $carriedMinutes  the ledger's re-carried deferred balance; null where it was not read
      * @return array<string, mixed>
      */
-    public function forAgreement(Workspace $workspace, ClientAgreement $agreement, array $periods, CarbonImmutable $through): array
+    public function forAgreement(Workspace $workspace, ClientAgreement $agreement, array $periods, CarbonImmutable $through, ?int $carriedMinutes): array
     {
-        return $this->presenter->present($this->reader->forAgreement($workspace, $agreement, $through, $periods));
+        return $this->presenter->present($this->reader->forAgreement($workspace, $agreement, $through, $periods, $carriedMinutes));
+    }
+
+    /**
+     * The re-carried deferred balance a ledger closes on: deferred work an
+     * invoice applied beyond free capacity, which termination bills on its own
+     * line ({@see ClientInvoicingService::applyDeferredWork()}).
+     *
+     * @param  array<int, MonthSummary>  $ledger
+     */
+    public static function carriedMinutesOf(array $ledger): int
+    {
+        $last = end($ledger);
+
+        return $last instanceof MonthSummary ? (int) round($last->recarriedDeferredHours * 60) : 0;
     }
 
     /**
@@ -56,13 +76,25 @@ final class DeferredBacklogReadService
     public function trailing(Workspace $workspace, ClientAgreement $agreement, int $months = self::PAGE_TREND_MONTHS): array
     {
         $through = $this->clock->today($workspace);
+        $company = $agreement->clientCompany()->where('workspace_id', $workspace->id)->first();
+        try {
+            $carried = $company instanceof ClientCompany
+                ? self::carriedMinutesOf($this->ledgers->buildAgreementLedgerThrough($company, $agreement, Carbon::instance($through)))
+                : null;
+        } catch (DomainException|RuntimeException) {
+            // A ledger that refuses to build states no balance; the backlog
+            // says so (null) rather than guessing one.
+            $carried = null;
+        }
 
-        return $this->forAgreement($workspace, $agreement, self::trailingPeriods($through, $months), $through);
+        return $this->forAgreement($workspace, $agreement, self::trailingPeriods($through, $months), $through, $carried);
     }
 
     /**
      * The workspace's active and terminated agreements that still have work
-     * on the shelf, largest first. Read in one bounded pass; no trend.
+     * on the shelf, largest first. Read in one bounded pass; no trend, and no
+     * re-carried balance, which only an agreement's own ledger states
+     * (`carried_hours` is null here; `capacity_ledger.get` reads it).
      *
      * @return array{agreement_count:int, truncated:bool, agreements:list<array<string, mixed>>}
      */

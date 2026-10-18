@@ -48,6 +48,82 @@ final class DeferredBacklogTest extends TestCase
         $this->assertTrue($backlog->hasBacklog());
     }
 
+    public function test_the_recarried_balance_is_billed_with_the_shelf_at_the_agreement_rate(): void
+    {
+        $backlog = DeferredBacklog::calculate(
+            $this->agreement(15000),
+            CarbonImmutable::parse('2026-03-31'),
+            true,
+            [$this->entry(1, 60, '2026-03-01')],
+            [],
+            [],
+            90,
+        );
+
+        $this->assertSame(1.5, $backlog->carriedHours());
+        $this->assertSame(2.5, $backlog->hours());
+        $this->assertSame(1, $backlog->entryCount);
+        // Priced as termination prices them: the shelf's line and the carried
+        // line each at the agreement's rate.
+        $this->assertSame(15000 + 22500, $backlog->amount);
+
+        $carriedOnly = DeferredBacklog::calculate($this->agreement(15000), CarbonImmutable::parse('2026-03-31'), true, [], [], [], 30);
+        $this->assertTrue($carriedOnly->hasBacklog());
+        $this->assertSame(7500, $carriedOnly->amount);
+
+        $unread = DeferredBacklog::calculate($this->agreement(15000), CarbonImmutable::parse('2026-03-31'), true, [], [], [], null);
+        $this->assertNull($unread->carriedHours());
+        $this->assertSame(0.0, $unread->hours());
+        $this->assertFalse($unread->hasBacklog());
+
+        $unpriced = DeferredBacklog::calculate($this->agreement(null), CarbonImmutable::parse('2026-03-31'), true, [], [], [], 30);
+        $this->assertSame(DeferredBacklogIssue::Unpriced, $unpriced->issue);
+        $this->assertNull($unpriced->amount);
+        $this->assertSame(0.5, $unpriced->hours());
+    }
+
+    public function test_nothing_dated_after_the_day_read_is_on_the_shelf_or_in_the_trend(): void
+    {
+        $backlog = $this->calculate(
+            outstanding: [$this->entry(1, 60, '2026-03-30'), $this->entry(2, 45, '2026-04-01')],
+            history: [
+                $this->entry(3, 30, '2026-03-10', lines: [$this->line('prior_month_retainer', '2026-03-31')]),
+                $this->entry(4, 20, '2026-03-10', lines: [$this->line('additional_hours', '2026-03-31')]),
+                $this->entry(5, 15, '2026-03-30', lines: []),
+                $this->entry(6, 10, '2026-03-31', lines: []),
+            ],
+            periods: ['2026-03'],
+            through: '2026-03-30',
+        );
+
+        $this->assertSame([1], $backlog->entryIds);
+        $this->assertSame(1.0, $backlog->hours());
+        $this->assertSame('2026-03-30', $backlog->through);
+        // The allocations dated the 31st have not happened yet on the 30th.
+        $this->assertSame([[30 + 20 + 15, 0, 0]], array_map(
+            static fn (DeferredBacklogMonth $month): array => [$month->minutesAdded, $month->minutesApplied, $month->minutesBilled],
+            $backlog->trend,
+        ));
+    }
+
+    public function test_work_before_the_segment_is_its_predecessors(): void
+    {
+        $backlog = DeferredBacklog::calculate(
+            $this->agreement(15000),
+            CarbonImmutable::parse('2026-03-31'),
+            true,
+            [$this->entry(1, 60, '2026-02-28'), $this->entry(2, 30, '2026-03-01')],
+            [$this->entry(1, 60, '2026-02-28', lines: []), $this->entry(2, 30, '2026-03-01', lines: [])],
+            ['2026-02', '2026-03'],
+            0,
+            CarbonImmutable::parse('2026-03-01'),
+        );
+
+        $this->assertSame([2], $backlog->entryIds);
+        $this->assertSame('2026-03-01', $backlog->oldestWorkedOn);
+        $this->assertSame([0, 30], array_map(static fn (DeferredBacklogMonth $month): int => $month->minutesAdded, $backlog->trend));
+    }
+
     public function test_hours_are_stated_to_four_places(): void
     {
         $backlog = $this->calculate(outstanding: [
@@ -236,11 +312,11 @@ final class DeferredBacklogTest extends TestCase
      * @param  list<ClientTimeEntry>  $history
      * @param  list<string>  $periods
      */
-    private function calculate(array $outstanding, array $history = [], array $periods = [], bool $chainsAgree = true, ?int $rate = 15000): DeferredBacklog
+    private function calculate(array $outstanding, array $history = [], array $periods = [], bool $chainsAgree = true, ?int $rate = 15000, string $through = '2026-03-31'): DeferredBacklog
     {
         return DeferredBacklog::calculate(
             $this->agreement($rate),
-            CarbonImmutable::parse('2026-03-31'),
+            CarbonImmutable::parse($through),
             $chainsAgree,
             $outstanding,
             $history,

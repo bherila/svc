@@ -1986,10 +1986,10 @@ export interface components {
         DeferredBacklog: {
             /**
              * Format: date
-             * @description The workspace day the backlog is read as of; later work is not on it.
+             * @description The day the backlog is read as of: the workspace's today, or the day before a successor agreement for the same project scope takes over. Later work is not on it.
              */
             through: string;
-            /** @description Outstanding deferred hours the termination invoice would collect today. Null only when withheld. */
+            /** @description Every hour the termination invoice would bill today: the outstanding deferred entries plus carried_hours. Null only when withheld. */
             hours: number | null;
             entry_count: number | null;
             /** Format: date */
@@ -1998,6 +1998,8 @@ export interface components {
             agreement_rate_hours: number | null;
             /** @description Flat-hourly subcontractor hours, priced at each entry's snapshotted rate. Null when withheld or unpriced. */
             flat_hourly_hours: number | null;
+            /** @description Deferred hours an earlier invoice applied beyond free capacity, which the ledger carries forward as a quantity and termination bills on its own line at the agreement's rate. Included in hours and the amount. Null where the ledger was not read: always in operations.summary, and when the ledger refuses to build. */
+            carried_hours: number | null;
             /** @description What the termination invoice would charge for these hours, in minor units of the agreement currency. Direct subcontractor work is never included. */
             amount_at_hourly_rate:
                 components['schemas']['CurrencyAmount'] | null;

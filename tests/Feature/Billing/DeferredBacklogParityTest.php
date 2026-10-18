@@ -133,8 +133,9 @@ final class DeferredBacklogParityTest extends TestCase
         $queries = count(DB::getQueryLog());
         DB::disableQueryLog();
 
-        // Chain check, outstanding set, history and its two eager loads.
-        $this->assertLessThanOrEqual(5, $queries);
+        // Two chain checks (shelf and history), the outstanding set, the agreement
+        // segments, and the history with its two eager loads - however many agreements.
+        $this->assertLessThanOrEqual(7, $queries);
     }
 
     public function test_a_disagreeing_project_chain_withholds_the_backlog_where_termination_refuses(): void
@@ -172,6 +173,63 @@ final class DeferredBacklogParityTest extends TestCase
 
         $this->expectException(DomainException::class);
         app(DeferredBillingAllocator::class)->collectForTermination($this->company, Carbon::parse(self::THROUGH), $agreement);
+    }
+
+    public function test_a_successor_owns_the_work_from_the_day_it_starts(): void
+    {
+        $outgoing = $this->agreement('Outgoing', null, 15000);
+        $outgoing->forceFill(['status' => 'terminated', 'ends_on' => '2026-03-31'])->save();
+        $successor = $this->agreement('Successor', null, 18000);
+        $successor->forceFill(['starts_on' => '2026-04-01'])->save();
+        // Another scope's agreement is no successor of a company-wide one.
+        $other = $this->agreement('Other scope', $this->otherProject->id, 12000);
+        $other->forceFill(['starts_on' => '2026-03-15'])->save();
+        $this->entry(60, '2026-03-10');
+        $this->entry(30, '2026-04-10');
+
+        $backlogs = app(DeferredBacklogReader::class)->forAgreements(
+            $this->workspace,
+            collect([$outgoing, $successor]),
+            CarbonImmutable::parse(self::THROUGH),
+            ['2026-03', '2026-04'],
+        );
+
+        $this->assertSame(60, $backlogs[$outgoing->id]->minutes);
+        $this->assertSame('2026-03-31', $backlogs[$outgoing->id]->through);
+        $this->assertSame(15000, $backlogs[$outgoing->id]->amount);
+        $this->assertSame([60, 0], array_column(array_map(static fn ($m): array => [$m->minutesAdded], $backlogs[$outgoing->id]->trend), 0));
+        $this->assertSame(30, $backlogs[$successor->id]->minutes);
+        $this->assertSame(self::THROUGH, $backlogs[$successor->id]->through);
+        $this->assertSame(9000, $backlogs[$successor->id]->amount);
+        // Until the outgoing final invoice links it, termination of the
+        // outgoing agreement through the handover collects exactly its share.
+        $this->assertSame(
+            app(DeferredBillingAllocator::class)->collectForTermination($this->company, Carbon::parse('2026-03-31'), $outgoing)->modelKeys(),
+            $backlogs[$outgoing->id]->entryIds,
+        );
+    }
+
+    public function test_an_allocated_entry_with_a_disagreeing_chain_withholds_the_trend_too(): void
+    {
+        $agreement = $this->agreement('Company-wide', null, 15000);
+        $stranger = ClientCompany::query()->create([
+            'workspace_id' => $this->workspace->id, 'name' => 'Allocated Stranger Client', 'slug' => 'allocated-stranger-client',
+        ]);
+        $strangerProject = ClientProject::query()->create([
+            'workspace_id' => $this->workspace->id, 'client_company_id' => $stranger->id, 'name' => 'Allocated Stranger Project',
+        ]);
+        $malformed = null;
+        $this->writingLegacyCrossTenantRows(function () use (&$malformed, $strangerProject): void {
+            $malformed = $this->entry(60, '2026-04-02', ['client_project_id' => $strangerProject->id]);
+        });
+        $this->allocate($malformed, 'prior_month_retainer', '2026-04-30', $this->workspace);
+        $reader = app(DeferredBacklogReader::class);
+        $through = CarbonImmutable::parse(self::THROUGH);
+
+        // Nothing is awaiting billing, so the shelf alone looks clean ...
+        $this->assertNull($reader->forAgreement($this->workspace, $agreement, $through)->issue);
+        // ... but the trend would read the malformed row, so it is withheld.
+        $this->assertSame(DeferredBacklogIssue::ProjectChainMismatch, $reader->forAgreement($this->workspace, $agreement, $through, ['2026-04'])->issue);
     }
 
     public function test_an_agreement_of_another_workspace_is_refused(): void

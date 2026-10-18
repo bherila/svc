@@ -4,6 +4,10 @@ namespace Tests\Unit\Billing;
 
 use App\Models\ClientAgreement;
 use App\Models\ClientTimeEntry;
+use App\Services\Billing\Balances\ClosingBalance;
+use App\Services\Billing\Balances\MonthSummary;
+use App\Services\Billing\Balances\OpeningBalance;
+use App\Services\Billing\DeferredBacklogReadService;
 use App\Support\Billing\DeferredTerminationPricing;
 use App\Support\Billing\FlatHourlyPricing;
 use DomainException;
@@ -120,6 +124,33 @@ final class DeferredTerminationPricingTest extends TestCase
                 'subcontractor_cost_currency' => null,
             ], true),
         ], 'USD', 'invoice SVC-TEST-12');
+    }
+
+    public function test_the_recarried_balance_is_priced_at_the_agreement_rate_on_its_own(): void
+    {
+        $this->assertSame(0, DeferredTerminationPricing::carriedTotal(0, $this->agreement(null)));
+        $this->assertSame(0, DeferredTerminationPricing::carriedTotal(-5, $this->agreement(null)));
+        $this->assertSame(10001, DeferredTerminationPricing::carriedTotal(60, $this->agreement(10001)));
+        $this->assertSame(167, DeferredTerminationPricing::carriedTotal(1, $this->agreement(10001)));
+
+        $this->expectException(DomainException::class);
+        DeferredTerminationPricing::carriedTotal(1, $this->agreement(null));
+    }
+
+    public function test_the_ledger_closing_balance_is_what_is_carried(): void
+    {
+        $month = static fn (string $period, float $carried): MonthSummary => new MonthSummary(
+            new OpeningBalance(10, 0, 0, 10, 0, 0, 10, 0),
+            new ClosingBalance(0, 0, 10, 0, 0, 0),
+            hoursWorked: 0,
+            yearMonth: $period,
+            retainerHours: 10,
+            recarriedDeferredHours: $carried,
+        );
+
+        $this->assertSame(0, DeferredBacklogReadService::carriedMinutesOf([]));
+        $this->assertSame(45, DeferredBacklogReadService::carriedMinutesOf([$month('2026-02', 3.0), $month('2026-03', 0.75)]));
+        $this->assertSame(1, DeferredBacklogReadService::carriedMinutesOf([$month('2026-03', 0.0084)]));
     }
 
     public function test_a_zero_rate_is_a_stated_rate(): void

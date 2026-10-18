@@ -9647,6 +9647,7 @@
                     "oldest_worked_on",
                     "agreement_rate_hours",
                     "flat_hourly_hours",
+                    "carried_hours",
                     "amount_at_hourly_rate",
                     "issue",
                     "issue_message",
@@ -9658,7 +9659,7 @@
                     "through": {
                         "type": "string",
                         "format": "date",
-                        "description": "The workspace day the backlog is read as of; later work is not on it."
+                        "description": "The day the backlog is read as of: the workspace's today, or the day before a successor agreement for the same project scope takes over. Later work is not on it."
                     },
                     "hours": {
                         "type": [
@@ -9666,7 +9667,7 @@
                             "null"
                         ],
                         "minimum": 0,
-                        "description": "Outstanding deferred hours the termination invoice would collect today. Null only when withheld."
+                        "description": "Every hour the termination invoice would bill today: the outstanding deferred entries plus carried_hours. Null only when withheld."
                     },
                     "entry_count": {
                         "type": [
@@ -9697,6 +9698,14 @@
                         ],
                         "minimum": 0,
                         "description": "Flat-hourly subcontractor hours, priced at each entry's snapshotted rate. Null when withheld or unpriced."
+                    },
+                    "carried_hours": {
+                        "type": [
+                            "number",
+                            "null"
+                        ],
+                        "minimum": 0,
+                        "description": "Deferred hours an earlier invoice applied beyond free capacity, which the ledger carries forward as a quantity and termination bills on its own line at the agreement's rate. Included in hours and the amount. Null where the ledger was not read: always in operations.summary, and when the ledger refuses to build."
                     },
                     "amount_at_hourly_rate": {
                         "oneOf": [

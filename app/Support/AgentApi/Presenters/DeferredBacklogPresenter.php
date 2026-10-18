@@ -25,6 +25,7 @@ final class DeferredBacklogPresenter
             'oldest_worked_on' => $backlog->oldestWorkedOn,
             'agreement_rate_hours' => $backlog->agreementRateHours(),
             'flat_hourly_hours' => $backlog->flatHourlyHours(),
+            'carried_hours' => $backlog->carriedHours(),
             'amount_at_hourly_rate' => $backlog->amount === null
                 ? null
                 : ['currency' => $backlog->currency, 'amount' => $backlog->amount],
