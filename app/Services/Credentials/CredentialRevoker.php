@@ -13,6 +13,7 @@ use Laravel\Passport\Passport;
 use Laravel\Passport\RefreshToken;
 use Laravel\Passport\Token;
 use Psr\Log\LoggerInterface;
+use Throwable;
 
 /**
  * The one place SVC revokes a credential: a connection disconnecting itself
@@ -136,11 +137,22 @@ final readonly class CredentialRevoker
         if (! $selection->fence) {
             return;
         }
-        match ($selection->scope) {
-            AgentCredentialScope::Connections => $this->fence->raise($selection->ownerId, $selection->clientId),
-            AgentCredentialScope::Token => $this->fence->raiseLineage((string) $selection->tokenId),
-            AgentCredentialScope::Name => null,
-        };
+        // The fence is a backstop: a cache it cannot reach must never stop the
+        // revocation itself. Fail open on the fence alone, and say so.
+        try {
+            match ($selection->scope) {
+                AgentCredentialScope::Connections => $this->fence->raise($selection->ownerId, $selection->clientId),
+                AgentCredentialScope::Token => $this->fence->raiseLineage((string) $selection->tokenId),
+                AgentCredentialScope::Name => null,
+            };
+        } catch (Throwable $unavailable) {
+            $this->log->warning('agent_token.fence_unavailable', [
+                'subject_id' => $selection->ownerPublicId,
+                'selection' => $selection->scope->value,
+                'client_id' => $selection->clientId,
+                'error' => $unavailable::class,
+            ]);
+        }
     }
 
     /** Whether {@see revokeUnattributedRefreshTokens()} may run: only with OAuth issuance (and so refresh) off. */

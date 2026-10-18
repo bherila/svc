@@ -10,6 +10,7 @@ use App\Services\Credentials\CredentialRevoker;
 use App\Services\Credentials\RevocationRefused;
 use App\Services\Credentials\RevokeCredentialsIssuedDuringRevocation;
 use App\Support\AgentApi\AgentApiScopes;
+use App\Support\WorkspaceClock;
 use BWH\Auth\Http\Middleware\EnforceOAuthPkce;
 use BWH\Auth\Http\Middleware\EnforceOAuthResourceIndicator;
 use BWH\Auth\Http\Middleware\EnsureOAuthServerEnabled;
@@ -20,6 +21,8 @@ use BWH\Auth\OAuth\Server\ResourceAuthCodeRepository;
 use BWH\Auth\OAuth\Server\ResourceClient;
 use BWH\Auth\OAuth\Server\ResourceRefreshTokenRepository;
 use Illuminate\Auth\Middleware\Authenticate;
+use Illuminate\Cache\ArrayStore;
+use Illuminate\Cache\Repository as CacheRepository;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Log\Events\MessageLogged;
 use Illuminate\Support\Facades\Artisan;
@@ -38,6 +41,7 @@ use Laravel\Passport\Events\RefreshTokenCreated;
 use Laravel\Passport\Passport;
 use League\OAuth2\Server\AuthorizationServer;
 use League\OAuth2\Server\ResourceServer;
+use RuntimeException;
 use Tests\TestCase;
 
 final class AgentOAuthLifecycleTest extends TestCase
@@ -645,6 +649,42 @@ final class AgentOAuthLifecycleTest extends TestCase
         Auth::forgetGuards();
         $this->mcpInitialize($raced['access_token'])->assertUnauthorized();
         $this->refresh($clientId, $raced['refresh_token'], $resource)->assertBadRequest()->assertJsonPath('error', 'invalid_grant');
+    }
+
+    /**
+     * The fence is a backstop, never a precondition: with the cache down the
+     * emergency revocation still revokes everything, and says the fence is off.
+     */
+    public function test_a_cache_outage_lifts_only_the_fence_never_the_revocation(): void
+    {
+        $person = User::factory()->create();
+        $clientId = $this->registerClient();
+        $verifier = $this->verifier();
+        $tokens = $this->exchangeCode($clientId, $this->authorize($person, $clientId, $verifier), $verifier, OAuthResourceIndicator::resource(self::MCP))->assertOk()->json();
+        $broken = new class(new ArrayStore) extends CacheRepository
+        {
+            public function put($key, $value, $ttl = null): bool
+            {
+                throw new RuntimeException('cache unavailable');
+            }
+        };
+        $this->app->instance(AgentCredentialFence::class, new AgentCredentialFence($broken, new WorkspaceClock));
+        $this->app->forgetInstance(CredentialRevoker::class);
+        $logged = [];
+        Event::listen(MessageLogged::class, static function (MessageLogged $event) use (&$logged): void {
+            $logged[] = ['level' => $event->level, 'message' => $event->message, 'context' => $event->context];
+        });
+
+        $this->assertSame(0, Artisan::call('svc:auth:revoke-connections', ['user_public_id' => $person->public_id]));
+
+        $this->assertSame(1, json_decode(trim(Artisan::output()), true)['access_tokens']);
+        Auth::forgetGuards();
+        $this->mcpInitialize($tokens['access_token'])->assertUnauthorized();
+        $warnings = array_values(array_filter($logged, static fn (array $entry): bool => $entry['message'] === 'agent_token.fence_unavailable'));
+        $this->assertNotEmpty($warnings);
+        $this->assertSame('warning', $warnings[0]['level']);
+        $this->assertSame($person->public_id, $warnings[0]['context']['subject_id'] ?? null);
+        $this->assertStringNotContainsString($tokens['access_token'], json_encode($logged, JSON_THROW_ON_ERROR));
     }
 
     /** The window follows the commit, however long the revocation's transaction took. */
