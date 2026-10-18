@@ -7,8 +7,10 @@ use App\Services\Credentials\RefreshGrantLineage;
 use App\Support\WorkspaceClock;
 use Illuminate\Cache\ArrayStore;
 use Illuminate\Cache\Repository;
+use Illuminate\Contracts\Cache\Store;
 use Illuminate\Contracts\Encryption\Encrypter;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Crypt;
 use Laravel\Passport\Passport;
 use League\OAuth2\Server\CryptTrait;
 use Tests\TestCase;
@@ -69,20 +71,103 @@ final class RefreshGrantLineageTest extends TestCase
         $fence = new AgentCredentialFence($cache, new WorkspaceClock);
 
         $fence->recordSuccessor('access-1', 'access-2');
+        // A concurrent refresh of the same refresh token branches the lineage: both are kept, once each.
+        $fence->recordSuccessor('access-1', 'access-9');
+        $fence->recordSuccessor('access-1', 'access-2');
 
-        $this->assertSame('access-2', $fence->successorOf('access-1'));
-        $this->assertNull($fence->successorOf('access-2'));
+        $this->assertSame(['access-2', 'access-9'], $fence->successorsOf('access-1'));
+        $this->assertSame([], $fence->successorsOf('access-2'));
         $sealed = $cache->get('agent-credential-fence:successor:'.hash('sha256', 'access-1'));
         $this->assertIsString($sealed);
         $this->assertStringNotContainsString('access-2', $sealed);
-        // Anything not sealed by this application names no successor.
+        // Anything not sealed by this application, or not a list of ids, names no successor.
         $cache->put('agent-credential-fence:successor:'.hash('sha256', 'access-3'), 'access-4', 60);
-        $this->assertNull($fence->successorOf('access-3'));
+        $this->assertSame([], $fence->successorsOf('access-3'));
         $cache->put('agent-credential-fence:successor:'.hash('sha256', 'access-5'), ['access-6'], 60);
-        $this->assertNull($fence->successorOf('access-5'));
+        $this->assertSame([], $fence->successorsOf('access-5'));
+        $cache->put('agent-credential-fence:successor:'.hash('sha256', 'access-7'), Crypt::encryptString('"not a list"'), 60);
+        $this->assertSame([], $fence->successorsOf('access-7'));
+        $cache->put('agent-credential-fence:successor:'.hash('sha256', 'access-8'), Crypt::encryptString('[7,"access-10"]'), 60);
+        $this->assertSame(['access-10'], $fence->successorsOf('access-8'));
 
         $this->travel(AgentCredentialFence::SECONDS)->seconds();
-        $this->assertNull($fence->successorOf('access-1'));
+        $this->assertSame([], $fence->successorsOf('access-1'));
+    }
+
+    /** Without a lock-capable store the append still happens. */
+    public function test_a_rotation_is_remembered_without_a_lock_capable_store(): void
+    {
+        $store = new class extends ArrayStore
+        {
+            public function lock($name, $seconds = 0, $owner = null)
+            {
+                throw new \LogicException('no locks here');
+            }
+        };
+        $plain = new class($store) implements Store
+        {
+            public function __construct(private readonly ArrayStore $inner) {}
+
+            public function get($key)
+            {
+                return $this->inner->get($key);
+            }
+
+            public function many(array $keys)
+            {
+                return $this->inner->many($keys);
+            }
+
+            public function put($key, $value, $seconds)
+            {
+                return $this->inner->put($key, $value, $seconds);
+            }
+
+            public function putMany(array $values, $seconds)
+            {
+                return $this->inner->putMany($values, $seconds);
+            }
+
+            public function increment($key, $value = 1)
+            {
+                return $this->inner->increment($key, $value);
+            }
+
+            public function decrement($key, $value = 1)
+            {
+                return $this->inner->decrement($key, $value);
+            }
+
+            public function forever($key, $value)
+            {
+                return $this->inner->forever($key, $value);
+            }
+
+            public function touch($key, $seconds)
+            {
+                return true;
+            }
+
+            public function forget($key)
+            {
+                return $this->inner->forget($key);
+            }
+
+            public function flush()
+            {
+                return $this->inner->flush();
+            }
+
+            public function getPrefix()
+            {
+                return '';
+            }
+        };
+        $fence = new AgentCredentialFence(new Repository($plain), new WorkspaceClock);
+
+        $fence->recordSuccessor('access-1', 'access-2');
+
+        $this->assertSame(['access-2'], $fence->successorsOf('access-1'));
     }
 
     private function request(string $grant, string $refreshToken): Request

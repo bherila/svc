@@ -726,6 +726,41 @@ final class AgentOAuthLifecycleTest extends TestCase
     }
 
     /**
+     * Two refreshes redeeming one refresh token concurrently branch the
+     * lineage; a self-revocation with the token they replaced ends every
+     * branch, and nothing of another person's.
+     */
+    public function test_a_self_revocation_ends_every_branch_of_a_forked_lineage(): void
+    {
+        $person = User::factory()->create();
+        $stranger = User::factory()->create();
+        $clientId = $this->registerClient();
+        $token = static function (int $userId) use ($clientId): string {
+            $id = Str::random(80);
+            Passport::token()->forceFill(['id' => $id, 'user_id' => $userId, 'client_id' => $clientId, 'scopes' => [], 'revoked' => false, 'expires_at' => now()->addHour()])->saveOrFail();
+
+            return $id;
+        };
+        $old = $token($person->id);
+        Passport::token()->newQuery()->whereKey($old)->update(['revoked' => true]);
+        [$left, $right, $grandchild, $theirs] = [$token($person->id), $token($person->id), $token($person->id), $token($stranger->id)];
+        $fence = app(AgentCredentialFence::class);
+        $fence->recordSuccessor($old, $left);
+        $fence->recordSuccessor($old, $right);
+        $fence->recordSuccessor($right, $grandchild);
+        // A successor id naming someone else's token is never reached.
+        $fence->recordSuccessor($left, $theirs);
+
+        $revocation = app(CredentialRevoker::class)->revoke(AgentCredentialSelection::token(AgentPrincipal::query()->findOrFail($person->id), $old), 'agent');
+
+        $this->assertSame(3, $revocation->accessTokens());
+        foreach ([$left, $right, $grandchild] as $id) {
+            $this->assertTrue((bool) Passport::token()->newQuery()->whereKey($id)->value('revoked'));
+        }
+        $this->assertFalse((bool) Passport::token()->newQuery()->whereKey($theirs)->value('revoked'));
+    }
+
+    /**
      * The fence is a backstop, never a precondition: with the cache down the
      * emergency revocation still revokes everything, and says the fence is off.
      */

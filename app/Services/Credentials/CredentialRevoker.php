@@ -223,10 +223,16 @@ final readonly class CredentialRevoker
         if ($selection->scope !== AgentCredentialScope::Token) {
             return [];
         }
+        // Breadth first, every branch: concurrent refreshes of one refresh token
+        // can each mint a successor.
         $family = [(string) $selection->tokenId];
         try {
-            while (count($family) < 8 && ($next = $this->fence->successorOf($family[count($family) - 1])) !== null && ! in_array($next, $family, true)) {
-                $family[] = $next;
+            for ($at = 0; $at < count($family) && count($family) < 16; $at++) {
+                foreach ($this->fence->successorsOf($family[$at]) as $next) {
+                    if (! in_array($next, $family, true)) {
+                        $family[] = $next;
+                    }
+                }
             }
         } catch (Throwable) {
             // The successors are a backstop, like the fence.

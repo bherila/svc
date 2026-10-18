@@ -3,6 +3,7 @@
 namespace App\Services\Credentials;
 
 use App\Support\WorkspaceClock;
+use Illuminate\Contracts\Cache\LockProvider;
 use Illuminate\Contracts\Cache\Repository;
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Support\Facades\Crypt;
@@ -71,27 +72,49 @@ final readonly class AgentCredentialFence
     /**
      * Remember which access token a refresh rotated this one into, for the
      * fence's window: a connection disconnecting itself with a token a refresh
-     * had just replaced follows the family to the replacement. The successor
-     * is stored encrypted under a digest key, so the cache holds no token id.
+     * had just replaced follows the family to the replacement. Two refreshes
+     * redeeming one refresh token concurrently can each mint a successor, so
+     * every successor is kept, appended under a lock. The list is stored
+     * encrypted under a digest key, so the cache holds no token id.
      */
     public function recordSuccessor(string $accessTokenId, string $successorId): void
     {
-        $this->cache->put(self::successorKey($accessTokenId), Crypt::encryptString($successorId), self::SECONDS);
+        $key = self::successorKey($accessTokenId);
+        $append = function () use ($key, $successorId): void {
+            $successors = $this->successorsAt($key);
+            if (! in_array($successorId, $successors, true)) {
+                $successors[] = $successorId;
+            }
+            $this->cache->put($key, Crypt::encryptString((string) json_encode($successors)), self::SECONDS);
+        };
+        $store = $this->cache->getStore();
+        $store instanceof LockProvider
+            ? $store->lock($key.':lock', 10)->block(5, $append)
+            : $append();
     }
 
-    public function successorOf(string $accessTokenId): ?string
+    /** @return list<string> */
+    public function successorsOf(string $accessTokenId): array
     {
-        $sealed = $this->cache->get(self::successorKey($accessTokenId));
+        return $this->successorsAt(self::successorKey($accessTokenId));
+    }
+
+    /** @return list<string> */
+    private function successorsAt(string $key): array
+    {
+        $sealed = $this->cache->get($key);
         /** @infection-ignore-all Equivalent: without it a missing entry reaches decryptString, which refuses it with the DecryptException caught below; it is here so a miss never passes null to the decrypter. */
         if ($sealed === null) {
-            return null;
+            return [];
         }
         try {
             // Anything this application did not seal - a string or otherwise - fails to decrypt.
-            return Crypt::decryptString($sealed);
+            $successors = json_decode(Crypt::decryptString($sealed), true);
         } catch (DecryptException) {
-            return null;
+            return [];
         }
+
+        return is_array($successors) ? array_values(array_filter($successors, is_string(...))) : [];
     }
 
     private static function successorKey(string $accessTokenId): string
