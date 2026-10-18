@@ -140,7 +140,7 @@ class IssuePersonalAccessTokenCommandTest extends TestCase
                 'subject_id' => $user->public_id,
                 'name' => 'Finance integration',
                 'revoked' => 1,
-                'credential_fingerprints' => [hash('sha256', (string) $mine->accessToken->getKey())],
+                'credential_fingerprints' => [hash_hmac('sha256', 'personal_access_token:'.$mine->accessToken->getKey(), (string) config('app.key'))],
             ],
         ], [
             'message' => 'personal_access_token.revoked',
@@ -153,5 +153,7 @@ class IssuePersonalAccessTokenCommandTest extends TestCase
             ],
         ]], $logged);
         $this->assertStringNotContainsString($mine->plainTextToken, json_encode($logged, JSON_THROW_ON_ERROR));
+        // Keyed: a plain digest of a sequential row id is reversed by counting.
+        $this->assertStringNotContainsString(hash('sha256', (string) $mine->accessToken->getKey()), json_encode($logged, JSON_THROW_ON_ERROR));
     }
 }

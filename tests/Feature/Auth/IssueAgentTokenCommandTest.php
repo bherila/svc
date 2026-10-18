@@ -365,7 +365,7 @@ final class IssueAgentTokenCommandTest extends TestCase
         $ids = Passport::token()->newQuery()->where('user_id', $user->id)->pluck('id')->map(static fn (mixed $id): string => (string) $id)->all();
 
         $this->assertSame(0, Artisan::call('svc:auth:revoke-connections', ['user_public_id' => $user->public_id]));
-        $this->assertSame(['access_tokens' => 2, 'refresh_tokens' => 0, 'authorization_codes' => 0], $this->decode(Artisan::output()));
+        $this->assertSame(['access_tokens' => 2, 'refresh_tokens' => 0, 'authorization_codes' => 0, 'unattributed_refresh_tokens' => 0], $this->decode(Artisan::output()));
 
         $this->bearer($rest)->getJson("/api/v1/workspaces/{$workspace->public_id}/projects")->assertUnauthorized();
         $this->bearer($mcp)->mcp($this->initializeMessage())->assertUnauthorized();

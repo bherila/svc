@@ -184,7 +184,11 @@ by a connection disconnecting itself, the smoke's cleanup, and the emergency
 one transaction on Passport's connection that locks the access-token rows,
 revokes their refresh tokens before the access tokens themselves (through
 Passport's repository, so revocation listeners hear of each), never deletes a row,
-and logs one `agent_token.revoked` entry after it commits.
+and logs one `agent_token.revoked` entry after it commits. A revocation also raises a
+60-second fence (`AgentCredentialFence`) on the person and client: an OAuth-grant
+token Passport persists inside it - the replacement a refresh already in flight
+mints - is revoked as it is created, as is any refresh token whose access token is
+already revoked.
 
 Revoke by name, which takes effect on the next request:
 

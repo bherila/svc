@@ -146,7 +146,9 @@ final class AgentTokenRequestTest extends TestCase
 
     public function test_audit_values_name_credentials_by_fingerprint_and_a_dump_never_shows_the_bearer(): void
     {
-        $this->assertSame(hash('sha256', '17'), CredentialFingerprint::of(17));
+        $this->assertSame(hash('sha256', '17'), CredentialFingerprint::of('17'));
+        $this->assertSame(hash_hmac('sha256', 'personal_access_token:17', 'key'), CredentialFingerprint::keyed(17, 'key'));
+        $this->assertNotSame(CredentialFingerprint::keyed(17, 'key'), CredentialFingerprint::keyed(17, 'other key'));
         $this->assertSame([hash('sha256', 'a'), hash('sha256', 'b')], CredentialFingerprint::all(['a', 'b']));
         $this->assertSame([], CredentialFingerprint::all([]));
 

@@ -3,20 +3,23 @@
 namespace App\Services\Credentials;
 
 /**
- * How every credential audit entry names a token: a SHA-256 of its stored id,
- * so entries about one credential can be matched without the log holding
- * anything that identifies or reconstructs it.
+ * How every credential audit entry names a token, so entries about one
+ * credential can be matched without the log holding anything that identifies
+ * or reconstructs it.
  */
 final class CredentialFingerprint
 {
-    public static function of(string|int $id): string
+    /**
+     * A SHA-256 of a Passport token id: 80 random characters, so the digest
+     * cannot be reversed by trying ids.
+     */
+    public static function of(string $id): string
     {
-        /** @infection-ignore-all Equivalent: this file is not strict, so hash() coerces an integer id identically without the cast. */
-        return hash('sha256', (string) $id);
+        return hash('sha256', $id);
     }
 
     /**
-     * @param  iterable<string|int>  $ids
+     * @param  iterable<string>  $ids
      * @return list<string>
      */
     public static function all(iterable $ids): array
@@ -27,5 +30,14 @@ final class CredentialFingerprint
         }
 
         return $fingerprints;
+    }
+
+    /**
+     * An HMAC, under the application key, of a sequential id (a Sanctum token
+     * row's): a plain digest of a small integer is reversed by counting.
+     */
+    public static function keyed(int $id, string $key): string
+    {
+        return hash_hmac('sha256', 'personal_access_token:'.$id, $key);
     }
 }

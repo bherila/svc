@@ -72,13 +72,34 @@ php artisan svc:auth:revoke-connections USER_PUBLIC_UUID --client=OAUTH_CLIENT_I
    or only those issued to `--client`. Rows are revoked, never deleted, so they
    remain for the investigation. Another person's credentials are never
    selected, even for the same client.
-4. It prints one JSON line, for example
-   `{"access_tokens":2,"refresh_tokens":1,"authorization_codes":0}`, and logs
-   `agent_token.revoked` with `actor: console`, the person's public UUID,
-   `selection: connections`, the client id when given, the counts and SHA-256
-   fingerprints of the revoked access-token ids. It prints and logs no bearer
-   value, token id or email address.
-5. Run it again. It is idempotent, and a second run reporting zeros confirms
+4. A refresh or code exchange already in flight can pass its own check just
+   before the revocation and persist its replacement just after. For
+   `AgentCredentialFence::SECONDS` (60 seconds) after any revocation, every
+   OAuth-grant access token Passport persists for that person (and client, or
+   every client) is revoked as it is created, and so is any refresh token whose
+   access token is already revoked; the racing connector receives credentials
+   that are already dead. Personal access tokens are not fenced. A person who
+   reconnects inside the window must reconnect again once it lapses - one more
+   reason to keep issuance off until the investigation allows it. A connection
+   that disconnects itself through `connections.revoke` fences its own client
+   the same way.
+5. It prints one JSON line, for example
+   `{"access_tokens":2,"refresh_tokens":1,"authorization_codes":0,"unattributed_refresh_tokens":0}`,
+   and logs `agent_token.revoked` with `actor: console`, the person's public
+   UUID, `selection: connections`, the client id when given, the counts and
+   SHA-256 fingerprints of the revoked access-token ids. It prints and logs no
+   bearer value, token id or email address.
+6. `unattributed_refresh_tokens` counts live refresh tokens, anyone's, that no
+   revocation by person can reach: issued before refresh tokens recorded their
+   owner, with their access token since purged. The
+   `2026_10_18_120000_backfill_oauth_refresh_token_owners` migration records
+   the owner of every such token whose access token still exists, so this is
+   normally zero. If it is not and the compromise could involve one of them,
+   rerun with `--unattributed`: it revokes every one of them, for whoever holds
+   it, reports `unattributed_refresh_tokens_revoked`, and logs
+   `agent_token.unattributed_refresh_tokens_revoked`. Their connectors must
+   authorize again.
+7. Run it again. It is idempotent, and a second run reporting zeros confirms
    nothing was minted in between. Then re-enable issuance and MCP as described
    under [Recovery and rollback](#recovery-and-rollback); the person reconnects
    through a fresh consent.

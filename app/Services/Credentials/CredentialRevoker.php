@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Laravel\Passport\Bridge\AccessTokenRepository;
 use Laravel\Passport\Passport;
+use Laravel\Passport\RefreshToken;
 use Laravel\Passport\Token;
 use Psr\Log\LoggerInterface;
 
@@ -35,6 +36,7 @@ final readonly class CredentialRevoker
         private AccessTokenRepository $accessTokens,
         private LoggerInterface $log,
         private WorkspaceClock $clock,
+        private AgentCredentialFence $fence,
     ) {}
 
     /**
@@ -43,15 +45,26 @@ final readonly class CredentialRevoker
     public function revoke(AgentCredentialSelection $selection, string $actor): AgentRevocation
     {
         $connection = Passport::token()->getConnection();
+        // Raised first, so a grant that persists while this runs is caught too.
+        if ($selection->scope === AgentCredentialScope::Connections) {
+            $this->fence->raise($selection->ownerId, $selection->clientId);
+        }
 
         return $connection->transaction(function () use ($selection, $actor, $connection): AgentRevocation {
-            $ids = array_values($this->accessTokenQuery($selection)
+            $rows = $this->accessTokenQuery($selection)
                 ->tap(Locks::forUpdate())
-                ->pluck('id')
-                ->map(static fn (mixed $id): string => (string) $id)
-                ->all());
+                ->get(['id', 'client_id']);
+            $ids = array_values($rows->map(static fn (Token $token): string => (string) $token->getKey())->all());
             if ($selection->atMost !== null && count($ids) > $selection->atMost) {
                 throw new AmbiguousRevocation(count($ids));
+            }
+            // A refresh of this connection that passed its check before the
+            // lock is waiting on it, and persists its replacement once this
+            // commits: the fence catches that replacement.
+            if ($selection->scope === AgentCredentialScope::Token) {
+                foreach ($rows->pluck('client_id')->unique() as $clientId) {
+                    $this->fence->raise($selection->ownerId, (string) $clientId);
+                }
             }
 
             // Refresh tokens first: revoking the access token alone would leave
@@ -82,6 +95,45 @@ final readonly class CredentialRevoker
     }
 
     /**
+     * Live refresh tokens no revocation by owner can reach: they record no
+     * owner (issued before refresh tokens did, and missed by the backfill
+     * because their access token was already purged) and have no access token
+     * left to name one.
+     */
+    public function unattributedRefreshTokens(): int
+    {
+        return $this->unattributedRefreshTokenQuery()->count();
+    }
+
+    /**
+     * Revoke every {@see unattributedRefreshTokens()} - whoever they belong
+     * to, which is exactly what cannot be known - so a containment that must
+     * not miss one can close them. Each such connection authorizes again.
+     */
+    public function revokeUnattributedRefreshTokens(string $actor): int
+    {
+        $revoked = $this->unattributedRefreshTokenQuery()->update(['revoked' => true]);
+        $this->log->info('agent_token.unattributed_refresh_tokens_revoked', ['actor' => $actor, 'revoked' => $revoked]);
+
+        return $revoked;
+    }
+
+    /** @return Builder<RefreshToken> */
+    private function unattributedRefreshTokenQuery(): Builder
+    {
+        $model = Passport::refreshToken();
+
+        return $model->newQuery()
+            ->where('revoked', false)
+            ->where('expires_at', '>', $this->clock->now())
+            ->whereNotIn('access_token_id', Passport::token()->newQuery()->select('id')->toBase())
+            ->when(
+                $model->getConnection()->getSchemaBuilder()->hasColumn($model->getTable(), ProviderIdentityTokens::OWNER_COLUMN),
+                static fn (Builder $refresh) => $refresh->whereNull(ProviderIdentityTokens::OWNER_COLUMN),
+            );
+    }
+
+    /**
      * Delete a person's named Sanctum personal access tokens (the finance
      * integration's), which have no revoked flag: deleting the row is how
      * Sanctum revokes. Unless `$all`, more than one match is refused.
@@ -105,7 +157,7 @@ final readonly class CredentialRevoker
                 'subject_id' => $owner->public_id,
                 'name' => $name,
                 'revoked' => $deleted,
-                'credential_fingerprints' => CredentialFingerprint::all($ids),
+                'credential_fingerprints' => array_map(static fn (mixed $id): string => CredentialFingerprint::keyed((int) $id, (string) config('app.key')), $ids),
             ]));
 
             return $deleted;

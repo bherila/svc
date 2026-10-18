@@ -14,6 +14,7 @@ use App\Services\AgentApi\Operations\AgentOperationCatalog;
 use App\Services\AgentApi\Operations\AgentPrincipalResolver;
 use App\Services\ApiCredentials\OpenApiGrantableScopes;
 use App\Services\Billing\ReplayHistoryBasis;
+use App\Services\Credentials\RevokeCredentialsIssuedDuringRevocation;
 use App\Services\Mcp\Context\McpPrincipalResolver;
 use App\Services\Mcp\Context\McpPrincipalResolverInterface;
 use App\Support\AgentApi\AgentApiScopes;
@@ -37,10 +38,13 @@ use Illuminate\Routing\Router;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
+use Laravel\Passport\Events\AccessTokenCreated;
+use Laravel\Passport\Events\RefreshTokenCreated;
 use Laravel\Passport\Passport;
 use Laravel\Sanctum\PersonalAccessToken;
 use Laravel\Sanctum\Sanctum;
@@ -122,6 +126,10 @@ class AppServiceProvider extends ServiceProvider
         Passport::tokensCan(AgentApiScopes::descriptions());
         Passport::tokensExpireIn(now()->addMinutes(15));
         Passport::refreshTokensExpireIn(now()->addDays(30));
+        // Synchronous, as Passport persists each credential: whatever a grant
+        // in flight during a revocation mints is revoked before it is returned.
+        Event::listen(AccessTokenCreated::class, [RevokeCredentialsIssuedDuringRevocation::class, 'accessTokenCreated']);
+        Event::listen(RefreshTokenCreated::class, [RevokeCredentialsIssuedDuringRevocation::class, 'refreshTokenCreated']);
         HandleCors::skipWhen(fn (Request $request): bool => $request->is('api/v1/mcp'));
         // Sanctum personal access tokens follow their owner's provider identity
         // (a no-op until provider identity enforcement is enabled).
