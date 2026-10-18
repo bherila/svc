@@ -88,16 +88,15 @@ collection's own predicates: `awaitingDeferredBilling()` (billable, deferred,
 linked to no line at all), `billableForInvoicing()`, the work date on or before
 the day read, and the agreement's project scope
 (`ClientTimeEntry::isWithinAgreementScope()`, the in-memory form of
-`forAgreementScope()`). The project chain is checked over the client's whole
-deferred chain before any agreement narrows it, as termination checks it.
-The history the trend reads is checked the same way, since an allocated entry
-is no longer awaiting billing but would still be counted, and so is any entry
-of another workspace claiming the client, as invoice generation's
-`assertCompanyProjectChainsAgree()` checks. Amounts are added with
+`forAgreementScope()`). The project chain is checked as invoice generation
+checks it before billing anything (`assertCompanyProjectChainsAgree()`): over
+every time entry of the client, whatever its status or kind, and over any
+entry of another workspace claiming the client, before any agreement narrows
+the set. Where generation would refuse, the backlog is withheld (`issue:
+project_chain_mismatch`, every figure null) instead of throwing, so a screen
+that shows it still renders. Amounts are added with
 `MoneyService::sum()`, so a total past the integer range is unpriced rather
-than an error. Where termination
-would refuse, the backlog is withheld (`issue: project_chain_mismatch`, every
-figure null) instead of throwing, so a screen that shows it still renders.
+than an error.
 
 **One segment, one backlog.** Agreements for the same project scope hand over
 to each other as invoice generation walks them

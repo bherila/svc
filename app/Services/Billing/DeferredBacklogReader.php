@@ -63,16 +63,18 @@ final class DeferredBacklogReader
             ->awaitingDeferredBilling()
             ->where('worked_on', '<=', $through->toDateString());
 
-        // Checked over each client's whole deferred chain before any agreement
-        // narrows it, as termination checks it, so a malformed row cannot
-        // disappear behind a project scope. A refusal there is a withheld
-        // figure here. The trend's history is checked too: an entry already
-        // allocated is no longer awaiting billing, but would still be read.
+        // The integrity check invoice generation makes before it bills anything
+        // (`assertCompanyProjectChainsAgree()`): every time entry of each
+        // client, inside the workspace and claiming it from outside, before any
+        // agreement narrows the set - so a malformed row cannot disappear
+        // behind a project scope, a status, or the trend's window. Where
+        // generation would refuse, the figure is withheld here.
         $history = $periods === [] ? null : $this->history($workspaceId, $companyIds, $through, CarbonImmutable::parse($periods[0].'-01'));
         $disagreeing = array_flip([
             ...$this->projectChainGuard->companiesClaimedOutsideWorkspace($workspaceId, $companyIds),
-            ...$this->projectChainGuard->companiesWithDisagreeingChains($workspaceId, $companyEntries),
-            ...($history === null ? [] : $this->projectChainGuard->companiesWithDisagreeingChains($workspaceId, $history)),
+            ...$this->projectChainGuard->companiesWithDisagreeingChains($workspaceId, ClientTimeEntry::query()
+                ->where('workspace_id', $workspaceId)
+                ->whereIn('client_company_id', $companyIds)),
         ]);
 
         $outstanding = (clone $companyEntries)

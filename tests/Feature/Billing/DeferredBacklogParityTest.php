@@ -21,6 +21,7 @@ use DomainException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use LogicException;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Concerns\WritesLegacyCrossTenantRows;
 use Tests\TestCase;
 
@@ -133,10 +134,10 @@ final class DeferredBacklogParityTest extends TestCase
         $queries = count(DB::getQueryLog());
         DB::disableQueryLog();
 
-        // The outside-workspace claim scan, two chain checks (shelf and history),
+        // The outside-workspace claim scan, the client chain check,
         // the outstanding set, the agreement
         // segments, and the history with its two eager loads - however many agreements.
-        $this->assertLessThanOrEqual(8, $queries);
+        $this->assertLessThanOrEqual(7, $queries);
     }
 
     public function test_a_disagreeing_project_chain_withholds_the_backlog_where_termination_refuses(): void
@@ -241,26 +242,38 @@ final class DeferredBacklogParityTest extends TestCase
         $this->assertNull($backlog->minutes);
     }
 
-    public function test_an_allocated_entry_with_a_disagreeing_chain_withholds_the_trend_too(): void
+    /** @return iterable<string, array{array<string, mixed>, bool}> */
+    public static function malformedRowsGenerationRefuses(): iterable
+    {
+        yield 'deferred work already allocated' => [[], true];
+        yield 'ordinary work' => [['is_deferred' => false], false];
+        yield 'a draft' => [['status' => 'draft'], false];
+        yield 'nonbillable work' => [['is_billable' => false], false];
+    }
+
+    /** @param array<string, mixed> $overrides */
+    #[DataProvider('malformedRowsGenerationRefuses')]
+    public function test_any_malformed_row_of_the_client_withholds_the_backlog_as_generation_refuses(array $overrides, bool $allocated): void
     {
         $agreement = $this->agreement('Company-wide', null, 15000);
+        $this->entry(60, '2026-03-01');
         $stranger = ClientCompany::query()->create([
-            'workspace_id' => $this->workspace->id, 'name' => 'Allocated Stranger Client', 'slug' => 'allocated-stranger-client',
+            'workspace_id' => $this->workspace->id, 'name' => 'Malformed Stranger Client', 'slug' => 'malformed-stranger-client',
         ]);
         $strangerProject = ClientProject::query()->create([
-            'workspace_id' => $this->workspace->id, 'client_company_id' => $stranger->id, 'name' => 'Allocated Stranger Project',
+            'workspace_id' => $this->workspace->id, 'client_company_id' => $stranger->id, 'name' => 'Malformed Stranger Project',
         ]);
         $malformed = null;
-        $this->writingLegacyCrossTenantRows(function () use (&$malformed, $strangerProject): void {
-            $malformed = $this->entry(60, '2026-04-02', ['client_project_id' => $strangerProject->id]);
+        $this->writingLegacyCrossTenantRows(function () use (&$malformed, $strangerProject, $overrides): void {
+            $malformed = $this->entry(60, '2026-04-02', ['client_project_id' => $strangerProject->id] + $overrides);
         });
-        $this->allocate($malformed, 'prior_month_retainer', '2026-04-30', $this->workspace);
+        if ($allocated) {
+            $this->allocate($malformed, 'prior_month_retainer', '2026-04-30', $this->workspace);
+        }
         $reader = app(DeferredBacklogReader::class);
         $through = CarbonImmutable::parse(self::THROUGH);
 
-        // Nothing is awaiting billing, so the shelf alone looks clean ...
-        $this->assertNull($reader->forAgreement($this->workspace, $agreement, $through)->issue);
-        // ... but the trend would read the malformed row, so it is withheld.
+        $this->assertSame(DeferredBacklogIssue::ProjectChainMismatch, $reader->forAgreement($this->workspace, $agreement, $through)->issue);
         $this->assertSame(DeferredBacklogIssue::ProjectChainMismatch, $reader->forAgreement($this->workspace, $agreement, $through, ['2026-04'])->issue);
     }
 
