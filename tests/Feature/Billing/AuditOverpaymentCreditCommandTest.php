@@ -204,6 +204,31 @@ class AuditOverpaymentCreditCommandTest extends TestCase
     }
 
     /** @param  array<string, mixed>  $options */
+    public function test_a_workspace_option_audits_that_workspace_alone(): void
+    {
+        $short = $this->company('scoped-short');
+        $this->overpaid($short, 5000);
+        $this->spent($short, 10000, 'SYNTH-SCOPED-SHORT');
+        $other = $this->company('scoped-other');
+        $this->overpaid($other, 10000);
+        $this->spent($other, 20000, 'SYNTH-SCOPED-OTHER');
+        $workspace = Workspace::query()->findOrFail($short->workspace_id);
+
+        $report = $this->report(['--workspace' => $workspace->public_id, '--list' => true]);
+
+        $this->assertSame(1, $report['summary']['pools']);
+        $this->assertSame(['USD' => 5000], $report['summary']['deficit_minor_by_currency']);
+        $this->assertSame([$workspace->public_id], array_column($report['pools'], 'workspace'));
+        $this->assertSame(2, $this->report()['summary']['in_deficit']);
+        $this->assertSame([$workspace->id], array_map(static fn ($pool): int => $pool->workspaceId, app(OverpaymentCreditAuditor::class)->partitions($workspace)));
+    }
+
+    public function test_an_unknown_workspace_option_is_refused(): void
+    {
+        $this->assertSame(2, Artisan::call('svc:billing:audit-overpayment-credit', ['--workspace' => '00000000-0000-4000-8000-000000000999']));
+        $this->assertSame(2, Artisan::call('svc:billing:audit-overpayment-credit', ['--workspace' => 'not-a-uuid']));
+    }
+
     private function report(array $options = []): array
     {
         $this->assertSame(0, Artisan::call('svc:billing:audit-overpayment-credit', ['--format' => 'json', ...$options]));

@@ -2,6 +2,7 @@
 
 namespace App\Services\Billing;
 
+use App\Models\Workspace;
 use App\Support\Billing\CreditPoolPartition;
 use App\Support\Billing\InvoicePaymentStatus;
 use App\Support\Billing\InvoiceStatus;
@@ -41,15 +42,19 @@ final class OverpaymentCreditAuditor
      * REPEATABLE READ fixes a snapshot at the first read and every batch reads
      * the same state. Nothing is written, so it commits nothing.
      *
+     * With a workspace, only that workspace's invoices and companies are
+     * read; their payments and credit lines are still found by invoice, so a
+     * row stamped to another workspace is flagged rather than missed.
+     *
      * @return list<CreditPoolPartition>
      */
-    public function partitions(): array
+    public function partitions(?Workspace $workspace = null): array
     {
-        return DB::transaction(fn (): array => $this->scan());
+        return DB::transaction(fn (): array => $this->scan($workspace));
     }
 
     /** @return list<CreditPoolPartition> */
-    private function scan(): array
+    private function scan(?Workspace $workspace): array
     {
         /** @var array<string, CreditPoolPartition> $partitions */
         $partitions = [];
@@ -61,7 +66,7 @@ final class OverpaymentCreditAuditor
         // Ownership of each invoice's company, resolved once. A company that is
         // missing or belongs to another workspace cannot own a pool.
         $companyWorkspace = [];
-        foreach (DB::table('client_companies')->get(['id', 'workspace_id']) as $company) {
+        foreach (DB::table('client_companies')->when($workspace !== null, static fn ($companies) => $companies->where('workspace_id', $workspace?->id))->get(['id', 'workspace_id']) as $company) {
             $companyWorkspace[self::key($company->id)] = self::key($company->workspace_id);
         }
 
@@ -72,6 +77,7 @@ final class OverpaymentCreditAuditor
         // grows with the number of batches, not of invoices.
         $batches = DB::table('client_invoices')
             ->select(['id', 'workspace_id', 'client_company_id', 'currency', 'status', 'total_amount'])
+            ->when($workspace !== null, static fn ($invoices) => $invoices->where('workspace_id', $workspace?->id))
             ->orderBy('id')
             ->lazy(self::BATCH)
             ->chunk(self::BATCH);

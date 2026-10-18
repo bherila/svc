@@ -2,10 +2,12 @@
 
 namespace App\Console\Commands\Billing;
 
+use App\Models\Workspace;
 use App\Services\Billing\OverpaymentCreditAuditor;
 use App\Support\Billing\CreditPoolPartition;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 /**
  * Report overpayment credit funded against credit consumed, per pool.
@@ -23,7 +25,8 @@ final class AuditOverpaymentCreditCommand extends Command
 {
     protected $signature = 'svc:billing:audit-overpayment-credit
         {--format=text : Output text or json}
-        {--list : Also list each pool by public id (not safe to paste)}';
+        {--list : Also list each pool by public id (not safe to paste)}
+        {--workspace= : Audit only this workspace (its public id); every workspace by default}';
 
     protected $description = 'Compare overpayment credit funded with credit consumed, per workspace, company and currency';
 
@@ -36,7 +39,18 @@ final class AuditOverpaymentCreditCommand extends Command
             return self::INVALID;
         }
 
-        $partitions = $auditor->partitions();
+        $workspace = null;
+        $requested = $this->option('workspace');
+        if ($requested !== null) {
+            $workspace = is_string($requested) && Str::isUuid($requested) ? Workspace::query()->where('public_id', $requested)->first() : null;
+            if ($workspace === null) {
+                $this->error('The --workspace option must be the public id of an existing workspace.');
+
+                return self::INVALID;
+            }
+        }
+
+        $partitions = $auditor->partitions($workspace);
         $summary = $this->summary($partitions);
         $rows = $this->option('list') ? $this->rows($partitions) : null;
 
