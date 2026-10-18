@@ -82,10 +82,12 @@ final readonly class AgentCredentialFence
     public function successorOf(string $accessTokenId): ?string
     {
         $sealed = $this->cache->get(self::successorKey($accessTokenId));
-        if (! is_string($sealed)) {
+        /** @infection-ignore-all Equivalent: without it a missing entry reaches decryptString, which refuses it with the DecryptException caught below; it is here so a miss never passes null to the decrypter. */
+        if ($sealed === null) {
             return null;
         }
         try {
+            // Anything this application did not seal - a string or otherwise - fails to decrypt.
             return Crypt::decryptString($sealed);
         } catch (DecryptException) {
             return null;
