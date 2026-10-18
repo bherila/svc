@@ -147,6 +147,58 @@ final class AgentPaymentsTest extends TestCase
         $this->assertDatabaseCount('client_invoice_payments', 1);
     }
 
+    /**
+     * The browser form's fields, through the API (#454): an optional date, a
+     * note, a pending cheque and the finance system's transaction.
+     */
+    #[DataProvider('transports')]
+    public function test_recording_takes_the_browser_forms_bookkeeping_fields(string $transport): void
+    {
+        [$user, $workspace, $invoice] = $this->fixture();
+        $payload = $this->payload($invoice);
+        unset($payload['received_on']);
+        $payload = [...$payload,
+            'amount' => 2500,
+            'reference' => 'SYN-CHEQUE-1',
+            'notes' => 'Synthetic note: cheque handed over at the synthetic meeting.',
+            'status' => 'pending',
+            'external_finance_transaction_uuid' => '22222222-2222-4222-8222-222222222222',
+        ];
+
+        $first = $this->record($transport, $user, $workspace, $payload, 'synthetic-bookkeeping');
+        $this->assertSame($first, $this->record($transport, $user, $workspace, $payload, 'synthetic-bookkeeping'));
+
+        $payment = ClientInvoicePayment::query()->where('workspace_id', $workspace->id)->sole();
+        $this->assertSame('pending', $payment->status);
+        $this->assertSame($payload['notes'], $payment->notes);
+        $this->assertSame($payload['external_finance_transaction_uuid'], $payment->external_finance_transaction_uuid);
+        // Today on the workspace's own calendar, which is what the form means.
+        $this->assertSame(now($workspace->timezone ?? 'UTC')->toDateString(), $payment->received_on?->toDateString());
+        $this->assertSame([
+            'id' => $payment->public_id, 'invoice_id' => $invoice->public_id, 'amount' => 2500, 'refunded_amount' => 0, 'currency' => 'USD',
+            'received_on' => $payment->received_on?->toDateString(), 'method' => 'cash', 'reference' => 'SYN-CHEQUE-1', 'notes' => $payload['notes'],
+            'external_finance_transaction_uuid' => $payload['external_finance_transaction_uuid'], 'status' => 'pending', 'manual' => true,
+            'version' => AgentApiVersion::for($payment),
+        ], $first[0]);
+        // Money not yet cleared moves nothing.
+        $this->assertSame('issued', $invoice->fresh()?->status);
+        $this->assertSame(10000, $invoice->fresh()?->balance_amount);
+    }
+
+    /**
+     * A receipt written before the optional fields existed hashes as it did:
+     * the same request with nulls for every new field is the same request.
+     */
+    public function test_null_optional_fields_replay_a_request_that_omitted_them(): void
+    {
+        [$user, $workspace, $invoice] = $this->fixture();
+        $payload = $this->payload($invoice);
+        $first = $this->record('rest', $user, $workspace, $payload, 'synthetic-null-optional');
+        $second = $this->record('rest', $user, $workspace, [...$payload, 'notes' => null, 'status' => null, 'external_finance_transaction_uuid' => null], 'synthetic-null-optional');
+        $this->assertSame($first, $second);
+        $this->assertDatabaseCount('client_invoice_payments', 1);
+    }
+
     public function test_authenticated_oauth_clients_have_separate_receipts(): void
     {
         [$user, $workspace, $invoice] = $this->fixture();
@@ -177,15 +229,18 @@ final class AgentPaymentsTest extends TestCase
         yield 'overpayment' => [['amount' => 10001], 422];
         yield 'currency mismatch' => [['currency' => 'EUR'], 422];
         yield 'ambiguous date' => [['received_on' => '09/01/2026'], 422];
-        yield 'missing date' => [['received_on' => null], 422];
         yield 'missing method' => [['method' => null], 422];
         yield 'method longer than its column' => [['method' => str_repeat('m', 41)], 422];
         yield 'future' => [['received_on' => '2099-01-01'], 422];
         yield 'too old' => [['received_on' => '2000-01-01'], 422];
         yield 'provider forbidden' => [['provider' => 'stripe'], 422];
-        yield 'status forbidden' => [['status' => 'pending'], 422];
+        yield 'failed is reached by transition, not recorded' => [['status' => 'failed'], 422];
+        yield 'refunded is reached by transition, not recorded' => [['status' => 'refunded'], 422];
+        yield 'unknown status' => [['status' => 'paid'], 422];
         yield 'refund forbidden' => [['refunded_amount' => 1], 422];
-        yield 'notes forbidden' => [['notes' => 'Synthetic private note'], 422];
+        yield 'notes longer than their column' => [['notes' => str_repeat('n', 10001)], 422];
+        yield 'malformed finance transaction' => [['external_finance_transaction_uuid' => 'not-a-uuid'], 422];
+        yield 'body idempotency key' => [['idempotency_key' => 'synthetic-body-key'], 422];
     }
 
     #[DataProvider('invalidPayloads')]
@@ -291,9 +346,12 @@ final class AgentPaymentsTest extends TestCase
         $second = $this->getJson($url.'&limit=2&cursor='.urlencode($first['next_cursor']))->assertOk()->assertJsonCount(1, 'data')->json();
         $this->assertNull($second['next_cursor']);
         $this->assertNotSame($first['data'][0]['id'], $second['data'][0]['id']);
-        $this->assertArrayNotHasKey('notes', $first['data'][0]);
+        // The note is the operator's own, and returned to the managers who
+        // may write it; processor identifiers are never returned.
+        $this->assertSame('Synthetic private note', $first['data'][0]['notes']);
         $this->assertArrayNotHasKey('provider_payment_identifier', $first['data'][0]);
-        $this->assertArrayNotHasKey('external_finance_transaction_uuid', $first['data'][0]);
+        $this->assertArrayNotHasKey('provider', $first['data'][0]);
+        $this->assertTrue($first['data'][0]['manual']);
         $this->assertSame('Synthetic reference', $first['data'][0]['reference']);
         $this->getJson($this->url($workspace).'?company_id='.$company->public_id)->assertOk()->assertJsonCount(3, 'data');
         $this->getJson($this->url($workspace).'?invoice_id='.$foreign->public_id)->assertOk()->assertJsonCount(0, 'data');
@@ -305,7 +363,8 @@ final class AgentPaymentsTest extends TestCase
         $company->portalUsers()->attach($portal->id, ['workspace_id' => $workspace->id]);
         $invoice->update(['is_visible_to_client' => true]);
         $this->actingAsMcp($portal, ['payments:read', 'payments:record', 'billing:read']);
-        $this->getJson($url)->assertOk()->assertJsonCount(3, 'data')->assertJsonPath('data.0.reference', null);
+        $this->getJson($url)->assertOk()->assertJsonCount(3, 'data')->assertJsonPath('data.0.reference', null)
+            ->assertJsonPath('data.0.notes', null)->assertJsonPath('data.0.external_finance_transaction_uuid', null);
         $this->withHeader('Idempotency-Key', 'synthetic-portal')->postJson($this->url($workspace), $this->payload($invoice))->assertForbidden();
         $invoice->update(['is_visible_to_client' => false]);
         $this->getJson($url)->assertOk()->assertJsonCount(0, 'data');

@@ -493,10 +493,16 @@ the same client.
 `payments.list` requires `payments:read` and an explicit `invoice_id` or
 `company_id`. It follows invoice visibility, defaults to 25 rows and caps pages
 at 100 using an opaque cursor. Portal readers see only payments on their visible
-issued, partially paid or paid invoices. Project-scoped portal users must be granted every project on an invoice; mixed-grant and unattributed invoices are withheld. References are withheld from portal readers.
-Private notes, processor identifiers and finance reconciliation records are never
-part of this response. Each row carries an opaque `version`, which
-`payments.correct` requires.
+issued, partially paid or paid invoices. Project-scoped portal users must be granted every project on an invoice; mixed-grant and unattributed invoices are withheld.
+The reference, the operator's private `notes` and the
+`external_finance_transaction_uuid` the payment was recorded against are returned
+to workspace owners/admins - who alone may write them - and are null for every
+other reader. Processor identifiers and finance reconciliation allocations are
+never part of this response. `manual` says whether the payment was recorded by
+hand rather than by a processor. Each row carries an opaque `version`, which
+every payment write requires. The operator's invoice screen renders each payment
+and line through the same presenters as `payments.list` and `invoices.get`, so
+the screen and the API cannot drift apart.
 
 `payments.record` records money already received; it does not collect money,
 create a Stripe intent, issue a refund, or change an existing payment's status.
@@ -506,14 +512,22 @@ The payment flag defaults to false and the outer flag remains the emergency stop
 The MCP catalog, REST route and capability inventory use the same cutover.
 
 Provide the invoice ID, positive integer amount in minor units, matching uppercase
-currency, actual `received_on` payment date (`Y-m-d`) and method (at most 40
-characters, the width of its column) explicitly; never
-infer an amount or substitute the invoice date. Reference is optional (for example,
-cash need not have one). A mandatory idempotency key protects retries; reusing a
-key with another payload is refused. The existing service refuses overpayment and
-draft/void invoices, accepts dates within its workspace-calendar two-year window,
-and records a succeeded payment. An identical retry remains safe after full
-settlement and when the original date ages below the creation window.
+currency and method (at most 40 characters, the width of its column) explicitly;
+never infer an amount. The fields are the invoice screen's payment form's
+(#454): `received_on` (`Y-m-d`) is the day the money arrived and defaults to
+today on the workspace calendar - give the actual date, never the invoice date;
+`reference` (for example, cash need not have one), `notes` and
+`external_finance_transaction_uuid` are optional; `status` is `succeeded` (the
+default) or `pending` for money not yet cleared, such as a cheque, which
+`payments.set_status` later settles. `failed`, `canceled`, `refunded` and
+`disputed` are where a recorded payment ends up and are reached only by
+transitioning it, never recorded directly - on the screen as through the API. A
+mandatory idempotency key protects retries; reusing a key with another payload is
+refused, and a field sent as `null` is the same request as one omitted. The
+existing service refuses a succeeded payment over the balance and draft/void
+invoices, and accepts dates within its workspace-calendar two-year window. An
+identical retry remains safe after full settlement and when the original date
+ages below the creation window.
 
 REST uses GET/POST `/api/v1/workspaces/{workspace}/payments`, with the same scopes
 and roles; POST takes the key in `Idempotency-Key`. The separate finance API
@@ -524,7 +538,7 @@ service. Browser URLs remain the route for initiating a customer payment.
 ### Correcting a recorded payment
 
 `payments.correct` corrects a payment's **descriptive** fields - `method`,
-`reference` and `received_on` - and nothing else. It is gated exactly as
+`reference`, `notes` and `received_on` - and nothing else. It is gated exactly as
 `payments.record` is: the `payments:record` scope, an owner/admin, both
 `AGENT_API_WRITES_ENABLED` and `AGENT_API_PAYMENT_WRITES_ENABLED`, and the MCP
 kill switch, each rechecked before a receipt is replayed. REST is
@@ -536,17 +550,16 @@ kill switch, each rechecked before a receipt is replayed. REST is
   moves it, and a stale one is refused with a conflict before anything is
   written. Re-read and decide again.
 - `reason` is required (at most 500 characters) and kept in the client history.
-- Name at least one of `method`, `reference` and `received_on`; the published
-  schema and the tool input schema both require it. Omitted fields are
-  unchanged; an explicit `null` reference clears it.
+- Name at least one of `method`, `reference`, `notes` and `received_on`; the
+  published schema and the tool input schema both require it. Omitted fields are
+  unchanged; an explicit `null` reference or note clears it.
   `received_on` has the same `Y-m-d`, workspace-calendar two-year window as
   recording, and `method` the same 40-character bound as its column.
 - Amount, currency, status, refunded amount, the invoice and processor fields
   are refused. Money is corrected by the operations that preserve history:
-  cancel and re-record, or record a refund.
-- `notes` is not offered to agents. `payments.list` never returns it, and a field
-  an agent cannot read back is one it cannot check its own write against; the
-  operator command below accepts it.
+  `payments.set_status` and `payments.refund`, below.
+- `notes` is returned by `payments.list` to the owners/admins who may correct it,
+  so a correction can be read back and checked.
 - A correction that changes nothing records nothing. Otherwise one
   `invoice.payment_corrected` activity records a before/after of only the fields
   that changed, plus the reason.
@@ -934,9 +947,11 @@ The web payment form, `payments.record`, and `invoices.issue` with a payment
 share `RecordReceivedPayment` and immutable `ReceivedPaymentData` facts.
 Transport adapters retain their own permission and receipt checks. Standalone
 agent payment keys retain their historical namespace, and issue-with-payment
-keys remain separate; existing receipts continue to replay. The web form keeps
-its optional date, status and bookkeeping fields, while agent recording remains
-limited to succeeded money already received. No processor charge is initiated.
+keys remain separate; existing receipts continue to replay. The web form and
+`payments.record` take the same optional date, status and bookkeeping fields;
+a payment folded into `invoices.issue` remains limited to succeeded money
+already received on a stated date. No processor charge is initiated.
+
 ### Recurring billing schedules
 
 `billing_schedules.list` and `billing_schedules.get` now also have REST endpoints

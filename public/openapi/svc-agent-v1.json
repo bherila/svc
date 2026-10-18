@@ -4934,7 +4934,7 @@
         "/workspaces/{workspace}/payments/{payment}": {
             "patch": {
                 "operationId": "payments.correct",
-                "description": "Owner/admin correction of a received payment's descriptive fields: method, reference and received_on, at least one of which must be given. Requires confirm: true, the version from payments.list and a reason, which is kept in the client history. Omitted fields are unchanged; an explicit null reference clears it. A stale version is refused with 409 and a correction that changes nothing records nothing. Amount, currency, status, refunds, the invoice and processor fields cannot be changed. Never initiates a charge or a refund. Requires both outer workflow and payment write flags.",
+                "description": "Owner/admin correction of a received payment's descriptive fields: method, reference, notes and received_on, at least one of which must be given. Requires confirm: true, the version from payments.list and a reason, which is kept in the client history. Omitted fields are unchanged; an explicit null reference or note clears it. A stale version is refused with 409 and a correction that changes nothing records nothing. Amount, currency, status, refunds, the invoice and processor fields cannot be changed. Never initiates a charge or a refund. Requires both outer workflow and payment write flags.",
                 "security": [
                     {
                         "oauth2": [
@@ -5053,7 +5053,7 @@
             },
             "post": {
                 "operationId": "payments.record",
-                "description": "Owner/admin bookkeeping for money already received. Never initiates a charge. Explicit invoice, minor-unit amount, currency, payment date and method required; reference is optional. Read invoices.get with billing:read for the current invoice expected_version; confirm: true is required. Overpayment refused. Requires both outer workflow and payment write flags.",
+                "description": "Owner/admin bookkeeping for money already received, with the same fields as the invoice screen's payment form. Never initiates a charge. Explicit invoice, minor-unit amount, currency and method required. received_on is the day the money arrived and defaults to today on the workspace calendar; reference, notes and the finance system's transaction id are optional; status is succeeded (the default) or pending for money not yet cleared, which payments.set_status later settles. Read invoices.get with billing:read for the current invoice expected_version; confirm: true is required. A succeeded payment over the balance is refused. Requires both outer workflow and payment write flags.",
                 "security": [
                     {
                         "oauth2": [
@@ -12531,7 +12531,10 @@
                     "received_on",
                     "method",
                     "reference",
+                    "notes",
+                    "external_finance_transaction_uuid",
                     "status",
+                    "manual",
                     "refunded_amount",
                     "version"
                 ],
@@ -12570,10 +12573,19 @@
                             "string",
                             "null"
                         ],
-                        "maxLength": 255
+                        "maxLength": 255,
+                        "description": "Null unless the reader is a workspace owner/admin."
                     },
                     "status": {
-                        "type": "string"
+                        "type": "string",
+                        "enum": [
+                            "pending",
+                            "succeeded",
+                            "failed",
+                            "refunded",
+                            "disputed",
+                            "canceled"
+                        ]
                     },
                     "refunded_amount": {
                         "type": "integer",
@@ -12581,6 +12593,26 @@
                     },
                     "version": {
                         "$ref": "#/components/schemas/Version"
+                    },
+                    "notes": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 10000,
+                        "description": "The operator's private note. Null unless the reader is a workspace owner/admin."
+                    },
+                    "external_finance_transaction_uuid": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "uuid",
+                        "description": "The finance system's transaction the payment was recorded against. Null unless the reader is a workspace owner/admin."
+                    },
+                    "manual": {
+                        "type": "boolean",
+                        "description": "Recorded by hand rather than by a payment processor. Only a manual payment can be moved by payments.set_status or payments.refund."
                     }
                 }
             },
@@ -12628,6 +12660,14 @@
                         ],
                         "maxLength": 255
                     },
+                    "notes": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 10000,
+                        "description": "The operator's private note; null or blank clears it."
+                    },
                     "received_on": {
                         "type": "string",
                         "format": "date"
@@ -12647,6 +12687,11 @@
                     {
                         "required": [
                             "reference"
+                        ]
+                    },
+                    {
+                        "required": [
+                            "notes"
                         ]
                     },
                     {
@@ -12685,7 +12730,6 @@
                     "invoice_id",
                     "amount",
                     "currency",
-                    "received_on",
                     "method",
                     "confirm",
                     "expected_version"
@@ -12705,7 +12749,8 @@
                     },
                     "received_on": {
                         "type": "string",
-                        "format": "date"
+                        "format": "date",
+                        "description": "The day the money arrived (YYYY-MM-DD), not in the future and at most two years back on the workspace's calendar. Omitted means today on that calendar."
                     },
                     "method": {
                         "type": "string",
@@ -12718,6 +12763,31 @@
                             "null"
                         ],
                         "maxLength": 255
+                    },
+                    "notes": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 10000,
+                        "description": "The operator's private note."
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "pending",
+                            "succeeded"
+                        ],
+                        "default": "succeeded",
+                        "description": "succeeded for money that has arrived; pending for money not yet cleared, such as an uncleared cheque. Move it later with payments.set_status."
+                    },
+                    "external_finance_transaction_uuid": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "uuid",
+                        "description": "The finance system's transaction this payment was received as."
                     },
                     "confirm": {
                         "type": "boolean",

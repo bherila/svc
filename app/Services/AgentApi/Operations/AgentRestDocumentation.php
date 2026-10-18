@@ -924,7 +924,7 @@ final class AgentRestDocumentation
             'payments.correct' => [
                 'method' => 'PATCH',
                 'scopes' => ['payments:record'],
-                'description' => 'Owner/admin correction of a received payment\'s descriptive fields: method, reference and received_on, at least one of which must be given. Requires confirm: true, the version from payments.list and a reason, which is kept in the client history. Omitted fields are unchanged; an explicit null reference clears it. A stale version is refused with 409 and a correction that changes nothing records nothing. Amount, currency, status, refunds, the invoice and processor fields cannot be changed. Never initiates a charge or a refund. Requires both outer workflow and payment write flags.',
+                'description' => 'Owner/admin correction of a received payment\'s descriptive fields: method, reference, notes and received_on, at least one of which must be given. Requires confirm: true, the version from payments.list and a reason, which is kept in the client history. Omitted fields are unchanged; an explicit null reference or note clears it. A stale version is refused with 409 and a correction that changes nothing records nothing. Amount, currency, status, refunds, the invoice and processor fields cannot be changed. Never initiates a charge or a refund. Requires both outer workflow and payment write flags.',
                 'parameters' => ['WorkspaceId', 'PaymentId', 'IdempotencyKey'],
                 'request' => 'ReceivedPaymentCorrectionRequest',
                 'response' => 'ReceivedPaymentResponse',
@@ -947,7 +947,7 @@ final class AgentRestDocumentation
             'payments.record' => [
                 'method' => 'POST',
                 'scopes' => ['payments:record', 'billing:read'],
-                'description' => 'Owner/admin bookkeeping for money already received. Never initiates a charge. Explicit invoice, minor-unit amount, currency, payment date and method required; reference is optional. Read invoices.get with billing:read for the current invoice expected_version; confirm: true is required. Overpayment refused. Requires both outer workflow and payment write flags.',
+                'description' => 'Owner/admin bookkeeping for money already received, with the same fields as the invoice screen\'s payment form. Never initiates a charge. Explicit invoice, minor-unit amount, currency and method required. received_on is the day the money arrived and defaults to today on the workspace calendar; reference, notes and the finance system\'s transaction id are optional; status is succeeded (the default) or pending for money not yet cleared, which payments.set_status later settles. Read invoices.get with billing:read for the current invoice expected_version; confirm: true is required. A succeeded payment over the balance is refused. Requires both outer workflow and payment write flags.',
                 'parameters' => ['WorkspaceId', 'IdempotencyKey'],
                 'request' => 'ReceivedPaymentRecordRequest',
                 'response' => 'ReceivedPaymentBatchResponse',

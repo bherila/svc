@@ -233,7 +233,7 @@ class InvoiceController extends Controller
     public function payment(StorePaymentRequest $request, Workspace $workspace, ClientInvoice $clientInvoice, RecordReceivedPayment $service): JsonResponse|RedirectResponse
     {
         Gate::authorize('manage', $workspace);
-        $facts = ReceivedPaymentData::from($request->validated(), requireDate: false, includeBookkeeping: true);
+        $facts = ReceivedPaymentData::from($request->validated(), requireDate: false, includeBookkeeping: true, acceptsBodyKey: true);
         $payment = $service->record($workspace, $clientInvoice, $facts, $facts->idempotencyKey ?? $request->header('Idempotency-Key'));
 
         return $request->expectsJson()

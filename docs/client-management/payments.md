@@ -210,9 +210,10 @@ one. It keeps recording `invoice.payment_date_corrected` with its
 `previous_received_on`/`received_on` payload, so the activity feed and every
 earlier entry keep their meaning.
 
-The console door is `svc:billing:correct-payment` and the agent door is the
-`payments.correct` MCP tool (see [the MCP guide](../mcp.md)); the agent door does
-not offer `notes`, which agents cannot read.
+The console door is `svc:billing:correct-payment` and the API door is
+`payments.correct`, over REST and MCP (see [the MCP guide](../mcp.md)); both
+take the same four fields, and `payments.list` returns the note to the managers
+who may write it.
 
 ## Payment Workflow
 
@@ -225,6 +226,16 @@ boundary and surfaced as above. An `Idempotency-Key` header, or an
 
 Recording a payment is a five-field form: amount, method, reference, the date
 the money arrived, and the invoice's own currency, which is not asked for.
+
+`ReceivedPaymentData` is the one rule set for recording by hand: the browser
+form, `payments.record` over REST and MCP, and a payment folded into
+`invoices.issue` all parse through it, so a value one door refuses the others
+refuse (#454). Its optional bookkeeping fields - `notes`, `status` and
+`external_finance_transaction_uuid` - are accepted by the form and by
+`payments.record` alike. `status` may be `succeeded` (the default) or `pending`:
+`failed`, `canceled`, `refunded` and `disputed` are where a recorded payment
+ends up, reached by transitioning it, so a row never appears already failed or
+refunded with nothing in its history saying how.
 
 There is no edit or delete of money. A payment's value is corrected by
 transitioning its status or its refunded amount through

@@ -363,7 +363,7 @@ describe('client screens under data that does not fit', () => {
                         id: 'line-1',
                         type: 'service',
                         description: LONG_DESCRIPTION,
-                        quantity: 1,
+                        quantity: '1.0000',
                         hours: 40,
                         line_date: '2026-08-30',
                         unit_amount: 375000,

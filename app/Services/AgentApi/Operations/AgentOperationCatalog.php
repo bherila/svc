@@ -1010,7 +1010,7 @@ final class AgentOperationCatalog
             $this->tool(
                 'payments.record',
                 'Record received payment',
-                'Record money already received using an explicit invoice, amount in minor units, currency, payment date and method. Current invoice version, explicit user confirmation and idempotency key required. Owner/admin only; overpayments refused. Never charges a customer or issues a refund.',
+                'Record money already received using an explicit invoice, amount in minor units, currency and method. Give the actual payment date as received_on (it defaults to today, never the invoice date); reference, notes and the finance transaction id are optional; status is succeeded, or pending for money that has not cleared. Current invoice version, explicit user confirmation and idempotency key required. Owner/admin only; overpayments refused. Never charges a customer or issues a refund.',
                 [AgentMcpWriteTools::class, 'paymentsRecord'],
                 Effect::LocalWrite,
                 true,
@@ -1021,7 +1021,7 @@ final class AgentOperationCatalog
             $this->tool(
                 'payments.correct',
                 'Correct received payment',
-                'Correct the method, reference or received date of a payment already recorded, using the version from payments.list and a reason that is kept in the client history. Omitted fields are unchanged; a null reference clears it. Amount, currency, status and refunds cannot be changed here. Explicit user confirmation and idempotency key required. Owner/admin only. Never charges a customer or issues a refund.',
+                'Correct the method, reference, notes or received date of a payment already recorded, using the version from payments.list and a reason that is kept in the client history. Omitted fields are unchanged; a null reference or note clears it. Amount, currency, status and refunds cannot be changed here; use payments.set_status or payments.refund. Explicit user confirmation and idempotency key required. Owner/admin only. Never charges a customer or issues a refund.',
                 [AgentMcpWriteTools::class, 'paymentsCorrect'],
                 Effect::LocalWrite,
                 true,

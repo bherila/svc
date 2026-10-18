@@ -14,7 +14,16 @@ use App\Support\AgentApi\ExplicitConfirmation;
 use App\Support\Billing\ReceivedPaymentData;
 use Illuminate\Support\Facades\Validator;
 
-/** Records money already received; never initiates a charge or changes a payment status. */
+/**
+ * `payments.record`: money already received, recorded by hand.
+ *
+ * The one implementation behind REST and MCP; both adapters only translate
+ * their transport into the payload. The fields are the browser form's
+ * ({@see ReceivedPaymentData}): an optional date (today on the workspace's
+ * calendar), an optional reference and note, `pending` or `succeeded`, and the
+ * finance system's transaction id. It never initiates a charge, and never
+ * changes an existing payment - that is `payments.set_status`.
+ */
 final class RecordPaymentAction
 {
     public function __construct(
@@ -32,17 +41,25 @@ final class RecordPaymentAction
         // Both transports mean no reference when it is omitted or null.
         // Canonicalize before hashing so a retry may switch REST/MCP safely.
         $payload += ['reference' => null];
+        // The optional fields #454 added mean the same omitted or null, and
+        // are dropped rather than defaulted: a receipt written before they
+        // existed hashes exactly as it did, so its retry still replays.
+        foreach (['received_on', 'notes', 'status', 'external_finance_transaction_uuid'] as $optional) {
+            if (array_key_exists($optional, $payload) && $payload[$optional] === null) {
+                unset($payload[$optional]);
+            }
+        }
 
         return $this->mutations->run($user, $workspace, $clientId, 'payments.record', $key, $payload,
             function () use ($user, $workspace, $clientId, $key, $payload): array {
                 $this->authorize($user, $workspace);
                 $data = Validator::make(['payment' => $payload], [
-                    'payment' => ['required', 'array:invoice_id,amount,currency,received_on,method,reference,expected_version,confirm'],
+                    'payment' => ['required', 'array:invoice_id,amount,currency,received_on,method,reference,notes,status,external_finance_transaction_uuid,expected_version,confirm'],
                     'payment.invoice_id' => ['required', 'uuid'],
                     'payment.expected_version' => ['required', 'string', 'size:64'],
                     'payment.confirm' => ['required', new ExplicitConfirmation],
                 ])->validate()['payment'];
-                $facts = ReceivedPaymentData::from($payload, errorPrefix: 'payment');
+                $facts = ReceivedPaymentData::from($payload, requireDate: false, includeBookkeeping: true, errorPrefix: 'payment');
                 $invoice = ClientInvoice::query()->where('workspace_id', $workspace->id)
                     ->where('public_id', $data['invoice_id'])->firstOrFail();
                 // Domain keys are workspace-wide; namespace them by caller and operation

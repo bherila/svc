@@ -14444,6 +14444,14 @@
                             "received_on": {
                                 "type": "string",
                                 "format": "date"
+                            },
+                            "notes": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "maxLength": 10000,
+                                "description": "The operator's private note; null or blank clears it."
                             }
                         },
                         "required": [
@@ -14474,12 +14482,17 @@
                             },
                             {
                                 "required": [
+                                    "notes"
+                                ]
+                            },
+                            {
+                                "required": [
                                     "received_on"
                                 ]
                             }
                         ]
                     },
-                    "description": "Correct the method, reference or received date of a payment already recorded, using the version from payments.list and a reason that is kept in the client history. Omitted fields are unchanged; a null reference clears it. Amount, currency, status and refunds cannot be changed here. Explicit user confirmation and idempotency key required. Owner/admin only. Never charges a customer or issues a refund.",
+                    "description": "Correct the method, reference, notes or received date of a payment already recorded, using the version from payments.list and a reason that is kept in the client history. Omitted fields are unchanged; a null reference or note clears it. Amount, currency, status and refunds cannot be changed here; use payments.set_status or payments.refund. Explicit user confirmation and idempotency key required. Owner/admin only. Never charges a customer or issues a refund.",
                     "annotations": {
                         "readOnlyHint": false,
                         "destructiveHint": false,
@@ -14509,7 +14522,10 @@
                                     "received_on",
                                     "method",
                                     "reference",
+                                    "notes",
+                                    "external_finance_transaction_uuid",
                                     "status",
+                                    "manual",
                                     "refunded_amount",
                                     "version"
                                 ],
@@ -14548,10 +14564,19 @@
                                             "string",
                                             "null"
                                         ],
-                                        "maxLength": 255
+                                        "maxLength": 255,
+                                        "description": "Null unless the reader is a workspace owner/admin."
                                     },
                                     "status": {
-                                        "type": "string"
+                                        "type": "string",
+                                        "enum": [
+                                            "pending",
+                                            "succeeded",
+                                            "failed",
+                                            "refunded",
+                                            "disputed",
+                                            "canceled"
+                                        ]
                                     },
                                     "refunded_amount": {
                                         "type": "integer",
@@ -14559,6 +14584,26 @@
                                     },
                                     "version": {
                                         "$ref": "#/$defs/Version"
+                                    },
+                                    "notes": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 10000,
+                                        "description": "The operator's private note. Null unless the reader is a workspace owner/admin."
+                                    },
+                                    "external_finance_transaction_uuid": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "uuid",
+                                        "description": "The finance system's transaction the payment was recorded against. Null unless the reader is a workspace owner/admin."
+                                    },
+                                    "manual": {
+                                        "type": "boolean",
+                                        "description": "Recorded by hand rather than by a payment processor. Only a manual payment can be moved by payments.set_status or payments.refund."
                                     }
                                 }
                             },
@@ -14655,7 +14700,10 @@
                                     "received_on",
                                     "method",
                                     "reference",
+                                    "notes",
+                                    "external_finance_transaction_uuid",
                                     "status",
+                                    "manual",
                                     "refunded_amount",
                                     "version"
                                 ],
@@ -14694,10 +14742,19 @@
                                             "string",
                                             "null"
                                         ],
-                                        "maxLength": 255
+                                        "maxLength": 255,
+                                        "description": "Null unless the reader is a workspace owner/admin."
                                     },
                                     "status": {
-                                        "type": "string"
+                                        "type": "string",
+                                        "enum": [
+                                            "pending",
+                                            "succeeded",
+                                            "failed",
+                                            "refunded",
+                                            "disputed",
+                                            "canceled"
+                                        ]
                                     },
                                     "refunded_amount": {
                                         "type": "integer",
@@ -14705,6 +14762,26 @@
                                     },
                                     "version": {
                                         "$ref": "#/$defs/Version"
+                                    },
+                                    "notes": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 10000,
+                                        "description": "The operator's private note. Null unless the reader is a workspace owner/admin."
+                                    },
+                                    "external_finance_transaction_uuid": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "uuid",
+                                        "description": "The finance system's transaction the payment was recorded against. Null unless the reader is a workspace owner/admin."
+                                    },
+                                    "manual": {
+                                        "type": "boolean",
+                                        "description": "Recorded by hand rather than by a payment processor. Only a manual payment can be moved by payments.set_status or payments.refund."
                                     }
                                 }
                             },
@@ -14737,10 +14814,6 @@
                                 "type": "string",
                                 "pattern": "^[A-Z]{3}$"
                             },
-                            "received_on": {
-                                "type": "string",
-                                "format": "date"
-                            },
                             "method": {
                                 "type": "string",
                                 "minLength": 1,
@@ -14762,12 +14835,42 @@
                                 "const": true,
                                 "description": "Explicit user confirmation is required."
                             },
+                            "received_on": {
+                                "type": "string",
+                                "format": "date",
+                                "description": "The day the money arrived (YYYY-MM-DD), not in the future and at most two years back on the workspace's calendar. Omitted means today on that calendar."
+                            },
                             "reference": {
                                 "type": [
                                     "string",
                                     "null"
                                 ],
                                 "maxLength": 255
+                            },
+                            "notes": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "maxLength": 10000,
+                                "description": "The operator's private note."
+                            },
+                            "status": {
+                                "type": "string",
+                                "enum": [
+                                    "pending",
+                                    "succeeded"
+                                ],
+                                "default": "succeeded",
+                                "description": "succeeded for money that has arrived; pending for money not yet cleared, such as an uncleared cheque. Move it later with payments.set_status."
+                            },
+                            "external_finance_transaction_uuid": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "format": "uuid",
+                                "description": "The finance system's transaction this payment was received as."
                             }
                         },
                         "required": [
@@ -14775,7 +14878,6 @@
                             "invoice_id",
                             "amount",
                             "currency",
-                            "received_on",
                             "method",
                             "idempotency_key",
                             "expected_version",
@@ -14783,7 +14885,7 @@
                         ],
                         "additionalProperties": false
                     },
-                    "description": "Record money already received using an explicit invoice, amount in minor units, currency, payment date and method. Current invoice version, explicit user confirmation and idempotency key required. Owner/admin only; overpayments refused. Never charges a customer or issues a refund.",
+                    "description": "Record money already received using an explicit invoice, amount in minor units, currency and method. Give the actual payment date as received_on (it defaults to today, never the invoice date); reference, notes and the finance transaction id are optional; status is succeeded, or pending for money that has not cleared. Current invoice version, explicit user confirmation and idempotency key required. Owner/admin only; overpayments refused. Never charges a customer or issues a refund.",
                     "annotations": {
                         "readOnlyHint": false,
                         "destructiveHint": false,
@@ -14816,7 +14918,10 @@
                                     "received_on",
                                     "method",
                                     "reference",
+                                    "notes",
+                                    "external_finance_transaction_uuid",
                                     "status",
+                                    "manual",
                                     "refunded_amount",
                                     "version"
                                 ],
@@ -14855,10 +14960,19 @@
                                             "string",
                                             "null"
                                         ],
-                                        "maxLength": 255
+                                        "maxLength": 255,
+                                        "description": "Null unless the reader is a workspace owner/admin."
                                     },
                                     "status": {
-                                        "type": "string"
+                                        "type": "string",
+                                        "enum": [
+                                            "pending",
+                                            "succeeded",
+                                            "failed",
+                                            "refunded",
+                                            "disputed",
+                                            "canceled"
+                                        ]
                                     },
                                     "refunded_amount": {
                                         "type": "integer",
@@ -14866,6 +14980,26 @@
                                     },
                                     "version": {
                                         "$ref": "#/$defs/Version"
+                                    },
+                                    "notes": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 10000,
+                                        "description": "The operator's private note. Null unless the reader is a workspace owner/admin."
+                                    },
+                                    "external_finance_transaction_uuid": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "uuid",
+                                        "description": "The finance system's transaction the payment was recorded against. Null unless the reader is a workspace owner/admin."
+                                    },
+                                    "manual": {
+                                        "type": "boolean",
+                                        "description": "Recorded by hand rather than by a payment processor. Only a manual payment can be moved by payments.set_status or payments.refund."
                                     }
                                 }
                             },
@@ -24590,9 +24724,9 @@
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.correct": "c4baf2959b7ae710",
-                "payments.list": "5f9d6942bc64d245",
-                "payments.record": "96e4995b7c1dc5ba",
+                "payments.correct": "675e27f39a47eaea",
+                "payments.list": "a9d6e9267ef8ee1a",
+                "payments.record": "075c031df6c51737",
                 "projects.archive": "9693f87cf68157c0",
                 "projects.create": "652afb7cd8be7462",
                 "projects.get": "c7ffe7930b196d4b",
@@ -24769,7 +24903,7 @@
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.accept": "6f660c7d4c51f10e",
@@ -24920,7 +25054,7 @@
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.accept": "6f660c7d4c51f10e",
@@ -25071,7 +25205,7 @@
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.accept": "6f660c7d4c51f10e",
@@ -25222,7 +25356,7 @@
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.accept": "6f660c7d4c51f10e",
@@ -25366,7 +25500,7 @@
                 "invoices.reminders.list": "86e53f8c46db44c6",
                 "invoices.square_candidates": "09693c77227c6c63",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "projects.members.list": "4d479cecdb3a8834",
@@ -25629,7 +25763,7 @@
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.get": "f2602fc26e943e89",
@@ -25829,7 +25963,7 @@
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.get": "f2602fc26e943e89",
@@ -26027,7 +26161,7 @@
                 "invoices.preview_period": "588e53821f4472ec",
                 "invoices.reminders.list": "86e53f8c46db44c6",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "projects.members.list": "4d479cecdb3a8834",
@@ -26179,7 +26313,7 @@
                 "invoices.preview_period": "588e53821f4472ec",
                 "invoices.reminders.list": "86e53f8c46db44c6",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "projects.members.list": "4d479cecdb3a8834",
@@ -26332,7 +26466,7 @@
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.get": "f2602fc26e943e89",
@@ -26482,7 +26616,7 @@
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.get": "f2602fc26e943e89",
@@ -26632,7 +26766,7 @@
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.get": "f2602fc26e943e89",
@@ -26782,7 +26916,7 @@
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.get": "f2602fc26e943e89",
@@ -26922,7 +27056,7 @@
                 "invoices.reminders.list": "86e53f8c46db44c6",
                 "invoices.square_candidates": "09693c77227c6c63",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "projects.members.list": "4d479cecdb3a8834",
@@ -27072,7 +27206,7 @@
                 "invoices.reminders.list": "86e53f8c46db44c6",
                 "invoices.square_candidates": "09693c77227c6c63",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "projects.members.list": "4d479cecdb3a8834",
@@ -27237,7 +27371,7 @@
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.get": "f2602fc26e943e89",
@@ -27385,7 +27519,7 @@
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.get": "f2602fc26e943e89",
@@ -27533,7 +27667,7 @@
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.get": "f2602fc26e943e89",
@@ -27681,7 +27815,7 @@
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.get": "f2602fc26e943e89",
@@ -27813,7 +27947,7 @@
                 "invoices.reminders.list": "86e53f8c46db44c6",
                 "invoices.square_candidates": "09693c77227c6c63",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "projects.members.list": "4d479cecdb3a8834",
@@ -27965,7 +28099,7 @@
                 "invoices.reminders.list": "86e53f8c46db44c6",
                 "invoices.square_candidates": "09693c77227c6c63",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "projects.members.list": "4d479cecdb3a8834",
@@ -28132,7 +28266,7 @@
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.get": "f2602fc26e943e89",
@@ -28282,7 +28416,7 @@
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.get": "f2602fc26e943e89",
@@ -28432,7 +28566,7 @@
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.get": "f2602fc26e943e89",
@@ -28582,7 +28716,7 @@
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.get": "f2602fc26e943e89",
@@ -28703,9 +28837,9 @@
                 "invoices.reminders.list": "86e53f8c46db44c6",
                 "invoices.square_candidates": "09693c77227c6c63",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.correct": "c4baf2959b7ae710",
-                "payments.list": "5f9d6942bc64d245",
-                "payments.record": "96e4995b7c1dc5ba",
+                "payments.correct": "675e27f39a47eaea",
+                "payments.list": "a9d6e9267ef8ee1a",
+                "payments.record": "075c031df6c51737",
                 "projects.archive": "9693f87cf68157c0",
                 "projects.create": "652afb7cd8be7462",
                 "projects.get": "c7ffe7930b196d4b",
@@ -28855,9 +28989,9 @@
                 "invoices.reminders.list": "86e53f8c46db44c6",
                 "invoices.square_candidates": "09693c77227c6c63",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.correct": "c4baf2959b7ae710",
-                "payments.list": "5f9d6942bc64d245",
-                "payments.record": "96e4995b7c1dc5ba",
+                "payments.correct": "675e27f39a47eaea",
+                "payments.list": "a9d6e9267ef8ee1a",
+                "payments.record": "075c031df6c51737",
                 "projects.archive": "9693f87cf68157c0",
                 "projects.create": "652afb7cd8be7462",
                 "projects.get": "c7ffe7930b196d4b",
@@ -29033,7 +29167,7 @@
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.accept": "6f660c7d4c51f10e",
@@ -29183,7 +29317,7 @@
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.accept": "6f660c7d4c51f10e",
@@ -29333,7 +29467,7 @@
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.accept": "6f660c7d4c51f10e",
@@ -29483,7 +29617,7 @@
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.accept": "6f660c7d4c51f10e",
@@ -29628,7 +29762,7 @@
                 "invoices.reminders.list": "86e53f8c46db44c6",
                 "invoices.square_candidates": "09693c77227c6c63",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "projects.members.list": "4d479cecdb3a8834",
@@ -29778,7 +29912,7 @@
                 "invoices.reminders.list": "86e53f8c46db44c6",
                 "invoices.square_candidates": "09693c77227c6c63",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "projects.members.list": "4d479cecdb3a8834",
@@ -29943,7 +30077,7 @@
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.get": "f2602fc26e943e89",
@@ -30091,7 +30225,7 @@
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.get": "f2602fc26e943e89",
@@ -30239,7 +30373,7 @@
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.get": "f2602fc26e943e89",
@@ -30387,7 +30521,7 @@
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.get": "f2602fc26e943e89",
@@ -30503,9 +30637,9 @@
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.correct": "c4baf2959b7ae710",
-                "payments.list": "5f9d6942bc64d245",
-                "payments.record": "96e4995b7c1dc5ba",
+                "payments.correct": "675e27f39a47eaea",
+                "payments.list": "a9d6e9267ef8ee1a",
+                "payments.record": "075c031df6c51737",
                 "projects.archive": "9693f87cf68157c0",
                 "projects.create": "652afb7cd8be7462",
                 "projects.get": "c7ffe7930b196d4b",
@@ -30654,9 +30788,9 @@
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.correct": "c4baf2959b7ae710",
-                "payments.list": "5f9d6942bc64d245",
-                "payments.record": "96e4995b7c1dc5ba",
+                "payments.correct": "675e27f39a47eaea",
+                "payments.list": "a9d6e9267ef8ee1a",
+                "payments.record": "075c031df6c51737",
                 "projects.archive": "9693f87cf68157c0",
                 "projects.create": "652afb7cd8be7462",
                 "projects.get": "c7ffe7930b196d4b",
@@ -30831,7 +30965,7 @@
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.accept": "6f660c7d4c51f10e",
@@ -30982,7 +31116,7 @@
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.accept": "6f660c7d4c51f10e",
@@ -31133,7 +31267,7 @@
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.accept": "6f660c7d4c51f10e",
@@ -31284,7 +31418,7 @@
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.accept": "6f660c7d4c51f10e",
@@ -31412,9 +31546,9 @@
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.correct": "c4baf2959b7ae710",
-                "payments.list": "5f9d6942bc64d245",
-                "payments.record": "96e4995b7c1dc5ba",
+                "payments.correct": "675e27f39a47eaea",
+                "payments.list": "a9d6e9267ef8ee1a",
+                "payments.record": "075c031df6c51737",
                 "projects.archive": "9693f87cf68157c0",
                 "projects.create": "652afb7cd8be7462",
                 "projects.get": "c7ffe7930b196d4b",
@@ -31562,9 +31696,9 @@
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.correct": "c4baf2959b7ae710",
-                "payments.list": "5f9d6942bc64d245",
-                "payments.record": "96e4995b7c1dc5ba",
+                "payments.correct": "675e27f39a47eaea",
+                "payments.list": "a9d6e9267ef8ee1a",
+                "payments.record": "075c031df6c51737",
                 "projects.archive": "9693f87cf68157c0",
                 "projects.create": "652afb7cd8be7462",
                 "projects.get": "c7ffe7930b196d4b",
@@ -31738,7 +31872,7 @@
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.accept": "6f660c7d4c51f10e",
@@ -31886,7 +32020,7 @@
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.accept": "6f660c7d4c51f10e",
@@ -32034,7 +32168,7 @@
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.accept": "6f660c7d4c51f10e",
@@ -32182,7 +32316,7 @@
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.accept": "6f660c7d4c51f10e",
@@ -33081,9 +33215,9 @@
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.correct": "c4baf2959b7ae710",
-                "payments.list": "5f9d6942bc64d245",
-                "payments.record": "96e4995b7c1dc5ba",
+                "payments.correct": "675e27f39a47eaea",
+                "payments.list": "a9d6e9267ef8ee1a",
+                "payments.record": "075c031df6c51737",
                 "projects.archive": "9693f87cf68157c0",
                 "projects.create": "652afb7cd8be7462",
                 "projects.get": "c7ffe7930b196d4b",
@@ -33234,9 +33368,9 @@
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.correct": "c4baf2959b7ae710",
-                "payments.list": "5f9d6942bc64d245",
-                "payments.record": "96e4995b7c1dc5ba",
+                "payments.correct": "675e27f39a47eaea",
+                "payments.list": "a9d6e9267ef8ee1a",
+                "payments.record": "075c031df6c51737",
                 "projects.archive": "9693f87cf68157c0",
                 "projects.create": "652afb7cd8be7462",
                 "projects.get": "c7ffe7930b196d4b",
@@ -33413,7 +33547,7 @@
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.accept": "6f660c7d4c51f10e",
@@ -33564,7 +33698,7 @@
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.accept": "6f660c7d4c51f10e",
@@ -33715,7 +33849,7 @@
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.accept": "6f660c7d4c51f10e",
@@ -33866,7 +34000,7 @@
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.accept": "6f660c7d4c51f10e",

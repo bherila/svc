@@ -23,6 +23,7 @@ use App\Services\Mcp\Context\McpRequestContext;
 use App\Support\AgentApi\Presenters\AgentInvoicePresenter;
 use App\Support\AgentApi\Presenters\AgentTaskPresenter;
 use App\Support\AgentApi\Presenters\AgentTimeEntryPresenter;
+use App\Support\Billing\ReceivedPaymentData;
 use Bherila\McpLaravelBridge\Http\InternalAgentApiTransport;
 use Bherila\McpLaravelBridge\Mcp\RequestArguments;
 use Mcp\Capability\Attribute\Schema;
@@ -119,35 +120,40 @@ final class AgentMcpWriteTools
         return $this->send('DELETE', "workspaces/{$workspace_id}/attachments/{$attachment_id}", compact('expected_version', 'confirm'), $idempotency_key);
     }
 
-    /** @return array<string, mixed> */
+    /**
+     * Record money already received. Omitted optional fields mean what the
+     * browser form means by them: today, no reference or note, succeeded.
+     *
+     * @return array<string, mixed>
+     */
     public function paymentsRecord(
         #[Schema(format: 'uuid')] string $workspace_id,
         #[Schema(format: 'uuid')] string $invoice_id,
         #[Schema(minimum: 1)] int $amount,
         #[Schema(pattern: '^[A-Z]{3}$')] string $currency,
-        #[Schema(format: 'date')] string $received_on,
         #[Schema(minLength: 1, maxLength: ClientInvoicePayment::METHOD_MAX_LENGTH)] string $method,
         #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key,
         #[Schema(minLength: 64, maxLength: 64)] string $expected_version,
         #[Schema] bool $confirm,
+        #[Schema(format: 'date')] ?string $received_on = null,
         #[Schema(maxLength: 255)] ?string $reference = null,
+        #[Schema(maxLength: ReceivedPaymentData::NOTES_MAX_LENGTH)] ?string $notes = null,
+        #[Schema(enum: ['pending', 'succeeded'])] ?string $status = null,
+        #[Schema(format: 'uuid')] ?string $external_finance_transaction_uuid = null,
     ): array {
         $context = $this->accounts->resolve($this->context('payments:record'), $workspace_id);
-        $workspace = $context->workspace;
-        if (! $workspace instanceof Workspace) {
-            throw new \LogicException('MCP payment recording requires a workspace context.');
-        }
+        $workspace = $this->workspace($context);
         $actor = User::query()->findOrFail($context->principal->subject->id);
         $ids = app(RecordPaymentAction::class)->run($actor, $workspace,
             $context->principal->clientId, $idempotency_key,
-            compact('invoice_id', 'amount', 'currency', 'received_on', 'method', 'reference', 'expected_version', 'confirm'));
+            compact('invoice_id', 'amount', 'currency', 'received_on', 'method', 'reference', 'notes', 'status', 'external_finance_transaction_uuid', 'expected_version', 'confirm'));
 
         return app(AgentPaymentReadService::class)->result($actor, $workspace, $ids);
     }
 
     /**
-     * Correct a received payment's method, reference or date. Omitted fields
-     * are left alone; an explicit null reference clears it.
+     * Correct a received payment's method, reference, note or date. Omitted
+     * fields are left alone; an explicit null reference or note clears it.
      *
      * @return array<string, mixed>
      */
@@ -162,9 +168,10 @@ final class AgentMcpWriteTools
         #[Schema(minLength: 1, maxLength: ClientInvoicePayment::METHOD_MAX_LENGTH)] ?string $method = null,
         #[Schema(maxLength: 255)] ?string $reference = null,
         #[Schema(format: 'date')] ?string $received_on = null,
+        #[Schema(maxLength: ReceivedPaymentData::NOTES_MAX_LENGTH)] ?string $notes = null,
     ): array {
         $body = compact('expected_version', 'reason', 'confirm');
-        foreach (compact('method', 'reference', 'received_on') as $name => $value) {
+        foreach (compact('method', 'reference', 'notes', 'received_on') as $name => $value) {
             if ($this->requestArguments->has($request, $name)) {
                 $body[$name] = $value;
             }

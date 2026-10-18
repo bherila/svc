@@ -1040,7 +1040,7 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        /** @description Owner/admin correction of a received payment's descriptive fields: method, reference and received_on, at least one of which must be given. Requires confirm: true, the version from payments.list and a reason, which is kept in the client history. Omitted fields are unchanged; an explicit null reference clears it. A stale version is refused with 409 and a correction that changes nothing records nothing. Amount, currency, status, refunds, the invoice and processor fields cannot be changed. Never initiates a charge or a refund. Requires both outer workflow and payment write flags. */
+        /** @description Owner/admin correction of a received payment's descriptive fields: method, reference, notes and received_on, at least one of which must be given. Requires confirm: true, the version from payments.list and a reason, which is kept in the client history. Omitted fields are unchanged; an explicit null reference or note clears it. A stale version is refused with 409 and a correction that changes nothing records nothing. Amount, currency, status, refunds, the invoice and processor fields cannot be changed. Never initiates a charge or a refund. Requires both outer workflow and payment write flags. */
         patch: operations['payments.correct'];
         trace?: never;
     };
@@ -1054,7 +1054,7 @@ export interface paths {
         /** @description List received payments for an explicit invoice_id or company_id (at least one required). Invoice visibility applies; private processor and reconciliation data is excluded. */
         get: operations['payments.list'];
         put?: never;
-        /** @description Owner/admin bookkeeping for money already received. Never initiates a charge. Explicit invoice, minor-unit amount, currency, payment date and method required; reference is optional. Read invoices.get with billing:read for the current invoice expected_version; confirm: true is required. Overpayment refused. Requires both outer workflow and payment write flags. */
+        /** @description Owner/admin bookkeeping for money already received, with the same fields as the invoice screen's payment form. Never initiates a charge. Explicit invoice, minor-unit amount, currency and method required. received_on is the day the money arrived and defaults to today on the workspace calendar; reference, notes and the finance system's transaction id are optional; status is succeeded (the default) or pending for money not yet cleared, which payments.set_status later settles. Read invoices.get with billing:read for the current invoice expected_version; confirm: true is required. A succeeded payment over the balance is refused. Requires both outer workflow and payment write flags. */
         post: operations['payments.record'];
         delete?: never;
         options?: never;
@@ -2871,10 +2871,27 @@ export interface components {
             /** Format: date */
             received_on: string | null;
             method: string | null;
+            /** @description Null unless the reader is a workspace owner/admin. */
             reference: string | null;
-            status: string;
+            /** @enum {string} */
+            status:
+                | 'pending'
+                | 'succeeded'
+                | 'failed'
+                | 'refunded'
+                | 'disputed'
+                | 'canceled';
             refunded_amount: number;
             version: components['schemas']['Version'];
+            /** @description The operator's private note. Null unless the reader is a workspace owner/admin. */
+            notes: string | null;
+            /**
+             * Format: uuid
+             * @description The finance system's transaction the payment was recorded against. Null unless the reader is a workspace owner/admin.
+             */
+            external_finance_transaction_uuid: string | null;
+            /** @description Recorded by hand rather than by a payment processor. Only a manual payment can be moved by payments.set_status or payments.refund. */
+            manual: boolean;
         };
         ReceivedPaymentBatchResponse: {
             data: components['schemas']['ReceivedPayment'][];
@@ -2885,6 +2902,8 @@ export interface components {
                   reason: string;
                   method?: string;
                   reference?: string | null;
+                  /** @description The operator's private note; null or blank clears it. */
+                  notes?: string | null;
                   /** Format: date */
                   received_on?: string;
                   /**
@@ -2893,6 +2912,7 @@ export interface components {
                    */
                   confirm: true;
               }
+            | unknown
             | unknown
             | unknown
             | unknown;
@@ -2905,10 +2925,26 @@ export interface components {
             invoice_id: string;
             amount: number;
             currency: string;
-            /** Format: date */
-            received_on: string;
+            /**
+             * Format: date
+             * @description The day the money arrived (YYYY-MM-DD), not in the future and at most two years back on the workspace's calendar. Omitted means today on that calendar.
+             */
+            received_on?: string;
             method: string;
             reference?: string | null;
+            /** @description The operator's private note. */
+            notes?: string | null;
+            /**
+             * @description succeeded for money that has arrived; pending for money not yet cleared, such as an uncleared cheque. Move it later with payments.set_status.
+             * @default succeeded
+             * @enum {string}
+             */
+            status: 'pending' | 'succeeded';
+            /**
+             * Format: uuid
+             * @description The finance system's transaction this payment was received as.
+             */
+            external_finance_transaction_uuid?: string | null;
             /**
              * @description Explicit user confirmation is required.
              * @constant

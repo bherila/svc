@@ -60,11 +60,17 @@ import type {
     InvoiceEmailContext,
 } from '@/types/invoice-email';
 
+/**
+ * A line as `invoices.get` presents it (one presenter on the server), plus the
+ * hours, day and correction capability this screen adds.
+ */
 type InvoiceLine = {
     id: string;
+    project_id?: string | null;
     type: string;
     description: string;
-    quantity: number;
+    /** A decimal string with four places, e.g. "1.5000". */
+    quantity: string;
     hours: number | null;
     line_date: string | null;
     unit_amount: number;
@@ -73,22 +79,37 @@ type InvoiceLine = {
     money_correctable?: boolean;
 };
 
+/** "1.5000" reads as 1.5: the stored scale is not something a reader typed. */
+function formatQuantity(quantity: string): string {
+    const parsed = Number(quantity);
+
+    return Number.isFinite(parsed) ? String(parsed) : quantity;
+}
+
 function correctionFields(lines: InvoiceLine[]) {
     return lines.map((line) => ({
         id: line.id,
         description: line.description,
-        quantity: String(line.quantity),
+        quantity: formatQuantity(line.quantity),
         unit_amount: (line.unit_amount / 100).toFixed(2),
         tax_amount: ((line.tax_amount ?? 0) / 100).toFixed(2),
         money_correctable: line.money_correctable ?? false,
     }));
 }
 
+/**
+ * A payment as `payments.list` presents it (one presenter on the server), plus
+ * the capability URLs this screen adds.
+ */
 type InvoicePayment = {
     id: string;
+    invoice_id?: string;
     status: string;
     method: string | null;
     reference: string | null;
+    notes?: string | null;
+    manual?: boolean;
+    version?: string;
     received_on: string | null;
     /**
      * Where a corrected date is sent, or null for a viewer who may not correct
@@ -1068,7 +1089,9 @@ export default function ClientInvoiceDetail({
                                                     {formatDay(line.line_date)}
                                                 </TableCell>
                                                 <TableCell className="tabular-nums">
-                                                    {line.quantity}
+                                                    {formatQuantity(
+                                                        line.quantity,
+                                                    )}
                                                 </TableCell>
                                                 <TableCell className="tabular-nums">
                                                     {line.hours ?? '—'}

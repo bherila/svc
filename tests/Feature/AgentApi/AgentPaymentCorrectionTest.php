@@ -94,6 +94,25 @@ final class AgentPaymentCorrectionTest extends TestCase
         $this->assertSame('ach', $payment->fresh()?->method);
     }
 
+    /** The note is offered as it is to the console command, and read back by payments.list (#454). */
+    #[DataProvider('transports')]
+    public function test_the_note_can_be_corrected_and_cleared(string $transport): void
+    {
+        [$user, $workspace, $payment] = $this->fixture();
+        $body = ['confirm' => true, 'expected_version' => AgentApiVersion::for($payment), 'reason' => 'Synthetic note', 'notes' => 'Synthetic: deposited at the synthetic branch.'];
+
+        $corrected = $this->correct($transport, $user, $workspace, $payment->public_id, $body, 'synthetic-note');
+        $this->assertIsArray($corrected);
+        $this->assertSame('Synthetic: deposited at the synthetic branch.', $corrected['notes']);
+        $this->assertSame('wire', $payment->fresh()?->method);
+
+        $cleared = $this->correct($transport, $user, $workspace, $payment->public_id, [...$body, 'notes' => null, 'expected_version' => $corrected['version']], 'synthetic-note-clear');
+        $this->assertIsArray($cleared);
+        $this->assertNull($cleared['notes']);
+        $this->assertNull($payment->fresh()?->notes);
+        $this->assertSame(2, ClientCompanyActivity::query()->where('action', 'invoice.payment_corrected')->count());
+    }
+
     /** @return iterable<string, array{array<string, mixed>}> */
     public static function refusedBodies(): iterable
     {
@@ -102,7 +121,7 @@ final class AgentPaymentCorrectionTest extends TestCase
         yield 'status' => [['status' => 'refunded']];
         yield 'refunded amount' => [['refunded_amount' => 1]];
         yield 'invoice' => [['invoice_id' => '00000000-0000-4000-8000-000000000000']];
-        yield 'notes are not offered to agents' => [['notes' => 'Synthetic private note']];
+        yield 'notes longer than their column' => [['notes' => str_repeat('n', 10001)]];
         yield 'no reason' => [['reason' => null]];
         yield 'blank reason' => [['reason' => '   ']];
         yield 'no version' => [['expected_version' => null]];
@@ -285,7 +304,7 @@ final class AgentPaymentCorrectionTest extends TestCase
 
         foreach (['REST body' => [$request, []], 'MCP input' => [$input, $tooling]] as $label => [$schema, $extra]) {
             $this->assertNotSame([], $validator->validateAgainstJsonSchema(json_decode((string) json_encode([...$base, ...$extra])), $schema), $label.': nothing to correct');
-            foreach (['method' => 'ach', 'reference' => null, 'received_on' => '2026-08-01'] as $field => $value) {
+            foreach (['method' => 'ach', 'reference' => null, 'notes' => null, 'received_on' => '2026-08-01'] as $field => $value) {
                 $this->assertSame(
                     [],
                     $validator->validateAgainstJsonSchema(json_decode((string) json_encode([...$base, ...$extra, $field => $value])), $schema),
