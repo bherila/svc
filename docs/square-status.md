@@ -96,7 +96,10 @@ Square dashboard URLs, and `truncated`:
   closed; `invoice_not_linked` means no svc invoice is linked to receive it. A
   payment recorded against another svc invoice still matches. The mirror takes
   payment ids from the order's tenders - `payment_id`, else the tender's own `id`
-  - and leaves out card tenders Square voided or failed, which took no money.
+  - and counts a card tender once it is captured: an authorization may still be
+  voided, and a capture changes the invoice's paid amount, so the order is read
+  again then. An order with more tenders than the reconciler accepts (100) stays
+  unresolved, as does a paid invoice until the sync has read its order.
 - `unlinked_customer_balances`: Square customers with no client company mapped
   and an open invoice, most owed first - the customers `square.customers.unlinked`
   lists with `with_open_balance`.

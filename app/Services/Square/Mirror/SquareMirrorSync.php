@@ -214,7 +214,10 @@ final class SquareMirrorSync
             if (! is_array($order)) {
                 throw SquareRequestFailed::unreadable();
             }
-            if ($this->mirror->storePaymentIds($workspace, $invoice['square_invoice_id'], $invoice['basis'], $this->mapper->paymentIds($order))) {
+            // An order with more tenders than the reconciler accepts stays
+            // unresolved, and the billing audit says it is incomplete.
+            $ids = $this->mapper->paymentIds($order);
+            if ($ids !== null && $this->mirror->storePaymentIds($workspace, $invoice['square_invoice_id'], $invoice['basis'], $ids)) {
                 $tally->paymentsResolved++;
             }
         }

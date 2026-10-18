@@ -27,14 +27,17 @@ final class SquareSnapshotMapper
 
     private const string STATUS = '/^[A-Z][A-Z_]{0,31}$/D';
 
-    /** Tenders read per order at most, as the order presenter caps them. */
-    private const int MAX_TENDERS = 50;
+    /** Tenders read per order at most, as the payment reconciler bounds them. */
+    private const int MAX_TENDERS = 100;
+
+    /** Invoice statuses under which Square may hold a payment. */
+    public const array PAYMENT_STATUSES = ['PAID', 'PARTIALLY_PAID', 'PARTIALLY_REFUNDED', 'REFUNDED', 'PAYMENT_PENDING'];
 
     /** The tender rules payment ids are read by; see {@see paymentIds()}. */
     private const string TENDER_RULES = 't2';
 
-    /** Card tender states in which no money moved. */
-    private const array TENDERS_WITHOUT_MONEY = ['VOIDED', 'FAILED'];
+    /** The one card tender state in which money has moved. */
+    private const string CAPTURED = 'CAPTURED';
 
     public function __construct(private readonly SquarePresenter $presenter) {}
 
@@ -145,34 +148,47 @@ final class SquareSnapshotMapper
 
     /**
      * Whether a mirrored invoice's payment ids are resolved for what it is
-     * now: an invoice with nothing paid, or no order to read, has none to
-     * resolve.
+     * now. An invoice with nothing paid, or no order to read, has none to
+     * resolve; one whose paid amount is unknown may hold a payment when its
+     * status says so, and is read like any other.
      */
     public static function paymentIdsCurrent(string $status, ?int $paidAmount, ?string $orderId, ?string $basis): bool
     {
-        return $paidAmount === null || $paidAmount <= 0 || $orderId === null || $basis === self::paymentIdsBasis($status, $paidAmount);
+        $mayHoldPayment = $paidAmount === null ? in_array($status, self::PAYMENT_STATUSES, true) : $paidAmount > 0;
+
+        return $orderId === null || ! $mayHoldPayment || $basis === self::paymentIdsBasis($status, $paidAmount);
     }
 
     /**
      * Payment ids from an order's tenders, as Square sent the order.
      *
      * A tender names its payment in `payment_id`, or only by its own `id` -
-     * the reconciler reads both the same way. A card tender Square voided or
-     * failed took no money, so it is not a payment to account for.
+     * the reconciler reads both the same way. A card tender counts once it is
+     * captured: an authorization may still be voided without the invoice
+     * changing, and a voided or failed tender took no money. A capture moves
+     * the invoice's paid amount, so the order is read again then.
+     *
+     * Null when the order has more tenders than the reconciler accepts: the
+     * ids stay unresolved rather than recorded short.
      *
      * @param  array<mixed>  $order
-     * @return list<string>
+     * @return list<string>|null
      */
-    public function paymentIds(array $order): array
+    public function paymentIds(array $order): ?array
     {
         $ids = [];
         $tenders = $order['tenders'] ?? [];
-        foreach (is_array($tenders) ? array_slice($tenders, 0, self::MAX_TENDERS) : [] as $tender) {
+        $tenders = is_array($tenders) ? $tenders : [];
+        if (count($tenders) > self::MAX_TENDERS) {
+            return null;
+        }
+        foreach ($tenders as $tender) {
             if (! is_array($tender)) {
                 continue;
             }
-            $card = $tender['card_details'] ?? null;
-            if (is_array($card) && in_array($card['status'] ?? null, self::TENDERS_WITHOUT_MONEY, true)) {
+            $card = $tender['card_details'] ?? [];
+            $state = is_array($card) ? ($card['status'] ?? self::CAPTURED) : self::CAPTURED;
+            if ($state !== self::CAPTURED) {
                 continue;
             }
             $id = self::id($tender['payment_id'] ?? null) ?? self::id($tender['id'] ?? null);

@@ -192,6 +192,15 @@ final class SquareBillingAuditTest extends TestCase
         $this->assertTrue($report['complete']);
         $this->assertSame(['pay_audit_tender'], array_column($report['unmatched_payments']['payments'], 'payment_id'));
         $this->assertSame([], $repository->invoicesNeedingPaymentIds($workspace, 10));
+
+        // A paid invoice whose amounts Square sent in two currencies has no
+        // known paid amount, and is read all the same.
+        $this->snapshot($workspace, 'inv_audit_2', 2, '2030-02-15', 'PAID', ['paid_amount' => null, 'total_amount' => null, 'square_order_id' => 'order_audit_2']);
+        $this->snapshot($workspace, 'inv_audit_3', 3, '2030-03-15', 'UNPAID', ['paid_amount' => null, 'square_order_id' => 'order_audit_3']);
+        $this->assertFalse(app(SquareBillingAudit::class)->report($workspace)['complete']);
+        $this->assertSame([['square_invoice_id' => 'inv_audit_2', 'square_order_id' => 'order_audit_2', 'basis' => 'PAID||t2']], $repository->invoicesNeedingPaymentIds($workspace, 10));
+        $this->assertTrue($repository->storePaymentIds($workspace, 'inv_audit_2', 'PAID||t2', []));
+        $this->assertTrue(app(SquareBillingAudit::class)->report($workspace)['complete']);
     }
 
     public function test_an_imported_annual_series_mirrors_its_amount_once_per_cycle(): void
