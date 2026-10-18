@@ -29,7 +29,7 @@ final class RefreshGrantLineage
     public function redeemedAccessTokenId(?Request $request): ?string
     {
         $presented = $request?->input('refresh_token');
-        if ($request?->input('grant_type') !== 'refresh_token' || ! is_string($presented) || $presented === '') {
+        if ($request?->input('grant_type') !== 'refresh_token' || ! is_string($presented)) {
             return null;
         }
         try {

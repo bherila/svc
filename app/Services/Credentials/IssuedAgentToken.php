@@ -46,7 +46,7 @@ final readonly class IssuedAgentToken implements JsonSerializable
     }
 
     /** @return array{fingerprint: string, token: string, expiresAt: string, label: string, scopes: non-empty-list<string>, resource: string} */
-    public function redacted(): array
+    private function redacted(): array
     {
         return [
             'fingerprint' => $this->fingerprint(),
