@@ -29,10 +29,7 @@ final class AgentConnectionController extends Controller
 
         // The refresh credential is revoked before the access token, under the
         // access-token row lock, so the connection cannot mint a replacement.
-        // The client the guard authenticated, so it is fenced even if a racing
-        // refresh and a purge have already removed the row.
-        $client = $current->oauth_client_id;
-        $revocation = $revoker->revoke(AgentCredentialSelection::token($user, $token, clientId: $client !== '' ? $client : null), 'agent');
+        $revocation = $revoker->revoke(AgentCredentialSelection::token($user, $token), 'agent');
         abort_unless($revocation->accessTokens() === 1, 404);
 
         return response()->json(status: 204);

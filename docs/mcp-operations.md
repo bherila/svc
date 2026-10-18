@@ -88,8 +88,10 @@ php artisan svc:auth:revoke-connections USER_PUBLIC_UUID --client=OAUTH_CLIENT_I
    person inside the window is refused, its row revoked. A person who
    reconnects inside the window must reconnect again once it lapses - one more
    reason to keep issuance off until the investigation allows it. A connection
-   that disconnects itself through `connections.revoke` fences its own client
-   the same way.
+   that disconnects itself through `connections.revoke` fences only its own
+   lineage: a refresh redeeming one of its refresh tokens is caught, while
+   another connection the same person holds with the same client keeps
+   refreshing.
 5. It prints one JSON line, for example
    `{"access_tokens":2,"refresh_tokens":1,"authorization_codes":0,"unattributed_refresh_tokens":0}`,
    and logs `agent_token.revoked` with `actor: console`, the person's public

@@ -595,19 +595,56 @@ final class AgentOAuthLifecycleTest extends TestCase
 
     /**
      * A racing refresh revoked the token and a purge removed the row before the
-     * self-revocation looked: the client the guard authenticated is fenced all the same.
+     * self-revocation looked: its lineage is fenced all the same, keyed on the
+     * id, and nothing wider is.
      */
-    public function test_a_self_revocation_fences_the_authenticated_client_when_the_row_is_gone(): void
+    public function test_a_self_revocation_fences_its_lineage_when_the_row_is_gone(): void
     {
         $person = User::factory()->create();
         $owner = AgentPrincipal::query()->findOrFail($person->id);
         $fence = app(AgentCredentialFence::class);
+        $tokenId = Str::random(80);
 
-        $revocation = app(CredentialRevoker::class)->revoke(AgentCredentialSelection::token($owner, Str::random(80), clientId: 'PURGED-CLIENT'), 'agent');
+        $revocation = app(CredentialRevoker::class)->revoke(AgentCredentialSelection::token($owner, $tokenId), 'agent');
 
         $this->assertSame(0, $revocation->accessTokens());
-        $this->assertTrue($fence->covers($person->id, 'purged-client'));
-        $this->assertFalse($fence->covers($person->id, 'another-client'));
+        $this->assertTrue($fence->coversLineage($tokenId));
+        $this->assertFalse($fence->coversLineage(Str::random(80)));
+        $this->assertFalse($fence->covers($person->id, 'any-client'));
+    }
+
+    /**
+     * Two connections of one person with the same client: disconnecting one
+     * leaves the other refreshing inside the window, while the disconnected
+     * one's own in-flight refresh is still caught.
+     */
+    public function test_a_self_revocation_spares_a_same_client_sibling_and_still_catches_its_own_refresh(): void
+    {
+        $person = User::factory()->create();
+        $clientId = $this->registerClient();
+        $resource = OAuthResourceIndicator::resource(self::MCP);
+        $verifier = $this->verifier();
+        $caller = $this->exchangeCode($clientId, $this->authorize($person, $clientId, $verifier), $verifier, $resource)->assertOk()->json();
+        // Consent was given once for this client, so the second connection is approved without a prompt.
+        $verifier = $this->verifier();
+        $sibling = $this->exchangeCode($clientId, $this->authorizeWithoutPrompt($person, $clientId, $verifier), $verifier, $resource)->assertOk()->json();
+        $callerId = OAuthResourceIndicator::tokenClaims($caller['access_token'])['jti'];
+
+        Auth::forgetGuards();
+        $this->withToken($caller['access_token'])->deleteJson("/api/v1/connections/{$callerId}")->assertNoContent();
+
+        // The sibling refreshes inside the window and keeps working.
+        $sibling = $this->refresh($clientId, $sibling['refresh_token'], $resource)->assertOk()->json();
+        Auth::forgetGuards();
+        $this->mcpInitialize($sibling['access_token'])->assertOk();
+        $this->refresh($clientId, $sibling['refresh_token'], $resource)->assertOk();
+
+        // The caller's own refresh, played as one that had passed its check before the lock, is caught.
+        Passport::refreshToken()->newQuery()->where('access_token_id', $callerId)->update(['revoked' => false]);
+        $raced = $this->refresh($clientId, $caller['refresh_token'], $resource)->assertOk()->json();
+        Auth::forgetGuards();
+        $this->mcpInitialize($raced['access_token'])->assertUnauthorized();
+        $this->refresh($clientId, $raced['refresh_token'], $resource)->assertBadRequest()->assertJsonPath('error', 'invalid_grant');
     }
 
     /** The window follows the commit, however long the revocation's transaction took. */
@@ -756,6 +793,26 @@ final class AgentOAuthLifecycleTest extends TestCase
             return;
         }
         $this->fail('The unattributed revocation was not refused while OAuth issuance is on.');
+    }
+
+    /** A person who already consented to this client is sent straight back with a code. */
+    private function authorizeWithoutPrompt(User $user, string $clientId, string $verifier): string
+    {
+        $this->actingAs($user, 'web');
+        $location = $this->get('/oauth/authorize?'.http_build_query([
+            'client_id' => $clientId,
+            'redirect_uri' => 'http://127.0.0.1:3210/callback',
+            'response_type' => 'code',
+            'scope' => implode(' ', [AgentApiScopes::MCP_USE, AgentApiScopes::IDENTITY_READ]),
+            'state' => 'oauth-test-state',
+            'code_challenge' => $this->base64Url(hash('sha256', $verifier, true)),
+            'code_challenge_method' => 'S256',
+            'resource' => OAuthResourceIndicator::resource(self::MCP),
+        ], '', '&', PHP_QUERY_RFC3986))->assertRedirect()->headers->get('Location');
+        parse_str((string) parse_url((string) $location, PHP_URL_QUERY), $query);
+        $this->assertIsString($query['code'] ?? null);
+
+        return $query['code'];
     }
 
     private function registerClient(): string

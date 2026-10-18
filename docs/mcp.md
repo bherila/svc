@@ -188,7 +188,9 @@ and logs one `agent_token.revoked` entry after it commits. A revocation also rai
 two-minute fence, counted from its commit, (`AgentCredentialFence`) on the person and client: an access token
 (OAuth or personal) or authorization code Passport persists inside it - the replacement a refresh already in flight
 mints - is revoked as it is created, as is any refresh token whose access token is
-already revoked.
+already revoked. A connection disconnecting itself fences only its own lineage (what a
+refresh of one of its refresh tokens persists), never the person's other connections to
+the same client.
 
 Revoke by name, which takes effect on the next request:
 

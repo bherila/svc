@@ -45,39 +45,13 @@ final readonly class CredentialRevoker
     public function revoke(AgentCredentialSelection $selection, string $actor): AgentRevocation
     {
         $connection = Passport::token()->getConnection();
-        /** @var list<string|null> $fenced clients to fence, null for every client */
-        $fenced = [];
         // Raised first, so a grant that persists while this runs is caught too.
-        if ($selection->fence && $selection->scope === AgentCredentialScope::Connections) {
-            $fenced[] = $selection->clientId;
-        }
-        // A refresh of this connection that passed its check may already have
-        // revoked the token (a refresh grant revokes the old access token
-        // before it issues the new one), or be waiting on the lock below; it
-        // persists its replacement after this either way. So the client comes
-        // from the owner's row whatever its state, and the fence catches the
-        // replacement.
-        if ($selection->fence && $selection->scope === AgentCredentialScope::Token) {
-            $clientId = $selection->clientId ?? Passport::token()->newQuery()
-                ->where('user_id', $selection->ownerId)
-                ->whereKey((string) $selection->tokenId)
-                ->value('client_id');
-            if ($clientId !== null) {
-                $fenced[] = (string) $clientId;
-            }
-        }
-        foreach ($fenced as $clientId) {
-            $this->fence->raise($selection->ownerId, $clientId);
-        }
+        $this->raiseFences($selection);
 
-        return $connection->transaction(function () use ($selection, $actor, $connection, $fenced): AgentRevocation {
+        return $connection->transaction(function () use ($selection, $actor, $connection): AgentRevocation {
             // Raised again once this commits, so the whole window follows the
             // revocation however long the transaction took.
-            $connection->afterCommit(function () use ($selection, $fenced): void {
-                foreach ($fenced as $clientId) {
-                    $this->fence->raise($selection->ownerId, $clientId);
-                }
-            });
+            $connection->afterCommit(fn () => $this->raiseFences($selection));
             $ids = array_values($this->accessTokenQuery($selection)
                 ->tap(Locks::forUpdate())
                 ->pluck('id')
@@ -145,6 +119,28 @@ final readonly class CredentialRevoker
         $this->log->info('agent_token.unattributed_refresh_tokens_revoked', ['actor' => $actor, 'revoked' => $revoked]);
 
         return $revoked;
+    }
+
+    /**
+     * A person's connections fence the person and client (or every client).
+     * One connection disconnecting itself fences only its own lineage: a
+     * refresh of this token that passed its check may already have revoked it
+     * (a refresh grant revokes the old access token before issuing the new
+     * one), may be waiting on the lock, or may race a purge of the row, and
+     * persists its replacement after this whichever it is. Keyed on the token
+     * id, it needs no row, and another connection the same person holds with
+     * the same client keeps refreshing.
+     */
+    private function raiseFences(AgentCredentialSelection $selection): void
+    {
+        if (! $selection->fence) {
+            return;
+        }
+        match ($selection->scope) {
+            AgentCredentialScope::Connections => $this->fence->raise($selection->ownerId, $selection->clientId),
+            AgentCredentialScope::Token => $this->fence->raiseLineage((string) $selection->tokenId),
+            AgentCredentialScope::Name => null,
+        };
     }
 
     /** Whether {@see revokeUnattributedRefreshTokens()} may run: only with OAuth issuance (and so refresh) off. */

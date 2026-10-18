@@ -15,8 +15,9 @@ use Psr\Log\LoggerInterface;
  * {@see AgentCredentialFence}): runs synchronously as Passport persists each
  * credential, so what a racing grant or consent returns is already dead.
  *
- * - an access token (OAuth grant or personal) persisted inside a fence goes through
- *   {@see CredentialRevoker}, which audits it;
+ * - an access token (OAuth grant or personal) persisted inside a person's
+ *   fence, or by a refresh descending from a fenced lineage (a connection that
+ *   disconnected itself), goes through {@see CredentialRevoker}, which audits it;
  * - an authorization code persisted inside a fence (a consent approved just
  *   before the revocation) is revoked, so it cannot be exchanged once the
  *   fence lapses;
@@ -43,12 +44,13 @@ final class RevokeCredentialsIssuedDuringRevocation
         private readonly AgentCredentialFence $fence,
         private readonly CredentialRevoker $revoker,
         private readonly LoggerInterface $log,
+        private readonly RefreshGrantLineage $lineage,
     ) {}
 
     public function accessTokenCreated(AccessTokenCreated $event): void
     {
         $userId = filter_var($event->userId, FILTER_VALIDATE_INT);
-        if ($userId === false || ! $this->fence->covers($userId, $event->clientId)) {
+        if ($userId === false || ! $this->isFenced($userId, $event->clientId)) {
             return;
         }
         // Personal access tokens too: an operator token issued for the person
@@ -62,6 +64,20 @@ final class RevokeCredentialsIssuedDuringRevocation
             self::$fenced[$event->tokenId] = ['user' => $userId, 'client' => $event->clientId];
             $this->revoker->revoke(AgentCredentialSelection::token($owner, $event->tokenId), self::ACTOR);
         }
+    }
+
+    /**
+     * The person's fence on this client, or - for a refresh grant - the
+     * lineage of the access token the presented refresh token belongs to.
+     */
+    private function isFenced(int $userId, string $clientId): bool
+    {
+        if ($this->fence->covers($userId, $clientId)) {
+            return true;
+        }
+        $parent = $this->lineage->redeemedAccessTokenId(app()->bound('request') ? request() : null);
+
+        return $parent !== null && $this->fence->coversLineage($parent);
     }
 
     public function refreshTokenCreated(RefreshTokenCreated $event): void

@@ -47,21 +47,42 @@ final readonly class AgentCredentialFence
 
     public function covers(int $userId, string $clientId): bool
     {
-        $now = $this->clock->now()->getTimestamp();
-        foreach ([$clientId, self::EVERY_CLIENT] as $client) {
-            // A store that keeps numbers unserialized (Redis without value
-            // serialization) hands the expiry back as a numeric string.
-            $until = filter_var($this->cache->get(self::key($userId, $client)), FILTER_VALIDATE_INT);
-            if ($until !== false && $until > $now) {
-                return true;
-            }
-        }
+        return $this->active(self::key($userId, $clientId)) || $this->active(self::key($userId, self::EVERY_CLIENT));
+    }
 
-        return false;
+    /**
+     * Fence one connection's lineage rather than its client: whatever a refresh
+     * redeeming a refresh token of this access token persists. A connection
+     * disconnecting itself fences only itself, never another connection the
+     * same person holds with the same client.
+     */
+    public function raiseLineage(string $accessTokenId): void
+    {
+        $this->cache->put(self::lineageKey($accessTokenId), $this->clock->now()->getTimestamp() + self::SECONDS, self::SECONDS);
+    }
+
+    public function coversLineage(string $accessTokenId): bool
+    {
+        return $this->active(self::lineageKey($accessTokenId));
+    }
+
+    private function active(string $key): bool
+    {
+        // A store that keeps numbers unserialized (Redis without value
+        // serialization) hands the expiry back as a numeric string.
+        $until = filter_var($this->cache->get($key), FILTER_VALIDATE_INT);
+
+        return $until !== false && $until > $this->clock->now()->getTimestamp();
     }
 
     private static function key(int $userId, string $clientId): string
     {
         return 'agent-credential-fence:'.$userId.':'.strtolower($clientId);
+    }
+
+    /** Hashed: the cache never holds a token id. */
+    private static function lineageKey(string $accessTokenId): string
+    {
+        return 'agent-credential-fence:lineage:'.hash('sha256', $accessTokenId);
     }
 }
