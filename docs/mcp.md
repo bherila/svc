@@ -548,8 +548,9 @@ ages below the creation window.
 REST uses GET/POST `/api/v1/workspaces/{workspace}/payments`, with the same scopes
 and roles; POST takes the key in `Idempotency-Key`. The separate finance API
 `/invoice-payments` lists reconciliation data and is not this recording endpoint.
-The CLI `svc:billing:payment` already records payments through the same lifecycle
-service. Browser URLs remain the route for initiating a customer payment.
+The CLI `svc:billing:payment` records payments through the same
+`ReceivedPaymentData` rules and `RecordReceivedPayment` operation, so it accepts
+exactly the statuses and fields `payments.record` does. Browser URLs remain the route for initiating a customer payment.
 
 ### Correcting a recorded payment
 

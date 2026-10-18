@@ -321,18 +321,23 @@ There is no edit or delete of money. A payment's value is corrected by
 transitioning its status or its refunded amount through
 `InvoiceLifecycleService`, which recomputes the invoice and records the
 corresponding activity — history is preserved rather than rewritten. A payment
-recorded by hand is transitioned as described above;
-`svc:billing:payment --status=failed` records a new failed row and does not
-change an existing payment. Its
+recorded by hand is transitioned as described above. Its
 descriptive fields are bookkeeping rather than money and have their own audited
 correction, above. The console equivalent of recording one is:
 
 ```
 php artisan svc:billing:payment <invoice> <minor-units> <currency> <method> \
-    --workspace=<workspace> [--status=succeeded] [--idempotency-key=<key>]
+    --workspace=<workspace> [--received-on=YYYY-MM-DD] [--reference=<text>] \
+    [--notes=<text>] [--status=succeeded|pending] \
+    [--external-finance-transaction=<uuid>] [--idempotency-key=<key>]
 ```
 
-`--status` accepts only the six values above; anything else is refused rather
-than stored, and `--received-on` is bounded by the same rule the screens are:
-`YYYY-MM-DD`, not in the future, not more than two years back, on the
-workspace's calendar.
+It parses through the same `ReceivedPaymentData` rules and records through the
+same `RecordReceivedPayment` operation as the screen and `payments.record`, so
+the three accept exactly the same payments (`PaymentRecordingStatusParityTest`).
+`--status` is `succeeded` or `pending`: anything else is refused, and the refusal
+points at `svc:billing:payment-status` (to mark a recorded payment failed or
+canceled) and `svc:billing:refund-payment` (to record a refund), because those
+states are reached by changing the payment, never by recording a new row.
+`--received-on` is bounded by the same rule the screens are: `YYYY-MM-DD`, not
+in the future, not more than two years back, on the workspace's calendar.
