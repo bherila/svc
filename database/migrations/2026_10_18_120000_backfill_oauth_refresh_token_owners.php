@@ -23,10 +23,20 @@ return new class extends Migration
             return;
         }
 
+        // The owner and the provider stamp together, as the refresh-token
+        // repository writes them: each copied from that token's own parent.
+        $columns = ['provider_user_id' => 'user_id'];
+        foreach (['provider_subject', 'provider_generation'] as $stamp) {
+            if ($schema->hasColumn('oauth_refresh_tokens', $stamp) && $schema->hasColumn('oauth_access_tokens', $stamp)) {
+                $columns[$stamp] = $stamp;
+            }
+        }
+        $parent = static fn (string $column) => $connection->table('oauth_access_tokens')->select($column)
+            ->whereColumn('oauth_access_tokens.id', 'oauth_refresh_tokens.access_token_id');
+
         $connection->table('oauth_refresh_tokens')->whereNull('provider_user_id')
             ->whereIn('access_token_id', $connection->table('oauth_access_tokens')->select('id')->whereNotNull('user_id'))
-            ->update(['provider_user_id' => $connection->table('oauth_access_tokens')->select('user_id')
-                ->whereColumn('oauth_access_tokens.id', 'oauth_refresh_tokens.access_token_id')]);
+            ->update(array_map($parent, $columns));
     }
 
     /** The recorded owner is correct either way; nothing to undo. */

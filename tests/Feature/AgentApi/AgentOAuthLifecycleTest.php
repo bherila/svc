@@ -492,22 +492,46 @@ final class AgentOAuthLifecycleTest extends TestCase
         $this->refresh($clientId, $legacy['refresh_token'], $resource)->assertBadRequest()->assertJsonPath('error', 'invalid_grant');
     }
 
-    public function test_the_owner_backfill_records_the_owner_of_a_legacy_refresh_token_while_its_access_token_exists(): void
+    /**
+     * Each legacy refresh token takes its own parent's owner and provider
+     * stamp, as the repository writes them; an owner already recorded is never
+     * overwritten, and an orphan's is never guessed.
+     */
+    public function test_the_owner_backfill_gives_each_legacy_refresh_token_its_own_parent_s_owner_and_stamp(): void
     {
-        $person = User::factory()->create();
         $clientId = $this->registerClient();
-        $verifier = $this->verifier();
-        $tokens = $this->exchangeCode($clientId, $this->authorize($person, $clientId, $verifier), $verifier, OAuthResourceIndicator::resource(self::MCP))->assertOk()->json();
-        $accessId = OAuthResourceIndicator::tokenClaims($tokens['access_token'])['jti'];
-        $refresh = Passport::refreshToken()->newQuery()->where('access_token_id', $accessId);
-        (clone $refresh)->update(['provider_user_id' => null]);
-        // An orphan's owner is never guessed.
-        Passport::refreshToken()->forceFill(['id' => Str::random(80), 'access_token_id' => Str::random(80), 'revoked' => false, 'expires_at' => now()->addDay()])->saveOrFail();
+        $legacy = function (int $userId, string $subject, int $generation, ?string $recorded = null) use ($clientId): string {
+            $accessId = Str::random(80);
+            Passport::token()->forceFill([
+                'id' => $accessId, 'user_id' => $userId, 'client_id' => $clientId, 'scopes' => [], 'revoked' => false,
+                'expires_at' => now()->addHour(), 'provider_subject' => $subject, 'provider_generation' => $generation,
+            ])->saveOrFail();
+            $refreshId = Str::random(80);
+            Passport::refreshToken()->forceFill([
+                'id' => $refreshId, 'access_token_id' => $accessId, 'revoked' => false, 'expires_at' => now()->addDay(),
+                'provider_user_id' => $recorded,
+            ])->saveOrFail();
+
+            return $refreshId;
+        };
+        $first = User::factory()->create();
+        $second = User::factory()->create();
+        $firstRefresh = $legacy($first->id, 'subject-first', 3);
+        $secondRefresh = $legacy($second->id, 'subject-second', 7);
+        $kept = $legacy($first->id, 'subject-kept', 9, 'already-recorded');
+        $orphan = Str::random(80);
+        Passport::refreshToken()->forceFill(['id' => $orphan, 'access_token_id' => Str::random(80), 'revoked' => false, 'expires_at' => now()->addDay()])->saveOrFail();
 
         (require database_path('migrations/2026_10_18_120000_backfill_oauth_refresh_token_owners.php'))->up();
 
-        $this->assertSame((string) $person->id, (string) (clone $refresh)->value('provider_user_id'));
-        $this->assertSame(1, Passport::refreshToken()->newQuery()->whereNull('provider_user_id')->count());
+        $row = static fn (string $id): array => array_map(
+            static fn (mixed $value): ?string => $value === null ? null : (string) $value,
+            Passport::refreshToken()->newQuery()->whereKey($id)->firstOrFail(['provider_user_id', 'provider_subject', 'provider_generation'])->getAttributes(),
+        );
+        $this->assertSame(['provider_user_id' => (string) $first->id, 'provider_subject' => 'subject-first', 'provider_generation' => '3'], $row($firstRefresh));
+        $this->assertSame(['provider_user_id' => (string) $second->id, 'provider_subject' => 'subject-second', 'provider_generation' => '7'], $row($secondRefresh));
+        $this->assertSame(['provider_user_id' => 'already-recorded', 'provider_subject' => null, 'provider_generation' => null], $row($kept));
+        $this->assertSame(['provider_user_id' => null, 'provider_subject' => null, 'provider_generation' => null], $row($orphan));
     }
 
     /**
