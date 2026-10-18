@@ -31,19 +31,61 @@ customer data. Preserve those constraints in incident tickets and logs.
 ## Credential containment
 
 MCP authentication is Passport OAuth, not a separate MCP password or API-key
-store. Revoke the affected OAuth connection through the authenticated
-`DELETE /api/v1/connections/{token}` workflow where the affected user can do
-so. The endpoint transaction revokes the refresh credential attached to that
-access token before revoking the access token itself, and the MCP principal
-resolver rereads the persisted access-token row on every request, so a revoked,
-expired, wrong-audience, or wrong-client credential is rejected before
-discovery and execution.
+store. A connector the affected user still controls can disconnect itself
+through the authenticated `DELETE /api/v1/connections/{token}` workflow; it
+revokes only the calling connection. Otherwise use the emergency revocation
+below. Both go through the same revoker (`CredentialRevoker`): one transaction
+that locks the access-token rows and revokes their refresh credentials before
+the access tokens themselves, and the MCP principal resolver rereads the
+persisted access-token row on every request, so a revoked, expired,
+wrong-audience, or wrong-client credential is rejected before discovery and
+execution.
 
-For a suspected client-wide compromise, first globally disable MCP, then use
-the established OAuth administration procedure to revoke the affected access
-and refresh-token family. Do not rotate the OAuth signing keys as a first
-response: the deployment workflow deliberately refuses automatic partial key
-rotation, and a key rotation is a separate authorization-server incident.
+Do not rotate the OAuth signing keys as a first response: the deployment
+workflow deliberately refuses automatic partial key rotation, and a key
+rotation is a separate authorization-server incident.
+
+### Emergency revocation of a person's agent connections
+
+For a compromised connector, a lost device, or a person who must be cut off
+now, an operator with shell access on the host runs:
+
+```bash
+php artisan svc:auth:revoke-connections USER_PUBLIC_UUID
+# or only the credentials issued to one OAuth client:
+php artisan svc:auth:revoke-connections USER_PUBLIC_UUID --client=OAUTH_CLIENT_ID
+```
+
+1. For a suspected client-wide or deployment-wide compromise, first globally
+   disable MCP (`AGENT_API_MCP_ENABLED=false`) and stop new issuance and
+   refresh (`AGENT_API_OAUTH_SERVER_ENABLED=false`), as under
+   [Immediate containment](#immediate-containment). With issuance off, no
+   connection can refresh between the revocation and the next request.
+2. Name the person by exact public UUID; an internal id, email address or
+   partial match is refused (exit 2), and an unknown UUID or client id fails
+   (exit 1) without revoking anything. `--client` takes the OAuth client id
+   recorded in the audit metadata.
+3. The command revokes, in one transaction, every pending authorization code,
+   every refresh token (including one whose expired access token Passport has
+   already purged) and then every access token the person holds - OAuth and
+   MCP connections, operator-issued agent tokens and personal API tokens alike -
+   or only those issued to `--client`. Rows are revoked, never deleted, so they
+   remain for the investigation. Another person's credentials are never
+   selected, even for the same client.
+4. It prints one JSON line, for example
+   `{"access_tokens":2,"refresh_tokens":1,"authorization_codes":0}`, and logs
+   `agent_token.revoked` with `actor: console`, the person's public UUID,
+   `selection: connections`, the client id when given, the counts and SHA-256
+   fingerprints of the revoked access-token ids. It prints and logs no bearer
+   value, token id or email address.
+5. Run it again. It is idempotent, and a second run reporting zeros confirms
+   nothing was minted in between. Then re-enable issuance and MCP as described
+   under [Recovery and rollback](#recovery-and-rollback); the person reconnects
+   through a fresh consent.
+
+The finance integration's Sanctum tokens are a separate credential store and
+are not touched; revoke those by name with `svc:auth:revoke-token` (see
+`docs/finance-api.md`).
 
 ## Recovery and rollback
 

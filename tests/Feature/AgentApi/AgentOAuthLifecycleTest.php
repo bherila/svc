@@ -343,6 +343,67 @@ final class AgentOAuthLifecycleTest extends TestCase
     }
 
     /**
+     * Emergency containment (#456): an operator cuts off one person's
+     * connections to one client, then all of them, with no SQL and no token of
+     * the person's to do it with - and another person's connection to the same
+     * client is never touched.
+     */
+    public function test_emergency_revocation_cuts_off_one_person_s_connections_by_client_then_all(): void
+    {
+        $person = User::factory()->create();
+        $bystander = User::factory()->create();
+        $first = $this->registerClient();
+        $second = $this->registerClient();
+        $resource = OAuthResourceIndicator::resource(self::MCP);
+        $connect = function (User $user, string $clientId) use ($resource): array {
+            $verifier = $this->verifier();
+
+            return $this->exchangeCode($clientId, $this->authorize($user, $clientId, $verifier), $verifier, $resource)->assertOk()->json();
+        };
+        $purged = $connect($person, $first);
+        $onSecond = $connect($person, $second);
+        $neighbour = $connect($bystander, $first);
+        // Passport purged this access row; its refresh token lives on alone.
+        Passport::token()->newQuery()->whereKey(OAuthResourceIndicator::tokenClaims($purged['access_token'])['jti'])->delete();
+        // A consent the connector has not yet exchanged.
+        $this->authorize($person, $first, $this->verifier());
+        $this->assertSame(1, Passport::authCode()->newQuery()->where('user_id', $person->id)->where('revoked', false)->count());
+
+        $this->assertSame(0, Artisan::call('svc:auth:revoke-connections', ['user_public_id' => $person->public_id, '--client' => $first]));
+        $this->assertSame(['access_tokens' => 0, 'refresh_tokens' => 1, 'authorization_codes' => 1], json_decode(trim(Artisan::output()), true));
+        $this->refresh($first, $purged['refresh_token'], $resource)->assertBadRequest()->assertJsonPath('error', 'invalid_grant');
+        Auth::forgetGuards();
+        $this->mcpInitialize($onSecond['access_token'])->assertOk();
+        $onSecond = $this->refresh($second, $onSecond['refresh_token'], $resource)->assertOk()->json();
+
+        $this->assertSame(0, Artisan::call('svc:auth:revoke-connections', ['user_public_id' => $person->public_id]));
+        $this->assertSame(['access_tokens' => 1, 'refresh_tokens' => 1, 'authorization_codes' => 0], json_decode(trim(Artisan::output()), true));
+        Auth::forgetGuards();
+        $this->mcpInitialize($onSecond['access_token'])->assertUnauthorized();
+        $this->refresh($second, $onSecond['refresh_token'], $resource)->assertBadRequest()->assertJsonPath('error', 'invalid_grant');
+
+        // Idempotent: nothing of the person's is left live.
+        $this->assertSame(0, Artisan::call('svc:auth:revoke-connections', ['user_public_id' => $person->public_id]));
+        $this->assertSame(['access_tokens' => 0, 'refresh_tokens' => 0, 'authorization_codes' => 0], json_decode(trim(Artisan::output()), true));
+
+        // The other person's connection to the same client still works.
+        Auth::forgetGuards();
+        $this->mcpInitialize($neighbour['access_token'])->assertOk();
+        $this->refresh($first, $neighbour['refresh_token'], $resource)->assertOk();
+    }
+
+    public function test_emergency_revocation_refuses_what_is_not_an_exact_person_or_client(): void
+    {
+        $person = User::factory()->create();
+
+        $this->assertSame(2, Artisan::call('svc:auth:revoke-connections', ['user_public_id' => (string) $person->id]));
+        $this->assertSame(1, Artisan::call('svc:auth:revoke-connections', ['user_public_id' => (string) Str::uuid()]));
+        $this->assertSame(2, Artisan::call('svc:auth:revoke-connections', ['user_public_id' => $person->public_id, '--client' => 'not-a-client']));
+        $this->assertSame(2, Artisan::call('svc:auth:revoke-connections', ['user_public_id' => $person->public_id, '--client' => '']));
+        $this->assertSame(1, Artisan::call('svc:auth:revoke-connections', ['user_public_id' => $person->public_id, '--client' => (string) Str::uuid()]));
+    }
+
+    /**
      * `connections.revoke` ends the calling connection and nothing else: not
      * another of the same person's connections, and not anyone else's.
      */

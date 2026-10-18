@@ -351,6 +351,43 @@ final class IssueAgentTokenCommandTest extends TestCase
         $this->assertStringNotContainsString($smoke['authorized_token'], json_encode($this->logged, JSON_THROW_ON_ERROR));
     }
 
+    /**
+     * The emergency path, audited like every other revocation: who, whose,
+     * how many, and fingerprints - never a token, its id or an email.
+     */
+    public function test_emergency_revocation_ends_every_agent_token_a_person_holds_and_is_audited(): void
+    {
+        [$user, $workspace] = $this->member('emergency');
+        [$stranger] = $this->member('emergency-stranger');
+        $rest = $this->decode($this->issue($user, 'Rest', [AgentApiScopes::PROJECTS_READ])[1])['token'];
+        $mcp = $this->decode($this->issue($user, 'Mcp', [AgentApiScopes::MCP_USE, AgentApiScopes::IDENTITY_READ])[1])['token'];
+        $kept = $this->decode($this->issue($stranger, 'Rest', [AgentApiScopes::IDENTITY_READ])[1])['token'];
+        $ids = Passport::token()->newQuery()->where('user_id', $user->id)->pluck('id')->map(static fn (mixed $id): string => (string) $id)->all();
+
+        $this->assertSame(0, Artisan::call('svc:auth:revoke-connections', ['user_public_id' => $user->public_id]));
+        $this->assertSame(['access_tokens' => 2, 'refresh_tokens' => 0, 'authorization_codes' => 0], $this->decode(Artisan::output()));
+
+        $this->bearer($rest)->getJson("/api/v1/workspaces/{$workspace->public_id}/projects")->assertUnauthorized();
+        $this->bearer($mcp)->mcp($this->initializeMessage())->assertUnauthorized();
+        $this->bearer($kept)->getJson('/api/v1/context')->assertOk();
+
+        $entries = array_values(array_filter($this->logged, static fn (array $entry): bool => $entry['message'] === 'agent_token.revoked'));
+        $this->assertCount(1, $entries);
+        $context = $entries[0]['context'];
+        $this->assertSame('console', $context['actor']);
+        $this->assertSame($user->public_id, $context['subject_id']);
+        $this->assertSame('connections', $context['selection']);
+        $this->assertSame(2, $context['revoked']);
+        $this->assertSame(0, $context['refresh_tokens_revoked']);
+        $this->assertSame(0, $context['authorization_codes_revoked']);
+        $this->assertArrayNotHasKey('client_id', $context);
+        $this->assertEqualsCanonicalizing(array_map(static fn (string $id): string => hash('sha256', $id), $ids), $context['credential_fingerprints']);
+        $serialized = json_encode($this->logged, JSON_THROW_ON_ERROR);
+        foreach ([$rest, $mcp, $kept, $user->email, ...$ids] as $secret) {
+            $this->assertStringNotContainsString($secret, $serialized);
+        }
+    }
+
     /** @return array{0: User, 1: Workspace} */
     private function member(string $label): array
     {
