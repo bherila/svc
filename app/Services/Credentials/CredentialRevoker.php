@@ -124,7 +124,7 @@ final readonly class CredentialRevoker
             // Exact equality on the kind's reserved prefix, never a LIKE. An
             // expired token authenticates nothing, so it is neither a duplicate
             // of a live one nor something to report revoking.
-            AgentCredentialScope::Name => $query->where('name', (string) $selection->storedName())->where('expires_at', '>', $this->clock->now()),
+            AgentCredentialScope::Name => $query->where('name', (string) $selection->storedName)->where('expires_at', '>', $this->clock->now()),
             // Expired rows too: one may still be the parent of a live refresh token.
             AgentCredentialScope::Connections => $selection->clientId === null ? $query : $query->where('client_id', $selection->clientId),
         };

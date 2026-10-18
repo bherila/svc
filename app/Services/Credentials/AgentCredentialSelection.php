@@ -14,21 +14,32 @@ use App\Models\User;
  */
 final readonly class AgentCredentialSelection
 {
+    public int $ownerId;
+
+    public string $ownerPublicId;
+
     private function __construct(
-        public int $ownerId,
-        public string $ownerPublicId,
+        User|AgentPrincipal $owner,
         public AgentCredentialScope $scope,
         public ?string $tokenId = null,
-        public ?AgentTokenKind $kind = null,
         public ?string $label = null,
+        /** The exact stored token name a {@see named()} selection matches. */
+        public ?string $storedName = null,
         public ?string $clientId = null,
         public ?int $atMost = null,
-    ) {}
+    ) {
+        /**
+         * @infection-ignore-all Both casts are equivalent mutants: this file is not strict, so the
+         * typed properties coerce the key and public id identically without them, and PHPStan
+         * requires them because getKey() and the attribute are untyped.
+         */
+        [$this->ownerId, $this->ownerPublicId] = [(int) $owner->getKey(), (string) $owner->public_id];
+    }
 
     /** One unrevoked access token of this owner, by id, and its refresh tokens. */
     public static function token(User|AgentPrincipal $owner, string $tokenId): self
     {
-        return new self((int) $owner->getKey(), (string) $owner->public_id, AgentCredentialScope::Token, tokenId: $tokenId);
+        return new self($owner, AgentCredentialScope::Token, tokenId: $tokenId);
     }
 
     /**
@@ -37,7 +48,7 @@ final readonly class AgentCredentialSelection
      */
     public static function named(User|AgentPrincipal $owner, AgentTokenKind $kind, string $label, bool $all): self
     {
-        return new self((int) $owner->getKey(), (string) $owner->public_id, AgentCredentialScope::Name, kind: $kind, label: $label, atMost: $all ? null : 1);
+        return new self($owner, AgentCredentialScope::Name, label: $label, storedName: $kind->namePrefix().$label, atMost: $all ? null : 1);
     }
 
     /**
@@ -47,12 +58,6 @@ final readonly class AgentCredentialSelection
      */
     public static function connections(User|AgentPrincipal $owner, ?string $clientId = null): self
     {
-        return new self((int) $owner->getKey(), (string) $owner->public_id, AgentCredentialScope::Connections, clientId: $clientId);
-    }
-
-    /** The stored token name a {@see named()} selection matches exactly. */
-    public function storedName(): ?string
-    {
-        return $this->kind === null || $this->label === null ? null : $this->kind->namePrefix().$this->label;
+        return new self($owner, AgentCredentialScope::Connections, clientId: $clientId);
     }
 }

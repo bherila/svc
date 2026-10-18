@@ -79,6 +79,7 @@ final readonly class AgentTokenRequest
         if (preg_match('/^\d{1,4}$/', $value) !== 1) {
             return null;
         }
+        /** @infection-ignore-all Equivalent: the value is all digits, so the comparisons and the ?int return coerce it identically without the cast. */
         $minutes = (int) $value;
 
         return $minutes >= 1 && $minutes <= self::MAX_TTL_MINUTES ? $minutes : null;

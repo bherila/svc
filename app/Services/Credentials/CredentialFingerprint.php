@@ -11,6 +11,7 @@ final class CredentialFingerprint
 {
     public static function of(string|int $id): string
     {
+        /** @infection-ignore-all Equivalent: this file is not strict, so hash() coerces an integer id identically without the cast. */
         return hash('sha256', (string) $id);
     }
 

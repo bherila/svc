@@ -132,14 +132,14 @@ final class AgentTokenRequestTest extends TestCase
         $principal = (new AgentPrincipal)->forceFill(['id' => 42, 'public_id' => '00000000-0000-4000-8000-000000000042']);
 
         $token = AgentCredentialSelection::token($principal, 'token-id');
-        $this->assertSame([42, '00000000-0000-4000-8000-000000000042', AgentCredentialScope::Token, 'token-id', null, null], [$token->ownerId, $token->ownerPublicId, $token->scope, $token->tokenId, $token->atMost, $token->storedName()]);
+        $this->assertSame([42, '00000000-0000-4000-8000-000000000042', AgentCredentialScope::Token, 'token-id', null, null], [$token->ownerId, $token->ownerPublicId, $token->scope, $token->tokenId, $token->atMost, $token->storedName]);
 
         $one = AgentCredentialSelection::named($owner, AgentTokenKind::Operator, 'Support', false);
-        $this->assertSame([41, AgentCredentialScope::Name, 1, 'operator-agent-token: Support', 'Support'], [$one->ownerId, $one->scope, $one->atMost, $one->storedName(), $one->label]);
+        $this->assertSame([41, AgentCredentialScope::Name, 1, 'operator-agent-token: Support', 'Support'], [$one->ownerId, $one->scope, $one->atMost, $one->storedName, $one->label]);
         $this->assertNull(AgentCredentialSelection::named($owner, AgentTokenKind::Operator, 'Support', true)->atMost);
 
         $all = AgentCredentialSelection::connections($owner);
-        $this->assertSame([41, AgentCredentialScope::Connections, null, null, null], [$all->ownerId, $all->scope, $all->clientId, $all->atMost, $all->storedName()]);
+        $this->assertSame([41, AgentCredentialScope::Connections, null, null, null], [$all->ownerId, $all->scope, $all->clientId, $all->atMost, $all->storedName]);
         $this->assertSame('client-id', AgentCredentialSelection::connections($owner, 'client-id')->clientId);
         $this->assertSame(['token', 'name', 'connections'], array_map(static fn (AgentCredentialScope $scope): string => $scope->value, AgentCredentialScope::cases()));
     }
