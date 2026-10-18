@@ -1391,7 +1391,7 @@ final class AgentOperationCatalog
             $this->tool(
                 'billing.preflight_schedule_generation',
                 'Preflight schedule generation',
-                'Workspace managers only. Classify every period each of the workspace\'s active billing schedules is due to bill through today, without writing, and count how many schedules would halt and why, as svc:billing:preflight-schedule-generation does for every workspace. Counts only; complete is false when a schedule\'s backlog was longer than the preflight examined, and the result is then inconclusive rather than clean.',
+                'Workspace managers only. Classify every period each of the workspace\'s active billing schedules is due to bill through today, without writing, and count how many schedules would halt and why, as svc:billing:preflight-schedule-generation does for every workspace. Counts only. It examines at most 60 periods per schedule (the command examines 240), and complete is false when a backlog was longer, so the result is inconclusive rather than clean; a workspace gets 5 per ten minutes.',
                 [AgentMcpBillingAuditTools::class, 'scheduleGenerationPreflight'],
                 Effect::Read,
                 true,

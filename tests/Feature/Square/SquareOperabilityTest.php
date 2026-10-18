@@ -92,7 +92,15 @@ final class SquareOperabilityTest extends TestCase
         $this->assertSame([1, 1], [$audits('success'), $audits('failed')]);
         $this->assertSame('paid', $invoice->fresh()->status);
 
-        for ($attempt = 3; $attempt <= SquareInvoiceReconciliation::RECONCILES_PER_WINDOW; $attempt++) {
+        // Replaying that completed key while Square is down is a failure, not a successful replay.
+        $this->squareInvoiceFailureStatus = 503;
+        $this->postJson($this->url($workspace, $invoice), [], ['Idempotency-Key' => 'synthetic-outage'])->assertStatus(503);
+        $this->assertSame([1, 2, 0], [$audits('success'), $audits('failed'), $audits('replay')]);
+        $this->squareInvoiceFailureStatus = null;
+        $this->postJson($this->url($workspace, $invoice), [], ['Idempotency-Key' => 'synthetic-outage'])->assertOk();
+        $this->assertSame(1, $audits('replay'));
+
+        for ($attempt = 5; $attempt <= SquareInvoiceReconciliation::RECONCILES_PER_WINDOW; $attempt++) {
             $this->postJson($this->url($workspace, $invoice), [], ['Idempotency-Key' => 'synthetic-budget-'.$attempt])->assertOk();
         }
         $before = Http::recorded()->count();

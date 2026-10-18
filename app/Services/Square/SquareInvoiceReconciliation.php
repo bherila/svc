@@ -74,7 +74,14 @@ final class SquareInvoiceReconciliation
 
                 return [$invoice->public_id];
             },
-            fn (array $ids) => $this->admit($user, $workspace),
+            // A replayed key does not re-run the callback, so a Square failure
+            // on this attempt is raised here instead, and audited as one.
+            function (array $ids) use ($user, $workspace, $refetched): void {
+                $this->admit($user, $workspace);
+                if ($refetched instanceof \Throwable) {
+                    throw $refetched;
+                }
+            },
         );
 
         return $invoice->refresh();

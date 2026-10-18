@@ -219,6 +219,8 @@ class AuditOverpaymentCreditCommandTest extends TestCase
         $this->assertSame(1, $report['summary']['pools']);
         $this->assertSame(['USD' => 5000], $report['summary']['deficit_minor_by_currency']);
         $this->assertSame([$workspace->public_id], array_column($report['pools'], 'workspace'));
+        $this->assertSame([$short->public_id], array_column($report['pools'], 'company'));
+        $this->assertSame([$short->public_id, $other->public_id], array_column($this->report(['--list' => true])['pools'], 'company'));
         $this->assertSame(2, $this->report()['summary']['in_deficit']);
         $this->assertSame([$workspace->id], array_map(static fn ($pool): int => $pool->workspaceId, app(OverpaymentCreditAuditor::class)->partitions($workspace)));
     }

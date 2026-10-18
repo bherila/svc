@@ -5,6 +5,7 @@ namespace App\Services\Mcp;
 use App\Services\AgentApi\AgentBillingAuditReadService;
 use App\Services\Mcp\Context\McpAccountContextResolver;
 use App\Services\Mcp\Context\McpRequestContext;
+use Illuminate\Http\Exceptions\ThrottleRequestsException;
 use LogicException;
 use Mcp\Capability\Attribute\Schema;
 use Mcp\Exception\ToolCallException;
@@ -74,7 +75,13 @@ final class AgentMcpBillingAuditTools
     {
         $context = $this->workspace($workspace_id);
 
-        return ['data' => $this->audits->scheduleGenerationPreflight($context->principal->subject, $context->workspace)];
+        try {
+            return ['data' => $this->audits->scheduleGenerationPreflight($context->principal->subject, $context->workspace)];
+        } catch (ThrottleRequestsException $budget) {
+            // The budget's own text says when to retry; the request handler
+            // would otherwise answer only that the tool failed.
+            throw new ToolCallException($budget->getMessage());
+        }
     }
 
     /** @return array{data: array<string, int>} */

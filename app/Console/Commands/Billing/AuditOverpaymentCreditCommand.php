@@ -150,12 +150,27 @@ final class AuditOverpaymentCreditCommand extends Command
      */
     private function rows(array $partitions): array
     {
-        $workspaces = DB::table('workspaces')->pluck('public_id', 'id')->all();
-        $companies = DB::table('client_companies')->pluck('public_id', 'id')->all();
+        // Only the pools' own workspaces and companies, so a scoped listing
+        // reads nothing of other tenants. A company stamped to another
+        // workspace than its pool's resolves to "missing".
+        $workspaceIds = array_values(array_unique(array_map(static fn (CreditPoolPartition $partition): int => $partition->workspaceId, $partitions)));
+        $workspaces = $workspaceIds === [] ? [] : DB::table('workspaces')->whereIn('id', $workspaceIds)->pluck('public_id', 'id')->all();
+        $companies = [];
+        foreach ($partitions as $partition) {
+            if ($partition->companyId !== null) {
+                $companies[$partition->workspaceId][] = $partition->companyId;
+            }
+        }
+        $names = [];
+        foreach ($companies as $workspaceId => $ids) {
+            foreach (DB::table('client_companies')->where('workspace_id', $workspaceId)->whereIn('id', array_values(array_unique($ids)))->get(['id', 'public_id']) as $company) {
+                $names[$workspaceId][(int) $company->id] = (string) $company->public_id;
+            }
+        }
 
         return array_map(fn (CreditPoolPartition $partition): array => [
             'workspace' => (string) ($workspaces[$partition->workspaceId] ?? 'missing'),
-            'company' => $partition->companyId === null ? null : (string) ($companies[$partition->companyId] ?? 'missing'),
+            'company' => $partition->companyId === null ? null : ($names[$partition->workspaceId][$partition->companyId] ?? 'missing'),
             'currency' => $partition->currency,
             'funded_minor' => $partition->funded(),
             'consumed_minor' => $partition->consumed(),

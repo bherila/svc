@@ -8,6 +8,7 @@ use App\Models\ClientCompany;
 use App\Models\ClientProposal;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\AgentApi\AgentBillingAuditReadService;
 use App\Services\Billing\ScheduleGenerationPreflight;
 use App\Services\Engagement\UnlinkedProposalAgreementAuditor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -57,6 +58,26 @@ final class AgentMcpWorkspaceAuditToolsTest extends TestCase
         $mine->memberships()->create(['user_id' => $member->id, 'role' => 'member']);
         $this->actingAsMcp($member, ['mcp:use', 'billing:read']);
         $this->assertNotContains('billing.preflight_schedule_generation', $this->toolNames($this->initialize()));
+    }
+
+    public function test_the_agent_preflight_is_bounded_per_schedule_and_per_workspace(): void
+    {
+        $this->travelTo('2026-10-15 12:00:00');
+        [$workspace, $owner] = $this->workspace('backlog');
+        ClientBillingSchedule::query()->where('workspace_id', $workspace->id)->update(['next_run_on' => '2021-01-01']);
+        $this->actingAsMcp($owner, ['mcp:use', 'billing:read']);
+        $session = $this->initialize();
+
+        $first = $this->callTool($session, 'billing.preflight_schedule_generation', ['workspace_id' => $workspace->public_id])['result']['structuredContent']['data'];
+        $this->assertSame([AgentBillingAuditReadService::PREFLIGHT_PERIOD_CAP, false, 1], [$first['periods_classified'], $first['complete'], $first['schedules_truncated']]);
+        $this->assertTrue(app(ScheduleGenerationPreflight::class)->run($workspace)->isConclusive(), 'The operator command examines the whole backlog.');
+        for ($call = 2; $call <= AgentBillingAuditReadService::PREFLIGHTS_PER_WINDOW; $call++) {
+            $this->assertFalse($this->callTool($session, 'billing.preflight_schedule_generation', ['workspace_id' => $workspace->public_id])['result']['isError'] ?? false);
+        }
+        $limited = $this->callTool($session, 'billing.preflight_schedule_generation', ['workspace_id' => $workspace->public_id]);
+        $this->assertTrue(isset($limited['error']) || ($limited['result']['isError'] ?? false), (string) json_encode($limited));
+        $this->assertStringContainsString('Retry in', (string) json_encode($limited));
+        $this->assertFalse($this->callTool($session, 'billing.audit_unlinked_proposal_agreements', ['workspace_id' => $workspace->public_id])['result']['isError'] ?? false, 'Only the preflight is budgeted.');
     }
 
     /** @return array{Workspace, User} */
