@@ -40,6 +40,13 @@ final class RevokeAgentConnectionsCommand extends Command
     public function handle(CredentialRevoker $revoker): int
     {
         $clientId = $this->option('client');
+        // A bare --client is a malformed client-scoped request, never a
+        // request to revoke every connection.
+        if ($clientId === null && $this->input->hasParameterOption('--client', true)) {
+            $this->error('--client must be an exact OAuth client id.');
+
+            return self::INVALID;
+        }
         // Passport stores client ids in lower case; so does every fence key.
         $clientId = is_string($clientId) ? strtolower(trim($clientId)) : null;
         if ($clientId !== null && ! Str::isUuid($clientId)) {

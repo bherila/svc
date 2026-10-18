@@ -25,14 +25,24 @@ use Psr\Log\LoggerInterface;
  *
  * The last two are audited as `agent_token.revoked_in_fence`.
  */
-final readonly class RevokeCredentialsIssuedDuringRevocation
+final class RevokeCredentialsIssuedDuringRevocation
 {
     public const string ACTOR = 'revocation-fence';
 
+    /**
+     * Whose access tokens this process just fenced, by token id, so the refresh
+     * token Passport persists for one next is audited with its owner and client
+     * even when a purge has removed the parent in between. Each entry is read
+     * once, by that refresh token.
+     *
+     * @var array<string, array{user: int, client: string}>
+     */
+    private static array $fenced = [];
+
     public function __construct(
-        private AgentCredentialFence $fence,
-        private CredentialRevoker $revoker,
-        private LoggerInterface $log,
+        private readonly AgentCredentialFence $fence,
+        private readonly CredentialRevoker $revoker,
+        private readonly LoggerInterface $log,
     ) {}
 
     public function accessTokenCreated(AccessTokenCreated $event): void
@@ -45,12 +55,19 @@ final readonly class RevokeCredentialsIssuedDuringRevocation
         // while their connections are being cut off is no exception.
         $owner = AgentPrincipal::query()->find($userId);
         if ($owner instanceof AgentPrincipal) {
+            // Bounded: a personal token is never followed by a refresh token.
+            if (count(self::$fenced) >= 100) {
+                self::$fenced = [];
+            }
+            self::$fenced[$event->tokenId] = ['user' => $userId, 'client' => $event->clientId];
             $this->revoker->revoke(AgentCredentialSelection::token($owner, $event->tokenId), self::ACTOR);
         }
     }
 
     public function refreshTokenCreated(RefreshTokenCreated $event): void
     {
+        $fenced = self::$fenced[$event->accessTokenId] ?? null;
+        unset(self::$fenced[$event->accessTokenId]);
         $parent = Passport::token()->newQuery()->whereKey($event->accessTokenId)->first(['user_id', 'client_id', 'revoked']);
         // A parent that is already gone was revoked and purged in between (a
         // purge takes revoked rows): the refresh token is no more legitimate.
@@ -63,8 +80,8 @@ final readonly class RevokeCredentialsIssuedDuringRevocation
         }
         $this->audit(
             'refresh_token',
-            $parent?->getAttribute('user_id') ?? $refresh->getAttribute(ProviderIdentityTokens::OWNER_COLUMN),
-            (string) ($parent?->getAttribute('client_id') ?? $refresh->getAttribute('client_id')),
+            $parent?->getAttribute('user_id') ?? $refresh->getAttribute(ProviderIdentityTokens::OWNER_COLUMN) ?? $fenced['user'] ?? null,
+            (string) ($parent?->getAttribute('client_id') ?? $refresh->getAttribute('client_id') ?? $fenced['client'] ?? ''),
             $event->refreshTokenId,
         );
     }

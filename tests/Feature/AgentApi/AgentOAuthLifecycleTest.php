@@ -33,6 +33,7 @@ use Illuminate\Testing\TestResponse;
 use Laravel\Passport\Bridge\AccessTokenRepository as PassportAccessTokenRepository;
 use Laravel\Passport\Bridge\AuthCodeRepository as PassportAuthCodeRepository;
 use Laravel\Passport\Bridge\RefreshTokenRepository as PassportRefreshTokenRepository;
+use Laravel\Passport\Events\AccessTokenCreated;
 use Laravel\Passport\Events\RefreshTokenCreated;
 use Laravel\Passport\Passport;
 use League\OAuth2\Server\AuthorizationServer;
@@ -640,6 +641,36 @@ final class AgentOAuthLifecycleTest extends TestCase
         ]], $logged);
     }
 
+    /**
+     * The repository takes a refresh token's owner from its parent, so after a
+     * purge it records none; the audit still names whose access token the fence
+     * revoked a moment before.
+     */
+    public function test_a_purged_parent_s_refresh_token_is_audited_with_the_fenced_owner(): void
+    {
+        $person = User::factory()->create();
+        $clientId = $this->registerClient();
+        $accessId = Str::random(80);
+        Passport::token()->forceFill(['id' => $accessId, 'user_id' => $person->id, 'client_id' => $clientId, 'scopes' => [], 'revoked' => false, 'expires_at' => now()->addHour()])->saveOrFail();
+        app(AgentCredentialFence::class)->raise($person->id, $clientId);
+        $listener = app(RevokeCredentialsIssuedDuringRevocation::class);
+        $listener->accessTokenCreated(new AccessTokenCreated($accessId, (string) $person->id, $clientId));
+        $this->assertTrue((bool) Passport::token()->newQuery()->whereKey($accessId)->value('revoked'));
+        Passport::token()->newQuery()->whereKey($accessId)->delete();
+        $refreshId = Str::random(80);
+        Passport::refreshToken()->forceFill(['id' => $refreshId, 'access_token_id' => $accessId, 'revoked' => false, 'expires_at' => now()->addDay()])->saveOrFail();
+        $logged = [];
+        Event::listen(MessageLogged::class, static function (MessageLogged $event) use (&$logged): void {
+            $logged[] = ['message' => $event->message, 'context' => $event->context];
+        });
+
+        $listener->refreshTokenCreated(new RefreshTokenCreated($refreshId, $accessId));
+
+        $this->assertTrue((bool) Passport::refreshToken()->newQuery()->whereKey($refreshId)->value('revoked'));
+        $this->assertSame('agent_token.revoked_in_fence', $logged[0]['message'] ?? null);
+        $this->assertSame([$person->public_id, $clientId], [$logged[0]['context']['subject_id'], $logged[0]['context']['client_id']]);
+    }
+
     public function test_emergency_revocation_refuses_what_is_not_an_exact_person_or_client(): void
     {
         $person = User::factory()->create();
@@ -648,6 +679,12 @@ final class AgentOAuthLifecycleTest extends TestCase
         $this->assertSame(1, Artisan::call('svc:auth:revoke-connections', ['user_public_id' => (string) Str::uuid()]));
         $this->assertSame(2, Artisan::call('svc:auth:revoke-connections', ['user_public_id' => $person->public_id, '--client' => 'not-a-client']));
         $this->assertSame(2, Artisan::call('svc:auth:revoke-connections', ['user_public_id' => $person->public_id, '--client' => '']));
+        // A bare --client never widens to every connection.
+        $verifier = $this->verifier();
+        $clientId = $this->registerClient();
+        $kept = $this->exchangeCode($clientId, $this->authorize($person, $clientId, $verifier), $verifier, OAuthResourceIndicator::resource(self::MCP))->assertOk()->json();
+        $this->assertSame(2, Artisan::call('svc:auth:revoke-connections', ['user_public_id' => $person->public_id, '--client' => null]));
+        $this->assertFalse((bool) Passport::token()->newQuery()->whereKey(OAuthResourceIndicator::tokenClaims($kept['access_token'])['jti'])->value('revoked'));
         $this->assertSame(1, Artisan::call('svc:auth:revoke-connections', ['user_public_id' => $person->public_id, '--client' => (string) Str::uuid()]));
     }
 
