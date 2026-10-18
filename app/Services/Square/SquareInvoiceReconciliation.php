@@ -9,6 +9,7 @@ use App\Models\Workspace;
 use App\Services\AgentApi\AgentMutationExecutor;
 use App\Services\Authorization\AgentAccess;
 use DomainException;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 
 /**
  * Reconcile one linked svc invoice with Square now (#458), rather than
@@ -56,6 +57,7 @@ final class SquareInvoiceReconciliation
      * For the operator's command, which acts for the workspace Square serves.
      *
      * @throws SquareRequestFailed when Square is not connected to the workspace or cannot be read
+     * @throws ModelNotFoundException when the workspace has no invoice with that id
      * @throws DomainException when the invoice is not linked, or Square's facts cannot be recorded
      */
     public function reconcile(Workspace $workspace, string $invoiceId): ClientInvoice

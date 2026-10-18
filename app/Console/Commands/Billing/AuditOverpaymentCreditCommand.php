@@ -42,7 +42,7 @@ final class AuditOverpaymentCreditCommand extends Command
         $workspace = null;
         $requested = $this->option('workspace');
         if ($requested !== null) {
-            $workspace = is_string($requested) && Str::isUuid($requested) ? Workspace::query()->where('public_id', $requested)->first() : null;
+            $workspace = Str::isUuid($requested) ? Workspace::query()->where('public_id', $requested)->first() : null;
             if ($workspace === null) {
                 $this->error('The --workspace option must be the public id of an existing workspace.');
 

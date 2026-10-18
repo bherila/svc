@@ -27,7 +27,7 @@ final class ReconcileSquarePaymentsCommand extends Command
     public function handle(SquarePaymentReconciler $reconciler, SquareInvoiceReconciliation $single): int
     {
         $invoice = $this->option('invoice');
-        if ($invoice !== null && (! is_string($invoice) || ! Str::isUuid($invoice))) {
+        if ($invoice !== null && ! Str::isUuid($invoice)) {
             $this->error('The --invoice option must be an invoice public id.');
 
             return self::INVALID;
@@ -44,7 +44,7 @@ final class ReconcileSquarePaymentsCommand extends Command
 
             return self::FAILURE;
         }
-        if (is_string($invoice)) {
+        if ($invoice !== null) {
             return $this->reconcileOne($single, $workspace, $invoice);
         }
         $failed = 0;
