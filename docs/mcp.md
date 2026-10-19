@@ -88,7 +88,9 @@ authentication, and its 401 challenge names that resource's metadata; a bound to
 therefore fails closed on an unmarked route or one marked for the other resource, so a
 REST token cannot open an MCP connection and an MCP token cannot call REST. A token
 request naming no resource is bound to REST. `DELETE /api/v1/connections/{token}`
-requires `mcp:use` and so belongs to the MCP resource. Dynamic registrations persist their exact scope ceiling. A legacy
+requires `mcp:use` and so belongs to the MCP resource. It disconnects only the calling
+connection: `token` must be the id of the access token making the request, and any other
+id, including another of the same person's connections, is a 404 that revokes nothing. Dynamic registrations persist their exact scope ceiling. A legacy
 dynamic client whose ceiling is null must re-register and re-authorize; null is
 never interpreted as unrestricted access.
 
@@ -166,8 +168,30 @@ reports the identity inactive (or, with enforcement on, cannot be asked).
 
 The command prints one JSON object on stdout - `token`, `expires_at`, `name`,
 `scopes` and `resource` - and the token appears nowhere else. It logs an
-`agent_token.issued` entry carrying the person's public UUID, the name, scopes,
+`agent_token.issued` entry carrying the actor, the person's public UUID, the name, scopes,
 resource, expiry and a SHA-256 fingerprint of the credential id, never the token.
+
+Every agent token SVC mints itself - this command, the post-deploy smoke
+(`svc:mcp:deploy-smoke-credentials`) and the pre-merge smoke
+(`scripts/mcp-smoke-credentials.php`) - goes through one issuer,
+`AgentTokenIssuer`, so all of them share these rules: the OAuth server switch,
+the provider identity check, the lifetime actually signed, the resource binding,
+the one personal access client Passport issues agent-principal tokens from
+(created only when none exists), and the `agent_token.issued` audit entry, whose
+`actor` is `console`, `deploy-smoke` or `ci-smoke`. Every revocation - by name,
+by a connection disconnecting itself, the smoke's cleanup, and the emergency
+`svc:auth:revoke-connections` - goes through one revoker, `CredentialRevoker`:
+one transaction on Passport's connection that locks the access-token rows,
+revokes their refresh tokens before the access tokens themselves (through
+Passport's repository, so revocation listeners hear of each), never deletes a row,
+and logs one `agent_token.revoked` entry after it commits. A revocation also raises a
+two-minute fence, counted from its commit, (`AgentCredentialFence`) on the person and client: an access token
+(OAuth or personal) or authorization code Passport persists inside it - the replacement a refresh already in flight
+mints - is revoked as it is created, as is any refresh token whose access token is
+already revoked. A connection disconnecting itself fences only its own lineage (what a
+refresh of one of its refresh tokens persists), never the person's other connections to
+the same client.
+
 Revoke by name, which takes effect on the next request:
 
 ```bash
@@ -177,7 +201,10 @@ php artisan svc:auth:revoke-agent-token USER_PUBLIC_UUID "Support session"
 The name is stored under a reserved prefix, so revocation by name only ever
 selects tokens this command issued, never a person's own personal token or an
 OAuth-connected agent's. Expired tokens are ignored; when more than one live
-token shares the name the command fails closed unless `--all` is given. It logs `agent_token.revoked` with the same metadata.
+token shares the name the command fails closed unless `--all` is given. It logs `agent_token.revoked`
+with the actor, the person's public UUID, the name, the count and the credential fingerprints.
+To cut off every agent credential a person holds, see
+[emergency revocation](mcp-operations.md#emergency-revocation-of-a-persons-agent-connections).
 
 ## Public capability inventory
 

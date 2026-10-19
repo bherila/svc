@@ -4,8 +4,10 @@ namespace Tests\Feature\Auth;
 
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Log\Events\MessageLogged;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Event;
 use Laravel\Sanctum\PersonalAccessToken;
 use Tests\TestCase;
 
@@ -113,5 +115,45 @@ class IssuePersonalAccessTokenCommandTest extends TestCase
         $this->assertStringNotContainsString($first->plainTextToken, $output);
         $this->assertStringNotContainsString($second->plainTextToken, $output);
         $this->assertStringNotContainsString($user->email, $output);
+    }
+
+    public function test_revoking_is_audited_by_fingerprint_and_never_reaches_another_person_s_token(): void
+    {
+        $user = User::factory()->create(['email' => 'audited-owner@synthetic.test']);
+        $stranger = User::factory()->create(['email' => 'audited-stranger@synthetic.test']);
+        $mine = $user->createToken('Finance integration', ['finance.read'], now()->addDay());
+        $theirs = $stranger->createToken('Finance integration', ['finance.read'], now()->addDay());
+        $logged = [];
+        Event::listen(MessageLogged::class, static function (MessageLogged $event) use (&$logged): void {
+            $logged[] = ['message' => $event->message, 'context' => $event->context];
+        });
+
+        $this->assertSame(0, Artisan::call('svc:auth:revoke-token', ['user_public_id' => $user->public_id, 'name' => 'Finance integration']));
+        $this->assertSame(1, Artisan::call('svc:auth:revoke-token', ['user_public_id' => $user->public_id, 'name' => 'Finance integration']));
+
+        $this->assertNull(PersonalAccessToken::query()->find($mine->accessToken->getKey()));
+        $this->assertNotNull(PersonalAccessToken::query()->find($theirs->accessToken->getKey()));
+        $this->assertSame([[
+            'message' => 'personal_access_token.revoked',
+            'context' => [
+                'actor' => 'console',
+                'subject_id' => $user->public_id,
+                'name' => 'Finance integration',
+                'revoked' => 1,
+                'credential_fingerprints' => [hash_hmac('sha256', 'personal_access_token:'.$mine->accessToken->getKey(), (string) config('app.key'))],
+            ],
+        ], [
+            'message' => 'personal_access_token.revoked',
+            'context' => [
+                'actor' => 'console',
+                'subject_id' => $user->public_id,
+                'name' => 'Finance integration',
+                'revoked' => 0,
+                'credential_fingerprints' => [],
+            ],
+        ]], $logged);
+        $this->assertStringNotContainsString($mine->plainTextToken, json_encode($logged, JSON_THROW_ON_ERROR));
+        // Keyed: a plain digest of a sequential row id is reversed by counting.
+        $this->assertStringNotContainsString(hash('sha256', (string) $mine->accessToken->getKey()), json_encode($logged, JSON_THROW_ON_ERROR));
     }
 }

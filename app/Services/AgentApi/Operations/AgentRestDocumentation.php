@@ -587,7 +587,7 @@ final class AgentRestDocumentation
             'connections.revoke' => [
                 'method' => 'DELETE',
                 'scopes' => ['mcp:use'],
-                'description' => false,
+                'description' => 'Disconnects the calling connection: token is the id of the access token making the request. Its refresh tokens are revoked before the access token itself, in one transaction, so the connection cannot mint a replacement; the token stops working on the next request. Any other token id, including another of the same person\'s connections, is a 404 and revokes nothing. For two minutes afterwards, a refresh of this connection that was already in flight is revoked as it is issued, so it cannot keep the connection; the person\'s other connections, including to the same client, are unaffected. Every connection a person holds is revoked by an operator with svc:auth:revoke-connections.',
                 'parameters' => ['TokenId'],
                 'response_description' => 'Connection revoked',
             ],

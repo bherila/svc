@@ -2,17 +2,18 @@
 
 namespace App\Console\Commands\Mcp;
 
-use App\Models\AgentPrincipal;
 use App\Models\User;
-use App\Services\Mcp\McpConnectionTokens;
+use App\Services\Credentials\AgentCredentialSelection;
+use App\Services\Credentials\AgentTokenIssuer;
+use App\Services\Credentials\AgentTokenKind;
+use App\Services\Credentials\AgentTokenRefused;
+use App\Services\Credentials\AgentTokenRequest;
+use App\Services\Credentials\CredentialRevoker;
 use App\Support\AgentApi\AgentApiScopes;
 use Illuminate\Console\Command;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
-use Laravel\Passport\ClientRepository;
-use Laravel\Passport\Passport;
 use RuntimeException;
 
 /**
@@ -73,70 +74,80 @@ final class DeploySmokeCredentialsCommand extends Command
 
     private const PRINCIPAL_NAME = 'Deployment MCP smoke';
 
-    private const CLIENT_NAME = 'SVC deployment MCP smoke';
-
-    public function handle(): int
+    public function handle(AgentTokenIssuer $issuer, CredentialRevoker $revoker): int
     {
-        $principal = $this->principal();
+        $user = $this->principal();
+        $kind = AgentTokenKind::DeploymentSmoke;
 
         if ($this->option('revoke')) {
-            $this->line((string) json_encode(['revoked' => $this->revokeTokens($principal)], JSON_THROW_ON_ERROR));
+            $revoked = $revoker->revoke(AgentCredentialSelection::connections($user, fence: false), $kind->actor());
+            $this->line((string) json_encode(['revoked' => $revoked->accessTokens()], JSON_THROW_ON_ERROR));
 
             return self::SUCCESS;
         }
 
-        $this->refuseIfThePrincipalCanReachAnything($principal);
+        $ttl = AgentTokenRequest::ttlFromInput((string) $this->option('ttl'));
+        if ($ttl === null) {
+            $this->error('--ttl must be a whole number of minutes from 1 to '.AgentTokenRequest::MAX_TTL_MINUTES.'.');
+
+            return self::INVALID;
+        }
+
+        $this->refuseIfThePrincipalCanReachAnything($user);
 
         // Any token from a previous run is dead to us the moment we mint a new
         // pair, and leaving it live would mean a failed cleanup silently
-        // accumulating valid credentials one deploy at a time.
-        $this->revokeTokens($principal);
+        // accumulating valid credentials one deploy at a time. Unfenced, here
+        // and in cleanup: the principal holds no OAuth connection to race, and
+        // a fence would revoke the pair this issues next.
+        $revoker->revoke(AgentCredentialSelection::connections($user, fence: false), $kind->actor());
 
-        $ttl = max(1, (int) $this->option('ttl'));
-        Passport::personalAccessTokensExpireIn(now()->addMinutes($ttl));
+        try {
+            $authorized = $issuer->issue($user, AgentTokenRequest::of($kind, 'authorized', [
+                AgentApiScopes::MCP_USE,
+                AgentApiScopes::IDENTITY_READ,
+            ], $ttl));
 
-        $client = $this->personalAccessClient();
+            // A connection carrying a *different* operation scope, not none. It
+            // has to be able to initialize before it can be refused a tool call,
+            // and a connection authorized for nothing cannot: the server
+            // advertises an empty capability set, which PHP serializes as a JSON
+            // array where the protocol requires an object, and a conformant
+            // client rejects the handshake. Found by this smoke before it
+            // shipped; tracked separately.
+            //
+            // Holding `projects:read` and not `identity:read` also makes the
+            // assertion sharper than a scopeless token would: it shows the scope
+            // is enforced per operation rather than "any scope will do".
+            $wrongScope = $issuer->issue($user, AgentTokenRequest::of($kind, 'wrong-scope', [
+                AgentApiScopes::MCP_USE,
+                AgentApiScopes::PROJECTS_READ,
+            ], $ttl));
+        } catch (AgentTokenRefused $refused) {
+            // Nothing half-issued outlives the refusal.
+            $revoker->revoke(AgentCredentialSelection::connections($user, fence: false), $kind->actor());
+            $this->error($refused->getMessage());
 
-        $authorized = $this->issue($principal, $client, 'authorized', [
-            AgentApiScopes::MCP_USE,
-            AgentApiScopes::IDENTITY_READ,
-        ]);
-
-        // A connection carrying a *different* operation scope, not none. It has
-        // to be able to initialize before it can be refused a tool call, and a
-        // connection authorized for nothing cannot: the server advertises an
-        // empty capability set, which PHP serializes as a JSON array where the
-        // protocol requires an object, and a conformant client rejects the
-        // handshake. Found by this smoke before it shipped; tracked separately.
-        //
-        // Holding `projects:read` and not `identity:read` also makes the
-        // assertion sharper than a scopeless token would: it shows the scope is
-        // enforced per operation rather than "any scope will do".
-        $wrongScope = $this->issue($principal, $client, 'wrong-scope', [
-            AgentApiScopes::MCP_USE,
-            AgentApiScopes::PROJECTS_READ,
-        ]);
+            return self::FAILURE;
+        }
 
         $this->line((string) json_encode([
-            'authorized_token' => $authorized,
-            'wrong_scope_token' => $wrongScope,
-            'expires_at' => now()->addMinutes($ttl)->toIso8601String(),
+            'authorized_token' => $authorized->token(),
+            'wrong_scope_token' => $wrongScope->token(),
+            'expires_at' => $authorized->expiresAt->toIso8601String(),
         ], JSON_THROW_ON_ERROR));
 
         return self::SUCCESS;
     }
 
     /**
-     * Created through {@see User}, read back as {@see AgentPrincipal}.
-     *
-     * They are the same row. `AgentPrincipal` is the OAuth-only view and is
-     * deliberately not mass-assignable, so the row is written through the model
-     * that owns the columns and then re-resolved through the one that owns the
-     * tokens - the same split the pre-merge credentials helper uses.
+     * Created through {@see User}, the model that owns the columns:
+     * `AgentPrincipal`, the OAuth-only view of the same row, is deliberately
+     * not mass-assignable. {@see AgentTokenIssuer} resolves the principal.
      */
-    private function principal(): AgentPrincipal
+    private function principal(): User
     {
-        $user = User::query()->firstOrCreate(
+        return User::query()->firstOrCreate(
             ['email' => self::EMAIL],
             [
                 'name' => self::PRINCIPAL_NAME,
@@ -146,8 +157,6 @@ final class DeploySmokeCredentialsCommand extends Command
                 'password' => Hash::make(Str::random(64)),
             ],
         );
-
-        return AgentPrincipal::query()->whereKey($user->getKey())->firstOrFail();
     }
 
     /**
@@ -158,7 +167,7 @@ final class DeploySmokeCredentialsCommand extends Command
      * a guard that silently stops looking is the failure mode this repository
      * has found most often.
      */
-    private function refuseIfThePrincipalCanReachAnything(AgentPrincipal $principal): void
+    private function refuseIfThePrincipalCanReachAnything(User $principal): void
     {
         $memberships = [
             'workspace_memberships' => DB::table('workspace_memberships')->where('user_id', $principal->id)->count(),
@@ -179,40 +188,5 @@ final class DeploySmokeCredentialsCommand extends Command
                 )),
             ));
         }
-    }
-
-    private function personalAccessClient(): string
-    {
-        $existing = DB::table('oauth_clients')
-            ->where('name', self::CLIENT_NAME)
-            ->where('revoked', false)
-            ->value('id');
-
-        if ($existing !== null) {
-            return (string) $existing;
-        }
-
-        return (string) app(ClientRepository::class)
-            ->createPersonalAccessGrantClient(self::CLIENT_NAME, 'agent-principals')
-            ->getKey();
-    }
-
-    /**
-     * Bound to the MCP resource (APP_URL/api/v1/mcp): the endpoint the smoke
-     * calls refuses any other audience.
-     *
-     * @param  list<string>  $scopes
-     */
-    private function issue(AgentPrincipal $principal, string $clientId, string $label, array $scopes): string
-    {
-        return app(McpConnectionTokens::class)->issue($principal, $clientId, self::PRINCIPAL_NAME.' '.$label, $scopes);
-    }
-
-    private function revokeTokens(AgentPrincipal $principal): int
-    {
-        return Passport::token()->newQuery()
-            ->where('user_id', $principal->id)
-            ->where('revoked', false)
-            ->update(['revoked' => true, 'updated_at' => Carbon::now()]);
     }
 }

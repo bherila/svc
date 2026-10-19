@@ -31,19 +31,109 @@ customer data. Preserve those constraints in incident tickets and logs.
 ## Credential containment
 
 MCP authentication is Passport OAuth, not a separate MCP password or API-key
-store. Revoke the affected OAuth connection through the authenticated
-`DELETE /api/v1/connections/{token}` workflow where the affected user can do
-so. The endpoint transaction revokes the refresh credential attached to that
-access token before revoking the access token itself, and the MCP principal
-resolver rereads the persisted access-token row on every request, so a revoked,
-expired, wrong-audience, or wrong-client credential is rejected before
-discovery and execution.
+store. A connector the affected user still controls can disconnect itself
+through the authenticated `DELETE /api/v1/connections/{token}` workflow; it
+revokes only the calling connection. Otherwise use the emergency revocation
+below. Both go through the same revoker (`CredentialRevoker`): one transaction
+that locks the access-token rows and revokes their refresh credentials before
+the access tokens themselves, and the MCP principal resolver rereads the
+persisted access-token row on every request, so a revoked, expired,
+wrong-audience, or wrong-client credential is rejected before discovery and
+execution.
 
-For a suspected client-wide compromise, first globally disable MCP, then use
-the established OAuth administration procedure to revoke the affected access
-and refresh-token family. Do not rotate the OAuth signing keys as a first
-response: the deployment workflow deliberately refuses automatic partial key
-rotation, and a key rotation is a separate authorization-server incident.
+Do not rotate the OAuth signing keys as a first response: the deployment
+workflow deliberately refuses automatic partial key rotation, and a key
+rotation is a separate authorization-server incident.
+
+### Emergency revocation of a person's agent connections
+
+For a compromised connector, a lost device, or a person who must be cut off
+now, an operator with shell access on the host runs:
+
+```bash
+php artisan svc:auth:revoke-connections USER_PUBLIC_UUID
+# or only the credentials issued to one OAuth client:
+php artisan svc:auth:revoke-connections USER_PUBLIC_UUID --client=OAUTH_CLIENT_ID
+```
+
+1. For a suspected client-wide or deployment-wide compromise, first globally
+   disable MCP (`AGENT_API_MCP_ENABLED=false`) and stop new issuance and
+   refresh (`AGENT_API_OAUTH_SERVER_ENABLED=false`), as under
+   [Immediate containment](#immediate-containment). With issuance off, no
+   connection can refresh between the revocation and the next request.
+2. Name the person by exact public UUID; an internal id, email address or
+   partial match is refused (exit 2), and an unknown UUID or client id fails
+   (exit 1) without revoking anything. `--client` takes the OAuth client id
+   recorded in the audit metadata.
+3. The command revokes, in one transaction, every pending authorization code,
+   every refresh token (including one whose expired access token Passport has
+   already purged) and then every access token the person holds - OAuth and
+   MCP connections, operator-issued agent tokens and personal API tokens alike -
+   or only those issued to `--client` (in any letter case). A refresh token of
+   the person's that records no client and whose access token is gone cannot be
+   told apart by client, so a `--client` run revokes it too rather than miss
+   it. Rows are revoked, never deleted, so they
+   remain for the investigation. Another person's credentials are never
+   selected, even for the same client.
+4. A refresh or code exchange already in flight can pass its own check just
+   before the revocation and persist its replacement just after. For
+   `AgentCredentialFence::SECONDS` (two minutes, counted from the commit) after any revocation, every
+   access token Passport persists for that person (and client, or
+   every client) is revoked as it is created, as is every authorization code
+   (a consent approved just before the revocation cannot be exchanged later)
+   and any refresh token whose access token is already revoked; the racing
+   connector receives credentials that are already dead. Each is audited:
+   access tokens as `agent_token.revoked` with `actor: revocation-fence`,
+   codes and refresh tokens as `agent_token.revoked_in_fence`. Personal tokens are fenced too: `svc:auth:issue-agent-token` for the
+   person inside the window is refused, its row revoked. A person who
+   reconnects inside the window must reconnect again once it lapses - one more
+   reason to keep issuance off until the investigation allows it. A connection
+   that disconnects itself through `connections.revoke` fences only its own
+   lineage: a refresh redeeming one of its refresh tokens is caught, while
+   another connection the same person holds with the same client keeps
+   refreshing. Each refresh is remembered for the same window, so a
+   connection that disconnects itself with a token a refresh had just
+   replaced also revokes the replacement.
+
+   The fence lives in the application cache. It is a backstop, never a
+   precondition: if the cache cannot be written the revocation still happens
+   in full and logs a `agent_token.fence_unavailable` warning, and only the
+   fence is missing. Likewise `php artisan cache:clear` (or a cache flush or
+   eviction) inside the window lifts the fence early. If either happens
+   during an incident, keep OAuth issuance off (step 1) and run the command
+   again once the cache is back.
+5. It prints one JSON line, for example
+   `{"access_tokens":2,"refresh_tokens":1,"authorization_codes":0,"unattributed_refresh_tokens":0}`,
+   and logs `agent_token.revoked` with `actor: console`, the person's public
+   UUID, `selection: connections`, the client id when given, the counts and
+   SHA-256 fingerprints of the revoked access-token ids. It prints and logs no
+   bearer value, token id or email address.
+6. `unattributed_refresh_tokens` counts live refresh tokens, anyone's, that no
+   revocation by person can reach: issued before refresh tokens recorded their
+   owner, with their access token since purged. The
+   `2026_10_18_120000_backfill_oauth_refresh_token_owners` migration records
+   the owner of every such token whose access token still exists, so this is
+   normally zero. If it is not and the compromise could involve one of them,
+   turn OAuth issuance off (step 1; the command refuses `--unattributed`
+   otherwise, since no fence can name an unattributed token's owner and a
+   refresh in flight could replace it) and rerun with `--unattributed`.
+   Issuance must be off on the serving tier, deployed and with its
+   configuration cache cleared, not only in the shell running the command:
+   the command can check only its own process's configuration, so an
+   `AGENT_API_OAUTH_SERVER_ENABLED=false` set just for the CLI passes the
+   check while the web servers keep refreshing. Confirm that
+   `/.well-known/oauth-authorization-server` answers 404 first. It
+   revokes every one of them, for whoever holds it, reports `unattributed_refresh_tokens_revoked`, and logs
+   `agent_token.unattributed_refresh_tokens_revoked`. Their connectors must
+   authorize again.
+7. Run it again. It is idempotent, and a second run reporting zeros confirms
+   nothing was minted in between. Then re-enable issuance and MCP as described
+   under [Recovery and rollback](#recovery-and-rollback); the person reconnects
+   through a fresh consent.
+
+The finance integration's Sanctum tokens are a separate credential store and
+are not touched; revoke those by name with `svc:auth:revoke-token` (see
+`docs/finance-api.md`).
 
 ## Recovery and rollback
 
