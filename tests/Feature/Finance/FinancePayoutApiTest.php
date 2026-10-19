@@ -42,7 +42,7 @@ final class FinancePayoutApiTest extends TestCase
         $stripe = $this->payment($workspace, $company, 'stripe', 'pi_synthetic_listed');
         $manual = $this->payment($workspace, $company, null, null);
         app(ProcessorSettlementRecorder::class)->recordPaymentSettlement($workspace, 'stripe', ['pi_synthetic_listed'],
-            PaymentSettlement::payout('po_synthetic_listed', '2026-10-21', CarbonImmutable::parse('2026-10-18 09:30:15', 'UTC'), 59, 'USD'));
+            PaymentSettlement::payout('po_synthetic_listed', '2026-10-21', 1000, CarbonImmutable::parse('2026-10-18 09:30:15', 'UTC'), 59, 'USD'));
         $this->actingAsMcp($owner, [AgentApiScopes::FINANCE_READ]);
 
         $response = $this->getJson("/api/v1/workspaces/{$workspace->public_id}/invoice-payments?status=any&per_page=10")->assertOk();

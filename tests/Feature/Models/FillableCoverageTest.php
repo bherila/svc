@@ -62,6 +62,7 @@ final class FillableCoverageTest extends TestCase
             'provider_fee_amount' => 'Written with provider_charged_at, by the same recorder.',
             'provider_payout_identifier' => 'Written with provider_charged_at, by the same recorder.',
             'provider_payout_arrival_date' => 'Written with provider_charged_at, by the same recorder.',
+            'provider_payout_reported_at_ms' => 'How current the payout report behind provider_payout_identifier is; written with it, by the same recorder, which refuses an older report against it.',
         ],
         PaymentReconciliation::class => [
             'review_reason' => 'Set only by InvoiceLifecycleService when a payment processor refunds or disputes the payment, and cleared by PaymentReconciliationService::upsert(); a caller-assigned value would hide a refund from review.',

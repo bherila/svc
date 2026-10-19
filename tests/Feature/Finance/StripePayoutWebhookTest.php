@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Services\Finance\ProcessorSettlementRecorder;
+use App\Support\Finance\PaymentSettlement;
 use App\Support\Finance\PayoutFacts;
 use App\Support\Finance\PayoutStatus;
 use App\Support\Finance\PayoutType;
@@ -160,6 +161,14 @@ final class StripePayoutWebhookTest extends TestCase
         $this->assertSame(['2025-10-21', 59, $settled?->lock_version], [$after?->provider_payout_arrival_date?->toDateString(), $after?->provider_fee_amount, $after?->lock_version]);
         $this->assertSame('2025-10-21', ProcessorPayout::query()->where('workspace_id', $workspace->id)->sole()->arrival_date?->toDateString());
         $this->assertDatabaseHas('client_stripe_events', ['stripe_event_id' => 'evt_stale_old', 'status' => 'processed']);
+
+        // Interleaved: the older report passed its payout check before the
+        // newer one finished, and writes its members only now.
+        $late = app(ProcessorSettlementRecorder::class)->recordPaymentSettlement($workspace, 'stripe', ['pi_synthetic_stale', 'ch_synthetic_stale'],
+            PaymentSettlement::payout('po_synthetic_stale', '2025-10-20', 1_000_000, null, 70, 'USD'));
+        $this->assertFalse($late);
+        $this->assertSame(['2025-10-21', 59, $settled?->lock_version, 2_000_000],
+            [$payment->fresh()?->provider_payout_arrival_date?->toDateString(), $payment->fresh()?->provider_fee_amount, $payment->fresh()?->lock_version, $payment->fresh()?->provider_payout_reported_at_ms]);
     }
 
     public function test_a_manual_payout_reads_no_members_and_reaches_only_a_row_already_stored(): void

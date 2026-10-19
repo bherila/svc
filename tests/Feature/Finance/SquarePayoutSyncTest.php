@@ -9,6 +9,7 @@ use App\Models\Workspace;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Services\Finance\ProcessorSettlementRecorder;
 use App\Services\Square\SquarePaymentReconciler;
+use App\Support\Finance\PaymentSettlement;
 use App\Support\Finance\PayoutFacts;
 use App\Support\Finance\PayoutStatus;
 use App\Support\Finance\PayoutType;
@@ -182,6 +183,14 @@ final class SquarePayoutSyncTest extends TestCase
         $after = $payment->fresh();
         $this->assertSame(['2030-02-05', 388, $settled?->lock_version], [$after?->provider_payout_arrival_date?->toDateString(), $after?->provider_fee_amount, $after?->lock_version]);
         $this->assertSame('2030-02-05', ProcessorPayout::query()->sole()->arrival_date?->toDateString());
+
+        // Interleaved: the older read passed its payout check before the newer
+        // one finished, and writes its entries only now.
+        $late = app(ProcessorSettlementRecorder::class)->recordPaymentSettlement($workspace, 'square', ['pay_fixture_1'],
+            PaymentSettlement::payout('po_fixture_1', '2030-02-03', 1_896_253_200_000, null, 300, 'USD'));
+        $this->assertFalse($late);
+        $this->assertSame(['2030-02-05', 388, $settled?->lock_version, 1_896_426_000_000],
+            [$payment->fresh()?->provider_payout_arrival_date?->toDateString(), $payment->fresh()?->provider_fee_amount, $payment->fresh()?->lock_version, $payment->fresh()?->provider_payout_reported_at_ms]);
     }
 
     public function test_a_payout_already_stored_with_a_newer_report_is_left_alone(): void

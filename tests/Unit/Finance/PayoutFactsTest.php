@@ -69,9 +69,11 @@ final class PayoutFactsTest extends TestCase
         $this->assertSame('2026-10-18T16:30:00+00:00', $charge->chargedAt?->toIso8601String());
         $this->assertSame([59, 'USD', null, null, false], [$charge->feeAmount, $charge->feeCurrency, $charge->payoutIdentifier, $charge->payoutArrivalDate, $charge->fromPayout]);
 
-        $payout = PaymentSettlement::payout('po_1', '2026-10-21', null, null, null);
-        $this->assertSame([null, null, 'po_1', '2026-10-21', true], [$payout->chargedAt, $payout->feeAmount, $payout->payoutIdentifier, $payout->payoutArrivalDate, $payout->fromPayout]);
-        $this->assertNull(PaymentSettlement::payout('po_1', null, null, -3, 'USD')->payoutArrivalDate);
+        $payout = PaymentSettlement::payout('po_1', '2026-10-21', 5000, null, null, null);
+        $this->assertSame([null, null, 'po_1', '2026-10-21', true, 5000], [$payout->chargedAt, $payout->feeAmount, $payout->payoutIdentifier, $payout->payoutArrivalDate, $payout->fromPayout, $payout->payoutReportedAtMs]);
+        $this->assertNull($charge->payoutReportedAtMs);
+        $this->assertSame(0, PaymentSettlement::payout('po_1', null, 0, null, null, null)->payoutReportedAtMs);
+        $this->assertNull(PaymentSettlement::payout('po_1', null, 0, null, -3, 'USD')->payoutArrivalDate);
     }
 
     /** @return iterable<string, array{0: \Closure(): PaymentSettlement}> */
@@ -80,9 +82,10 @@ final class PayoutFactsTest extends TestCase
         yield 'fee without currency' => [static fn (): PaymentSettlement => PaymentSettlement::charge(null, 59, null)];
         yield 'currency without fee' => [static fn (): PaymentSettlement => PaymentSettlement::charge(null, null, 'USD')];
         yield 'lower currency' => [static fn (): PaymentSettlement => PaymentSettlement::charge(null, 59, 'usd')];
-        yield 'empty payout' => [static fn (): PaymentSettlement => PaymentSettlement::payout('', null, null, null, null)];
-        yield 'long payout' => [static fn (): PaymentSettlement => PaymentSettlement::payout(str_repeat('x', 256), null, null, null, null)];
-        yield 'arrival with time' => [static fn (): PaymentSettlement => PaymentSettlement::payout('po_1', '2026-10-21T00:00:00Z', null, null, null)];
+        yield 'empty payout' => [static fn (): PaymentSettlement => PaymentSettlement::payout('', null, 0, null, null, null)];
+        yield 'long payout' => [static fn (): PaymentSettlement => PaymentSettlement::payout(str_repeat('x', 256), null, 0, null, null, null)];
+        yield 'arrival with time' => [static fn (): PaymentSettlement => PaymentSettlement::payout('po_1', '2026-10-21T00:00:00Z', 0, null, null, null)];
+        yield 'report before the epoch' => [static fn (): PaymentSettlement => PaymentSettlement::payout('po_1', null, -1, null, null, null)];
     }
 
     /** @param \Closure(): PaymentSettlement $build */

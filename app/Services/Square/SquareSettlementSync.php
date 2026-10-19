@@ -125,7 +125,7 @@ final class SquareSettlementSync
             if ($entry->paymentId === null) {
                 continue;
             }
-            $settlement = PaymentSettlement::payout($payout->identifier, $payout->arrivalDate, null, $entry->fee, $entry->currency);
+            $settlement = PaymentSettlement::payout($payout->identifier, $payout->arrivalDate, $payout->observedAtMs, null, $entry->fee, $entry->currency);
             if ($this->recorder->recordPaymentSettlement($workspace, 'square', [$entry->paymentId], $settlement, $apply)) {
                 $payments++;
             }

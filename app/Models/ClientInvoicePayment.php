@@ -26,6 +26,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property int|null $provider_fee_amount
  * @property string|null $provider_payout_identifier
  * @property CarbonImmutable|null $provider_payout_arrival_date
+ * @property int|null $provider_payout_reported_at_ms
  *
  * `lock_version` is maintained by {@see IncrementsAgentRevision} on every
  * Eloquent save, so any write to the row - a status transition, a refund, a
@@ -41,7 +42,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'method', 'reference', 'notes', 'provider', 'provider_payment_identifier',
     'provider_event_created_at', 'provider_event_id', 'provider_dispute_updated_at_ms', 'external_finance_transaction_uuid', 'idempotency_key',
 ])]
-#[Hidden(['id', 'workspace_id', 'client_invoice_id', 'notes', 'provider_payment_identifier', 'provider_event_created_at', 'provider_event_id', 'provider_dispute_updated_at_ms', 'external_finance_transaction_uuid', 'idempotency_key', 'lock_version', 'provider_charged_at', 'provider_fee_amount', 'provider_payout_identifier', 'provider_payout_arrival_date'])]
+#[Hidden(['id', 'workspace_id', 'client_invoice_id', 'notes', 'provider_payment_identifier', 'provider_event_created_at', 'provider_event_id', 'provider_dispute_updated_at_ms', 'external_finance_transaction_uuid', 'idempotency_key', 'lock_version', 'provider_charged_at', 'provider_fee_amount', 'provider_payout_identifier', 'provider_payout_arrival_date', 'provider_payout_reported_at_ms'])]
 class ClientInvoicePayment extends Model implements WorkspaceOwned
 {
     /**
@@ -65,6 +66,7 @@ class ClientInvoicePayment extends Model implements WorkspaceOwned
             'provider_charged_at' => 'immutable_datetime',
             'provider_fee_amount' => 'integer',
             'provider_payout_arrival_date' => DateOnly::class,
+            'provider_payout_reported_at_ms' => 'integer',
         ];
     }
 

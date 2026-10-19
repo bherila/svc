@@ -23,6 +23,8 @@ final readonly class PaymentSettlement
         public ?string $payoutIdentifier,
         public ?string $payoutArrivalDate,
         public bool $fromPayout,
+        /** How current the payout report is (epoch ms); null for a charge-time report. */
+        public ?int $payoutReportedAtMs = null,
     ) {
         if (($feeAmount === null) !== ($feeCurrency === null)) {
             throw new DomainException('A processor fee is reported with its currency.');
@@ -45,8 +47,12 @@ final readonly class PaymentSettlement
     }
 
     /** What a payout's accounting says about one of its payments. */
-    public static function payout(string $payoutIdentifier, ?string $arrivalDate, ?CarbonImmutable $chargedAt, ?int $feeAmount, ?string $feeCurrency): self
+    public static function payout(string $payoutIdentifier, ?string $arrivalDate, int $reportedAtMs, ?CarbonImmutable $chargedAt, ?int $feeAmount, ?string $feeCurrency): self
     {
-        return new self($chargedAt?->utc(), $feeAmount, $feeCurrency, $payoutIdentifier, $arrivalDate, true);
+        if ($reportedAtMs < 0) {
+            throw new DomainException('A payout report time is not before the epoch.');
+        }
+
+        return new self($chargedAt?->utc(), $feeAmount, $feeCurrency, $payoutIdentifier, $arrivalDate, true, $reportedAtMs);
     }
 }

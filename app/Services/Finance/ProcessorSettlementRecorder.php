@@ -152,25 +152,40 @@ final class ProcessorSettlementRecorder
             if ($payment === null) {
                 return false;
             }
+            // A payout report older than the one the payment's payout facts
+            // came from says nothing current. Checked here, under the
+            // payment's row lock, so an older report of the same payout that
+            // was read first and written last cannot restore stale facts.
+            $stored = $payment->provider_payout_reported_at_ms;
+            $reported = $settlement->payoutReportedAtMs;
+            if ($reported !== null && $stored !== null && $reported < $stored) {
+                return false;
+            }
             $changes = $this->paymentChanges($payment, $settlement);
-            if ($changes === []) {
+            $stamp = $reported !== null && $reported !== $stored ? ['provider_payout_reported_at_ms' => $reported] : [];
+            if ($changes === [] && $stamp === []) {
                 return false;
             }
             if (! $apply) {
-                return true;
+                return $changes !== [];
             }
             ClientInvoicePayment::query()
                 ->where('workspace_id', $workspace->id)
                 ->whereKey($payment->id)
-                ->update([
-                    ...$changes,
-                    // A builder update never reaches IncrementsAgentRevision, so
-                    // the revision the finance feed compares is moved here.
-                    'lock_version' => DB::raw('lock_version + 1'),
-                    'updated_at' => $this->clock->now()->utc(),
-                ]);
+                ->update($changes === []
+                    // Only the report time moved: nothing a reader sees, so
+                    // neither the revision nor updated_at.
+                    ? [...$stamp, 'updated_at' => $payment->updated_at]
+                    : [
+                        ...$changes,
+                        ...$stamp,
+                        // A builder update never reaches IncrementsAgentRevision, so
+                        // the revision the finance feed compares is moved here.
+                        'lock_version' => DB::raw('lock_version + 1'),
+                        'updated_at' => $this->clock->now()->utc(),
+                    ]);
 
-            return true;
+            return $changes !== [];
         };
 
         if (! $apply) {

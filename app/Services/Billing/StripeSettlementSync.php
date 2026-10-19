@@ -130,7 +130,7 @@ final class StripeSettlementSync
                 if (! $member->isCharge || ! $this->belongsTo($member, $owners, $workspace->id)) {
                     continue;
                 }
-                $settlement = PaymentSettlement::payout($payout->identifier, $payout->arrivalDate, $member->chargedAt, $member->fee, $member->currency);
+                $settlement = PaymentSettlement::payout($payout->identifier, $payout->arrivalDate, $payout->observedAtMs, $member->chargedAt, $member->fee, $member->currency);
                 if ($this->recorder->recordPaymentSettlement($workspace, 'stripe', $member->paymentIdentifiers, $settlement, $apply)) {
                     $payments++;
                 }

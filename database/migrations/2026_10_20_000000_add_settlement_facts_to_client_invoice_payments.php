@@ -17,6 +17,10 @@ use Illuminate\Support\Facades\Schema;
  *   return part of one.
  * - `provider_payout_identifier` and `provider_payout_arrival_date`: the payout
  *   the payment settled in and the day that payout arrives at the bank.
+ * - `provider_payout_reported_at_ms`: how current the payout report those two
+ *   came from is (epoch milliseconds). A payout report older than it changes
+ *   nothing on the payment, checked under the payment's row lock, so two
+ *   reports of one payout cannot interleave into stale facts.
  *
  * All nullable: a payment recorded by hand has none of them, and a processor
  * payment has them only once the processor reports them. Existing rows are
@@ -39,6 +43,7 @@ return new class extends Migration
                 $payout->collation('utf8mb4_bin');
             }
             $table->date('provider_payout_arrival_date')->nullable()->after('provider_payout_identifier');
+            $table->unsignedBigInteger('provider_payout_reported_at_ms')->nullable()->after('provider_payout_arrival_date');
             $table->index(['workspace_id', 'provider', 'provider_payout_identifier'], 'client_invoice_payments_ws_payout_index');
         });
     }
@@ -47,7 +52,7 @@ return new class extends Migration
     {
         Schema::table('client_invoice_payments', function (Blueprint $table): void {
             $table->dropIndex('client_invoice_payments_ws_payout_index');
-            $table->dropColumn(['provider_charged_at', 'provider_fee_amount', 'provider_payout_identifier', 'provider_payout_arrival_date']);
+            $table->dropColumn(['provider_charged_at', 'provider_fee_amount', 'provider_payout_identifier', 'provider_payout_arrival_date', 'provider_payout_reported_at_ms']);
         });
     }
 };
