@@ -15,6 +15,7 @@ use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 use Mcp\Capability\Discovery\SchemaValidator;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -240,6 +241,25 @@ final class FinanceReconciliationOperationsTest extends TestCase
         $memberHeaders = $this->initialize();
         $memberNames = array_column($this->postJson('/api/v1/mcp', ['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/list'], $memberHeaders)->assertOk()->json('result.tools'), 'name');
         $this->assertNotContains(FinanceReconciliationOperations::LIST, $memberNames);
+    }
+
+    /** A tool's nested REST request is not counted again against the caller's throttle (#459). */
+    public function test_a_routed_finance_call_is_counted_once_against_the_principals_throttle(): void
+    {
+        [$owner, $workspace, $payment] = $this->payment('Throttle');
+        $this->actingAsMcp($owner, ['mcp:use', 'finance:read', 'finance:reconcile']);
+        $key = sha1((string) $owner->getAuthIdentifier());
+        RateLimiter::clear($key);
+
+        $headers = $this->initialize();
+        $this->tool($headers, FinanceReconciliationOperations::UPSERT, [
+            'workspace_id' => $workspace->public_id, 'payment_id' => $payment->public_id, 'external_system' => 'synthetic-ledger',
+            'transaction_id' => (string) Str::uuid(), 'allocated_amount' => 100, 'currency' => 'USD',
+        ]);
+        $this->assertSame(2, RateLimiter::attempts($key), 'initialize and the tool call, not the nested REST request');
+
+        $this->getJson($this->listPath($workspace))->assertOk();
+        $this->assertSame(3, RateLimiter::attempts($key), 'a REST client is still counted');
     }
 
     public function test_the_mcp_upsert_input_is_the_rest_body_plus_its_path(): void

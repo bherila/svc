@@ -387,7 +387,7 @@ Route::prefix('v1')
 // the website's session: nothing in the browser reconciles.
 Route::prefix('v1')
     ->name('agent-api.v1.')
-    ->middleware([ExpectOAuthResource::class.':rest', 'auth:sanctum,api', 'throttle:60,1', NoStoreAgentResponse::class])
+    ->middleware([ExpectOAuthResource::class.':rest', 'auth:sanctum,api', ThrottleOuterAgentRequests::class.':60,1', NoStoreAgentResponse::class])
     ->group(function () use ($operation): void {
         // A workspace the caller cannot see answers 404 before anything else,
         // as on every other workspace route: nothing - not even a failed
