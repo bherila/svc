@@ -23,6 +23,10 @@ use Illuminate\Support\Facades\Validator;
  * calendar), an optional reference and note, `pending` or `succeeded`, and the
  * finance system's transaction id. It never initiates a charge, and never
  * changes an existing payment - that is `payments.set_status`.
+ *
+ * Under the invoice lock, after a completed receipt has had the chance to
+ * replay, {@see PaymentCollectionGuard} refuses a payment while another is
+ * still in flight on the invoice, or when Square collects it.
  */
 final class RecordPaymentAction
 {
@@ -30,6 +34,7 @@ final class RecordPaymentAction
         private readonly AgentMutationExecutor $mutations,
         private readonly RecordReceivedPayment $receivedPayments,
         private readonly AgentAccess $access,
+        private readonly PaymentCollectionGuard $collection,
     ) {}
 
     /** @param array<string, mixed> $payload
@@ -65,8 +70,9 @@ final class RecordPaymentAction
                 // Domain keys are workspace-wide; namespace them by caller and operation
                 // so an agent receipt cannot collide with a CLI/import receipt.
                 $payment = $this->receivedPayments->record($workspace, $invoice, $facts, RecordReceivedPayment::agentKey($user->id, $clientId, $key),
-                    static function (ClientInvoice $locked) use ($data): void {
+                    function (ClientInvoice $locked) use ($data): void {
                         abort_unless(AgentApiVersion::matches($locked, $data['expected_version']), 409, 'The invoice has changed; read it and retry.');
+                        $this->collection->assertMayRecord($locked);
                     });
 
                 return [$payment->public_id];

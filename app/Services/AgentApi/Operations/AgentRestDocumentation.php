@@ -1167,11 +1167,19 @@ final class AgentRestDocumentation
             'payments.record' => [
                 'method' => 'POST',
                 'scopes' => ['payments:record', 'billing:read'],
-                'description' => 'Owner/admin bookkeeping for money already received, with the same fields as the invoice screen\'s payment form. Never initiates a charge. Explicit invoice, minor-unit amount, currency and method required. received_on is the day the money arrived and defaults to today on the workspace calendar; reference, notes and the finance system\'s transaction id are optional; status is succeeded (the default) or pending for money not yet cleared, which payments.set_status later settles. Read invoices.get with billing:read for the current invoice expected_version; confirm: true is required. A succeeded payment over the balance is refused. Requires both outer workflow and payment write flags.',
+                'description' => 'Owner/admin bookkeeping for money already received, with the same fields as the invoice screen\'s payment form. Never initiates a charge. Explicit invoice, minor-unit amount, currency and method required. received_on is the day the money arrived and defaults to today on the workspace calendar; reference, notes and the finance system\'s transaction id are optional; status is succeeded (the default) or pending for money not yet cleared, which payments.set_status later settles. Read invoices.get with billing:read for the current invoice expected_version; confirm: true is required. A succeeded payment over the balance is refused, and so is any payment while another on the invoice is pending or while Square collects the invoice (invoices.get reports pending_payments and collection_owner). A retry with the same Idempotency-Key and body returns the original payment without recording again. Requires both outer workflow and payment write flags.',
                 'parameters' => ['WorkspaceId', 'IdempotencyKey'],
                 'request' => 'ReceivedPaymentRecordRequest',
                 'response' => 'ReceivedPaymentBatchResponse',
                 'response_description' => 'Authorized received payments',
+                'errors' => [
+                    401 => 'Not signed in, or the token is missing, expired or revoked.',
+                    403 => 'The caller is not a workspace owner or admin, or the token lacks payments:record or billing:read. Each is checked again on a replay.',
+                    404 => 'The workspace or invoice does not exist, or an agent write cutover is switched off.',
+                    409 => 'expected_version is no longer current (read the invoice again), or the Idempotency-Key was already used with a different request or is still being processed.',
+                    422 => 'The Idempotency-Key header is missing, the body has an unknown field, confirm is not true, or a field is invalid (`errors` names it). Also, checked under the invoice lock: the invoice is a draft or void, a succeeded payment exceeds the balance, another payment on the invoice is pending (pending_payments on invoices.get), or Square collects the invoice (collection_owner square).',
+                    429 => 'Too many requests (retry after Retry-After).',
+                ],
             ],
             'payments.refund' => [
                 'method' => 'POST',

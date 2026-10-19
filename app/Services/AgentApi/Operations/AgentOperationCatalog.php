@@ -1021,7 +1021,7 @@ final class AgentOperationCatalog
             $this->tool(
                 'payments.record',
                 'Record received payment',
-                'Record money already received using an explicit invoice, amount in minor units, currency and method. Give the actual payment date as received_on (it defaults to today, never the invoice date); reference, notes and the finance transaction id are optional; status is succeeded, or pending for money that has not cleared. Current invoice version, explicit user confirmation and idempotency key required. Owner/admin only; overpayments refused. Never charges a customer or issues a refund.',
+                'Record money already received using an explicit invoice, amount in minor units, currency and method. Give the actual payment date as received_on (it defaults to today, never the invoice date); reference, notes and the finance transaction id are optional; status is succeeded, or pending for money that has not cleared. Current invoice version, explicit user confirmation and idempotency key required. Owner/admin only; overpayments refused, and so is any payment while another on the invoice is pending or Square collects it (invoices.get shows pending_payments and collection_owner). Never charges a customer or issues a refund.',
                 [AgentMcpWriteTools::class, 'paymentsRecord'],
                 Effect::LocalWrite,
                 true,
