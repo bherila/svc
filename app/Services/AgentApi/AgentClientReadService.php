@@ -48,6 +48,10 @@ final class AgentClientReadService
             $query->where('is_active', $status === 'active');
         }
         if ($window !== null && $window->requested()) {
+            // Archiving or restoring a client changes is_active: a feed filtered
+            // on it would never deliver that change.
+            ChangeWindow::refuseMutableFilters(['status' => $status !== null && $status !== ''], []);
+
             return ChangeFeedPage::run($workspace, 'clients|status='.($status ?? ''), $query, $limit, $cursor, $window,
                 function (Collection $companies) use ($workspace): void {
                     $this->withSquareCustomers($workspace, $companies);

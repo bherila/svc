@@ -4,7 +4,6 @@ namespace App\Support\AgentApi;
 
 use App\Exceptions\InvalidAgentApiCursor;
 use App\Models\Workspace;
-use App\Support\WorkspaceClock;
 use Carbon\CarbonImmutable;
 use Closure;
 use Illuminate\Database\Eloquent\Builder;
@@ -17,14 +16,16 @@ use Illuminate\Support\Carbon;
  * id desc` inside a snapshot watermark, the same semantics as the change
  * feeds of the sibling applications.
  *
- * A pass starts without a cursor. The first page fixes the watermark (now,
- * unless the caller names an earlier one) and every page of the pass is
- * bounded by it and returns it, so rows changed while the pass is paged are
- * left for the next pass instead of shifting pages under the reader. The next
- * pass sends that watermark as `updated_since`, which is inclusive: a row
- * changed in the watermark's own second is read twice rather than never.
- * Timestamps only locate candidates; a row's `version` says whether it
- * actually changed.
+ * A pass starts without a cursor. The first page fixes the watermark (now
+ * less {@see ChangeWindow::LAG_SECONDS}, unless the caller names an earlier
+ * one) and every page of the pass is bounded by it and returns it, so rows
+ * changed while the pass is paged are left for the next pass instead of
+ * shifting pages under the reader. The next pass sends that watermark as
+ * `updated_since`, which is inclusive. The lag makes consecutive passes
+ * overlap, so a row stamped before a pass started but committed after it read
+ * is still read by the next one; rows in the overlap are delivered twice, and
+ * a consumer deduplicates by (id, version). Timestamps only locate candidates;
+ * a row's `version` says whether it actually changed.
  *
  * A row with no `updated_at` (never written through a model) comes last in a
  * full pass rather than disappearing from it, and never matches
@@ -118,7 +119,7 @@ final class ChangeFeedPage
     {
         $requested = $window->watermark?->format(ChangeWindow::FORMAT);
         if ($position === null) {
-            return $requested ?? app(WorkspaceClock::class)->now('UTC')->startOfSecond()->format(ChangeWindow::FORMAT);
+            return $requested ?? ChangeWindow::latest()->format(ChangeWindow::FORMAT);
         }
         if ($requested !== null && $requested !== $position->watermark) {
             throw new InvalidAgentApiCursor('watermark does not match the cursor.');

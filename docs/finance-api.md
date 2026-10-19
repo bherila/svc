@@ -114,22 +114,27 @@ switches it from numbered pages to change order:
 - Payments come newest change first (`updated_at desc, id desc`), `per_page` at a
   time, with an opaque `meta.next_cursor` bound to its workspace, query and pass;
   `page` is refused there.
-- The first page of a pass fixes a snapshot `watermark` (now, or an earlier time
-  passed as `watermark`; never a future one) and every page returns it in
+- The first page of a pass fixes a snapshot `watermark` - 120 seconds before the
+  request (`ChangeWindow::LAG_SECONDS`), or an earlier time passed as
+  `watermark`, never a later one - and every page returns it in
   `meta.watermark`. Rows changed while the pass is paged wait for the next pass.
   With a cursor, omit `watermark` or send the same one.
 - The next pass sends that watermark as `updated_since`, which is inclusive.
-  Starting a few seconds earlier is harmless, and covers a write whose
-  transaction committed after the previous pass read.
-- `status=any` (either order) returns every recognised status, never a row whose
-  status is outside the published enum. A full refund moves a
-  payment to `refunded` while a partial refund leaves it `succeeded`, so a
-  synchronizer reads `any`. Payments are never deleted.
+  `updated_at` is stamped when a row is written, not when its transaction
+  commits; the lag outlasts any request's transaction, so a row stamped before a
+  pass started but committed after it read is in the next pass.
+- **Passes overlap, so rows are re-delivered.** Deduplicate by `(id, version)`:
+  timestamps locate candidates, `version` detects a change.
+- A change feed reads every status: send `status=any`. It returns every
+  recognised status, never a row whose status is outside the published enum. A
+  full refund moves a payment to `refunded` while a partial refund leaves it
+  `succeeded`, and a payment can change out of any other filter, so another
+  `status`, `received_from` and `received_to` are refused (`422`) there; `invoice`
+  is allowed, since a payment never changes invoice. Payments are never deleted.
 - A row never stamped with `updated_at` comes last in a full pass and never
   matches `updated_since`.
-- Timestamps locate candidates; `version` detects a change. Each payment carries
-  its opaque revision, which also moves when one of its allocations does. Two
-  changes in the same second still give two versions.
+- Each payment's opaque `version` also moves when one of its allocations does.
+  Two changes in the same second still give two versions.
 - The embedded `invoice` and its `client` are **read-time snapshots, not
   change-tracked**: a change to the invoice or client does not move the
   payment's `version` or `updated_at`. Follow the `invoices.list` and
@@ -139,10 +144,13 @@ The finance system's other reads take the same window: `invoices.list`
 (`billing:read`) and `clients.list` (`clients:read`) page by id as before, and
 switch to this change order - with `meta.watermark` - when a request names
 `updated_since` or `watermark`. A cursor from one order is refused in the other.
-`invoices.list` refuses `overdue` on a change-feed request (`422`): an invoice
-becomes overdue as the workspace's date passes, not when its row changes, so a
-feed filtered on it would drop invoices that tip over between passes. Sync
-without it and judge due dates locally.
+A change feed takes only filters on what a record never changes: on
+`invoices.list`, `company_id` and `invoice_kind`; on `clients.list`, none. Any
+other - `status`, `collectible`, `overdue`, the issue, due and service-period
+dates, a client's `status` - is refused (`422`, naming it): a record that
+changes out of the filter would never be delivered again, and `overdue` changes
+as the date passes without the invoice changing at all. Sync without them and
+filter the synced records.
 
 `PUT /api/v1/workspaces/{workspace}/invoice-payments/{payment}/reconciliations/{external-system}/{transaction-uuid}` (`finance.reconciliations.upsert`)
 

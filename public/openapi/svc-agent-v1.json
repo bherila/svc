@@ -4262,7 +4262,7 @@
         "/workspaces/{workspace}/invoice-payments": {
             "get": {
                 "operationId": "finance.invoice_payments.list",
-                "description": "Received payments with what each is worth net of refunds, how much of that its active finance reconciliation allocations cover, and every allocation, active first; newest received first. Succeeded payments unless status is given; status=any returns every status the enum names, so a full refund (refunded) and a partial one (still succeeded) are both seen; a row with an unrecognised status is never returned. 50 a page unless per_page is (at most 100), numbered by page. For incremental sync, name updated_since, watermark or cursor instead of page: payments then come newest change first (updated_at, then id) inside a snapshot watermark that the first page of a pass fixes (now, or an earlier time given) and every page returns in meta; follow meta.next_cursor until it is null, then start the next pass with updated_since set to that watermark (inclusive; starting a few seconds earlier is harmless). Timestamps only find candidates: compare version, which also moves when one of the payment's allocations changes. The embedded invoice and client are read-time snapshots, not change-tracked: a change to the invoice or client does not move the payment, so follow invoices.list and clients.list for them. Payments are never deleted. Workspace owners/admins; with the finance token, any workspace member. Internal ids, payment notes and processor payment identifiers are never returned. The Sanctum finance token issued by svc:auth:issue-token is accepted too, its finance.read and finance.reconcile abilities standing for these scopes.",
+                "description": "Received payments with what each is worth net of refunds, how much of that its active finance reconciliation allocations cover, and every allocation, active first; newest received first. Succeeded payments unless status is given; status=any returns every status the enum names, so a full refund (refunded) and a partial one (still succeeded) are both seen; a row with an unrecognised status is never returned. 50 a page unless per_page is (at most 100), numbered by page. For incremental sync, name updated_since, watermark or cursor instead of page, with status=any (any other status, received_from and received_to are refused there: a payment can change out of them): payments then come newest change first (updated_at, then id) inside a snapshot watermark that the first page of a pass fixes (now, or an earlier time given) and every page returns in meta; follow meta.next_cursor until it is null, then start the next pass with updated_since set to that watermark (inclusive; starting a few seconds earlier is harmless). Timestamps only find candidates, and consecutive passes overlap: deduplicate by (id, version), where version also moves when one of the payment's allocations changes. The embedded invoice and client are read-time snapshots, not change-tracked: a change to the invoice or client does not move the payment, so follow invoices.list and clients.list for them. Payments are never deleted. Workspace owners/admins; with the finance token, any workspace member. Internal ids, payment notes and processor payment identifiers are never returned. The Sanctum finance token issued by svc:auth:issue-token is accepted too, its finance.read and finance.reconcile abilities standing for these scopes.",
                 "security": [
                     {
                         "oauth2": [
@@ -5015,7 +5015,7 @@
                     {
                         "name": "overdue",
                         "in": "query",
-                        "description": "Refused (422) together with updated_since or watermark: an invoice becomes overdue as the date passes, not when it changes, so a change feed cannot filter on it.",
+                        "description": "Refused (422) together with updated_since or watermark, like every filter but company_id and invoice_kind: an invoice becomes overdue as the date passes, without changing, so a change feed cannot filter on it.",
                         "schema": {
                             "type": "boolean"
                         }
@@ -9402,7 +9402,7 @@
             "UpdatedSince": {
                 "name": "updated_since",
                 "in": "query",
-                "description": "Only records changed at or after this time (inclusive): the previous pass's watermark. Naming updated_since or watermark switches a listing that otherwise pages to change order - newest change first inside a snapshot watermark returned in meta - and a cursor from one order is refused in the other.",
+                "description": "Only records changed at or after this time (inclusive): the previous pass's watermark. Naming updated_since or watermark switches a listing that otherwise pages to change order - newest change first inside a snapshot watermark returned in meta - and a cursor from one order is refused in the other. Consecutive passes overlap by design (see watermark), so deduplicate by (id, version). A change feed takes only filters on what a record never changes - invoices.list: company_id and invoice_kind; clients.list: none; finance.invoice_payments.list: invoice, with status=any - and refuses any other with a 422 naming it, since a record that changes out of a filter would never be delivered again.",
                 "schema": {
                     "type": "string",
                     "format": "date-time"
@@ -9411,7 +9411,7 @@
             "Watermark": {
                 "name": "watermark",
                 "in": "query",
-                "description": "The pass's snapshot upper bound. Fixed by its first page (now when omitted, never in the future) and returned by every page; with a cursor, omit it or send the same one.",
+                "description": "The pass's snapshot upper bound. Fixed by its first page - 120 seconds before the request when omitted, and never later than that - and returned by every page; with a cursor, omit it or send the same one. The lag outlasts any write's transaction, so a record stamped before a pass started but committed after it read is in the next pass; records in that overlap arrive twice.",
                 "schema": {
                     "type": "string",
                     "format": "date-time"

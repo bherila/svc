@@ -82,9 +82,23 @@ final readonly class FinancePaymentQuery
         ])->validate();
         $window = ChangeWindow::from($validated);
         $cursor = isset($validated['cursor']) && $validated['cursor'] !== '' ? (string) $validated['cursor'] : null;
-        // A change feed is followed by cursor; a page number there would be ignored, so it is refused.
-        if (($cursor !== null || $window->requested()) && array_key_exists('page', $input)) {
-            throw ValidationException::withMessages(['page' => 'A change-feed request (updated_since, watermark or cursor) is followed by cursor, not page.']);
+        if ($cursor !== null || $window->requested()) {
+            // A change feed is followed by cursor; a page number there would be ignored, so it is refused.
+            if (array_key_exists('page', $input)) {
+                throw ValidationException::withMessages(['page' => 'A change-feed request (updated_since, watermark or cursor) is followed by cursor, not page.']);
+            }
+            // A payment's status and received-on date change - a refund, a
+            // dispute, a corrected date - so a feed filtered on either would
+            // never deliver the change that took a payment out of it. The feed
+            // reads every status, said explicitly.
+            if (($validated['status'] ?? null) !== self::ANY_STATUS) {
+                throw ValidationException::withMessages(['status' => 'A change-feed request (updated_since, watermark or cursor) reads every status: send status=any and filter the synced payments.']);
+            }
+            ChangeWindow::refuseMutableFilters([
+                'received_from' => isset($validated['received_from']),
+                'received_to' => isset($validated['received_to']),
+                'invoice' => isset($validated['invoice']),
+            ], ['invoice']);
         }
         $page = filter_var($input['page'] ?? null, FILTER_VALIDATE_INT);
         $status = (string) ($validated['status'] ?? InvoicePaymentStatus::Succeeded->value);

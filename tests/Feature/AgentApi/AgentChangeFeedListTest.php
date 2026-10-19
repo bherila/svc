@@ -15,6 +15,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
 use Mcp\Capability\Discovery\SchemaValidator;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\HttpFoundation\Response;
 use Tests\TestCase;
 
@@ -40,19 +41,22 @@ final class AgentChangeFeedListTest extends TestCase
         $this->stamp($second, '2026-09-20 00:00:00');
         $this->actingAsMcp($owner, [AgentApiScopes::BILLING_READ]);
         $path = "/api/v1/workspaces/{$workspace->public_id}/invoices";
+        // Read once the lag has passed, so the watermark is 12:00.
+        CarbonImmutable::setTestNow('2026-10-01 12:02:00');
 
         $page = $this->getJson($path.'?'.http_build_query(['updated_since' => '2026-09-01T00:00:00Z', 'limit' => 1]))->assertOk();
         $this->assertMatchesSchema('invoices.list', $page);
         $this->assertSame([$second->public_id], array_column($page->json('data'), 'id'));
         $this->assertSame('2026-10-01T12:00:00+00:00', $page->json('meta.watermark'));
 
-        // Changed after the pass began: not on this pass's later pages.
+        // Changed after the pass's watermark: not on this pass's later pages.
         CarbonImmutable::setTestNow('2026-10-01 12:05:00');
         $this->stamp($old, '2026-10-01 12:05:00');
         $next = $this->getJson($path.'?'.http_build_query(['updated_since' => '2026-09-01T00:00:00Z', 'limit' => 1, 'cursor' => $page->json('meta.next_cursor')]))->assertOk();
         $this->assertSame([$first->public_id], array_column($next->json('data'), 'id'));
         $this->assertNull($next->json('meta.next_cursor'));
 
+        CarbonImmutable::setTestNow('2026-10-01 12:07:00');
         $following = $this->getJson($path.'?'.http_build_query(['updated_since' => '2026-10-01T12:00:00Z']))->assertOk();
         $this->assertSame([$old->public_id], array_column($following->json('data'), 'id'));
 
@@ -66,7 +70,7 @@ final class AgentChangeFeedListTest extends TestCase
         $legacyCursor = (string) $this->getJson($path.'?limit=1')->json('meta.next_cursor');
         $this->getJson($path.'?'.http_build_query(['updated_since' => '2026-09-01T00:00:00Z', 'cursor' => $legacyCursor]))->assertUnprocessable();
         $this->getJson($path.'?'.http_build_query(['limit' => 1, 'cursor' => $page->json('meta.next_cursor')]))->assertUnprocessable();
-        $this->getJson($path.'?'.http_build_query(['watermark' => '2026-10-01T13:00:00Z']))->assertUnprocessable()->assertJsonValidationErrors('watermark');
+        $this->getJson($path.'?'.http_build_query(['watermark' => '2026-10-01T12:06:00Z']))->assertUnprocessable()->assertJsonValidationErrors('watermark');
         $this->getJson($path.'?'.http_build_query(['updated_since' => 'not a time']))->assertUnprocessable()->assertJsonValidationErrors('updated_since');
     }
 
@@ -78,8 +82,9 @@ final class AgentChangeFeedListTest extends TestCase
         $mine = $this->invoice($workspace, $company);
         $theirs = $this->invoice($workspace, $other);
         $this->actingAsMcp($owner, [AgentApiScopes::BILLING_READ]);
+        CarbonImmutable::setTestNow('2026-10-01 12:02:00');
 
-        $filtered = $this->getJson("/api/v1/workspaces/{$workspace->public_id}/invoices?".http_build_query(['updated_since' => '2026-01-01T00:00:00Z', 'company_id' => $company->public_id]))->assertOk();
+        $filtered = $this->getJson("/api/v1/workspaces/{$workspace->public_id}/invoices?".http_build_query(['updated_since' => '2026-01-01T00:00:00Z', 'company_id' => $company->public_id, 'invoice_kind' => 'ad_hoc']))->assertOk();
         $this->assertSame([$mine->public_id], array_column($filtered->json('data'), 'id'));
         $this->assertNotSame($mine->public_id, $theirs->public_id);
 
@@ -88,23 +93,37 @@ final class AgentChangeFeedListTest extends TestCase
         $this->getJson("/api/v1/workspaces/{$workspace->public_id}/invoices?updated_since=2026-01-01T00:00:00Z")->assertNotFound();
     }
 
-    public function test_invoices_list_refuses_overdue_on_a_change_feed_request(): void
+    /** @return iterable<string, array{array<string, mixed>}> */
+    public static function changeableInvoiceFilters(): iterable
     {
-        CarbonImmutable::setTestNow('2026-10-01 12:00:00');
-        [$owner, $workspace] = $this->workspace('Overdue feed');
+        yield 'status' => [['status' => 'issued']];
+        yield 'collectible' => [['collectible' => 'true']];
+        yield 'not collectible' => [['collectible' => 'false']];
+        yield 'overdue' => [['overdue' => 'true']];
+        yield 'not overdue' => [['overdue' => 'false']];
+        yield 'issue_date_from' => [['issue_date_from' => '2026-01-01']];
+        yield 'issue_date_to' => [['issue_date_to' => '2026-12-31']];
+        yield 'due_date_from' => [['due_date_from' => '2026-01-01']];
+        yield 'due_date_to' => [['due_date_to' => '2026-12-31']];
+        yield 'service_period_overlaps' => [['service_period_overlaps' => ['from' => '2026-01-01', 'to' => '2026-12-31']]];
+    }
+
+    /** @param  array<string, mixed>  $filter */
+    #[DataProvider('changeableInvoiceFilters')]
+    public function test_invoices_list_refuses_a_filter_an_invoice_can_change_out_of_on_a_change_feed_request(array $filter): void
+    {
+        CarbonImmutable::setTestNow('2026-10-01 12:02:00');
+        [$owner, $workspace] = $this->workspace('Changeable filter');
         $this->actingAsMcp($owner, [AgentApiScopes::BILLING_READ]);
         $path = "/api/v1/workspaces/{$workspace->public_id}/invoices?";
 
         foreach ([['updated_since' => '2026-01-01T00:00:00Z'], ['watermark' => '2026-10-01T12:00:00Z']] as $window) {
-            foreach (['true', 'false'] as $overdue) {
-                $this->getJson($path.http_build_query([...$window, 'overdue' => $overdue]))
-                    ->assertUnprocessable()
-                    ->assertJsonValidationErrors('overdue');
-            }
+            $this->getJson($path.http_build_query([...$window, ...$filter]))
+                ->assertUnprocessable()
+                ->assertJsonValidationErrors((string) array_key_first($filter));
         }
-        // Numbered by id it filters as before, and the feed takes the other filters.
-        $this->getJson($path.http_build_query(['overdue' => 'true']))->assertOk();
-        $this->getJson($path.http_build_query(['updated_since' => '2026-01-01T00:00:00Z', 'collectible' => 'true']))->assertOk();
+        // Numbered by id, it filters as before.
+        $this->getJson($path.http_build_query($filter))->assertOk();
     }
 
     public function test_clients_list_pages_changes_since_a_time_for_managers_only(): void
@@ -118,6 +137,7 @@ final class AgentChangeFeedListTest extends TestCase
         $this->stamp($untouched, '2026-07-01 00:00:00');
         $this->actingAsMcp($owner, [AgentApiScopes::CLIENTS_READ]);
         $path = "/api/v1/workspaces/{$workspace->public_id}/clients";
+        CarbonImmutable::setTestNow('2026-10-01 12:02:00');
 
         $page = $this->getJson($path.'?'.http_build_query(['updated_since' => '2026-09-01T00:00:00Z', 'limit' => 1]))->assertOk();
         $this->assertMatchesSchema('clients.list', $page);
@@ -126,6 +146,14 @@ final class AgentChangeFeedListTest extends TestCase
         $next = $this->getJson($path.'?'.http_build_query(['updated_since' => '2026-09-01T00:00:00Z', 'limit' => 1, 'cursor' => $page->json('meta.next_cursor'), 'watermark' => '2026-10-01T12:00:00Z']))->assertOk();
         $this->assertSame([$company->public_id], array_column($next->json('data'), 'id'));
         $this->assertNull($next->json('meta.next_cursor'));
+
+        // Archiving or restoring changes a client out of a status filter.
+        foreach (['active', 'archived'] as $status) {
+            $this->getJson($path.'?'.http_build_query(['updated_since' => '2026-09-01T00:00:00Z', 'status' => $status]))
+                ->assertUnprocessable()
+                ->assertJsonValidationErrors('status');
+            $this->getJson($path.'?'.http_build_query(['status' => $status]))->assertOk();
+        }
 
         $legacy = $this->getJson($path)->assertOk();
         $this->assertMatchesSchema('clients.list', $legacy);

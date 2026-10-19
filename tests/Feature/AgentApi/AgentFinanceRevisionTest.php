@@ -46,7 +46,8 @@ final class AgentFinanceRevisionTest extends TestCase
         $allocated = $this->paymentVersion($workspace);
         $this->assertNotSame($original, $allocated);
         $this->assertSame('2026-10-01 12:00:00', $payment->fresh()?->updated_at?->format('Y-m-d H:i:s'));
-        $this->assertSame([$payment->public_id], array_column($this->getJson($this->listPath($workspace, ['updated_since' => '2026-10-01T12:00:00Z']))->json('data'), 'id'));
+        CarbonImmutable::setTestNow('2026-10-01 12:02:00');
+        $this->assertSame([$payment->public_id], array_column($this->getJson($this->listPath($workspace, ['status' => 'any', 'updated_since' => '2026-10-01T12:00:00Z']))->json('data'), 'id'));
 
         // Two more revisions in the same second still differ.
         $this->putJson($path, [...$body, 'allocated_amount' => 2000])->assertOk();
@@ -81,6 +82,7 @@ final class AgentFinanceRevisionTest extends TestCase
             $before = $this->paymentVersion($workspace);
             CarbonImmutable::setTestNow($at);
             $report(ClientInvoicePayment::query()->whereKey($payment->id)->firstOrFail());
+            CarbonImmutable::setTestNow(CarbonImmutable::parse($at, 'UTC')->addMinutes(2));
             $feed = $this->getJson($this->listPath($workspace, ['status' => 'any', 'updated_since' => CarbonImmutable::parse($at, 'UTC')->toIso8601String()]))->assertOk();
             $this->assertSame([$payment->public_id], array_column($feed->json('data'), 'id'), $at);
             $this->assertTrue($feed->json('data.0.reconciliations.0.needs_review'), $at);

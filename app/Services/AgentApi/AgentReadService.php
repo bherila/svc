@@ -37,7 +37,6 @@ use Closure;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
-use Illuminate\Validation\ValidationException;
 
 /**
  * Tenant-scoped, allowlisted read workflows shared by Agent REST and MCP.
@@ -49,6 +48,15 @@ use Illuminate\Validation\ValidationException;
  */
 final class AgentReadService
 {
+    /**
+     * The invoices.list filters a change feed takes: those on what an invoice
+     * never changes. Every other one can stop (or start) matching an invoice
+     * when it changes - its status, its balance, its dates - or, for overdue,
+     * as the date passes without any change at all; the feed would then never
+     * deliver the change that took it out of the filter.
+     */
+    private const array INVOICE_FEED_FILTERS = ['company_id', 'invoice_kind'];
+
     public function __construct(
         private readonly AgentAccess $access,
         private readonly ProjectAccess $projects,
@@ -327,11 +335,11 @@ final class AgentReadService
     public function invoices(User|AgentPrincipal $user, Workspace $workspace, ?string $status, int $limit, ?string $cursor, ?InvoiceListFilters $filters = null, ?ChangeWindow $window = null): array
     {
         $this->requireWorkspace($user, $workspace);
-        // An invoice becomes overdue when the workspace's day passes its due
-        // date, not when the row is written, so a change feed filtered on it
-        // would silently drop every invoice that tipped over between passes.
-        if ($window !== null && $window->requested() && array_key_exists('overdue', $filters === null ? [] : $filters->values)) {
-            throw ValidationException::withMessages(['overdue' => 'overdue changes with the date, not with updated_at, so it cannot filter a change-feed request (updated_since or watermark); filter the synced invoices by due_date instead.']);
+        if ($window !== null && $window->requested()) {
+            ChangeWindow::refuseMutableFilters([
+                'status' => $status !== null && $status !== '',
+                ...array_fill_keys(array_keys($filters === null ? [] : $filters->values), true),
+            ], self::INVOICE_FEED_FILTERS);
         }
         $query = $this->invoiceQuery($user, $workspace)->with(['clientCompany' => fn ($companies) => $companies->where('workspace_id', $workspace->id)]);
         if ($status !== null && $status !== '') {
