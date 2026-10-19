@@ -460,6 +460,15 @@ final class SquareBillingAuditPolicyTest extends TestCase
         $this->assertSame([[], [], [], [], false], [$findings->unmirroredPeriods, $findings->unmatchedPayments, $findings->seriesDrift, $findings->unlinkedCustomerBalances, $findings->complete]);
     }
 
+    public function test_a_series_is_not_missing_before_its_agreement_starts(): void
+    {
+        $future = new SquareAuditAgreement(self::AGREEMENT, self::COMPANY, '000123', '2030-10-02', BillingCadence::Monthly, 1, 'USD');
+        $today = new SquareAuditAgreement(self::AGREEMENT, self::COMPANY, '000123', '2030-10-01', BillingCadence::Monthly, 1, 'USD');
+
+        $this->assertSame([], self::classify([], agreement: $future)->seriesDrift);
+        $this->assertSame([[SquareBillingAuditPolicy::DRIFT_SERIES_NOT_MIRRORED]], array_column(self::classify([], agreement: $today)->seriesDrift, 'codes'));
+    }
+
     public function test_absence_is_not_claimed_when_the_series_load_was_bounded(): void
     {
         $facts = new SquareBillingAuditFacts('2030-10-01', [self::agreement()], [], [], [], [], false, false);

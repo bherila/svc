@@ -267,8 +267,11 @@ final class SquareBillingAuditPolicy
         foreach ($facts->agreements as $agreement) {
             $series = $members[$agreement->seriesKey] ?? [];
             if ($series === []) {
-                // Absent from a complete mirror is absent from Square.
-                $drift[] = ['agreement' => $agreement, 'codes' => [self::DRIFT_SERIES_NOT_MIRRORED], 'series_cadence' => null, 'series_currency' => null, 'series_amount' => null];
+                // Absent from a complete mirror is absent from Square - once
+                // the agreement has started, when a first bill could exist.
+                if ($agreement->startsOn <= $facts->today) {
+                    $drift[] = ['agreement' => $agreement, 'codes' => [self::DRIFT_SERIES_NOT_MIRRORED], 'series_cadence' => null, 'series_currency' => null, 'series_amount' => null];
+                }
 
                 continue;
             }

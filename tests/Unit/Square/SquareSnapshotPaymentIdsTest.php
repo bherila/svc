@@ -6,6 +6,7 @@ use App\Services\Square\Mirror\SquareSnapshotMapper;
 use App\Services\Square\SquarePresenter;
 use App\Services\Square\SquareRequestFailed;
 use PHPUnit\Framework\TestCase;
+use Tests\Concerns\FakesSquare;
 
 /**
  * Which of an order's tenders the mirror records as payments (#438), over a
@@ -13,6 +14,23 @@ use PHPUnit\Framework\TestCase;
  */
 final class SquareSnapshotPaymentIdsTest extends TestCase
 {
+    use FakesSquare;
+
+    public function test_a_request_whose_amount_cannot_be_read_leaves_the_total_unknown(): void
+    {
+        $invoice = self::squareInvoice('inv_fixture_1');
+        $second = [...$invoice['payment_requests'][0], 'uid' => 'request_fixture_2'];
+        unset($second['computed_amount_money']);
+        $invoice['payment_requests'][] = $second;
+        $mapper = new SquareSnapshotMapper(new SquarePresenter);
+
+        $row = $mapper->invoice($invoice);
+        $this->assertNotNull($row);
+        $this->assertNull($row['total_amount']);
+        $this->assertSame('USD', $row['currency'], 'The readable requests still name the currency.');
+        $this->assertSame(12_345, $mapper->invoice(self::squareInvoice('inv_fixture_1'))['total_amount'] ?? null);
+    }
+
     public function test_a_tender_names_its_payment_by_payment_id_else_by_its_own_id_and_only_captured_card_tenders_count(): void
     {
         $order = ['id' => 'order_fixture_1', 'tenders' => [
