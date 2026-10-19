@@ -81,13 +81,22 @@ Route::middleware(['auth:sanctum', 'throttle:60,1'])
 $operation = static fn (string $operationId, array $action): RoutingRoute => Route::operation($operationId, $action)
     ->middleware(EnsureOperationDeployed::class.':'.$operationId);
 
+/**
+ * A workspace the caller cannot see is not found, before anything else runs:
+ * no write reaches its actions, no failure is audited in another tenant, and
+ * a missing record answers as an unseen workspace does (#459).
+ */
+$inVisibleWorkspace = static fn (RoutingRoute $route): RoutingRoute => $route
+    ->middleware(EnsureAgentWorkspaceVisible::class)
+    ->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']));
+
 // The REST resource (APP_URL/api/v1): only REST-bound tokens and the signed-in
 // website's session. An MCP-bound token is refused here, as a REST token is at
 // the MCP endpoint.
 Route::prefix('v1')
     ->name('agent-api.v1.')
     ->middleware([ExpectOAuthResource::class.':rest', AuthenticateFirstPartySession::class, 'auth:api', 'throttle:60,1', NoStoreAgentResponse::class])
-    ->group(function () use ($operation): void {
+    ->group(function () use ($operation, $inVisibleWorkspace): void {
         $operation('context.get', [AgentReadController::class, 'context']);
         $operation('workspaces.create', [AgentWorkspaceMiscController::class, 'create']);
         $operation('search', [AgentWorkspaceMiscController::class, 'search'])
@@ -189,11 +198,11 @@ Route::prefix('v1')
         $operation('proposals.accept', [AgentProposalController::class, 'accept'])->whereUuid('proposal')->middleware(EnsureAgentWorkspaceVisible::class)->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']));
 
         $operation('expenses.list', [AgentExpenseController::class, 'index']);
-        $operation('expenses.log', [AgentExpenseController::class, 'store']);
-        $operation('expenses.update', [AgentExpenseController::class, 'update'])
-            ->whereUuid('expense');
-        $operation('expenses.delete', [AgentExpenseController::class, 'destroy'])
-            ->whereUuid('expense');
+        $inVisibleWorkspace($operation('expenses.log', [AgentExpenseController::class, 'store']));
+        $inVisibleWorkspace($operation('expenses.update', [AgentExpenseController::class, 'update'])
+            ->whereUuid('expense'));
+        $inVisibleWorkspace($operation('expenses.delete', [AgentExpenseController::class, 'destroy'])
+            ->whereUuid('expense'));
 
         $operation('expenses.approve', [AgentExpenseController::class, 'approve'])
             ->whereUuid('expense')
@@ -254,15 +263,15 @@ Route::prefix('v1')
         $operation('projects.members.update', [AgentProjectController::class, 'updateMember'])
             ->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))
             ->whereUuid('project')->middleware(EnsureAgentWorkspaceVisible::class);
-        $operation('tasks.create', [AgentTaskMutationController::class, 'store'])
-            ->whereUuid('project');
-        $operation('tasks.update', [AgentTaskMutationController::class, 'update'])
-            ->whereUuid('task');
-        $operation('time_entries.log', [AgentTimeEntryMutationController::class, 'store']);
-        $operation('time_entries.update', [AgentTimeEntryMutationController::class, 'update'])
-            ->whereUuid('entry');
-        $operation('time_entries.delete', [AgentTimeEntryMutationController::class, 'destroy'])
-            ->whereUuid('entry');
+        $inVisibleWorkspace($operation('tasks.create', [AgentTaskMutationController::class, 'store'])
+            ->whereUuid('project'));
+        $inVisibleWorkspace($operation('tasks.update', [AgentTaskMutationController::class, 'update'])
+            ->whereUuid('task'));
+        $inVisibleWorkspace($operation('time_entries.log', [AgentTimeEntryMutationController::class, 'store']));
+        $inVisibleWorkspace($operation('time_entries.update', [AgentTimeEntryMutationController::class, 'update'])
+            ->whereUuid('entry'));
+        $inVisibleWorkspace($operation('time_entries.delete', [AgentTimeEntryMutationController::class, 'destroy'])
+            ->whereUuid('entry'));
         $operation('time_entries.unapprove', [AgentTimeEntryMutationController::class, 'unapprove'])
             ->whereUuid('entry')->middleware(EnsureAgentWorkspaceVisible::class)
             ->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']));
@@ -369,8 +378,8 @@ Route::prefix('v1')
             ->whereUuid('invoice');
         $operation('invoices.discard_draft', [AgentInvoiceMutationController::class, 'discardDraft'])
             ->whereUuid('invoice');
-        $operation('invoices.issue', [AgentInvoiceMutationController::class, 'issue'])
-            ->whereUuid('invoice');
+        $inVisibleWorkspace($operation('invoices.issue', [AgentInvoiceMutationController::class, 'issue'])
+            ->whereUuid('invoice'));
         $operation('invoices.send', [AgentInvoiceMutationController::class, 'send'])
             ->whereUuid('invoice');
         $operation('invoices.void', [AgentInvoiceMutationController::class, 'void'])
