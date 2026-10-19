@@ -10651,6 +10651,7 @@
                 "required": [
                     "id",
                     "name",
+                    "provider_subject",
                     "workspaces",
                     "capabilities",
                     "withheld_tools"
@@ -10661,6 +10662,13 @@
                     },
                     "name": {
                         "type": "string"
+                    },
+                    "provider_subject": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Your subject at the trusted identity provider, the same in every application it signs you in to; null when this account is not bound to it. Compare it with the subject the connecting application knows before trusting the connection."
                     },
                     "workspaces": {
                         "type": "array",

@@ -2022,6 +2022,8 @@ export interface components {
         Context: {
             id: components['schemas']['Uuid'];
             name: string;
+            /** @description Your subject at the trusted identity provider, the same in every application it signs you in to; null when this account is not bound to it. Compare it with the subject the connecting application knows before trusting the connection. */
+            provider_subject: string | null;
             workspaces: components['schemas']['WorkspaceContext'][];
             capabilities: 'workspaces:create'[];
             withheld_tools: components['schemas']['WithheldTool'][];

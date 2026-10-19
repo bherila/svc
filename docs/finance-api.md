@@ -76,6 +76,13 @@ this door **every** finance operation requires a workspace owner or admin, the
 listing included, and the tools are offered only to someone who manages a
 workspace. The finance token's member listing is not extended to OAuth.
 
+Before trusting a connection, the finance system reads `context.get`
+(`identity:read`): its `provider_subject` is the person's subject at the trusted
+identity provider (null for an account not bound to it), to compare with the
+subject of the person who connected. It is a stable cross-application
+identifier, not a secret, but it appears only in that authorized
+self-description and is never logged.
+
 ## Endpoints
 
 `GET /api/v1/workspaces/{workspace}/invoice-payments` (`finance.invoice_payments.list`)

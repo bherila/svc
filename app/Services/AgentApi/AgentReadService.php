@@ -31,6 +31,8 @@ use App\Support\AgentApi\Presenters\AgentTimeEntryPresenter;
 use App\Support\AgentApi\Presenters\SquareLinkPresenter;
 use App\Support\Billing\InvoiceKind;
 use App\Support\WorkspaceClock;
+use BWH\Auth\OAuth\Session\ProviderBindingResolver;
+use BWH\Auth\OAuth\Session\ProviderSessionExpired;
 use Closure;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -83,6 +85,7 @@ final class AgentReadService
         return [
             'id' => $user->public_id,
             'name' => $user->name,
+            'provider_subject' => $this->providerSubject($user),
             'capabilities' => AgentWriteCutover::workspaces() && $allowsScope('workspaces:create') ? ['workspaces:create'] : [],
             'withheld_tools' => app(AgentWithheldTools::class)->for($allowsScope,
                 $workspaces->contains(fn (Workspace $workspace): bool => $this->access->isWorkspaceManager($user, $workspace))),
@@ -98,6 +101,23 @@ final class AgentReadService
                 ];
             })->values()->all(),
         ];
+    }
+
+    /**
+     * The caller's subject at the trusted identity provider, so a connecting
+     * application can check it reached the account of the person who
+     * connected. A stable cross-application identifier rather than a secret,
+     * but kept to this authorized self-description: never in a public
+     * response or a log. Null for an account with no provider binding, or a
+     * binding the trusted provider does not vouch for.
+     */
+    private function providerSubject(User|AgentPrincipal $user): ?string
+    {
+        try {
+            return app(ProviderBindingResolver::class)->binding($user)?->subject;
+        } catch (ProviderSessionExpired) {
+            return null;
+        }
     }
 
     /**

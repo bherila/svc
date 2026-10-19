@@ -1,0 +1,68 @@
+<?php
+
+namespace Tests\Feature\AgentApi;
+
+use App\Models\User;
+use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
+use App\Support\AgentApi\AgentApiScopes;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Mcp\Capability\Discovery\SchemaValidator;
+use Tests\Concerns\IssuesAgentOAuthTokens;
+use Tests\TestCase;
+
+/**
+ * `context.get` names the caller's identity-provider subject (S5), so a
+ * connecting application can check that the account it reached is the person
+ * who connected. Only the authorized caller's own context carries it, and only
+ * for a binding to the trusted provider.
+ */
+final class AgentContextProviderSubjectTest extends TestCase
+{
+    use IssuesAgentOAuthTokens;
+    use RefreshDatabase;
+
+    private const string PROVIDER = 'synthetic-provider';
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        config(['bherila-auth.oauth_client.provider' => self::PROVIDER]);
+    }
+
+    public function test_a_connection_reads_its_own_provider_subject_through_the_real_oauth_flow(): void
+    {
+        $user = User::factory()->create(['oauth_provider' => self::PROVIDER, 'oauth_subject' => '4711']);
+        $tokens = $this->issueAgentTokens($user, 'rest', [AgentApiScopes::IDENTITY_READ]);
+
+        $context = $this->withToken($tokens['access_token'])->getJson('/api/v1/context')
+            ->assertOk()
+            ->assertJsonPath('data.id', $user->public_id)
+            ->assertJsonPath('data.provider_subject', '4711');
+        $this->assertSame([], (new SchemaValidator)->validateAgainstJsonSchema($context->json(), AgentApiResponseSchemaCatalog::forOperation('context.get')));
+    }
+
+    public function test_an_unbound_or_foreign_binding_has_no_provider_subject(): void
+    {
+        $unbound = User::factory()->create(['oauth_provider' => null, 'oauth_subject' => null]);
+        $this->actingAsMcp($unbound, [AgentApiScopes::IDENTITY_READ]);
+        $this->getJson('/api/v1/context')->assertOk()->assertJsonPath('data.provider_subject', null);
+
+        // Bound to some other provider: not a subject the trusted provider
+        // vouches for, so none is named.
+        $foreign = User::factory()->create(['oauth_provider' => 'another-provider', 'oauth_subject' => '4711']);
+        $this->actingAsMcp($foreign, [AgentApiScopes::IDENTITY_READ]);
+        $this->getJson('/api/v1/context')->assertOk()->assertJsonPath('data.provider_subject', null);
+    }
+
+    public function test_context_without_identity_read_or_a_credential_names_no_subject(): void
+    {
+        $user = User::factory()->create(['oauth_provider' => self::PROVIDER, 'oauth_subject' => '4711']);
+
+        $anonymous = $this->getJson('/api/v1/context')->assertUnauthorized();
+        $this->assertStringNotContainsString('4711', (string) $anonymous->getContent());
+
+        $this->actingAsMcp($user, [AgentApiScopes::BILLING_READ]);
+        $refused = $this->getJson('/api/v1/context')->assertForbidden();
+        $this->assertStringNotContainsString('4711', (string) $refused->getContent());
+    }
+}
