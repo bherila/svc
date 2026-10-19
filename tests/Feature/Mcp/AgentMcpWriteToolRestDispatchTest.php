@@ -50,6 +50,11 @@ final class AgentMcpWriteToolRestDispatchTest extends TestCase
     {
         $writes = $this->writeTools();
         $this->assertNotEmpty($writes);
+        // The finance reconciliation writes (#457) dispatch like every other.
+        foreach (['finance.reconciliations.upsert', 'finance.reconciliations.deactivate'] as $finance) {
+            $this->assertArrayHasKey($finance, $writes);
+            $this->assertArrayNotHasKey($finance, self::DIRECT);
+        }
         $this->assertSame([], array_values(array_diff(array_keys(self::DIRECT), array_keys($writes))), 'An allowlisted tool is no longer a write tool.');
 
         foreach ($writes as $id => $operation) {

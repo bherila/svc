@@ -703,8 +703,9 @@ Operators use the same rules without the agent gates through
 (`/api/v1/workspaces/{workspace}/invoice-payments…`, see
 [the finance reconciliation API](finance-api.md)) as operations: in the OpenAPI
 document, gated by `finance:read` and `finance:reconcile`, and served as MCP tools
-through `AgentMcpFinanceTools`, which reaches the REST routes over
-`InternalAgentApiTransport`, so a tool and its route run one
+through `AgentMcpFinanceTools`, which dispatches each tool to its own REST
+binding with `AgentMcpRestCall` like every other routed tool, so a tool and its
+route run one
 `FinanceReconciliationOperations`. The `svc:finance:payments`,
 `svc:finance:reconcile` and `svc:finance:unreconcile` commands call the same
 operation.

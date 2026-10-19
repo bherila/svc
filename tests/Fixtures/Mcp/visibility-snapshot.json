@@ -9040,6 +9040,7 @@
                                     "status",
                                     "amount",
                                     "refunded_amount",
+                                    "disputed_amount",
                                     "net_amount",
                                     "reconciled_amount",
                                     "unreconciled_amount",
@@ -9076,6 +9077,14 @@
                                     "refunded_amount": {
                                         "type": "integer",
                                         "minimum": 0
+                                    },
+                                    "disputed_amount": {
+                                        "type": [
+                                            "integer",
+                                            "null"
+                                        ],
+                                        "minimum": 0,
+                                        "description": "While disputed, what the processor's dispute holds back (the whole amount when the processor did not say); null for any other status."
                                     },
                                     "net_amount": {
                                         "type": "integer",
@@ -9204,6 +9213,9 @@
                                     "currency",
                                     "reconciled_on",
                                     "is_active",
+                                    "needs_review",
+                                    "review_reason",
+                                    "review_flagged_at",
                                     "created_at",
                                     "updated_at"
                                 ],
@@ -9242,6 +9254,29 @@
                                     "is_active": {
                                         "type": "boolean",
                                         "description": "Whether it counts toward the payment's reconciled amount. An inactive allocation is kept with its history."
+                                    },
+                                    "needs_review": {
+                                        "type": "boolean",
+                                        "description": "Active and flagged because the payment processor refunded or disputed the payment after this allocation was written. Cleared by the next write that fits the payment, or by deactivating it."
+                                    },
+                                    "review_reason": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "enum": [
+                                            "processor_refund",
+                                            "processor_dispute",
+                                            null
+                                        ],
+                                        "description": "Why it was last flagged."
+                                    },
+                                    "review_flagged_at": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date-time"
                                     },
                                     "created_at": {
                                         "type": [
@@ -9334,6 +9369,9 @@
                                     "currency",
                                     "reconciled_on",
                                     "is_active",
+                                    "needs_review",
+                                    "review_reason",
+                                    "review_flagged_at",
                                     "created_at",
                                     "updated_at"
                                 ],
@@ -9372,6 +9410,29 @@
                                     "is_active": {
                                         "type": "boolean",
                                         "description": "Whether it counts toward the payment's reconciled amount. An inactive allocation is kept with its history."
+                                    },
+                                    "needs_review": {
+                                        "type": "boolean",
+                                        "description": "Active and flagged because the payment processor refunded or disputed the payment after this allocation was written. Cleared by the next write that fits the payment, or by deactivating it."
+                                    },
+                                    "review_reason": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "enum": [
+                                            "processor_refund",
+                                            "processor_dispute",
+                                            null
+                                        ],
+                                        "description": "Why it was last flagged."
+                                    },
+                                    "review_flagged_at": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date-time"
                                     },
                                     "created_at": {
                                         "type": [
@@ -9478,6 +9539,9 @@
                                     "currency",
                                     "reconciled_on",
                                     "is_active",
+                                    "needs_review",
+                                    "review_reason",
+                                    "review_flagged_at",
                                     "created_at",
                                     "updated_at"
                                 ],
@@ -9516,6 +9580,29 @@
                                     "is_active": {
                                         "type": "boolean",
                                         "description": "Whether it counts toward the payment's reconciled amount. An inactive allocation is kept with its history."
+                                    },
+                                    "needs_review": {
+                                        "type": "boolean",
+                                        "description": "Active and flagged because the payment processor refunded or disputed the payment after this allocation was written. Cleared by the next write that fits the payment, or by deactivating it."
+                                    },
+                                    "review_reason": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "enum": [
+                                            "processor_refund",
+                                            "processor_dispute",
+                                            null
+                                        ],
+                                        "description": "Why it was last flagged."
+                                    },
+                                    "review_flagged_at": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date-time"
                                     },
                                     "created_at": {
                                         "type": [
@@ -26254,9 +26341,9 @@
                 "expenses.receipts.upload_url": "c53d1f0b0ac10262",
                 "expenses.unapprove": "ae21aae8d227dc06",
                 "expenses.update": "1e517d25f792bde9",
-                "finance.invoice_payments.list": "65b80aee692019c6",
-                "finance.reconciliations.deactivate": "f6eb291b6388912d",
-                "finance.reconciliations.upsert": "db945c1721c4c983",
+                "finance.invoice_payments.list": "d631e9b4ee478b93",
+                "finance.reconciliations.deactivate": "d1b06a6b9905d69e",
+                "finance.reconciliations.upsert": "201ea35719d4b506",
                 "invoices.add_time": "ee27431f3eebdb38",
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.corrections.get": "aa93da895756b80b",
@@ -27074,7 +27161,7 @@
                 "expenses.list": "444aff51ddc70e0d",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
-                "finance.invoice_payments.list": "65b80aee692019c6",
+                "finance.invoice_payments.list": "d631e9b4ee478b93",
                 "invoices.corrections.get": "aa93da895756b80b",
                 "invoices.get": "790ff02f4ec45336",
                 "invoices.list": "07979ef323922adf",
@@ -27749,9 +27836,9 @@
                 "expenses.list": "444aff51ddc70e0d",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
-                "finance.invoice_payments.list": "65b80aee692019c6",
-                "finance.reconciliations.deactivate": "f6eb291b6388912d",
-                "finance.reconciliations.upsert": "db945c1721c4c983",
+                "finance.invoice_payments.list": "d631e9b4ee478b93",
+                "finance.reconciliations.deactivate": "d1b06a6b9905d69e",
+                "finance.reconciliations.upsert": "201ea35719d4b506",
                 "invoices.corrections.get": "aa93da895756b80b",
                 "invoices.get": "790ff02f4ec45336",
                 "invoices.list": "07979ef323922adf",
@@ -27906,9 +27993,9 @@
                 "expenses.list": "444aff51ddc70e0d",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
-                "finance.invoice_payments.list": "65b80aee692019c6",
-                "finance.reconciliations.deactivate": "f6eb291b6388912d",
-                "finance.reconciliations.upsert": "db945c1721c4c983",
+                "finance.invoice_payments.list": "d631e9b4ee478b93",
+                "finance.reconciliations.deactivate": "d1b06a6b9905d69e",
+                "finance.reconciliations.upsert": "201ea35719d4b506",
                 "invoices.corrections.get": "aa93da895756b80b",
                 "invoices.get": "790ff02f4ec45336",
                 "invoices.list": "07979ef323922adf",
@@ -28673,9 +28760,9 @@
                 "expenses.list": "444aff51ddc70e0d",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
-                "finance.invoice_payments.list": "65b80aee692019c6",
-                "finance.reconciliations.deactivate": "f6eb291b6388912d",
-                "finance.reconciliations.upsert": "db945c1721c4c983",
+                "finance.invoice_payments.list": "d631e9b4ee478b93",
+                "finance.reconciliations.deactivate": "d1b06a6b9905d69e",
+                "finance.reconciliations.upsert": "201ea35719d4b506",
                 "invoices.corrections.get": "aa93da895756b80b",
                 "invoices.get": "790ff02f4ec45336",
                 "invoices.list": "07979ef323922adf",
@@ -28828,9 +28915,9 @@
                 "expenses.list": "444aff51ddc70e0d",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
-                "finance.invoice_payments.list": "65b80aee692019c6",
-                "finance.reconciliations.deactivate": "f6eb291b6388912d",
-                "finance.reconciliations.upsert": "db945c1721c4c983",
+                "finance.invoice_payments.list": "d631e9b4ee478b93",
+                "finance.reconciliations.deactivate": "d1b06a6b9905d69e",
+                "finance.reconciliations.upsert": "201ea35719d4b506",
                 "invoices.corrections.get": "aa93da895756b80b",
                 "invoices.get": "790ff02f4ec45336",
                 "invoices.list": "07979ef323922adf",
@@ -29594,9 +29681,9 @@
                 "expenses.list": "444aff51ddc70e0d",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
-                "finance.invoice_payments.list": "65b80aee692019c6",
-                "finance.reconciliations.deactivate": "f6eb291b6388912d",
-                "finance.reconciliations.upsert": "db945c1721c4c983",
+                "finance.invoice_payments.list": "d631e9b4ee478b93",
+                "finance.reconciliations.deactivate": "d1b06a6b9905d69e",
+                "finance.reconciliations.upsert": "201ea35719d4b506",
                 "invoices.corrections.get": "aa93da895756b80b",
                 "invoices.get": "790ff02f4ec45336",
                 "invoices.list": "07979ef323922adf",
@@ -29751,9 +29838,9 @@
                 "expenses.list": "444aff51ddc70e0d",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
-                "finance.invoice_payments.list": "65b80aee692019c6",
-                "finance.reconciliations.deactivate": "f6eb291b6388912d",
-                "finance.reconciliations.upsert": "db945c1721c4c983",
+                "finance.invoice_payments.list": "d631e9b4ee478b93",
+                "finance.reconciliations.deactivate": "d1b06a6b9905d69e",
+                "finance.reconciliations.upsert": "201ea35719d4b506",
                 "invoices.corrections.get": "aa93da895756b80b",
                 "invoices.get": "790ff02f4ec45336",
                 "invoices.list": "07979ef323922adf",
@@ -30512,9 +30599,9 @@
                 "expenses.receipts.upload_url": "c53d1f0b0ac10262",
                 "expenses.unapprove": "ae21aae8d227dc06",
                 "expenses.update": "1e517d25f792bde9",
-                "finance.invoice_payments.list": "65b80aee692019c6",
-                "finance.reconciliations.deactivate": "f6eb291b6388912d",
-                "finance.reconciliations.upsert": "db945c1721c4c983",
+                "finance.invoice_payments.list": "d631e9b4ee478b93",
+                "finance.reconciliations.deactivate": "d1b06a6b9905d69e",
+                "finance.reconciliations.upsert": "201ea35719d4b506",
                 "invoices.corrections.get": "aa93da895756b80b",
                 "invoices.get": "790ff02f4ec45336",
                 "invoices.list": "07979ef323922adf",
@@ -30669,9 +30756,9 @@
                 "expenses.receipts.upload_url": "c53d1f0b0ac10262",
                 "expenses.unapprove": "ae21aae8d227dc06",
                 "expenses.update": "1e517d25f792bde9",
-                "finance.invoice_payments.list": "65b80aee692019c6",
-                "finance.reconciliations.deactivate": "f6eb291b6388912d",
-                "finance.reconciliations.upsert": "db945c1721c4c983",
+                "finance.invoice_payments.list": "d631e9b4ee478b93",
+                "finance.reconciliations.deactivate": "d1b06a6b9905d69e",
+                "finance.reconciliations.upsert": "201ea35719d4b506",
                 "invoices.corrections.get": "aa93da895756b80b",
                 "invoices.get": "790ff02f4ec45336",
                 "invoices.list": "07979ef323922adf",
@@ -31471,7 +31558,7 @@
                 "expenses.list": "444aff51ddc70e0d",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
-                "finance.invoice_payments.list": "65b80aee692019c6",
+                "finance.invoice_payments.list": "d631e9b4ee478b93",
                 "invoices.corrections.get": "aa93da895756b80b",
                 "invoices.get": "790ff02f4ec45336",
                 "invoices.list": "07979ef323922adf",
@@ -31626,7 +31713,7 @@
                 "expenses.list": "444aff51ddc70e0d",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
-                "finance.invoice_payments.list": "65b80aee692019c6",
+                "finance.invoice_payments.list": "d631e9b4ee478b93",
                 "invoices.corrections.get": "aa93da895756b80b",
                 "invoices.get": "790ff02f4ec45336",
                 "invoices.list": "07979ef323922adf",
@@ -32357,9 +32444,9 @@
                 "expenses.receipts.upload_url": "c53d1f0b0ac10262",
                 "expenses.unapprove": "ae21aae8d227dc06",
                 "expenses.update": "1e517d25f792bde9",
-                "finance.invoice_payments.list": "65b80aee692019c6",
-                "finance.reconciliations.deactivate": "f6eb291b6388912d",
-                "finance.reconciliations.upsert": "db945c1721c4c983",
+                "finance.invoice_payments.list": "d631e9b4ee478b93",
+                "finance.reconciliations.deactivate": "d1b06a6b9905d69e",
+                "finance.reconciliations.upsert": "201ea35719d4b506",
                 "invoices.add_time": "ee27431f3eebdb38",
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.corrections.get": "aa93da895756b80b",
@@ -32513,9 +32600,9 @@
                 "expenses.receipts.upload_url": "c53d1f0b0ac10262",
                 "expenses.unapprove": "ae21aae8d227dc06",
                 "expenses.update": "1e517d25f792bde9",
-                "finance.invoice_payments.list": "65b80aee692019c6",
-                "finance.reconciliations.deactivate": "f6eb291b6388912d",
-                "finance.reconciliations.upsert": "db945c1721c4c983",
+                "finance.invoice_payments.list": "d631e9b4ee478b93",
+                "finance.reconciliations.deactivate": "d1b06a6b9905d69e",
+                "finance.reconciliations.upsert": "201ea35719d4b506",
                 "invoices.add_time": "ee27431f3eebdb38",
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.corrections.get": "aa93da895756b80b",
@@ -33297,9 +33384,9 @@
                 "expenses.receipts.upload_url": "c53d1f0b0ac10262",
                 "expenses.unapprove": "ae21aae8d227dc06",
                 "expenses.update": "1e517d25f792bde9",
-                "finance.invoice_payments.list": "65b80aee692019c6",
-                "finance.reconciliations.deactivate": "f6eb291b6388912d",
-                "finance.reconciliations.upsert": "db945c1721c4c983",
+                "finance.invoice_payments.list": "d631e9b4ee478b93",
+                "finance.reconciliations.deactivate": "d1b06a6b9905d69e",
+                "finance.reconciliations.upsert": "201ea35719d4b506",
                 "invoices.add_time": "ee27431f3eebdb38",
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.corrections.get": "aa93da895756b80b",
@@ -33452,9 +33539,9 @@
                 "expenses.receipts.upload_url": "c53d1f0b0ac10262",
                 "expenses.unapprove": "ae21aae8d227dc06",
                 "expenses.update": "1e517d25f792bde9",
-                "finance.invoice_payments.list": "65b80aee692019c6",
-                "finance.reconciliations.deactivate": "f6eb291b6388912d",
-                "finance.reconciliations.upsert": "db945c1721c4c983",
+                "finance.invoice_payments.list": "d631e9b4ee478b93",
+                "finance.reconciliations.deactivate": "d1b06a6b9905d69e",
+                "finance.reconciliations.upsert": "201ea35719d4b506",
                 "invoices.add_time": "ee27431f3eebdb38",
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.corrections.get": "aa93da895756b80b",
@@ -35025,9 +35112,9 @@
                 "expenses.receipts.upload_url": "c53d1f0b0ac10262",
                 "expenses.unapprove": "ae21aae8d227dc06",
                 "expenses.update": "1e517d25f792bde9",
-                "finance.invoice_payments.list": "65b80aee692019c6",
-                "finance.reconciliations.deactivate": "f6eb291b6388912d",
-                "finance.reconciliations.upsert": "db945c1721c4c983",
+                "finance.invoice_payments.list": "d631e9b4ee478b93",
+                "finance.reconciliations.deactivate": "d1b06a6b9905d69e",
+                "finance.reconciliations.upsert": "201ea35719d4b506",
                 "invoices.add_time": "ee27431f3eebdb38",
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.corrections.get": "aa93da895756b80b",
@@ -35183,9 +35270,9 @@
                 "expenses.receipts.upload_url": "c53d1f0b0ac10262",
                 "expenses.unapprove": "ae21aae8d227dc06",
                 "expenses.update": "1e517d25f792bde9",
-                "finance.invoice_payments.list": "65b80aee692019c6",
-                "finance.reconciliations.deactivate": "f6eb291b6388912d",
-                "finance.reconciliations.upsert": "db945c1721c4c983",
+                "finance.invoice_payments.list": "d631e9b4ee478b93",
+                "finance.reconciliations.deactivate": "d1b06a6b9905d69e",
+                "finance.reconciliations.upsert": "201ea35719d4b506",
                 "invoices.add_time": "ee27431f3eebdb38",
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.corrections.get": "aa93da895756b80b",

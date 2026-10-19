@@ -2247,6 +2247,8 @@ export interface components {
                 | 'canceled';
             amount: number;
             refunded_amount: number;
+            /** @description While disputed, what the processor's dispute holds back (the whole amount when the processor did not say); null for any other status. */
+            disputed_amount: number | null;
             /** @description amount less refunded_amount, never below zero. */
             net_amount: number;
             /** @description What the active allocations cover. */
@@ -2327,6 +2329,15 @@ export interface components {
             reconciled_on: string | null;
             /** @description Whether it counts toward the payment's reconciled amount. An inactive allocation is kept with its history. */
             is_active: boolean;
+            /** @description Active and flagged because the payment processor refunded or disputed the payment after this allocation was written. Cleared by the next write that fits the payment, or by deactivating it. */
+            needs_review: boolean;
+            /**
+             * @description Why it was last flagged.
+             * @enum {string|null}
+             */
+            review_reason: 'processor_refund' | 'processor_dispute' | null;
+            /** Format: date-time */
+            review_flagged_at: string | null;
             /** Format: date-time */
             created_at: string | null;
             /** Format: date-time */
