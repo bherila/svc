@@ -605,12 +605,28 @@ exactly the statuses and fields `payments.record` does. Browser URLs remain the 
 ### Correcting a recorded payment
 
 `payments.correct` corrects a payment's **descriptive** fields - `method`,
-`reference`, `notes` and `received_on` - and nothing else. It is gated exactly as
-`payments.record` is: the `payments:record` scope, an owner/admin, both
-`AGENT_API_WRITES_ENABLED` and `AGENT_API_PAYMENT_WRITES_ENABLED`, and the MCP
-kill switch, each rechecked before a receipt is replayed. REST is
+`reference`, `notes` and `received_on` - and nothing else. It is gated as
+`payments.set_status` and `payments.refund` are: the `payments:record` scope
+together with `payments:read`, which supplies the version it checks, an
+owner/admin, both `AGENT_API_WRITES_ENABLED` and
+`AGENT_API_PAYMENT_WRITES_ENABLED`, and the MCP kill switch, each rechecked
+before a receipt is replayed. REST is
 `PATCH /api/v1/workspaces/{workspace}/payments/{payment}` with the key in
 `Idempotency-Key`.
+
+**Grant change (#473).** Until #473, `payments.correct` needed only
+`payments:record`. It now also needs `payments:read`. An existing OAuth client,
+dynamic registration, personal API token or operator-issued agent token that holds
+`payments:record` without `payments:read` keeps every other payment tool, but
+`payments.correct` disappears from its `tools/list` (`context.get` lists it as
+withheld, `scope_not_granted`) and the REST route answers 403 with
+`error="insufficient_scope", scope="payments:read"`. Nothing is migrated
+silently: re-authorize the client requesting both scopes, or issue a
+replacement token with both (`svc:auth:issue-agent-token ... payments:record
+payments:read`) and revoke the old one. A client that could already call
+`payments.set_status` or `payments.refund` holds both and is unaffected; in
+practice every client that corrects a payment already reads it first with
+`payments.list` and so already holds `payments:read`.
 
 - `expected_version` is required: the `version` a `payments.list` row carries.
   Any write to the payment - a status change, a refund, another correction -

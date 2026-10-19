@@ -1061,7 +1061,7 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        /** @description Owner/admin correction of a received payment's descriptive fields: method, reference, notes and received_on, at least one of which must be given. Requires confirm: true, the version from payments.list and a reason, which is kept in the client history. Omitted fields are unchanged; an explicit null reference or note clears it. A stale version is refused with 409 and a correction that changes nothing records nothing. Amount, currency, status, refunds, the invoice and processor fields cannot be changed. Never initiates a charge or a refund. Requires both outer workflow and payment write flags. */
+        /** @description Owner/admin correction of a received payment's descriptive fields: method, reference, notes and received_on, at least one of which must be given. Requires confirm: true, the version from payments.list (hence payments:read as well as payments:record) and a reason, which is kept in the client history. Omitted fields are unchanged; an explicit null reference or note clears it. A stale version is refused with 409 and a correction that changes nothing records nothing. Amount, currency, status, refunds, the invoice and processor fields cannot be changed. Never initiates a charge or a refund. Requires both outer workflow and payment write flags. */
         patch: operations['payments.correct'];
         trace?: never;
     };

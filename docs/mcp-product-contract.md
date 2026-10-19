@@ -46,7 +46,7 @@ delivery attached. `payments.record` requires `payments:record`, workspace owner
 permission, and both `AGENT_API_WRITES_ENABLED` and
 `AGENT_API_PAYMENT_WRITES_ENABLED`; the payment flag defaults to false. It records
 money already received and cannot initiate a charge. `payments.correct` carries the
-same gates and corrects only a recorded payment's method, reference or received
+same gates, plus `payments:read` for the version it checks (#473), and corrects only a recorded payment's method, reference or received
 date, with its version and a reason. There is no generic CRUD tool.
 
 All resources use public UUIDs. Lists use cursors with a maximum page size of 100.

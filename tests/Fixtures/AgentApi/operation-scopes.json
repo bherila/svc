@@ -938,8 +938,10 @@
     },
     "payments.correct": {
         "scopes": [
-            "payments:record"
+            "payments:record",
+            "payments:read"
         ],
+        "scope_rule": "all",
         "flags": [
             "agent.writes.payments",
             "mcp",
