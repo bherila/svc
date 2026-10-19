@@ -17,17 +17,16 @@ use Symfony\Component\HttpFoundation\Response;
  */
 final class ThrottleOuterAgentRequests
 {
-    public function __construct(
-        private readonly InternalApiDispatch $dispatch,
-        private readonly ThrottleRequests $throttle,
-    ) {}
+    public function __construct(private readonly InternalApiDispatch $dispatch) {}
 
-    public function handle(Request $request, Closure $next, int|string $maxAttempts = 60, float|int|string $decayMinutes = 1, string $prefix = ''): Response
+    /** The parameters arrive as route text, `throttle`'s own: attempts, minutes, prefix. */
+    public function handle(Request $request, Closure $next, string $maxAttempts = '60', string $decayMinutes = '1', string $prefix = ''): Response
     {
         if ($this->dispatch->active()) {
             return $next($request);
         }
 
-        return $this->throttle->handle($request, $next, $maxAttempts, $decayMinutes, $prefix);
+        // Resolved per request, so a test that swaps the throttle out swaps it here too.
+        return app(ThrottleRequests::class)->handle($request, $next, $maxAttempts, (float) $decayMinutes, $prefix);
     }
 }
