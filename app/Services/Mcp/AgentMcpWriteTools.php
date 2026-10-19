@@ -2,19 +2,15 @@
 
 namespace App\Services\Mcp;
 
-use App\Models\ClientInvoice;
 use App\Models\ClientInvoicePayment;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\AgentApi\AgentPaymentReadService;
-use App\Services\AgentApi\AgentReadService;
 use App\Services\AgentApi\ChangeManualPaymentAction;
 use App\Services\AgentApi\CorrectPaymentAction;
-use App\Services\AgentApi\IssueInvoiceAction;
 use App\Services\AgentApi\RecordPaymentAction;
 use App\Services\Mcp\Context\McpAccountContextResolver;
 use App\Services\Mcp\Context\McpRequestContext;
-use App\Support\AgentApi\Presenters\AgentInvoicePresenter;
 use App\Support\AgentApi\ReadView;
 use App\Support\Billing\InvoiceEmailDraft;
 use App\Support\Billing\ReceivedPaymentData;
@@ -568,38 +564,24 @@ final class AgentMcpWriteTools
         #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key,
         ?array $payment = null,
     ): array {
-        $context = $this->workspaceContext($workspace_id, 'billing:deliver');
-        $workspace = $this->workspace($context);
         $flags = app(McpFeatureFlags::class);
         // A payment folded into issue answers to the same kill switch as the
-        // payments.record tool; the action separately enforces its cutover,
+        // payments.record tool; the route separately enforces its cutover,
         // scope and role, and refuses before anything is written.
         if ($payment !== null && ! $flags->enabledFor('payments.record', McpFeatureFlags::WRITE)) {
             throw new ToolCallException('Recording payments is not enabled for agents.');
         }
-        $actor = User::query()->findOrFail($context->principal->subject->id);
-        // `payment` joins the body only when sent, so a plain issue hashes
-        // exactly as it did through the REST route before this migration.
-        $body = compact('expected_version', 'confirm') + ($payment !== null ? ['payment' => $payment] : []);
-        $ids = app(IssueInvoiceAction::class)->run(
-            $actor,
-            $workspace,
-            $context->principal->clientId,
-            $idempotency_key,
-            $invoice_id,
-            $body,
-            $context->principal->hasScope('payments:record'),
-        );
-        // A token that may read invoices gets the invoice exactly as
-        // invoices.get returns it. It is that read, so it answers to the read's
-        // scope and kill switch; otherwise the plain mutation shape is returned.
-        if ($context->principal->hasScope('billing:read')
-            && $flags->enabledFor('invoices.get', McpFeatureFlags::READ)) {
-            return ['data' => app(AgentReadService::class)->invoice($context->principal->subject, $workspace, $ids[0])];
-        }
-        $invoice = ClientInvoice::query()->where('workspace_id', $workspace->id)->where('public_id', $ids[0])->firstOrFail();
 
-        return ['data' => app(AgentInvoicePresenter::class)->mutation($workspace, $invoice)];
+        // `payment` joins the body only when sent, so a plain issue hashes
+        // exactly as it always has. The read view is invoices.get's, so it
+        // answers to that tool's kill switch here and to its scope in the route.
+        return $this->rest->call(
+            'invoices.issue',
+            ['workspace' => $workspace_id, 'invoice' => $invoice_id],
+            compact('expected_version', 'confirm') + ($payment !== null ? ['payment' => $payment] : []),
+            $idempotency_key,
+            $flags->enabledFor('invoices.get', McpFeatureFlags::READ) ? [ReadView::PARAMETER => ReadView::READ] : [],
+        );
     }
 
     /** @param list<string> $recipients
@@ -690,16 +672,6 @@ final class AgentMcpWriteTools
         $context = $this->requestContext ?? throw new \LogicException('MCP write tools require a request context.');
         if (! $context->principal->hasScope($scope)) {
             throw new ToolCallException('This connection lacks the required permission.');
-        }
-
-        return $context;
-    }
-
-    private function workspaceContext(string $workspaceId, string $scope): McpRequestContext
-    {
-        $context = $this->accounts->resolve($this->context($scope), $workspaceId);
-        if (! $context->workspace instanceof Workspace) {
-            throw new \LogicException('MCP write tools require a workspace context.');
         }
 
         return $context;

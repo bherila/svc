@@ -10,6 +10,7 @@ use App\Models\Workspace;
 use App\Services\AgentApi\AgentInvoiceOperations;
 use App\Services\AgentApi\AgentMutationContextFactory;
 use App\Services\AgentApi\AgentMutationExecutor;
+use App\Services\AgentApi\AgentReadService;
 use App\Services\AgentApi\IssueInvoiceAction;
 use App\Services\Authorization\AgentAccess;
 use App\Services\Authorization\AgentTokenScopes;
@@ -20,6 +21,7 @@ use App\Support\AgentApi\AgentApiScopes;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\AgentApi\ExplicitConfirmation;
 use App\Support\AgentApi\Presenters\AgentInvoicePresenter;
+use App\Support\AgentApi\ReadView;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
@@ -130,18 +132,26 @@ final class AgentInvoiceMutationController extends Controller
         return response()->json(['data' => $presenter->mutation($workspace, $record)]);
     }
 
-    public function issue(Request $request, Workspace $workspace, string $invoice, IssueInvoiceAction $issue, AgentInvoicePresenter $presenter, AgentMutationContextFactory $contexts, AgentTokenScopes $scopes): JsonResponse
+    public function issue(Request $request, Workspace $workspace, string $invoice, IssueInvoiceAction $issue, AgentInvoicePresenter $presenter, AgentMutationContextFactory $contexts, AgentTokenScopes $scopes, AgentReadService $reads): JsonResponse
     {
         $context = $contexts->from($request);
+        $readView = ReadView::requested($request);
         $ids = $issue->run(
             $context->user,
             $workspace,
             $context->oauthClientId,
             $context->idempotencyKey,
             $invoice,
-            $request->all(),
+            ReadView::payload($request),
             $scopes->allows($request, AgentApiScopes::PAYMENTS_RECORD),
         );
+        // The invoice exactly as invoices.get presents it, for a caller who may read invoices.
+        if ($readView && $scopes->allows($request, AgentApiScopes::BILLING_READ)) {
+            $reader = $request->user();
+            abort_unless($reader instanceof User || $reader instanceof AgentPrincipal, 401);
+
+            return response()->json(['data' => $reads->invoice($reader, $workspace, $ids[0] ?? '')]);
+        }
         $record = $this->findInvoice($workspace, $ids[0] ?? null);
 
         return response()->json(['data' => $presenter->mutation($workspace, $record)]);
