@@ -183,13 +183,14 @@ final class SquareSnapshotMapper
      *
      * Null when the order has more tenders than the reconciler accepts: the
      * ids stay unresolved rather than recorded short. A tender list that is
-     * not a list is unreadable, as the reconciler finds it, and the sync
-     * fails and retries rather than recording it empty.
+     * not a list, or a tender without a readable id, is unreadable, as the
+     * reconciler finds it, and the sync fails and retries rather than
+     * recording it short or empty.
      *
      * @param  array<mixed>  $order
      * @return list<string>|null
      *
-     * @throws SquareRequestFailed when the tenders are not a list
+     * @throws SquareRequestFailed when the tenders are not a list of readable tenders
      */
     public function paymentIds(array $order): ?array
     {
@@ -202,16 +203,18 @@ final class SquareSnapshotMapper
             return null;
         }
         foreach ($tenders as $tender) {
-            if (! is_array($tender)) {
-                continue;
+            // As the reconciler reads them: a tender that is not one, or has
+            // no readable id, makes the order unreadable rather than shorter.
+            $id = is_array($tender) ? (self::id($tender['payment_id'] ?? null) ?? self::id($tender['id'] ?? null)) : null;
+            if ($id === null) {
+                throw SquareRequestFailed::unreadable();
             }
             $card = $tender['card_details'] ?? [];
             $state = is_array($card) ? ($card['status'] ?? self::CAPTURED) : self::CAPTURED;
             if ($state !== self::CAPTURED) {
                 continue;
             }
-            $id = self::id($tender['payment_id'] ?? null) ?? self::id($tender['id'] ?? null);
-            if ($id !== null && ! in_array($id, $ids, true)) {
+            if (! in_array($id, $ids, true)) {
                 $ids[] = $id;
             }
         }

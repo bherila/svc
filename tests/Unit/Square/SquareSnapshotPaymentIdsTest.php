@@ -24,8 +24,6 @@ final class SquareSnapshotPaymentIdsTest extends TestCase
             ['id' => 'tender_fixture_1', 'payment_id' => 'pay_fixture_1'],
             ['id' => 'tender_fixture_6', 'payment_id' => 'pay_fixture_6', 'card_details' => ['entry_method' => 'ON_FILE']],
             ['id' => 'tender_fixture_7', 'payment_id' => 'pay_fixture_7', 'card_details' => 'unreadable'],
-            ['id' => 'bad id with spaces'],
-            'not a tender',
         ]];
 
         $this->assertSame(['pay_fixture_1', 'pay_fixture_2', 'pay_fixture_6', 'pay_fixture_7'], (new SquareSnapshotMapper(new SquarePresenter))->paymentIds($order));
@@ -46,7 +44,7 @@ final class SquareSnapshotPaymentIdsTest extends TestCase
         $tenders[] = ['id' => 'tender_101', 'payment_id' => 'pay_101'];
         $this->assertNull($mapper->paymentIds(['tenders' => $tenders]));
         $this->assertSame([], $mapper->paymentIds([]), 'An order with no tenders has no payments.');
-        foreach (['none', ['first' => ['id' => 'pay_1']]] as $malformed) {
+        foreach (['none', ['first' => ['id' => 'pay_1']], ['not a tender'], [['id' => 'bad id with spaces']], [['type' => 'CARD']], [['id' => 'pay_1'], 'not a tender']] as $malformed) {
             try {
                 $mapper->paymentIds(['tenders' => $malformed]);
                 $this->fail('A malformed tender list must not resolve.');
