@@ -59,8 +59,11 @@ final class SquareSnapshotPaymentIdsTest extends TestCase
         $this->assertNotNull($ids);
         $this->assertCount(100, $ids);
         $this->assertSame('pay_100', $ids[99]);
+        $this->assertFalse($mapper->exceedsTenderBound(['tenders' => $tenders]));
         $tenders[] = ['id' => 'tender_101', 'payment_id' => 'pay_101'];
         $this->assertNull($mapper->paymentIds(['tenders' => $tenders]));
+        $this->assertTrue($mapper->exceedsTenderBound(['tenders' => $tenders]));
+        $this->assertFalse($mapper->exceedsTenderBound(['tenders' => 'none']));
         $this->assertSame([], $mapper->paymentIds([]), 'An order with no tenders has no payments.');
         foreach (['none', ['first' => ['id' => 'pay_1']], ['not a tender'], [['id' => 'bad id with spaces']], [['type' => 'CARD']], [['id' => 'pay_1'], 'not a tender']] as $malformed) {
             try {

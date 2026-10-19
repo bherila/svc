@@ -359,6 +359,24 @@ final class SquareBillingAuditTest extends TestCase
         $this->assertFalse(app(SquareBillingAudit::class)->report($workspace)['complete']);
     }
 
+    public function test_a_sync_that_finishes_while_the_mirror_is_read_leaves_the_audit_incomplete(): void
+    {
+        [$workspace] = $this->fixture();
+        $running = SquareSyncRun::query()->create(['workspace_id' => $workspace->id, 'trigger' => SquareSyncRun::TRIGGER_SCHEDULE, 'status' => SquareSyncRun::RUNNING, 'api_version' => '2026-09-16', 'started_at' => '2030-03-20 11:45:00']);
+        // It completes after the first read of the newest run, mid-load.
+        $finished = false;
+        DB::listen(function (QueryExecuted $query) use ($running, &$finished): void {
+            if (! $finished && str_contains($query->sql, 'client_agreements')) {
+                $finished = true;
+                DB::table('square_sync_runs')->where('id', $running->id)->update(['status' => SquareSyncRun::COMPLETED, 'finished_at' => '2030-03-20 11:46:00']);
+            }
+        });
+
+        $this->assertFalse(app(SquareBillingAudit::class)->report($workspace)['complete']);
+        $this->assertTrue($finished);
+        $this->assertTrue(app(SquareBillingAudit::class)->report($workspace)['complete'], 'The next read is of one generation.');
+    }
+
     public function test_an_imported_annual_series_mirrors_its_amount_once_per_cycle(): void
     {
         [$workspace, $owner] = $this->fixture();

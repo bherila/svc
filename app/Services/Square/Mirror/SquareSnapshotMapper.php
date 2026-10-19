@@ -198,6 +198,17 @@ final class SquareSnapshotMapper
     }
 
     /**
+     * Whether an order has more tenders than the reconciler accepts: it can
+     * never be read.
+     *
+     * @param  array<mixed>  $order
+     */
+    public function exceedsTenderBound(array $order): bool
+    {
+        return is_array($order['tenders'] ?? null) && count($order['tenders']) > self::MAX_TENDERS;
+    }
+
+    /**
      * Whether an order holds a card tender that is still only authorized.
      *
      * @param  array<mixed>  $order

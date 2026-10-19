@@ -45,6 +45,10 @@ final class SquareBillingAuditRepository
 
     public function load(Workspace $workspace, string $today): SquareBillingAuditFacts
     {
+        // The newest run is read before and after the mirror: only when it is
+        // the same completed, untruncated run both times were the reads all
+        // of one generation.
+        $before = $this->newestRun($workspace);
         $agreements = $this->agreements($workspace);
         $complete = count($agreements) <= self::MAX_AGREEMENTS;
         $agreements = array_slice($agreements, 0, self::MAX_AGREEMENTS);
@@ -75,10 +79,6 @@ final class SquareBillingAuditRepository
             ->get($columns);
         $reachComplete = $reach->count() <= self::MAX_INVOICES;
         $complete = $complete && $seriesComplete && $reachComplete;
-        // The newest run must be the complete one: a newer run that is still
-        // going, or failed, has left the mirror between generations.
-        $lastSync = SquareSyncRun::query()->where('workspace_id', $workspace->id)->orderByDesc('id')->first(['status', 'truncated']);
-        $mirrorComplete = $lastSync !== null && $lastSync->status === SquareSyncRun::COMPLETED && ! $lastSync->truncated;
         $snapshots = [];
         foreach ([...$members->all(), ...$reach->take(self::MAX_INVOICES)->all()] as $snapshot) {
             $snapshots[$snapshot->square_invoice_id] ??= $snapshot;
@@ -153,6 +153,10 @@ final class SquareBillingAuditRepository
             );
         }
 
+        $after = $this->newestRun($workspace);
+        $mirrorComplete = $before !== null && $after !== null && $before->id === $after->id
+            && $before->status === SquareSyncRun::COMPLETED && $after->status === SquareSyncRun::COMPLETED && ! $after->truncated;
+
         return new SquareBillingAuditFacts(
             $today,
             $agreements,
@@ -165,6 +169,12 @@ final class SquareBillingAuditRepository
             $reachComplete,
             $mirrorComplete,
         );
+    }
+
+    /** A newer run that is still going, or failed, leaves the mirror between generations. */
+    private function newestRun(Workspace $workspace): ?SquareSyncRun
+    {
+        return SquareSyncRun::query()->where('workspace_id', $workspace->id)->orderByDesc('id')->first(['id', 'status', 'truncated']);
     }
 
     /** @return list<SquareAuditAgreement> */
