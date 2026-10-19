@@ -1014,7 +1014,12 @@ final class AgentRestDocumentation
                         'explode' => true,
                     ],
                     self::query('collectible', ['type' => 'boolean']),
-                    self::query('overdue', ['type' => 'boolean']),
+                    [
+                        'name' => 'overdue',
+                        'in' => 'query',
+                        'description' => 'Refused (422) together with updated_since or watermark: an invoice becomes overdue as the date passes, not when it changes, so a change feed cannot filter on it.',
+                        'schema' => ['type' => 'boolean'],
+                    ],
                     'UpdatedSince',
                     'Watermark',
                 ],

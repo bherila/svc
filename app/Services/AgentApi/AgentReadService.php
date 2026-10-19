@@ -37,6 +37,7 @@ use Closure;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Tenant-scoped, allowlisted read workflows shared by Agent REST and MCP.
@@ -326,6 +327,12 @@ final class AgentReadService
     public function invoices(User|AgentPrincipal $user, Workspace $workspace, ?string $status, int $limit, ?string $cursor, ?InvoiceListFilters $filters = null, ?ChangeWindow $window = null): array
     {
         $this->requireWorkspace($user, $workspace);
+        // An invoice becomes overdue when the workspace's day passes its due
+        // date, not when the row is written, so a change feed filtered on it
+        // would silently drop every invoice that tipped over between passes.
+        if ($window !== null && $window->requested() && array_key_exists('overdue', $filters === null ? [] : $filters->values)) {
+            throw ValidationException::withMessages(['overdue' => 'overdue changes with the date, not with updated_at, so it cannot filter a change-feed request (updated_since or watermark); filter the synced invoices by due_date instead.']);
+        }
         $query = $this->invoiceQuery($user, $workspace)->with(['clientCompany' => fn ($companies) => $companies->where('workspace_id', $workspace->id)]);
         if ($status !== null && $status !== '') {
             $query->where('status', $status);

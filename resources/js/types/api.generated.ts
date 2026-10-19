@@ -6918,6 +6918,7 @@ export interface operations {
                     to: string;
                 };
                 collectible?: boolean;
+                /** @description Refused (422) together with updated_since or watermark: an invoice becomes overdue as the date passes, not when it changes, so a change feed cannot filter on it. */
                 overdue?: boolean;
                 /** @description Only records changed at or after this time (inclusive): the previous pass's watermark. Naming updated_since or watermark switches a listing that otherwise pages to change order - newest change first inside a snapshot watermark returned in meta - and a cursor from one order is refused in the other. */
                 updated_since?: components['parameters']['UpdatedSince'];

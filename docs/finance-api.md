@@ -135,6 +135,10 @@ The finance system's other reads take the same window: `invoices.list`
 (`billing:read`) and `clients.list` (`clients:read`) page by id as before, and
 switch to this change order - with `meta.watermark` - when a request names
 `updated_since` or `watermark`. A cursor from one order is refused in the other.
+`invoices.list` refuses `overdue` on a change-feed request (`422`): an invoice
+becomes overdue as the workspace's date passes, not when its row changes, so a
+feed filtered on it would drop invoices that tip over between passes. Sync
+without it and judge due dates locally.
 
 `PUT /api/v1/workspaces/{workspace}/invoice-payments/{payment}/reconciliations/{external-system}/{transaction-uuid}` (`finance.reconciliations.upsert`)
 

@@ -88,6 +88,25 @@ final class AgentChangeFeedListTest extends TestCase
         $this->getJson("/api/v1/workspaces/{$workspace->public_id}/invoices?updated_since=2026-01-01T00:00:00Z")->assertNotFound();
     }
 
+    public function test_invoices_list_refuses_overdue_on_a_change_feed_request(): void
+    {
+        CarbonImmutable::setTestNow('2026-10-01 12:00:00');
+        [$owner, $workspace] = $this->workspace('Overdue feed');
+        $this->actingAsMcp($owner, [AgentApiScopes::BILLING_READ]);
+        $path = "/api/v1/workspaces/{$workspace->public_id}/invoices?";
+
+        foreach ([['updated_since' => '2026-01-01T00:00:00Z'], ['watermark' => '2026-10-01T12:00:00Z']] as $window) {
+            foreach (['true', 'false'] as $overdue) {
+                $this->getJson($path.http_build_query([...$window, 'overdue' => $overdue]))
+                    ->assertUnprocessable()
+                    ->assertJsonValidationErrors('overdue');
+            }
+        }
+        // Numbered by id it filters as before, and the feed takes the other filters.
+        $this->getJson($path.http_build_query(['overdue' => 'true']))->assertOk();
+        $this->getJson($path.http_build_query(['updated_since' => '2026-01-01T00:00:00Z', 'collectible' => 'true']))->assertOk();
+    }
+
     public function test_clients_list_pages_changes_since_a_time_for_managers_only(): void
     {
         CarbonImmutable::setTestNow('2026-10-01 12:00:00');
