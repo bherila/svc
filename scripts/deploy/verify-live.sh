@@ -2,7 +2,8 @@
 #
 # Runner-side verification performed before the shared atomic action commits a
 # release as healthy. It verifies the rendered home page, its manifest-derived hashed
-# JS and CSS assets, production OAuth redirect, protected resource discovery, authentication, operation scopes and MCP session
+# JS and CSS assets, production OAuth redirect, exactly one canonical scheduler cron line,
+# protected resource discovery, authentication, operation scopes and MCP session
 # isolation. Smoke credentials are short-lived, data-blind and always revoked.
 set -euo pipefail
 
@@ -39,6 +40,12 @@ redirect_url=$(curl --fail --silent --show-error --connect-timeout 10 --max-time
     --output /dev/null --write-out '%{redirect_url}' \
     "$DEPLOY_SITE_URL/oauth/redirect")
 printf '%s' "$redirect_url" | node scripts/deploy/verify-oauth-redirect.mjs
+
+# The action has installed SVC's cron by now. The scheduler is SVC's only background runner, so
+# the release is not healthy unless there is exactly one canonical scheduler line.
+# shellcheck disable=SC2029 # The arguments expand on the runner and are escaped for remote Bash.
+ssh "$DEPLOY_SSH_TARGET" "bash -s -- $(printf '%q ' "$DEPLOY_STABLE_DIR" "$DEPLOY_PHP_BINARY")" \
+    <scripts/deploy/cron-audit.sh
 
 remote_artisan="cd ~/$DEPLOY_STABLE_DIR && $DEPLOY_PHP_BINARY artisan svc:mcp:deploy-smoke-credentials"
 cleanup() {

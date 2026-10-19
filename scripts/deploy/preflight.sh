@@ -70,4 +70,52 @@ done
 require_private_file "$key_root/oauth-private.key" oauth-private.key
 require_private_file "$key_root/oauth-public.key" oauth-public.key
 
+# The shared action pauses SVC's cron lines before maintenance and replaces them after serving,
+# but it recognises a line only by `cd "$HOME/svc-laravel" ` (or the bare or expanded-home
+# spelling). An SVC line spelled any other way (~/svc-laravel, a release path, a job id alone)
+# would keep running through the migration and survive beside the canonical line, so refuse it
+# now, before anything changes. The classifier matches scripts/deploy/cron-audit.sh. Lines are
+# never printed.
+command -v crontab >/dev/null 2>&1 || fail 'crontab is unavailable'
+cron_work=$(mktemp -d)
+trap 'rm -rf -- "$cron_work"' EXIT
+if ! crontab -l >"$cron_work/current" 2>"$cron_work/error"; then
+    grep -qi 'no crontab for' "$cron_work/error" || fail 'the account crontab could not be read'
+    : >"$cron_work/current"
+fi
+# shellcheck disable=SC2016 # The literal spellings keep $HOME unexpanded, as cron sees it.
+unmanaged_cron=$(LC_ALL=C awk -v app="$stable_dir" \
+    -v quoted_literal='cd "$HOME/'"$stable_dir"'" ' -v bare_literal='cd $HOME/'"$stable_dir"' ' \
+    -v quoted_expanded="cd \"$HOME/$stable_dir\" " -v bare_expanded="cd $HOME/$stable_dir " '
+    function component(character) { return character != "" && character ~ /[A-Za-z0-9._-]/ }
+    function names_app(line,   offset, relative, start) {
+        offset = 1
+        while ((relative = index(substr(line, offset), app)) != 0) {
+            start = offset + relative - 1
+            if (!component(substr(line, start - 1, 1)) && !component(substr(line, start + length(app), 1))) return 1
+            offset = start + 1
+        }
+        return 0
+    }
+    # The scheduler job id anywhere it ends at an id boundary: trailing spaces or an annotation
+    # after it must not hide a legacy scheduler.
+    function has_job(line,   tag, offset, relative, start) {
+        tag = "JOB:" app "-scheduler"
+        offset = 1
+        while ((relative = index(substr(line, offset), tag)) != 0) {
+            start = offset + relative - 1
+            if (!component(substr(line, start + length(tag), 1))) return 1
+            offset = start + 1
+        }
+        return 0
+    }
+    /^[[:space:]]*(#|$)/ { next }
+    /^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*[[:space:]]*=/ { next }
+    names_app($0) || has_job($0) {
+        if (!(index($0, quoted_literal) || index($0, bare_literal) || index($0, quoted_expanded) || index($0, bare_expanded))) unmanaged++
+    }
+    END { print unmanaged + 0 }
+' "$cron_work/current")
+test "$unmanaged_cron" = 0 || fail 'an SVC cron line is spelled so the deploy cannot pause or replace it'
+
 echo 'SVC static deployment prerequisites passed (metadata only).'
