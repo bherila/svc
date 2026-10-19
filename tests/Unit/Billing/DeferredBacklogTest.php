@@ -75,6 +75,7 @@ final class DeferredBacklogTest extends TestCase
         $this->assertNull($unread->carriedHours());
         $this->assertSame(0.0, $unread->hours());
         $this->assertFalse($unread->hasBacklog());
+        $this->assertSame(0, $unread->amount);
 
         $unpriced = DeferredBacklog::calculate($this->agreement(null), CarbonImmutable::parse('2026-03-31'), true, [], [], [], 30);
         $this->assertSame(DeferredBacklogIssue::Unpriced, $unpriced->issue);

@@ -161,6 +161,9 @@ final class DeferredTerminationPricingTest extends TestCase
         $this->assertSame(540, DeferredBacklogReadService::carriedMinutesOf($ledger, CarbonImmutable::parse('2026-05-01')));
         $this->assertSame(0, DeferredBacklogReadService::carriedMinutesOf($ledger, CarbonImmutable::parse('2026-01-31')));
         $this->assertSame(1, DeferredBacklogReadService::carriedMinutesOf([$month('2026-03', 0.0084)], $march));
+        // To the nearest minute, as termination carries it: neither up nor down.
+        $this->assertSame(0, DeferredBacklogReadService::carriedMinutesOf([$month('2026-03', 0.0081)], $march));
+        $this->assertSame(1, DeferredBacklogReadService::carriedMinutesOf([$month('2026-03', 0.0166)], $march));
     }
 
     public function test_lines_that_together_exceed_the_integer_range_refuse_rather_than_becoming_a_float(): void
