@@ -161,15 +161,18 @@ final class SquareSnapshotMapper
 
     /**
      * Whether a mirrored invoice's payment ids are resolved for what it is
-     * now. An invoice with nothing paid, or no order to read, has none to
-     * resolve; one whose paid amount is unknown may hold a payment when its
-     * status says so, and is read like any other.
+     * now. An invoice with nothing paid has none to resolve; one whose paid
+     * amount is unknown may hold a payment when its status says so, and is
+     * read like any other; and one that may hold a payment but has no order
+     * cannot be resolved at all.
      */
     public static function paymentIdsCurrent(string $status, ?int $paidAmount, ?string $orderId, ?string $basis): bool
     {
         $mayHoldPayment = $paidAmount === null ? in_array($status, self::PAYMENT_STATUSES, true) : $paidAmount > 0;
 
-        return $orderId === null || ! $mayHoldPayment || $basis === self::paymentIdsBasis($status, $paidAmount);
+        // Without an order there is nothing to read the payments from, so one
+        // that may hold a payment stays unresolved rather than counted empty.
+        return ! $mayHoldPayment || ($orderId !== null && $basis === self::paymentIdsBasis($status, $paidAmount));
     }
 
     /**

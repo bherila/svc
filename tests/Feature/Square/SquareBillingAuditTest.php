@@ -16,6 +16,7 @@ use App\Models\Workspace;
 use App\Services\Square\Audit\SquareBillingAudit;
 use App\Services\Square\Audit\SquareBillingAuditRepository;
 use App\Services\Square\Mirror\SquareMirrorRepository;
+use App\Services\Square\Mirror\SquareSnapshotMapper;
 use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -290,6 +291,28 @@ final class SquareBillingAuditTest extends TestCase
         $this->assertSame(SquareBillingAuditRepository::MAX_PAYMENT_IDS / 500, $queries);
     }
 
+    public function test_only_payments_the_audit_checks_spend_the_bound(): void
+    {
+        [$workspace] = $this->fixture();
+        $this->snapshot($workspace, 'inv_audit_1', 1, '2030-01-15', 'PAID', ['paid_amount' => 12_345, 'payment_ids' => ['pay_in_reach']]);
+        // Newer, and out of reach: an unmapped customer's one-off invoice.
+        $ids = array_map(static fn (int $index): string => 'pay_stranger_'.$index, range(1, SquareBillingAuditRepository::MAX_PAYMENT_IDS));
+        $this->snapshot($workspace, 'inv_stranger', null, '2030-02-15', 'UNPAID', ['series_key' => null, 'invoice_number' => '000500', 'square_customer_id' => 'cust_audit_stranger', 'paid_amount' => 100, 'payment_ids' => $ids]);
+
+        $report = app(SquareBillingAudit::class)->report($workspace);
+
+        $this->assertTrue($report['complete']);
+        $this->assertSame(['pay_in_reach'], array_column($report['unmatched_payments']['payments'], 'payment_id'));
+    }
+
+    public function test_a_paid_invoice_without_an_order_cannot_be_resolved(): void
+    {
+        [$workspace] = $this->fixture();
+        $this->snapshot($workspace, 'inv_audit_1', 1, '2030-01-15', 'PAID', ['paid_amount' => 12_345]);
+
+        $this->assertFalse(app(SquareBillingAudit::class)->report($workspace)['complete']);
+    }
+
     public function test_an_imported_annual_series_mirrors_its_amount_once_per_cycle(): void
     {
         [$workspace, $owner] = $this->fixture();
@@ -326,9 +349,17 @@ final class SquareBillingAuditTest extends TestCase
         return [$workspace, $owner, $company, $agreement];
     }
 
-    /** @param  array<string, mixed>  $overrides */
+    /**
+     * A mirrored invoice. Given payment ids, they are resolved for its state
+     * unless the overrides say otherwise.
+     *
+     * @param  array<string, mixed>  $overrides
+     */
     private function snapshot(Workspace $workspace, string $id, ?int $occurrence, string $due, string $status, array $overrides = []): void
     {
+        if (array_key_exists('payment_ids', $overrides) && ! array_key_exists('payment_ids_basis', $overrides)) {
+            $overrides = ['square_order_id' => 'order_'.$id, 'payment_ids_basis' => SquareSnapshotMapper::paymentIdsBasis($status, $overrides['paid_amount'] ?? 0), ...$overrides];
+        }
         SquareInvoiceSnapshot::query()->create([
             'workspace_id' => $workspace->id,
             'square_invoice_id' => $id,

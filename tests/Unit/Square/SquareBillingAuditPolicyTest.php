@@ -69,6 +69,18 @@ final class SquareBillingAuditPolicyTest extends TestCase
         ], array_map(static fn (array $payment): array => [$payment['invoice']->squareInvoiceId, $payment['payment_id'], $payment['reason']], $findings->unmatchedPayments));
     }
 
+    public function test_payment_reach_is_a_link_a_billed_series_or_a_confirmed_customer(): void
+    {
+        $series = ['000123' => true];
+        $mapped = ['cust_mapped' => true];
+
+        $this->assertTrue(SquareBillingAuditPolicy::inPaymentReach(true, null, null, $series, $mapped));
+        $this->assertTrue(SquareBillingAuditPolicy::inPaymentReach(false, '000123', null, $series, $mapped));
+        $this->assertTrue(SquareBillingAuditPolicy::inPaymentReach(false, null, 'cust_mapped', $series, $mapped));
+        $this->assertFalse(SquareBillingAuditPolicy::inPaymentReach(false, '000999', 'cust_other', $series, $mapped));
+        $this->assertFalse(SquareBillingAuditPolicy::inPaymentReach(false, null, null, $series, $mapped));
+    }
+
     public function test_unmapped_customers_with_open_invoices_are_ranked_by_what_they_owe(): void
     {
         $findings = self::classify([

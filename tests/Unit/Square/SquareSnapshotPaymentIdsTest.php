@@ -65,7 +65,9 @@ final class SquareSnapshotPaymentIdsTest extends TestCase
         $this->assertFalse(SquareSnapshotMapper::paymentIdsCurrent('PAID', 12_345, 'order_fixture_1', null));
         $this->assertFalse(SquareSnapshotMapper::paymentIdsCurrent('PARTIALLY_REFUNDED', 12_345, 'order_fixture_1', $basis));
         $this->assertFalse(SquareSnapshotMapper::paymentIdsCurrent('PAID', 1, 'order_fixture_1', $basis));
-        $this->assertTrue(SquareSnapshotMapper::paymentIdsCurrent('PAID', 12_345, null, null), 'No order to read.');
+        $this->assertFalse(SquareSnapshotMapper::paymentIdsCurrent('PAID', 12_345, null, null), 'Paid, and no order to read the payments from.');
+        $this->assertFalse(SquareSnapshotMapper::paymentIdsCurrent('PAID', 12_345, null, $basis));
+        $this->assertTrue(SquareSnapshotMapper::paymentIdsCurrent('UNPAID', 0, null, null), 'Nothing paid, and no order.');
         $this->assertTrue(SquareSnapshotMapper::paymentIdsCurrent('UNPAID', 0, 'order_fixture_1', null), 'Nothing paid.');
         $this->assertTrue(SquareSnapshotMapper::paymentIdsCurrent('UNPAID', null, 'order_fixture_1', null), 'Unknown amount, and no payment to hold.');
         $this->assertFalse(SquareSnapshotMapper::paymentIdsCurrent('PAID', null, 'order_fixture_1', null), 'Unknown amount on a paid invoice is read.');

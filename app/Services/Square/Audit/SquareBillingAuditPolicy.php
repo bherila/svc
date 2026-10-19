@@ -59,6 +59,21 @@ final class SquareBillingAuditPolicy
 
     public const string DRIFT_BILLED_AFTER_END = 'billed_after_end';
 
+    /**
+     * Whether an invoice's payments are svc's to account for: it is actively
+     * linked, in a series an agreement is billed in, or a confirmed
+     * customer's.
+     *
+     * @param  array<string, mixed>  $billedSeries  keyed by series key
+     * @param  array<string, true>  $mappedCustomers
+     */
+    public static function inPaymentReach(bool $linked, ?string $seriesKey, ?string $customerId, array $billedSeries, array $mappedCustomers): bool
+    {
+        return $linked
+            || ($seriesKey !== null && isset($billedSeries[$seriesKey]))
+            || ($customerId !== null && isset($mappedCustomers[$customerId]));
+    }
+
     public static function classify(SquareBillingAuditFacts $facts): SquareBillingAuditFindings
     {
         $agreements = [];
@@ -111,10 +126,7 @@ final class SquareBillingAuditPolicy
         $unmatched = [];
         $resolved = true;
         foreach ($facts->invoices as $invoice) {
-            $inReach = $invoice->linked !== null
-                || ($invoice->seriesKey !== null && isset($agreements[$invoice->seriesKey]))
-                || ($invoice->customerId !== null && isset($facts->mappedCustomerIds[$invoice->customerId]));
-            if (! $inReach) {
+            if (! self::inPaymentReach($invoice->linked !== null, $invoice->seriesKey, $invoice->customerId, $agreements, $facts->mappedCustomerIds)) {
                 continue;
             }
             // Ids read for an earlier state, or by earlier rules, may name

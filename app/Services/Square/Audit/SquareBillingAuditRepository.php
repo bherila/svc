@@ -80,26 +80,37 @@ final class SquareBillingAuditRepository
         }
 
         $squareInvoiceIds = [];
-        $paymentIds = [];
-        $deferred = [];
         $customerIds = [];
         foreach ($snapshots as $snapshot) {
             $squareInvoiceIds[] = $snapshot->square_invoice_id;
-            // Past the bound, an invoice's payments are left unchecked - and
-            // say so - rather than looked up in ever more queries.
-            $ids = $snapshot->payment_ids ?? [];
-            if (count($paymentIds) + count($ids) > self::MAX_PAYMENT_IDS) {
-                $deferred[$snapshot->square_invoice_id] = true;
-                $ids = [];
-            }
-            foreach ($ids as $paymentId) {
-                $paymentIds[$paymentId] = true;
-            }
             if ($snapshot->square_customer_id !== null) {
                 $customerIds[$snapshot->square_customer_id] = true;
             }
         }
         $links = $this->links($workspace, $squareInvoiceIds);
+        $customerIds = array_map(strval(...), array_keys($customerIds));
+        $mappedCustomers = $this->mappedCustomers($workspace, $customerIds);
+        $billedSeries = array_fill_keys($seriesKeys, true);
+
+        // Only invoices whose payments the audit checks spend the bound;
+        // past it, an invoice's payments are left unchecked - and say so -
+        // rather than looked up in ever more queries.
+        $paymentIds = [];
+        $deferred = [];
+        foreach ($snapshots as $snapshot) {
+            if (! SquareBillingAuditPolicy::inPaymentReach(isset($links[$snapshot->square_invoice_id]), $snapshot->series_key, $snapshot->square_customer_id, $billedSeries, $mappedCustomers)) {
+                continue;
+            }
+            $ids = $snapshot->payment_ids ?? [];
+            if (count($paymentIds) + count($ids) > self::MAX_PAYMENT_IDS) {
+                $deferred[$snapshot->square_invoice_id] = true;
+
+                continue;
+            }
+            foreach ($ids as $paymentId) {
+                $paymentIds[$paymentId] = true;
+            }
+        }
 
         $invoices = [];
         foreach ($snapshots as $snapshot) {
@@ -129,8 +140,8 @@ final class SquareBillingAuditRepository
             $today,
             $agreements,
             $invoices,
-            $this->mappedCustomers($workspace, array_map(strval(...), array_keys($customerIds))),
-            $this->retiredCustomers($workspace, array_map(strval(...), array_keys($customerIds))),
+            $mappedCustomers,
+            $this->retiredCustomers($workspace, $customerIds),
             $this->recordedPayments($workspace, array_map(strval(...), array_keys($paymentIds))),
             $complete,
             $seriesComplete,
