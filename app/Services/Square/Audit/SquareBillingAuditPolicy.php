@@ -96,13 +96,13 @@ final class SquareBillingAuditPolicy
                 || ($date !== null && $date < $starts[$seriesKey])) {
                 continue;
             }
-            // A bill with no location cannot be tied to the others, so it
-            // makes the prefix as unclassifiable as a second location.
-            $locations[$seriesKey][] = $location ?? "\0unknown";
+            $locations[$seriesKey][] = $location;
         }
         $ambiguous = [];
         foreach ($locations as $seriesKey => $seen) {
-            if (count(array_unique($seen)) > 1) {
+            // A bill with no location cannot be tied to any series, so it
+            // makes the prefix as unclassifiable as a second location.
+            if (in_array(null, $seen, true) || count(array_unique($seen)) > 1) {
                 // @infection-ignore-all PHP normalises array keys either way; the cast only states the string key static analysis requires.
                 $ambiguous[(string) $seriesKey] = true;
             }
@@ -116,11 +116,12 @@ final class SquareBillingAuditPolicy
         $ambiguous = self::ambiguousSeries($facts->agreements, array_map(static fn (SquareAuditInvoice $invoice): array => [$invoice->seriesKey, $invoice->status, $invoice->date(), $invoice->locationId], $facts->invoices));
         // A prefix shared by two locations is two series svc cannot tell
         // apart, so nothing is derived from it but that finding - and when
-        // the members were bounded, an omitted one could be in another
-        // location, so nothing is derived from any series.
+        // the members were bounded, or the last sync did not list all of
+        // Square, an omitted one could be in another location, so nothing is
+        // derived from any series.
         $agreements = [];
         foreach ($facts->agreements as $agreement) {
-            if ($facts->seriesComplete && ! isset($ambiguous[$agreement->seriesKey])) {
+            if ($facts->seriesComplete && $facts->mirrorComplete && ! isset($ambiguous[$agreement->seriesKey])) {
                 $agreements[$agreement->seriesKey] = $agreement;
             }
         }
@@ -200,7 +201,7 @@ final class SquareBillingAuditPolicy
     private static function unlinkedCustomerBalances(SquareBillingAuditFacts $facts): array
     {
         // A customer's balance is only stated over all of its open invoices.
-        if (! $facts->reachComplete || ! $facts->seriesComplete) {
+        if (! $facts->reachComplete || ! $facts->seriesComplete || ! $facts->mirrorComplete) {
             return [];
         }
         $customers = [];
@@ -258,7 +259,7 @@ final class SquareBillingAuditPolicy
         }
         // A bounded member load may have cut any series short, and a partial
         // series would drift on whichever members happened to load.
-        if (! $facts->seriesComplete) {
+        if (! $facts->seriesComplete || ! $facts->mirrorComplete) {
             return [];
         }
         $today = CarbonImmutable::parse($facts->today);
@@ -266,11 +267,8 @@ final class SquareBillingAuditPolicy
         foreach ($facts->agreements as $agreement) {
             $series = $members[$agreement->seriesKey] ?? [];
             if ($series === []) {
-                // Absent from the mirror is absent from Square only after a
-                // sync that listed every Square invoice.
-                if ($facts->mirrorComplete) {
-                    $drift[] = ['agreement' => $agreement, 'codes' => [self::DRIFT_SERIES_NOT_MIRRORED], 'series_cadence' => null, 'series_currency' => null, 'series_amount' => null];
-                }
+                // Absent from a complete mirror is absent from Square.
+                $drift[] = ['agreement' => $agreement, 'codes' => [self::DRIFT_SERIES_NOT_MIRRORED], 'series_cadence' => null, 'series_currency' => null, 'series_amount' => null];
 
                 continue;
             }

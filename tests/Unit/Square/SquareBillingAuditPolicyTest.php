@@ -332,7 +332,7 @@ final class SquareBillingAuditPolicyTest extends TestCase
         $truncated = SquareBillingAuditPolicy::classify(new SquareBillingAuditFacts('2030-10-01', [self::agreement()], [$open], [], [], [], true, true, true, false));
         $bounded = SquareBillingAuditPolicy::classify(new SquareBillingAuditFacts('2030-10-01', [self::agreement()], [$open], [], [], [], false, true, false, true));
 
-        $this->assertSame([[], false, 1], [$truncated->seriesDrift, $truncated->complete, count($truncated->unlinkedCustomerBalances)]);
+        $this->assertSame([[], false, 0], [$truncated->seriesDrift, $truncated->complete, count($truncated->unlinkedCustomerBalances)]);
         $membersBounded = SquareBillingAuditPolicy::classify(new SquareBillingAuditFacts('2030-10-01', [self::agreement()], [$open], [], [], [], false, false, true, true));
         $this->assertSame([], $membersBounded->unlinkedCustomerBalances, 'A series member could hold part of a balance.');
         $this->assertSame([[SquareBillingAuditPolicy::DRIFT_SERIES_NOT_MIRRORED], [], false], [$bounded->seriesDrift[0]['codes'], $bounded->unlinkedCustomerBalances, $bounded->complete]);
@@ -415,6 +415,7 @@ final class SquareBillingAuditPolicyTest extends TestCase
         $this->assertSame([[SquareBillingAuditPolicy::DRIFT_MULTIPLE_LOCATIONS]], array_column($findings->seriesDrift, 'codes'));
         $this->assertSame([], SquareBillingAuditPolicy::ambiguousSeries([self::agreement()], [['000123', 'PAID', '2029-01-01', 'LOCFIXTURE02'], ['000123', 'SCHEDULED', '2030-05-01', 'LOCFIXTURE03'], ['000123', 'PAID', null, 'LOCFIXTURE01'], ['000999', 'PAID', null, 'LOCFIXTURE09'], [null, 'PAID', null, 'LOCFIXTURE08'], ['000123', 'CANCELED', '2030-02-01', null]]));
         $this->assertSame(['000123' => true], SquareBillingAuditPolicy::ambiguousSeries([self::agreement()], [['000123', 'PAID', null, 'LOCFIXTURE01'], ['000123', 'PAID', '2030-02-01', null]]), 'A bill with no location cannot be tied to the others.');
+        $this->assertSame(['000123' => true], SquareBillingAuditPolicy::ambiguousSeries([self::agreement()], [['000123', 'PAID', '2030-02-01', null]]), 'Nor, alone, to any series.');
         $this->assertSame(['000123' => true], SquareBillingAuditPolicy::ambiguousSeries([self::agreement()], [['000123', 'PAID', '2030-01-01', 'LOCFIXTURE02'], ['000123', 'PAID', null, 'LOCFIXTURE01']]));
         $other = new SquareAuditAgreement('00000000-0000-4000-8000-00000000a009', self::COMPANY, '000999', '2030-01-01', BillingCadence::Monthly, 1, 'USD');
         $this->assertSame(['000123' => true, '000999' => true], SquareBillingAuditPolicy::ambiguousSeries([self::agreement(), $other], [
@@ -448,6 +449,15 @@ final class SquareBillingAuditPolicyTest extends TestCase
         $members[] = self::invoice('inv_fixture_9', 9, '2030-09-15', 'PAID', linked: true, total: null);
 
         $this->assertSame([], self::classify($members)->seriesDrift, 'The latest amount is unknown, so it is not compared.');
+    }
+
+    public function test_an_incomplete_mirror_derives_no_series_findings_or_balances(): void
+    {
+        $members = [...self::monthly(9_000), self::invoice('inv_open', 9, '2030-09-15', 'UNPAID', payments: ['pay_here'])];
+        $members[] = self::invoice('inv_stranger', null, '2030-02-01', 'UNPAID', series: null, customer: 'cust_stranger', total: 100);
+        $findings = SquareBillingAuditPolicy::classify(new SquareBillingAuditFacts('2030-10-01', [self::agreement()], $members, [], [], [], true, true, true, false));
+
+        $this->assertSame([[], [], [], [], false], [$findings->unmirroredPeriods, $findings->unmatchedPayments, $findings->seriesDrift, $findings->unlinkedCustomerBalances, $findings->complete]);
     }
 
     public function test_absence_is_not_claimed_when_the_series_load_was_bounded(): void

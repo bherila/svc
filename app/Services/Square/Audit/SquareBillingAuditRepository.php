@@ -99,7 +99,10 @@ final class SquareBillingAuditRepository
             $snapshot->series_key, $snapshot->status, $snapshot->due_on?->toDateString() ?? $snapshot->scheduled_at?->toDateString(), $snapshot->square_location_id,
         ], array_values($snapshots)));
         $billedSeries = [];
-        foreach ($seriesComplete ? $agreements : [] as $agreement) {
+        // As the policy will: no series reach while the mirror is not a
+        // complete generation (checked again after the loads).
+        $mirrorLooksComplete = $before !== null && $before->status === SquareSyncRun::COMPLETED && ! $before->truncated;
+        foreach ($seriesComplete && $mirrorLooksComplete ? $agreements : [] as $agreement) {
             if (! isset($ambiguous[$agreement->seriesKey])) {
                 $billedSeries[$agreement->seriesKey] = $agreement;
             }

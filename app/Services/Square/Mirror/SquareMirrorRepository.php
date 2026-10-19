@@ -54,7 +54,7 @@ final class SquareMirrorRepository
      * Invoices whose payment ids have not been read for their current status
      * and paid amount, oldest change first.
      *
-     * @return list<array{square_invoice_id: string, square_order_id: string, basis: string}>
+     * @return list<array{square_invoice_id: string, square_order_id: string, square_location_id: string|null, basis: string}>
      */
     public function invoicesNeedingPaymentIds(Workspace $workspace, int $limit): array
     {
@@ -76,7 +76,7 @@ final class SquareMirrorRepository
             ->orderBy('synced_at')
             ->orderBy('id')
             ->limit(min($limit, 100))
-            ->get(['square_invoice_id', 'square_order_id', 'status', 'paid_amount', 'payment_ids_basis']);
+            ->get(['square_invoice_id', 'square_order_id', 'square_location_id', 'status', 'paid_amount', 'payment_ids_basis']);
         $due = [];
         foreach ($rows as $row) {
             $paid = $row->paid_amount === null ? null : (int) $row->paid_amount;
@@ -86,7 +86,7 @@ final class SquareMirrorRepository
                 continue;
             }
             $basis = SquareSnapshotMapper::paymentIdsBasis((string) $row->status, $paid);
-            $due[] = ['square_invoice_id' => (string) $row->square_invoice_id, 'square_order_id' => (string) $row->square_order_id, 'basis' => $basis];
+            $due[] = ['square_invoice_id' => (string) $row->square_invoice_id, 'square_order_id' => (string) $row->square_order_id, 'square_location_id' => $row->square_location_id === null ? null : (string) $row->square_location_id, 'basis' => $basis];
             if (count($due) >= $limit) {
                 break;
             }

@@ -191,7 +191,7 @@ final class SquareBillingAuditTest extends TestCase
 
         $this->assertFalse(app(SquareBillingAudit::class)->report($workspace)['complete']);
         $due = $repository->invoicesNeedingPaymentIds($workspace, 10);
-        $this->assertSame([['square_invoice_id' => 'inv_audit_1', 'square_order_id' => 'order_audit_1', 'basis' => 'PAID|12345|t2']], $due);
+        $this->assertSame([['square_invoice_id' => 'inv_audit_1', 'square_order_id' => 'order_audit_1', 'square_location_id' => 'LOCFIXTURE01', 'basis' => 'PAID|12345|t2']], $due);
 
         $this->assertTrue($repository->storePaymentIds($workspace, 'inv_audit_1', $due[0]['basis'], ['pay_audit_tender']));
         $report = app(SquareBillingAudit::class)->report($workspace);
@@ -204,7 +204,7 @@ final class SquareBillingAuditTest extends TestCase
         $this->snapshot($workspace, 'inv_audit_2', 2, '2030-02-15', 'PAID', ['paid_amount' => null, 'total_amount' => null, 'square_order_id' => 'order_audit_2']);
         $this->snapshot($workspace, 'inv_audit_3', 3, '2030-03-15', 'UNPAID', ['paid_amount' => null, 'square_order_id' => 'order_audit_3']);
         $this->assertFalse(app(SquareBillingAudit::class)->report($workspace)['complete']);
-        $this->assertSame([['square_invoice_id' => 'inv_audit_2', 'square_order_id' => 'order_audit_2', 'basis' => 'PAID||t2']], $repository->invoicesNeedingPaymentIds($workspace, 10));
+        $this->assertSame([['square_invoice_id' => 'inv_audit_2', 'square_order_id' => 'order_audit_2', 'square_location_id' => 'LOCFIXTURE01', 'basis' => 'PAID||t2']], $repository->invoicesNeedingPaymentIds($workspace, 10));
         $this->assertTrue($repository->storePaymentIds($workspace, 'inv_audit_2', 'PAID||t2', []));
         $this->assertTrue(app(SquareBillingAudit::class)->report($workspace)['complete']);
     }
