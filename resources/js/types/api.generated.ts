@@ -870,6 +870,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** @description Issue a draft invoice as a workspace owner or admin, using its current version and confirm: true. Issuing never emails the client itself; automatic invoice email, when the client has it, is scheduled after its delay. An optional payment records money already received elsewhere in the same transaction and receipt (payments:record and AGENT_API_PAYMENT_WRITES_ENABLED); it never initiates a charge, and the scheduled delivery is cancelled. Requires AGENT_API_WRITES_ENABLED and AGENT_API_INVOICE_WRITES_ENABLED. */
         post: operations['invoices.issue'];
         delete?: never;
         options?: never;
@@ -1546,6 +1547,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** @description Create a task in a project whose tasks the caller may manage. Hidden from clients unless is_visible_to_client is true. Requires AGENT_API_WRITES_ENABLED. */
         post: operations['tasks.create'];
         delete?: never;
         options?: never;
@@ -1566,7 +1568,7 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        /** @description Omitted properties remain unchanged; explicit null clears nullable properties. */
+        /** @description Update a task the caller may manage, using its current version. Omitted properties remain unchanged; explicit null clears nullable properties. Completing stamps completed_at once; reopening clears it. Requires AGENT_API_WRITES_ENABLED. */
         patch: operations['tasks.update'];
         trace?: never;
     };
@@ -1612,10 +1614,11 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
+        /** @description Soft-delete draft time using its current version: the caller's own, or anyone's as a workspace owner or admin. Approved and invoiced time is refused. Requires AGENT_API_TIME_ENTRY_WRITES_ENABLED. */
         delete: operations['time_entries.delete'];
         options?: never;
         head?: never;
-        /** @description Omitted properties remain unchanged; explicit null clears nullable properties. */
+        /** @description Update draft time, or approved time on a regenerable draft invoice, using its current version: the caller's own, or anyone's as a workspace owner or admin. Omitted properties remain unchanged; explicit null clears nullable properties. Requires AGENT_API_TIME_ENTRY_WRITES_ENABLED. */
         patch: operations['time_entries.update'];
         trace?: never;
     };
@@ -1628,6 +1631,7 @@ export interface paths {
         };
         get: operations['time_entries.list'];
         put?: never;
+        /** @description Atomically log up to 20 completed time entries on projects the caller may log time on. client_visible_description without is_visible_to_client makes the entry client-visible; send false to stage the client text privately. A billing rate requires time:approve and the approver role. approve: true approves the entries in the same transaction and receipt; it requires time:approve, the approver role on every project and AGENT_API_WRITES_ENABLED. Requires AGENT_API_TIME_ENTRY_WRITES_ENABLED. */
         post: operations['time_entries.log'];
         delete?: never;
         options?: never;
@@ -2425,7 +2429,7 @@ export interface components {
             /** @description Money already received for this draft, recorded in the same transaction so the invoice is issued and paid or not changed at all. Requires the payments:record OAuth scope, a workspace owner/admin, and the payment write cutover; never initiates a charge, refuses overpayment, and cancels the automatic client delivery that issuing schedules. */
             payment?: components['schemas']['InvoiceIssuePayment'];
         };
-        /** @description REST returns the invoice mutation shape. MCP returns the invoice exactly as invoices.get does when the token also holds billing:read and invoices.get is enabled, and the mutation shape otherwise. */
+        /** @description The invoice exactly as invoices.get presents it when the request asks for view=read and the token also holds billing:read, and the mutation shape otherwise. The MCP tool asks for the view while invoices.get is enabled. */
         InvoiceIssueResponse: {
             data:
                 | components['schemas']['InvoiceDetail']
@@ -3869,6 +3873,7 @@ export interface components {
             subcontractor_cost_amount?: number | null;
             subcontractor_cost_currency?: string | null;
         };
+        /** @description The logged rows exactly as time_entries.list presents them, rates and subcontractor terms included for workspace owners and admins, when the request asks for view=read and the token also holds time:read; the write shape otherwise. The MCP tool asks for the view while time_entries.list is enabled. */
         TimeEntryBatchResponse: {
             data: components['schemas']['TimeEntry'][];
         };
@@ -5907,6 +5912,60 @@ export interface operations {
                     'application/json': components['schemas']['DeletionResponse'];
                 };
             };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The caller is not a workspace owner or admin (checked again on a replay), or the token lacks expenses:write. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace or expense is not visible to the caller, or an expense write cutover is off. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description expected_version is no longer current (read the expense again), the expense is no longer a draft, or the Idempotency-Key was already used with a different request. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key header is missing, or expected_version is missing or malformed. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
             default: components['responses']['Error'];
         };
     };
@@ -5935,6 +5994,60 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['ExpenseResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The caller is not a workspace owner or admin (checked again on a replay), or the token lacks expenses:write. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace, expense or project is not visible to the caller, the project is not the expense client's, or an expense write cutover is off. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description expected_version is no longer current (read the expense again), the expense is no longer a draft, or the Idempotency-Key was already used with a different request. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key header is missing, the body has an unknown field, or a field is invalid (`errors` names it). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
                 };
             };
             default: components['responses']['Error'];
@@ -5993,6 +6106,60 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['ExpenseBatchResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The caller is not a workspace owner or admin (checked again on a replay), or the token lacks expenses:write. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace, a client or a project is not visible to the caller, a project is not the client's, or an expense write cutover is off. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key was already used with a different request, or the first request with it is still being processed. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key header is missing, an entry has an unknown field, or a field is invalid (`errors` names it). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
                 };
             };
             default: components['responses']['Error'];
@@ -6484,7 +6651,10 @@ export interface operations {
     };
     'invoices.issue': {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Send `read` to receive the issued invoice exactly as invoices.get presents it, when the token also holds billing:read; without that scope the response keeps the write shape. Any other value is refused before anything is written, and the view is not part of the request an Idempotency-Key binds. */
+                view?: 'read';
+            };
             header: {
                 'Idempotency-Key': components['parameters']['IdempotencyKey'];
             };
@@ -6507,6 +6677,60 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['InvoiceIssueResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The caller is not a workspace owner or admin, or the token lacks billing:deliver; with a payment, also without payments:record or while AGENT_API_PAYMENT_WRITES_ENABLED is off. Each is checked again on a replay. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace or invoice is not visible to the caller, or an invoice write cutover is off. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description expected_version is no longer current (read the invoice again), or the Idempotency-Key was already used with a different request (payment is part of the request). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key header is missing, view is not read, confirm is not true, or a field is invalid (`errors` names it). Also when the invoice is not a draft, or the payment is in another currency, exceeds the balance or predates the issue date. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
                 };
             };
             default: components['responses']['Error'];
@@ -7823,6 +8047,60 @@ export interface operations {
                     'application/json': components['schemas']['TaskResponse'];
                 };
             };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks tasks:write, or the caller may not manage tasks on the project (checked again on a replay). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace or project is not visible to the caller, or AGENT_API_WRITES_ENABLED is off. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key was already used with a different request, or the first request with it is still being processed. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key header is missing, or a field is invalid (`errors` names it). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
             default: components['responses']['Error'];
         };
     };
@@ -7875,6 +8153,60 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['TaskResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks tasks:write, or the caller may not manage tasks on the project (checked again on a replay). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace or task is not visible to the caller, or AGENT_API_WRITES_ENABLED is off. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description expected_version is no longer current (read the task again), or the Idempotency-Key was already used with a different request. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key header is missing, or a field is invalid (`errors` names it). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
                 };
             };
             default: components['responses']['Error'];
@@ -7963,6 +8295,60 @@ export interface operations {
                     'application/json': components['schemas']['DeletionResponse'];
                 };
             };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks time:write, or the entry is someone else's and the caller is not a workspace owner or admin (checked again on a replay). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace or entry is not visible to the caller, or AGENT_API_TIME_ENTRY_WRITES_ENABLED is off. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description expected_version is no longer current (read the entry again), the entry is no longer a draft, or the Idempotency-Key was already used with a different request. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key header is missing, or expected_version is missing or malformed. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
             default: components['responses']['Error'];
         };
     };
@@ -7991,6 +8377,60 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['TimeEntryResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks time:write, or the entry is someone else's and the caller is not a workspace owner or admin (checked again on a replay). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace, entry or task is not visible to the caller, or AGENT_API_TIME_ENTRY_WRITES_ENABLED is off. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description expected_version is no longer current (read the entry again), the entry is no longer editable, or the Idempotency-Key was already used with a different request. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key header is missing, or a field is invalid (`errors` names it). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
                 };
             };
             default: components['responses']['Error'];
@@ -8034,7 +8474,10 @@ export interface operations {
     };
     'time_entries.log': {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Send `read` to receive the written time entries exactly as time_entries.list presents them, when the token also holds time:read; without that scope the response keeps the write shape. Any other value is refused before anything is written, and the view is not part of the request an Idempotency-Key binds. */
+                view?: 'read';
+            };
             header: {
                 'Idempotency-Key': components['parameters']['IdempotencyKey'];
             };
@@ -8056,6 +8499,60 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['TimeEntryBatchResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks time:write; the caller may not log time on a project; a billing rate or approve: true was sent without time:approve; or approval was asked for while AGENT_API_WRITES_ENABLED is off or without the approver role on every project. Each is checked again on a replay. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace, a project or a task is not visible to the caller, or AGENT_API_TIME_ENTRY_WRITES_ENABLED is off. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key was already used with a different request (approve is part of the request), or the first request with it is still being processed. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key header is missing, view is not read, an entry has an unknown field, or a field is invalid (`errors` names it): a date outside the time sheet, or a billing rate from someone who could not approve the entry. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
                 };
             };
             default: components['responses']['Error'];

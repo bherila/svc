@@ -3493,6 +3493,66 @@
                             }
                         }
                     },
+                    "401": {
+                        "description": "Not signed in, or the token is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The caller is not a workspace owner or admin (checked again on a replay), or the token lacks expenses:write.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace or expense is not visible to the caller, or an expense write cutover is off.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "expected_version is no longer current (read the expense again), the expense is no longer a draft, or the Idempotency-Key was already used with a different request.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "The Idempotency-Key header is missing, or expected_version is missing or malformed.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
                     "default": {
                         "$ref": "#/components/responses/Error"
                     }
@@ -3503,7 +3563,12 @@
                     "idempotency_key": "header_and_argument",
                     "expected_version": true
                 },
-                "x-agent-mcp-tool": "expenses.delete"
+                "x-agent-mcp-tool": "expenses.delete",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_EXPENSE_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "expenses.delete"
             },
             "patch": {
                 "operationId": "expenses.update",
@@ -3550,6 +3615,66 @@
                             }
                         }
                     },
+                    "401": {
+                        "description": "Not signed in, or the token is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The caller is not a workspace owner or admin (checked again on a replay), or the token lacks expenses:write.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace, expense or project is not visible to the caller, the project is not the expense client's, or an expense write cutover is off.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "expected_version is no longer current (read the expense again), the expense is no longer a draft, or the Idempotency-Key was already used with a different request.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "The Idempotency-Key header is missing, the body has an unknown field, or a field is invalid (`errors` names it).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
                     "default": {
                         "$ref": "#/components/responses/Error"
                     }
@@ -3560,7 +3685,12 @@
                     "idempotency_key": "header_and_argument",
                     "expected_version": true
                 },
-                "x-agent-mcp-tool": "expenses.update"
+                "x-agent-mcp-tool": "expenses.update",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_EXPENSE_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "expenses.update"
             }
         },
         "/workspaces/{workspace}/expenses": {
@@ -3676,6 +3806,66 @@
                             }
                         }
                     },
+                    "401": {
+                        "description": "Not signed in, or the token is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The caller is not a workspace owner or admin (checked again on a replay), or the token lacks expenses:write.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace, a client or a project is not visible to the caller, a project is not the client's, or an expense write cutover is off.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "The Idempotency-Key was already used with a different request, or the first request with it is still being processed.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "The Idempotency-Key header is missing, an entry has an unknown field, or a field is invalid (`errors` names it).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
                     "default": {
                         "$ref": "#/components/responses/Error"
                     }
@@ -3685,7 +3875,12 @@
                 "x-agent-write-safety": {
                     "idempotency_key": "header_and_argument"
                 },
-                "x-agent-mcp-tool": "expenses.log"
+                "x-agent-mcp-tool": "expenses.log",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_EXPENSE_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "expenses.log"
             }
         },
         "/workspaces/{workspace}/expenses/{expense}/receipts/{receipt}/content": {
@@ -4733,6 +4928,7 @@
         "/workspaces/{workspace}/invoices/{invoice}/issue": {
             "post": {
                 "operationId": "invoices.issue",
+                "description": "Issue a draft invoice as a workspace owner or admin, using its current version and confirm: true. Issuing never emails the client itself; automatic invoice email, when the client has it, is scheduled after its delay. An optional payment records money already received elsewhere in the same transaction and receipt (payments:record and AGENT_API_PAYMENT_WRITES_ENABLED); it never initiates a charge, and the scheduled delivery is cancelled. Requires AGENT_API_WRITES_ENABLED and AGENT_API_INVOICE_WRITES_ENABLED.",
                 "security": [
                     {
                         "oauth2": [
@@ -4762,6 +4958,17 @@
                     },
                     {
                         "$ref": "#/components/parameters/IdempotencyKey"
+                    },
+                    {
+                        "name": "view",
+                        "in": "query",
+                        "description": "Send `read` to receive the issued invoice exactly as invoices.get presents it, when the token also holds billing:read; without that scope the response keeps the write shape. Any other value is refused before anything is written, and the view is not part of the request an Idempotency-Key binds.",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "read"
+                            ]
+                        }
                     }
                 ],
                 "responses": {
@@ -4771,6 +4978,66 @@
                             "application/json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/InvoiceIssueResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Not signed in, or the token is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The caller is not a workspace owner or admin, or the token lacks billing:deliver; with a payment, also without payments:record or while AGENT_API_PAYMENT_WRITES_ENABLED is off. Each is checked again on a replay.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace or invoice is not visible to the caller, or an invoice write cutover is off.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "expected_version is no longer current (read the invoice again), or the Idempotency-Key was already used with a different request (payment is part of the request).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "The Idempotency-Key header is missing, view is not read, confirm is not true, or a field is invalid (`errors` names it). Also when the invoice is not a draft, or the payment is in another currency, exceeds the balance or predates the issue date.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
                                 }
                             }
                         }
@@ -4786,7 +5053,12 @@
                     "expected_version": true,
                     "confirm": true
                 },
-                "x-agent-mcp-tool": "invoices.issue"
+                "x-agent-mcp-tool": "invoices.issue",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_INVOICE_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "invoices.issue"
             }
         },
         "/workspaces/{workspace}/invoices/{invoice}/pdf-link": {
@@ -7560,6 +7832,7 @@
         "/workspaces/{workspace}/projects/{project}/tasks": {
             "post": {
                 "operationId": "tasks.create",
+                "description": "Create a task in a project whose tasks the caller may manage. Hidden from clients unless is_visible_to_client is true. Requires AGENT_API_WRITES_ENABLED.",
                 "security": [
                     {
                         "oauth2": [
@@ -7602,6 +7875,66 @@
                             }
                         }
                     },
+                    "401": {
+                        "description": "Not signed in, or the token is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The token lacks tasks:write, or the caller may not manage tasks on the project (checked again on a replay).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace or project is not visible to the caller, or AGENT_API_WRITES_ENABLED is off.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "The Idempotency-Key was already used with a different request, or the first request with it is still being processed.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "The Idempotency-Key header is missing, or a field is invalid (`errors` names it).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
                     "default": {
                         "$ref": "#/components/responses/Error"
                     }
@@ -7611,7 +7944,11 @@
                 "x-agent-write-safety": {
                     "idempotency_key": "header_and_argument"
                 },
-                "x-agent-mcp-tool": "tasks.create"
+                "x-agent-mcp-tool": "tasks.create",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "tasks.create"
             }
         },
         "/workspaces/{workspace}/tasks/{task}": {
@@ -7656,7 +7993,7 @@
             },
             "patch": {
                 "operationId": "tasks.update",
-                "description": "Omitted properties remain unchanged; explicit null clears nullable properties.",
+                "description": "Update a task the caller may manage, using its current version. Omitted properties remain unchanged; explicit null clears nullable properties. Completing stamps completed_at once; reopening clears it. Requires AGENT_API_WRITES_ENABLED.",
                 "security": [
                     {
                         "oauth2": [
@@ -7699,6 +8036,66 @@
                             }
                         }
                     },
+                    "401": {
+                        "description": "Not signed in, or the token is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The token lacks tasks:write, or the caller may not manage tasks on the project (checked again on a replay).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace or task is not visible to the caller, or AGENT_API_WRITES_ENABLED is off.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "expected_version is no longer current (read the task again), or the Idempotency-Key was already used with a different request.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "The Idempotency-Key header is missing, or a field is invalid (`errors` names it).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
                     "default": {
                         "$ref": "#/components/responses/Error"
                     }
@@ -7709,7 +8106,11 @@
                     "idempotency_key": "header_and_argument",
                     "expected_version": true
                 },
-                "x-agent-mcp-tool": "tasks.update"
+                "x-agent-mcp-tool": "tasks.update",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "tasks.update"
             }
         },
         "/workspaces/{workspace}/tasks": {
@@ -7821,6 +8222,7 @@
         "/workspaces/{workspace}/time-entries/{entry}": {
             "delete": {
                 "operationId": "time_entries.delete",
+                "description": "Soft-delete draft time using its current version: the caller's own, or anyone's as a workspace owner or admin. Approved and invoiced time is refused. Requires AGENT_API_TIME_ENTRY_WRITES_ENABLED.",
                 "security": [
                     {
                         "oauth2": [
@@ -7863,6 +8265,66 @@
                             }
                         }
                     },
+                    "401": {
+                        "description": "Not signed in, or the token is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The token lacks time:write, or the entry is someone else's and the caller is not a workspace owner or admin (checked again on a replay).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace or entry is not visible to the caller, or AGENT_API_TIME_ENTRY_WRITES_ENABLED is off.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "expected_version is no longer current (read the entry again), the entry is no longer a draft, or the Idempotency-Key was already used with a different request.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "The Idempotency-Key header is missing, or expected_version is missing or malformed.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
                     "default": {
                         "$ref": "#/components/responses/Error"
                     }
@@ -7873,11 +8335,15 @@
                     "idempotency_key": "header_and_argument",
                     "expected_version": true
                 },
-                "x-agent-mcp-tool": "time_entries.delete"
+                "x-agent-mcp-tool": "time_entries.delete",
+                "x-svc-flags": [
+                    "AGENT_API_TIME_ENTRY_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "time_entries.delete"
             },
             "patch": {
                 "operationId": "time_entries.update",
-                "description": "Omitted properties remain unchanged; explicit null clears nullable properties.",
+                "description": "Update draft time, or approved time on a regenerable draft invoice, using its current version: the caller's own, or anyone's as a workspace owner or admin. Omitted properties remain unchanged; explicit null clears nullable properties. Requires AGENT_API_TIME_ENTRY_WRITES_ENABLED.",
                 "security": [
                     {
                         "oauth2": [
@@ -7920,6 +8386,66 @@
                             }
                         }
                     },
+                    "401": {
+                        "description": "Not signed in, or the token is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The token lacks time:write, or the entry is someone else's and the caller is not a workspace owner or admin (checked again on a replay).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace, entry or task is not visible to the caller, or AGENT_API_TIME_ENTRY_WRITES_ENABLED is off.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "expected_version is no longer current (read the entry again), the entry is no longer editable, or the Idempotency-Key was already used with a different request.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "The Idempotency-Key header is missing, or a field is invalid (`errors` names it).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
                     "default": {
                         "$ref": "#/components/responses/Error"
                     }
@@ -7930,7 +8456,11 @@
                     "idempotency_key": "header_and_argument",
                     "expected_version": true
                 },
-                "x-agent-mcp-tool": "time_entries.update"
+                "x-agent-mcp-tool": "time_entries.update",
+                "x-svc-flags": [
+                    "AGENT_API_TIME_ENTRY_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "time_entries.update"
             }
         },
         "/workspaces/{workspace}/time-entries": {
@@ -8046,6 +8576,7 @@
             },
             "post": {
                 "operationId": "time_entries.log",
+                "description": "Atomically log up to 20 completed time entries on projects the caller may log time on. client_visible_description without is_visible_to_client makes the entry client-visible; send false to stage the client text privately. A billing rate requires time:approve and the approver role. approve: true approves the entries in the same transaction and receipt; it requires time:approve, the approver role on every project and AGENT_API_WRITES_ENABLED. Requires AGENT_API_TIME_ENTRY_WRITES_ENABLED.",
                 "security": [
                     {
                         "oauth2": [
@@ -8072,6 +8603,17 @@
                     },
                     {
                         "$ref": "#/components/parameters/IdempotencyKey"
+                    },
+                    {
+                        "name": "view",
+                        "in": "query",
+                        "description": "Send `read` to receive the written time entries exactly as time_entries.list presents them, when the token also holds time:read; without that scope the response keeps the write shape. Any other value is refused before anything is written, and the view is not part of the request an Idempotency-Key binds.",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "read"
+                            ]
+                        }
                     }
                 ],
                 "responses": {
@@ -8085,6 +8627,66 @@
                             }
                         }
                     },
+                    "401": {
+                        "description": "Not signed in, or the token is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The token lacks time:write; the caller may not log time on a project; a billing rate or approve: true was sent without time:approve; or approval was asked for while AGENT_API_WRITES_ENABLED is off or without the approver role on every project. Each is checked again on a replay.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace, a project or a task is not visible to the caller, or AGENT_API_TIME_ENTRY_WRITES_ENABLED is off.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "The Idempotency-Key was already used with a different request (approve is part of the request), or the first request with it is still being processed.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "The Idempotency-Key header is missing, view is not read, an entry has an unknown field, or a field is invalid (`errors` names it): a date outside the time sheet, or a billing rate from someone who could not approve the entry.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
                     "default": {
                         "$ref": "#/components/responses/Error"
                     }
@@ -8094,7 +8696,11 @@
                 "x-agent-write-safety": {
                     "idempotency_key": "header_and_argument"
                 },
-                "x-agent-mcp-tool": "time_entries.log"
+                "x-agent-mcp-tool": "time_entries.log",
+                "x-svc-flags": [
+                    "AGENT_API_TIME_ENTRY_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "time_entries.log"
             }
         },
         "/workspaces/{workspace}/time-entries/{entry}/unapprove": {
@@ -11312,7 +11918,7 @@
                 "required": [
                     "data"
                 ],
-                "description": "REST returns the invoice mutation shape. MCP returns the invoice exactly as invoices.get does when the token also holds billing:read and invoices.get is enabled, and the mutation shape otherwise.",
+                "description": "The invoice exactly as invoices.get presents it when the request asks for view=read and the token also holds billing:read, and the mutation shape otherwise. The MCP tool asks for the view while invoices.get is enabled.",
                 "properties": {
                     "data": {
                         "anyOf": [
@@ -17477,6 +18083,7 @@
             "TimeEntryBatchResponse": {
                 "type": "object",
                 "additionalProperties": false,
+                "description": "The logged rows exactly as time_entries.list presents them, rates and subcontractor terms included for workspace owners and admins, when the request asks for view=read and the token also holds time:read; the write shape otherwise. The MCP tool asks for the view while time_entries.list is enabled.",
                 "required": [
                     "data"
                 ],

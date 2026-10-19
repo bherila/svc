@@ -2,6 +2,7 @@
 
 namespace App\Services\AgentApi\Operations;
 
+use App\Support\AgentApi\ReadView;
 use App\Support\Square\SquareIdentifiers;
 
 /**
@@ -88,6 +89,88 @@ final class AgentRestDocumentation
             422 => 'The Idempotency-Key header is missing, the body has an unknown field, or confirm is not true.',
             429 => 'Too many requests, or the identity provider is limiting invitations (retry after Retry-After).',
             503 => 'The identity provider withdrawal did not finish. Access is already withdrawn: repeat the same request with the same Idempotency-Key to finish it.',
+        ],
+    ];
+
+    /**
+     * The refusals of the writes MCP reaches over REST (#459), by status.
+     * Each body is the shared `Error` schema; a 422 for a field carries its
+     * messages under `errors`.
+     *
+     * @var array<string, array<int, string>>
+     */
+    private const array ROUTED_WRITE_ERRORS = [
+        'tasks.create' => [
+            401 => 'Not signed in, or the token is missing, expired or revoked.',
+            403 => 'The token lacks tasks:write, or the caller may not manage tasks on the project (checked again on a replay).',
+            404 => 'The workspace or project is not visible to the caller, or AGENT_API_WRITES_ENABLED is off.',
+            409 => 'The Idempotency-Key was already used with a different request, or the first request with it is still being processed.',
+            422 => 'The Idempotency-Key header is missing, or a field is invalid (`errors` names it).',
+            429 => 'Too many requests (retry after Retry-After).',
+        ],
+        'tasks.update' => [
+            401 => 'Not signed in, or the token is missing, expired or revoked.',
+            403 => 'The token lacks tasks:write, or the caller may not manage tasks on the project (checked again on a replay).',
+            404 => 'The workspace or task is not visible to the caller, or AGENT_API_WRITES_ENABLED is off.',
+            409 => 'expected_version is no longer current (read the task again), or the Idempotency-Key was already used with a different request.',
+            422 => 'The Idempotency-Key header is missing, or a field is invalid (`errors` names it).',
+            429 => 'Too many requests (retry after Retry-After).',
+        ],
+        'time_entries.log' => [
+            401 => 'Not signed in, or the token is missing, expired or revoked.',
+            403 => 'The token lacks time:write; the caller may not log time on a project; a billing rate or approve: true was sent without time:approve; or approval was asked for while AGENT_API_WRITES_ENABLED is off or without the approver role on every project. Each is checked again on a replay.',
+            404 => 'The workspace, a project or a task is not visible to the caller, or AGENT_API_TIME_ENTRY_WRITES_ENABLED is off.',
+            409 => 'The Idempotency-Key was already used with a different request (approve is part of the request), or the first request with it is still being processed.',
+            422 => 'The Idempotency-Key header is missing, view is not read, an entry has an unknown field, or a field is invalid (`errors` names it): a date outside the time sheet, or a billing rate from someone who could not approve the entry.',
+            429 => 'Too many requests (retry after Retry-After).',
+        ],
+        'time_entries.update' => [
+            401 => 'Not signed in, or the token is missing, expired or revoked.',
+            403 => 'The token lacks time:write, or the entry is someone else\'s and the caller is not a workspace owner or admin (checked again on a replay).',
+            404 => 'The workspace, entry or task is not visible to the caller, or AGENT_API_TIME_ENTRY_WRITES_ENABLED is off.',
+            409 => 'expected_version is no longer current (read the entry again), the entry is no longer editable, or the Idempotency-Key was already used with a different request.',
+            422 => 'The Idempotency-Key header is missing, or a field is invalid (`errors` names it).',
+            429 => 'Too many requests (retry after Retry-After).',
+        ],
+        'time_entries.delete' => [
+            401 => 'Not signed in, or the token is missing, expired or revoked.',
+            403 => 'The token lacks time:write, or the entry is someone else\'s and the caller is not a workspace owner or admin (checked again on a replay).',
+            404 => 'The workspace or entry is not visible to the caller, or AGENT_API_TIME_ENTRY_WRITES_ENABLED is off.',
+            409 => 'expected_version is no longer current (read the entry again), the entry is no longer a draft, or the Idempotency-Key was already used with a different request.',
+            422 => 'The Idempotency-Key header is missing, or expected_version is missing or malformed.',
+            429 => 'Too many requests (retry after Retry-After).',
+        ],
+        'expenses.log' => [
+            401 => 'Not signed in, or the token is missing, expired or revoked.',
+            403 => 'The caller is not a workspace owner or admin (checked again on a replay), or the token lacks expenses:write.',
+            404 => 'The workspace, a client or a project is not visible to the caller, a project is not the client\'s, or an expense write cutover is off.',
+            409 => 'The Idempotency-Key was already used with a different request, or the first request with it is still being processed.',
+            422 => 'The Idempotency-Key header is missing, an entry has an unknown field, or a field is invalid (`errors` names it).',
+            429 => 'Too many requests (retry after Retry-After).',
+        ],
+        'expenses.update' => [
+            401 => 'Not signed in, or the token is missing, expired or revoked.',
+            403 => 'The caller is not a workspace owner or admin (checked again on a replay), or the token lacks expenses:write.',
+            404 => 'The workspace, expense or project is not visible to the caller, the project is not the expense client\'s, or an expense write cutover is off.',
+            409 => 'expected_version is no longer current (read the expense again), the expense is no longer a draft, or the Idempotency-Key was already used with a different request.',
+            422 => 'The Idempotency-Key header is missing, the body has an unknown field, or a field is invalid (`errors` names it).',
+            429 => 'Too many requests (retry after Retry-After).',
+        ],
+        'expenses.delete' => [
+            401 => 'Not signed in, or the token is missing, expired or revoked.',
+            403 => 'The caller is not a workspace owner or admin (checked again on a replay), or the token lacks expenses:write.',
+            404 => 'The workspace or expense is not visible to the caller, or an expense write cutover is off.',
+            409 => 'expected_version is no longer current (read the expense again), the expense is no longer a draft, or the Idempotency-Key was already used with a different request.',
+            422 => 'The Idempotency-Key header is missing, or expected_version is missing or malformed.',
+            429 => 'Too many requests (retry after Retry-After).',
+        ],
+        'invoices.issue' => [
+            401 => 'Not signed in, or the token is missing, expired or revoked.',
+            403 => 'The caller is not a workspace owner or admin, or the token lacks billing:deliver; with a payment, also without payments:record or while AGENT_API_PAYMENT_WRITES_ENABLED is off. Each is checked again on a replay.',
+            404 => 'The workspace or invoice is not visible to the caller, or an invoice write cutover is off.',
+            409 => 'expected_version is no longer current (read the invoice again), or the Idempotency-Key was already used with a different request (payment is part of the request).',
+            422 => 'The Idempotency-Key header is missing, view is not read, confirm is not true, or a field is invalid (`errors` names it). Also when the invoice is not a draft, or the payment is in another currency, exceeds the balance or predates the issue date.',
+            429 => 'Too many requests (retry after Retry-After).',
         ],
     ];
 
@@ -669,6 +752,11 @@ final class AgentRestDocumentation
                 'request' => 'ExpectedVersionRequest',
                 'response' => 'DeletionResponse',
                 'response_description' => 'Draft expense soft-deleted',
+                'errors' => self::ROUTED_WRITE_ERRORS['expenses.delete'],
+                'extensions' => [
+                    'x-svc-flags' => ['AGENT_API_WRITES_ENABLED', 'AGENT_API_EXPENSE_WRITES_ENABLED'],
+                    'x-mcp-tool' => 'expenses.delete',
+                ],
             ],
             'expenses.list' => [
                 'method' => 'GET',
@@ -693,6 +781,11 @@ final class AgentRestDocumentation
                 'request' => 'ExpenseLogRequest',
                 'response' => 'ExpenseBatchResponse',
                 'response_description' => 'Draft expenses recorded or replayed',
+                'errors' => self::ROUTED_WRITE_ERRORS['expenses.log'],
+                'extensions' => [
+                    'x-svc-flags' => ['AGENT_API_WRITES_ENABLED', 'AGENT_API_EXPENSE_WRITES_ENABLED'],
+                    'x-mcp-tool' => 'expenses.log',
+                ],
             ],
             'expenses.receipts.content' => [
                 'method' => 'GET',
@@ -768,6 +861,11 @@ final class AgentRestDocumentation
                 'request' => 'ExpenseUpdateRequest',
                 'response' => 'ExpenseResponse',
                 'response_description' => 'Draft expense updated',
+                'errors' => self::ROUTED_WRITE_ERRORS['expenses.update'],
+                'extensions' => [
+                    'x-svc-flags' => ['AGENT_API_WRITES_ENABLED', 'AGENT_API_EXPENSE_WRITES_ENABLED'],
+                    'x-mcp-tool' => 'expenses.update',
+                ],
             ],
             'invoices.add_time' => [
                 'method' => 'POST',
@@ -860,11 +958,16 @@ final class AgentRestDocumentation
             'invoices.issue' => [
                 'method' => 'POST',
                 'scopes' => ['billing:deliver'],
-                'description' => false,
-                'parameters' => ['WorkspaceId', 'InvoiceId', 'IdempotencyKey'],
+                'description' => 'Issue a draft invoice as a workspace owner or admin, using its current version and confirm: true. Issuing never emails the client itself; automatic invoice email, when the client has it, is scheduled after its delay. An optional payment records money already received elsewhere in the same transaction and receipt (payments:record and AGENT_API_PAYMENT_WRITES_ENABLED); it never initiates a charge, and the scheduled delivery is cancelled. Requires AGENT_API_WRITES_ENABLED and AGENT_API_INVOICE_WRITES_ENABLED.',
+                'parameters' => ['WorkspaceId', 'InvoiceId', 'IdempotencyKey', self::readView('the issued invoice exactly as invoices.get presents it', 'billing:read')],
                 'request' => 'InvoiceIssueRequest',
                 'response' => 'InvoiceIssueResponse',
                 'response_description' => 'Invoice issued, and paid when a payment was supplied',
+                'errors' => self::ROUTED_WRITE_ERRORS['invoices.issue'],
+                'extensions' => [
+                    'x-svc-flags' => ['AGENT_API_WRITES_ENABLED', 'AGENT_API_INVOICE_WRITES_ENABLED'],
+                    'x-mcp-tool' => 'invoices.issue',
+                ],
             ],
             'invoices.list' => [
                 'method' => 'GET',
@@ -1201,11 +1304,16 @@ final class AgentRestDocumentation
             'tasks.create' => [
                 'method' => 'POST',
                 'scopes' => ['tasks:write'],
-                'description' => false,
+                'description' => 'Create a task in a project whose tasks the caller may manage. Hidden from clients unless is_visible_to_client is true. Requires AGENT_API_WRITES_ENABLED.',
                 'parameters' => ['WorkspaceId', 'ProjectId', 'IdempotencyKey'],
                 'request' => 'TaskCreateRequest',
                 'response' => 'TaskResponse',
                 'response_description' => 'Task created',
+                'errors' => self::ROUTED_WRITE_ERRORS['tasks.create'],
+                'extensions' => [
+                    'x-svc-flags' => ['AGENT_API_WRITES_ENABLED'],
+                    'x-mcp-tool' => 'tasks.create',
+                ],
             ],
             'tasks.get' => [
                 'method' => 'GET',
@@ -1231,11 +1339,16 @@ final class AgentRestDocumentation
             'tasks.update' => [
                 'method' => 'PATCH',
                 'scopes' => ['tasks:write'],
-                'description' => 'Omitted properties remain unchanged; explicit null clears nullable properties.',
+                'description' => 'Update a task the caller may manage, using its current version. Omitted properties remain unchanged; explicit null clears nullable properties. Completing stamps completed_at once; reopening clears it. Requires AGENT_API_WRITES_ENABLED.',
                 'parameters' => ['WorkspaceId', 'TaskId', 'IdempotencyKey'],
                 'request' => 'TaskUpdateRequest',
                 'response' => 'TaskResponse',
                 'response_description' => 'Task updated',
+                'errors' => self::ROUTED_WRITE_ERRORS['tasks.update'],
+                'extensions' => [
+                    'x-svc-flags' => ['AGENT_API_WRITES_ENABLED'],
+                    'x-mcp-tool' => 'tasks.update',
+                ],
             ],
             'time_entries.approve' => [
                 'method' => 'POST',
@@ -1249,11 +1362,16 @@ final class AgentRestDocumentation
             'time_entries.delete' => [
                 'method' => 'DELETE',
                 'scopes' => ['time:write'],
-                'description' => false,
+                'description' => 'Soft-delete draft time using its current version: the caller\'s own, or anyone\'s as a workspace owner or admin. Approved and invoiced time is refused. Requires AGENT_API_TIME_ENTRY_WRITES_ENABLED.',
                 'parameters' => ['WorkspaceId', 'TimeEntryId', 'IdempotencyKey'],
                 'request' => 'ExpectedVersionRequest',
                 'response' => 'DeletionResponse',
                 'response_description' => 'Draft time soft-deleted',
+                'errors' => self::ROUTED_WRITE_ERRORS['time_entries.delete'],
+                'extensions' => [
+                    'x-svc-flags' => ['AGENT_API_TIME_ENTRY_WRITES_ENABLED'],
+                    'x-mcp-tool' => 'time_entries.delete',
+                ],
             ],
             'time_entries.list' => [
                 'method' => 'GET',
@@ -1288,11 +1406,16 @@ final class AgentRestDocumentation
             'time_entries.log' => [
                 'method' => 'POST',
                 'scopes' => ['time:write'],
-                'description' => false,
-                'parameters' => ['WorkspaceId', 'IdempotencyKey'],
+                'description' => 'Atomically log up to 20 completed time entries on projects the caller may log time on. client_visible_description without is_visible_to_client makes the entry client-visible; send false to stage the client text privately. A billing rate requires time:approve and the approver role. approve: true approves the entries in the same transaction and receipt; it requires time:approve, the approver role on every project and AGENT_API_WRITES_ENABLED. Requires AGENT_API_TIME_ENTRY_WRITES_ENABLED.',
+                'parameters' => ['WorkspaceId', 'IdempotencyKey', self::readView('the written time entries exactly as time_entries.list presents them', 'time:read')],
                 'request' => 'TimeLogRequest',
                 'response' => 'TimeEntryBatchResponse',
                 'response_description' => 'Time entries logged or replayed',
+                'errors' => self::ROUTED_WRITE_ERRORS['time_entries.log'],
+                'extensions' => [
+                    'x-svc-flags' => ['AGENT_API_TIME_ENTRY_WRITES_ENABLED'],
+                    'x-mcp-tool' => 'time_entries.log',
+                ],
             ],
             'time_entries.unapprove' => [
                 'method' => 'POST',
@@ -1306,11 +1429,16 @@ final class AgentRestDocumentation
             'time_entries.update' => [
                 'method' => 'PATCH',
                 'scopes' => ['time:write'],
-                'description' => 'Omitted properties remain unchanged; explicit null clears nullable properties.',
+                'description' => 'Update draft time, or approved time on a regenerable draft invoice, using its current version: the caller\'s own, or anyone\'s as a workspace owner or admin. Omitted properties remain unchanged; explicit null clears nullable properties. Requires AGENT_API_TIME_ENTRY_WRITES_ENABLED.',
                 'parameters' => ['WorkspaceId', 'TimeEntryId', 'IdempotencyKey'],
                 'request' => 'TimeUpdateRequest',
                 'response' => 'TimeEntryResponse',
                 'response_description' => 'Draft time updated',
+                'errors' => self::ROUTED_WRITE_ERRORS['time_entries.update'],
+                'extensions' => [
+                    'x-svc-flags' => ['AGENT_API_TIME_ENTRY_WRITES_ENABLED'],
+                    'x-mcp-tool' => 'time_entries.update',
+                ],
             ],
             'workspaces.create' => [
                 'method' => 'POST',
@@ -1587,6 +1715,21 @@ final class AgentRestDocumentation
                 'required' => true,
                 'schema' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 255],
             ],
+        ];
+    }
+
+    /**
+     * `?view=read` on a write ({@see ReadView}).
+     *
+     * @return array<string, mixed>
+     */
+    private static function readView(string $answer, string $scope): array
+    {
+        return [
+            'name' => ReadView::PARAMETER,
+            'in' => 'query',
+            'description' => "Send `read` to receive {$answer}, when the token also holds {$scope}; without that scope the response keeps the write shape. Any other value is refused before anything is written, and the view is not part of the request an Idempotency-Key binds.",
+            'schema' => ['type' => 'string', 'enum' => [ReadView::READ]],
         ];
     }
 
