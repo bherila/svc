@@ -18,6 +18,7 @@ use App\Services\Square\SquareConfiguration;
 use App\Services\Square\SquareLinkRepository;
 use App\Services\Square\SquareRequestFailed;
 use App\Support\AgentApi\ExplicitConfirmation;
+use App\Support\Billing\BillingCadence;
 use App\Support\WorkspaceClock;
 use DomainException;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -133,10 +134,18 @@ final class SquareCustomerImporter
                         'starts_on' => $series['first_due_on'],
                         'billing_cadence' => $series['cadence'],
                         'currency' => $series['currency'],
-                        'retainer_amount' => $series['amount'],
                     ]);
-                    // Billed in Square: svc issues and records, Square collects.
-                    $agreement->forceFill(['square_series_key' => $series['series_key']])->save();
+                    // The series bills its amount once per cycle. retainer_amount
+                    // is a monthly fee the engine multiplies by the cycle's
+                    // months, so a quarterly or annual series' amount is the
+                    // whole-cycle override instead. Billed in Square: svc
+                    // issues and records, Square collects.
+                    $agreement->forceFill([
+                        ...($series['cadence'] === BillingCadence::Monthly->value
+                            ? ['retainer_amount' => $series['amount']]
+                            : ['period_retainer_amount' => $series['amount']]),
+                        'square_series_key' => $series['series_key'],
+                    ])->save();
                 }
                 $this->activities->record($workspace, $company, 'company.imported_from_square', $company, [
                     'square_customer_id' => $customerId,

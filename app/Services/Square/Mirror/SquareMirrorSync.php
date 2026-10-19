@@ -211,10 +211,25 @@ final class SquareMirrorSync
     {
         foreach ($this->mirror->invoicesNeedingPaymentIds($workspace, $limit) as $invoice) {
             $order = $this->client->retrieveOrder($invoice['square_order_id'])['order'] ?? null;
-            if (! is_array($order)) {
+            // As the reconciler checks it: the order must be the one asked
+            // for, at the invoice's location when the mirror knows it.
+            if (! is_array($order) || ($order['id'] ?? null) !== $invoice['square_order_id']
+                || ($invoice['square_location_id'] !== null && ($order['location_id'] ?? null) !== $invoice['square_location_id'])) {
                 throw SquareRequestFailed::unreadable();
             }
-            if ($this->mirror->storePaymentIds($workspace, $invoice['square_invoice_id'], $invoice['basis'], $this->mapper->paymentIds($order))) {
+            // An order with more tenders than the reconciler accepts stays
+            // unresolved, and the billing audit says it is incomplete; it is
+            // stamped so the next runs move on to other invoices.
+            // The basis is STATUS|PAID|rules; an empty PAID is an unknown amount.
+            $ids = $this->mapper->paymentIds($order, explode('|', $invoice['basis'], 3)[1] !== '');
+            if ($ids === null) {
+                $this->mirror->markPaymentIdsUnresolvable($workspace, $invoice['square_invoice_id'], $invoice['basis'],
+                    retryAfter: ! $this->mapper->exceedsTenderBound($order) && $this->mapper->holdsAuthorization($order) ? $this->now() : null, read: $invoice['read']);
+            } elseif ($ids === []) {
+                // Every queued invoice may hold a payment; an order showing no
+                // settled tender yet is retried, not taken as having none.
+                $this->mirror->markPaymentIdsUnresolvable($workspace, $invoice['square_invoice_id'], $invoice['basis'], retryAfter: $this->now(), read: $invoice['read']);
+            } elseif ($this->mirror->storePaymentIds($workspace, $invoice['square_invoice_id'], $invoice['basis'], $ids, rereadAfter: $this->now(), read: $invoice['read'])) {
                 $tally->paymentsResolved++;
             }
         }

@@ -380,7 +380,7 @@ final class AgentOperationCatalog
             $this->tool(
                 'billing_audit.stale_and_missing',
                 'Audit stale drafts and missing periods',
-                'Workspace managers only. Count drafts whose due date or scheduled issue date has passed and active recurring agreements lacking a non-void invoice for their current retainer period, with balances per currency and up to 100 identifiers per category. Flags only: nothing is issued, sent or generated.',
+                'Workspace managers only. Count drafts whose due date or scheduled issue date has passed and active recurring agreements lacking a non-void invoice for their current retainer period, with balances per currency and up to 100 identifiers per category. Where Square serves the workspace, also flags invoices paid outside Square, billed Square series periods with no linked svc invoice, unrecorded Square payments, unlinked Square customers with an open balance, and series drift from the agreement. Flags only: nothing is issued, sent or generated, and nothing is written to Square.',
                 [AgentMcpReadTools::class, 'billingAuditStaleAndMissing'],
                 Effect::Read,
                 true,

@@ -403,7 +403,7 @@ final class AgentRestDocumentation
             'billing_audit.stale_and_missing' => [
                 'method' => 'GET',
                 'scopes' => ['billing:read'],
-                'description' => 'Workspace managers only. A stale draft is a draft whose due date or scheduled issue date is before today in the workspace\'s calendar; a missing period is the started current period of an active recurring agreement with no non-void invoice. This read only flags them: nothing issues, sends or generates an invoice.',
+                'description' => 'Workspace managers only. A stale draft is a draft whose due date or scheduled issue date is before today in the workspace\'s calendar; a missing period is the started current period of an active recurring agreement with no non-void invoice. Where Square serves the workspace, square_payment_mismatches lists invoices paid outside Square while Square is still open, and square_billing_audit flags billed series periods with no linked svc invoice, Square payments svc has not recorded, unlinked Square customers with an open balance, and series whose cadence, currency or amount drifted from the agreement, from svc\'s mirror as of its last sync. This read only flags them: nothing issues, sends or generates an invoice, and nothing is written to Square.',
                 'parameters' => ['WorkspaceId'],
                 'response' => 'StaleAndMissingInvoiceAuditResponse',
                 'response_description' => 'Authorized result',
