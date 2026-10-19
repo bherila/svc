@@ -115,6 +115,8 @@ for directory in "$root" "$root/public" "$root/public/build"; do
 done
 for manifest in "$root/public/build/manifest.json" "$root/public/build/.vite/manifest.json"; do
     [ -e "$manifest" ] || [ -L "$manifest" ] || continue
+    # The fallback's .vite directory must be real too, not only public/build above it.
+    [ -d "${manifest%/*}" ] && [ ! -L "${manifest%/*}" ] || exit 1
     [ -f "$manifest" ] && [ ! -L "$manifest" ] || exit 1
     [ "$(wc -c <"$manifest")" -le "$2" ] || exit 1
     exec head -c "$2" -- "$manifest"

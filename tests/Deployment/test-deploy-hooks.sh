@@ -289,6 +289,15 @@ ln -s "$temporary/manifest.json" "$manifest"
 expect_diagnose_failure 'a symlinked build manifest'
 rm "$manifest"
 expect_diagnose_failure 'a missing build manifest'
+# The .vite fallback is accepted only through a real directory.
+mkdir -p "$remote_home/svc-laravel/public/build/.vite"
+cp "$temporary/manifest.json" "$remote_home/svc-laravel/public/build/.vite/manifest.json"
+run_diagnose >/dev/null 2>&1 || fail 'diagnostic rejected a real .vite manifest'
+mv "$remote_home/svc-laravel/public/build/.vite" "$temporary/vite"
+ln -s "$temporary/vite" "$remote_home/svc-laravel/public/build/.vite"
+expect_diagnose_failure 'a symlinked .vite manifest directory'
+rm "$remote_home/svc-laravel/public/build/.vite"
+rm -r "$temporary/vite"
 cp "$temporary/manifest.json" "$manifest"
 mv "$remote_home/svc-laravel/public/build" "$temporary/build"
 ln -s "$temporary/build" "$remote_home/svc-laravel/public/build"
