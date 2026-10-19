@@ -1169,6 +1169,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    '/workspaces/{workspace}/payments/{payment}/refunds/{refund}/reversal': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Owner/admin correction of a refund that was recorded in error against a payment recorded by hand - the money was never returned to the client. Records a reversing entry linked to the refund, which stays in the payment's refunds unchanged: the refund is never edited or deleted. amount reverses part of the refund, in minor units; omitted, the whole refund is reversed. A refund is reversed at most once and never by more than it was, and a reversal is not itself reversed - if the money was returned after all, record the refund again with payments.refund. The payment's refunded_amount falls by the amount, a fully refunded payment becomes succeeded again, and the invoice's paid amount, balance and status are recomputed, so an invoice can be paid again. Requires confirm: true, the payment version and the refund id from payments.list, and a reason, which is kept in the client history with both entries' ids. A stale version is refused with 409. Refused with 422: a payment recorded by a processor (Stripe, Square), whose refunds follow its own events; a refund already reversed, a reversal, or an id that is not a refund of this payment; more than the refund or than the payment's refunded amount; a void invoice; or successful payments that would exceed the invoice total. Never initiates a charge and never moves money. Requires both outer workflow and payment write flags. */
+        post: operations['payments.reverse_refund'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     '/workspaces/{workspace}/payments/{payment}/status': {
         parameters: {
             query?: never;
@@ -3270,8 +3287,10 @@ export interface components {
              * @description The finance system's transaction the payment was recorded against. Null unless the reader is a workspace owner/admin.
              */
             external_finance_transaction_uuid: string | null;
-            /** @description Recorded by hand rather than by a payment processor. Only a manual payment can be moved by payments.set_status or payments.refund. */
+            /** @description Recorded by hand rather than by a payment processor. Only a manual payment can be moved by payments.set_status, payments.refund or payments.reverse_refund. */
             manual: boolean;
+            /** @description The refunds recorded by hand against this payment and their reversals, oldest first; refunded_amount is the refunds less their reversals. Empty for a processor (Stripe, Square) payment, whose refunds are reported by the processor as a total. */
+            refunds: components['schemas']['ReceivedPaymentRefund'][];
         };
         ReceivedPaymentBatchResponse: {
             data: components['schemas']['ReceivedPayment'][];
@@ -3333,6 +3352,31 @@ export interface components {
             /** @description Current invoice version from invoices.get. */
             expected_version: string;
         };
+        ReceivedPaymentRefund: {
+            /** Format: uuid */
+            id: string;
+            /**
+             * @description refund: money returned to the client outside SVC. reversal: a refund recorded in error, answered; the refund it names is unchanged.
+             * @enum {string}
+             */
+            kind: 'refund' | 'reversal';
+            /** @description Minor units, in the payment's currency. */
+            amount: number;
+            /** @description Why, as recorded. Null unless the reader is a workspace owner/admin. */
+            reason: string | null;
+            /**
+             * Format: uuid
+             * @description For a reversal, the refund it reverses; null for a refund.
+             */
+            reverses_refund_id: string | null;
+            /**
+             * Format: uuid
+             * @description For a refund, the reversal that answers it, or null while none has; a refund is reversed at most once. Always null for a reversal.
+             */
+            reversed_by_id: string | null;
+            /** Format: date-time */
+            recorded_at: string;
+        };
         ReceivedPaymentRefundRequest: {
             expected_version: components['schemas']['Version'];
             /**
@@ -3344,6 +3388,18 @@ export interface components {
             reason: string;
             /** @description What was returned to the client now, in minor units; at most what is left unrefunded. */
             amount: number;
+        };
+        ReceivedPaymentRefundReversalRequest: {
+            expected_version: components['schemas']['Version'];
+            /**
+             * @description Explicit user confirmation is required.
+             * @constant
+             */
+            confirm: true;
+            /** @description Why the refund was recorded in error, kept in the client history. */
+            reason: string;
+            /** @description How much of the refund to reverse, in minor units, at most the refund; omitted or null reverses all of it. */
+            amount?: number | null;
         };
         ReceivedPaymentResponse: {
             data: components['schemas']['ReceivedPayment'];
@@ -7837,6 +7893,38 @@ export interface operations {
         };
         responses: {
             /** @description Payment with the refund recorded */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ReceivedPaymentResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'payments.reverse_refund': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                payment: components['parameters']['PaymentId'];
+                /** @description The refund to reverse: a refunds[].id of kind refund from payments.list. */
+                refund: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['ReceivedPaymentRefundReversalRequest'];
+            };
+        };
+        responses: {
+            /** @description Payment with the reversal recorded */
             200: {
                 headers: {
                     [name: string]: unknown;

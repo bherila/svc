@@ -39,7 +39,7 @@ final class AgentMcpWriteToolRestDispatchTest extends TestCase
         $this->assertNotEmpty($writes);
         // The finance reconciliation (#457) and payment (#459) writes dispatch
         // like every other: no write tool runs its action directly any more.
-        foreach (['finance.reconciliations.upsert', 'finance.reconciliations.deactivate', 'payments.record', 'payments.correct', 'payments.set_status', 'payments.refund'] as $id) {
+        foreach (['finance.reconciliations.upsert', 'finance.reconciliations.deactivate', 'payments.record', 'payments.correct', 'payments.set_status', 'payments.refund', 'payments.reverse_refund'] as $id) {
             $this->assertArrayHasKey($id, $writes);
         }
 

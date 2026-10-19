@@ -14,8 +14,8 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 
 /**
- * `payments.set_status` and `payments.refund`: what a payment recorded by hand
- * is worth, changed with a reason (#455).
+ * `payments.set_status`, `payments.refund` and `payments.reverse_refund`: what
+ * a payment recorded by hand is worth, changed with a reason (#455, #472).
  *
  * The one implementation behind REST and MCP; the console commands reach the
  * same {@see ManualPaymentChange} and {@see InvoiceLifecycleService::changeManualPayment()}
@@ -57,17 +57,32 @@ final class ChangeManualPaymentAction
     }
 
     /**
+     * `payments.reverse_refund` (#472): answer a refund recorded in error with
+     * a reversing entry naming it - all of it, or `amount` of it.
+     *
+     * @param  array<string, mixed>  $payload
+     * @return list<string>
+     */
+    public function reverseRefund(User $user, Workspace $workspace, string $clientId, string $key, string $paymentId, string $refundId, array $payload): array
+    {
+        return $this->run('payments.reverse_refund', $user, $workspace, $clientId, $key, $paymentId, $payload, [
+            'body.amount' => ['sometimes', 'nullable', 'integer:strict', 'min:1'],
+        ], static fn (array $data): ManualPaymentChange => ManualPaymentChange::reversal($refundId, $data['amount'] ?? null, $data['reason']), ['refund_id' => $refundId]);
+    }
+
+    /**
      * @param  array<string, mixed>  $payload
      * @param  array<string, list<mixed>>  $rules  the operation's own field
      * @param  callable(array<string, mixed>): ManualPaymentChange  $change
+     * @param  array<string, string>  $path  more of the path than the payment, part of what the receipt is for
      * @return list<string>
      */
-    private function run(string $operation, User $user, Workspace $workspace, string $clientId, string $key, string $paymentId, array $payload, array $rules, callable $change): array
+    private function run(string $operation, User $user, Workspace $workspace, string $clientId, string $key, string $paymentId, array $payload, array $rules, callable $change, array $path = []): array
     {
         abort_unless(trim($key) !== '' && strlen($key) <= 255, 422, 'An idempotency key is required.');
         $field = substr((string) array_key_first($rules), strlen('body.'));
 
-        return $this->mutations->run($user, $workspace, $clientId, $operation, $key, ['payment_id' => $paymentId, 'body' => $payload],
+        return $this->mutations->run($user, $workspace, $clientId, $operation, $key, ['payment_id' => $paymentId, ...$path, 'body' => $payload],
             function () use ($user, $workspace, $paymentId, $payload, $rules, $field, $change): array {
                 $this->authorize($user, $workspace);
                 $data = Validator::make(['body' => $payload], [
@@ -81,7 +96,7 @@ final class ChangeManualPaymentAction
                     ->where('workspace_id', $workspace->id)
                     ->where('public_id', $paymentId)
                     ->firstOrFail();
-                $outcome = $this->invoices->changeManualPayment($payment, $change($data), (string) $data['expected_version'], $workspace);
+                $outcome = $this->invoices->changeManualPayment($payment, $change($data), (string) $data['expected_version'], $workspace, $user);
 
                 return [$outcome->payment->public_id];
             },

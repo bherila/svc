@@ -178,7 +178,7 @@ final class AgentPaymentsTest extends TestCase
             'id' => $payment->public_id, 'invoice_id' => $invoice->public_id, 'amount' => 2500, 'refunded_amount' => 0, 'currency' => 'USD',
             'received_on' => $payment->received_on?->toDateString(), 'method' => 'cash', 'reference' => 'SYN-CHEQUE-1', 'notes' => $payload['notes'],
             'external_finance_transaction_uuid' => $payload['external_finance_transaction_uuid'], 'status' => 'pending', 'manual' => true,
-            'version' => AgentApiVersion::for($payment),
+            'refunds' => [], 'version' => AgentApiVersion::for($payment),
         ], $first[0]);
         // Money not yet cleared moves nothing.
         $this->assertSame('issued', $invoice->fresh()?->status);

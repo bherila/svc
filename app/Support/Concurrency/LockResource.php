@@ -53,6 +53,9 @@ enum LockResource: string
     // status and refund both start from the payment row and reach the invoice
     // through it, never the other way.
     case ClientInvoicePayment = 'client_invoice_payments';
+    // A hand-recorded payment's refund history (#472), read with a share lock
+    // under the payment's lock so a reversal decides on the latest entries.
+    case ClientInvoicePaymentRefund = 'client_invoice_payment_refunds';
     case PaymentReconciliation = 'payment_reconciliations';
 
     case ClientInvoice = 'client_invoices';

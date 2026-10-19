@@ -60,4 +60,12 @@ final class AgentPaymentController extends Controller
 
         return response()->json(['data' => $reads->result($context->user, $workspace, $ids)['data'][0]]);
     }
+
+    public function reverseRefund(Request $request, Workspace $workspace, string $payment, string $refund, AgentMutationContextFactory $contexts, ChangeManualPaymentAction $action, AgentPaymentReadService $reads): JsonResponse
+    {
+        $context = $contexts->fromAuthenticatedClient($request);
+        $ids = $action->reverseRefund($context->user, $workspace, $context->oauthClientId, $context->idempotencyKey, $payment, $refund, $request->all());
+
+        return response()->json(['data' => $reads->result($context->user, $workspace, $ids)['data'][0]]);
+    }
 }

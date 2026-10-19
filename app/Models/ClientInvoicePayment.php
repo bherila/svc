@@ -117,6 +117,17 @@ class ClientInvoicePayment extends Model implements WorkspaceOwned
         return $this->belongsTo(Workspace::class);
     }
 
+    /**
+     * The refunds of a payment recorded by hand and their reversals (#472),
+     * immutable and in the order they were recorded.
+     *
+     * @return HasMany<ClientInvoicePaymentRefund, $this>
+     */
+    public function refunds(): HasMany
+    {
+        return $this->hasMany(ClientInvoicePaymentRefund::class, 'client_invoice_payment_id');
+    }
+
     /** @return HasMany<PaymentReconciliation, $this> */
     public function reconciliations(): HasMany
     {

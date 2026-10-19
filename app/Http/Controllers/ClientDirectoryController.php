@@ -261,6 +261,7 @@ class ClientDirectoryController extends Controller
                 ->where('workspace_id', $workspace->id)
                 ->orderByDesc('received_on')
                 ->orderByDesc('id'),
+            'payments.refunds' => AgentPaymentPresenter::with($workspace)['refunds'],
         ]);
         $clientInvoice->loadExists([
             'emailDeliveries as send_has_blocking_delivery' => fn (Builder $query): Builder => $query

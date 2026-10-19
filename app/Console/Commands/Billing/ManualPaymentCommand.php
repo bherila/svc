@@ -15,7 +15,8 @@ use Throwable;
 
 /**
  * The operator's doors to {@see InvoiceLifecycleService::changeManualPayment()}
- * (#455), the console twins of `payments.set_status` and `payments.refund`.
+ * (#455), the console twins of `payments.set_status`, `payments.refund` and
+ * `payments.reverse_refund` (#472).
  *
  * Each subclass only turns its options into a {@see ManualPaymentChange}; the
  * rules are that value's and the write is the service's, exactly as the API
@@ -28,6 +29,12 @@ abstract class ManualPaymentCommand extends Command
 {
     /** The change the options describe; a DomainException is reported as a refusal. */
     abstract protected function change(): ManualPaymentChange;
+
+    /** What to tell the operator after a refusal, beside the refusal itself. */
+    protected function refusalHint(ClientInvoicePayment $payment): ?string
+    {
+        return null;
+    }
 
     public function handle(InvoiceLifecycleService $service): int
     {
@@ -81,11 +88,22 @@ abstract class ManualPaymentCommand extends Command
                 'invoice_balance' => (int) $invoice->balance_amount,
                 // After a dry run the row is back to how it was locked.
                 'version' => $dryRun ? $outcome->lockedVersion : AgentApiVersion::for($outcome->payment),
+                // The refund or reversal entry written (#472); after a dry
+                // run, the one that would have been.
+                'entry' => $outcome->entry === null ? null : [
+                    'id' => (string) $outcome->entry->public_id,
+                    'kind' => $outcome->entry->kind->value,
+                    'amount' => (int) $outcome->entry->amount,
+                ],
             ];
             $dryRun ? DB::rollBack() : DB::commit();
         } catch (DomainException $exception) {
             DB::rollBack();
             $this->error($exception->getMessage());
+            $hint = $this->refusalHint($payment);
+            if ($hint !== null) {
+                $this->line($hint);
+            }
 
             return self::FAILURE;
         } catch (Throwable $exception) {
@@ -107,6 +125,9 @@ abstract class ManualPaymentCommand extends Command
         $this->components->twoColumnDetail('Status', $result['status']['old'].' → '.$result['status']['new']);
         $this->components->twoColumnDetail('Refunded', $result['refunded_amount']['old'].' → '.$result['refunded_amount']['new']);
         $this->components->twoColumnDetail('Invoice', $result['invoice_status'].', balance '.$result['invoice_balance']);
+        if ($result['entry'] !== null) {
+            $this->components->twoColumnDetail(ucfirst($result['entry']['kind']), $result['entry']['id'].', '.$result['entry']['amount']);
+        }
         if ($dryRun && $result['changed']) {
             $this->components->warn('Dry run: nothing was written.');
         }

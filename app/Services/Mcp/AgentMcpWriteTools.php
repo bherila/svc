@@ -181,6 +181,28 @@ final class AgentMcpWriteTools
         return $this->rest->call('payments.refund', ['workspace' => $workspace_id, 'payment' => $payment_id], compact('amount', 'expected_version', 'reason', 'confirm'), $idempotency_key);
     }
 
+    /**
+     * Answer a refund recorded in error with a reversing entry (#472): all of
+     * it, or `amount` of it when sent.
+     *
+     * @return array<string, mixed>
+     */
+    public function paymentsReverseRefund(
+        #[Schema(format: 'uuid')] string $workspace_id,
+        #[Schema(format: 'uuid')] string $payment_id,
+        #[Schema(format: 'uuid')] string $refund_id,
+        #[Schema(minLength: 64, maxLength: 64)] string $expected_version,
+        #[Schema(minLength: 1, maxLength: 500)] string $reason,
+        #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key,
+        #[Schema] bool $confirm,
+        RequestContext $request,
+        #[Schema(minimum: 1)] ?int $amount = null,
+    ): array {
+        return $this->rest->call('payments.reverse_refund', ['workspace' => $workspace_id, 'payment' => $payment_id, 'refund' => $refund_id],
+            compact('expected_version', 'reason', 'confirm') + $this->provided($request, compact('amount')),
+            $idempotency_key);
+    }
+
     public function forContext(McpRequestContext $context): self
     {
         return new self(

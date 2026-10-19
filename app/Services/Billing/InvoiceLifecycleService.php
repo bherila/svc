@@ -10,6 +10,7 @@ use App\Models\ClientInvoiceLine;
 use App\Models\ClientInvoicePayment;
 use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
+use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Activity\ClientActivityRecorder;
 use App\Services\Square\SquareCollectionGuard;
@@ -26,6 +27,7 @@ use App\Support\Billing\ManualPaymentOutcome;
 use App\Support\Billing\PaymentCorrection;
 use App\Support\Billing\PaymentCorrectionOutcome;
 use App\Support\Billing\PaymentDateBounds;
+use App\Support\Billing\PaymentRefundKind;
 use App\Support\Billing\PaymentVersionChanged;
 use App\Support\Billing\ServicePeriodRequirement;
 use App\Support\Concurrency\LockResource;
@@ -55,6 +57,7 @@ final class InvoiceLifecycleService
         private readonly WorkspaceClock $clock = new WorkspaceClock,
         private readonly ?InvoiceAdministratorNotificationService $administratorNotifications = null,
         private readonly DraftCatchUpDependencies $draftCatchUpDependencies = new DraftCatchUpDependencies,
+        private readonly PaymentRefundLedger $refunds = new PaymentRefundLedger,
     ) {}
 
     /**
@@ -1239,38 +1242,69 @@ final class InvoiceLifecycleService
      * `$expectedVersion` is checked on the locked row; a payment that moved
      * since the caller read it is refused with {@see PaymentVersionChanged}.
      * A change that leaves the payment as it is writes and records nothing.
+     *
+     * **Refunds and their reversals are entries (#472).** Each refund writes
+     * one immutable row of the payment's refund history
+     * ({@see PaymentRefundLedger}); a refund recorded in error is answered by a
+     * reversal naming it, which lowers the refunded amount through the same
+     * write and never edits the refund. A reversal makes money count again, so
+     * it is refused on a void invoice and wherever the invoice would be paid
+     * beyond its total. The entry is written under the payment lock, after the
+     * payment, and the activity names it.
      */
-    public function changeManualPayment(ClientInvoicePayment $payment, ManualPaymentChange $change, ?string $expectedVersion = null, ?Workspace $workspace = null): ManualPaymentOutcome
+    public function changeManualPayment(ClientInvoicePayment $payment, ManualPaymentChange $change, ?string $expectedVersion = null, ?Workspace $workspace = null, ?User $actor = null): ManualPaymentOutcome
     {
-        return DB::transaction(function () use ($payment, $change, $expectedVersion, $workspace): ManualPaymentOutcome {
+        return DB::transaction(function () use ($payment, $change, $expectedVersion, $workspace, $actor): ManualPaymentOutcome {
             /** @var array{status: InvoicePaymentStatus, refunded_amount: int}|null $decision */
             $decision = null;
             $observed = null;
-            $guard = static function (ClientInvoicePayment $locked) use ($change, $expectedVersion, &$decision, &$observed): bool {
+            $kind = $change->isReversal() ? PaymentRefundKind::Reversal : ($change->isRefund() ? PaymentRefundKind::Refund : null);
+            // Named before the write, so the activity the write records can
+            // carry the entry it is the history of.
+            $entryId = $kind === null ? null : (string) Str::uuid();
+            $refunds = $this->refunds;
+            $guard = static function (ClientInvoicePayment $locked) use ($change, $expectedVersion, $refunds, &$decision, &$observed): bool {
                 if ($expectedVersion !== null && ! AgentApiVersion::matches($locked, $expectedVersion)) {
                     throw new PaymentVersionChanged;
                 }
                 $observed = ['status' => (string) $locked->status, 'refunded_amount' => (int) $locked->refunded_amount, 'version' => AgentApiVersion::for($locked)];
-                $decision = $change->decide((string) $locked->status, (int) $locked->amount, (int) $locked->refunded_amount, $locked->provider);
+                // Read under the payment's lock, which every write of its
+                // refund history holds, so a refund cannot be reversed twice.
+                $target = $change->reverses === null ? null : $refunds->find($locked, $change->reverses);
+                $decision = $change->decide((string) $locked->status, (int) $locked->amount, (int) $locked->refunded_amount, $locked->provider, $target);
 
                 return $decision !== null;
             };
             // Closures by reference rather than arrow functions: both are read
             // after the guard has run, and an arrow function would capture the
             // values from before it.
-            $extra = static function () use ($change, &$observed): array {
-                return ['reason' => $change->reason, 'previous_status' => $observed['status'] ?? null];
+            $extra = static function () use ($change, $kind, $entryId, &$observed): array {
+                $entry = match ($kind) {
+                    PaymentRefundKind::Refund => ['refund_id' => $entryId],
+                    PaymentRefundKind::Reversal => ['reversal_id' => $entryId, 'reverses_refund_id' => $change->reverses],
+                    null => [],
+                };
+
+                return ['reason' => $change->reason, 'previous_status' => $observed['status'] ?? null, ...$entry];
             };
             $total = static function () use (&$decision): int {
                 return $decision['refunded_amount'] ?? throw new LogicException('A refund is written only after it is decided.');
             };
 
-            $written = $change->isRefund()
+            $written = $kind !== null
                 ? $this->writeRefundedAmount($payment, $total, $workspace, $guard, $extra, manual: true)
                 : $this->writePaymentStatus($payment, $change->status ?? throw new LogicException('A status change names its status.'), $workspace, $guard, $extra, manual: true);
 
             if ($observed === null) {
                 throw new LogicException('The manual payment guard did not run.');
+            }
+            $entry = null;
+            if ($kind !== null && $entryId !== null && $decision !== null) {
+                $moved = match ($kind) {
+                    PaymentRefundKind::Refund => $decision['refunded_amount'] - $observed['refunded_amount'],
+                    PaymentRefundKind::Reversal => $observed['refunded_amount'] - $decision['refunded_amount'],
+                };
+                $entry = $this->refunds->record($written, $entryId, $kind, $moved, $change->reason, $change->reverses, $actor);
             }
 
             return new ManualPaymentOutcome(
@@ -1279,6 +1313,7 @@ final class InvoiceLifecycleService
                 $observed['refunded_amount'],
                 $observed['version'],
                 $decision !== null,
+                $entry,
             );
         });
     }
@@ -1730,12 +1765,30 @@ final class InvoiceLifecycleService
             if ($guard !== null) {
                 $this->assertCurrentInvoiceSnapshot($invoice);
             }
+            $previousAmount = $lockedPayment->refunded_amount;
+            // A hand-recorded reversal (#472) is a decision that money counts
+            // again, so it must fit the invoice as recording that money would.
+            // A processor's lower total is a report and is recorded regardless.
+            $reversal = $manual && $amount < $previousAmount;
+            if ($reversal) {
+                if ($invoice->status === 'void') {
+                    throw new DomainException('The invoice is void, so a refund of its payment cannot be reversed: the money would count toward an invoice nobody owes. Nothing has been changed.');
+                }
+                $otherPaid = (int) $invoice->payments()
+                    ->where('workspace_id', $invoice->workspace_id)
+                    ->where('id', '!=', $lockedPayment->id)
+                    ->get(['status', 'amount', 'refunded_amount', 'disputed_amount'])
+                    ->sum(fn (ClientInvoicePayment $other): int => $other->paidContribution());
+                if (($lockedPayment->amount - $amount) > ($invoice->total_amount - $otherPaid)) {
+                    throw new DomainException('Reversing this refund would make successful payments exceed the invoice total. Withdraw the payment that replaced the refunded money first. Nothing has been changed.');
+                }
+            }
             // A refund changes the settled money the credit pool is derived
             // from. Recorded under the company lock, after the payment and the
             // invoice, so an issue spending credit concurrently either waits
             // for this or refuses on the moved revision.
             $this->overpaymentCreditService->recordPoolChange((int) $invoice->workspace_id, (int) $invoice->client_company_id);
-            $previousAmount = $lockedPayment->refunded_amount;
+            $previousInvoiceStatus = $invoice->status;
             $lockedPayment->forceFill([
                 'refunded_amount' => $amount,
                 'status' => $currentStatus === InvoicePaymentStatus::Disputed
@@ -1755,6 +1808,10 @@ final class InvoiceLifecycleService
                 (string) Str::uuid(),
                 ['previous_refunded_amount' => $previousAmount, ...($extra === null ? [] : $extra())],
             );
+            if ($reversal) {
+                // The money counts again, so it may settle the invoice again.
+                $this->recordMarkedPaid($invoice, $previousInvoiceStatus, (string) Str::uuid());
+            }
 
             return ClientInvoicePayment::query()->where('workspace_id', $lockedPayment->workspace_id)->whereKey($lockedPayment->id)->firstOrFail();
         });

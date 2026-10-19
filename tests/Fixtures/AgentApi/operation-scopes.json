@@ -1052,6 +1052,19 @@
             "mcp.switch:payments.refund"
         ]
     },
+    "payments.reverse_refund": {
+        "scopes": [
+            "payments:record",
+            "payments:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.payments",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:payments.reverse_refund"
+        ]
+    },
     "payments.set_status": {
         "scopes": [
             "payments:record",

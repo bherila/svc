@@ -266,8 +266,8 @@ already returned to the client outside SVC - SVC never sends money. `amount` is
 what was returned now, in minor units, and the refunds of a payment may not
 exceed its amount. Only a succeeded payment can be refunded; refunding all of it
 makes it `refunded`, otherwise it stays `succeeded` with its `refunded_amount`
-raised. A refund cannot be reduced: a refund entered in error is corrected by an
-operator, not by this operation.
+raised. Each refund is kept as its own immutable entry; one entered in error is
+never reduced or deleted, but answered by a reversal (below).
 
 **Balances and issued invoices.** The invoice's paid amount, balance and status
 are recomputed as for any payment change, so a paid invoice reopens: to
@@ -310,7 +310,70 @@ php artisan svc:billing:payment-status <payment> --workspace=<workspace> \
 php artisan svc:billing:refund-payment <payment> --workspace=<workspace> \
     --amount=<minor-units> --reason=<text> \
     [--expected-version=<version>] [--dry-run] [--format=json]
+php artisan svc:billing:reverse-refund <payment> --workspace=<workspace> \
+    --refund=<refund> [--amount=<minor-units>] --reason=<text> \
+    [--expected-version=<version>] [--dry-run] [--format=json]
 ```
+
+The output names the refund or reversal entry written (`entry` in JSON), so
+the refund's id is at hand for a later reversal.
+
+## Reversing a refund recorded in error
+
+A refund recorded by mistake - the money was never returned, or less was than
+was typed - is corrected by a **reversing entry** linked to it (#472). The
+refund is never edited or deleted: what was recorded and what corrected it both
+stay in the history.
+
+**The refund history.** Every refund of a payment recorded by hand is one row of
+`client_invoice_payment_refunds` (`PaymentRefundLedger`), immutable once written:
+the model refuses an update or a delete. A row is a `refund` or a `reversal`,
+with its amount, reason and who recorded it; a reversal names the refund it
+answers in `reverses_refund_id`, which is unique, so the schema itself refuses a
+second reversal of one refund. For a hand-recorded payment the refunds less
+their reversals always equal `refunded_amount`, which stays the total every
+balance is derived from. A payment refunded by hand before the history existed
+was given one refund entry for its whole refunded amount by the migration, so it
+can be reversed like any other. A processor's payment has no entries: its
+refunds are the processor's report of a total, and they follow its events.
+`payments.list` and the invoice screen's payload carry the entries as
+`refunds`, oldest first, with each entry's `reason` returned to owners/admins
+only.
+
+**The rule** (`ManualPaymentChange::reversal()`, decided without a database
+against the entry read under the payment lock):
+
+- only a payment recorded by hand, and only a `succeeded` or `refunded` one -
+  the only statuses a refunded payment can be in;
+- only an entry of kind `refund` of this payment that nothing has reversed - a
+  reversal is not itself reversed; if the money was returned after all, the
+  refund is recorded again;
+- `amount` reverses part of the refund and defaults to all of it; it may not
+  exceed the refund, nor the payment's refunded amount;
+- a reason (at most 500 characters).
+
+**What it does.** The refunded amount falls by the reversed amount through the
+same write a refund takes - the payment and invoice locks, the credit-pool
+change, the invoice recomputation - so a fully refunded payment is `succeeded`
+again and the invoice's paid amount rises; `invoice.marked_paid` is recorded if
+that settles it. Because the money counts again, the reversal is refused on a
+void invoice and wherever successful payments would then exceed the invoice
+total: withdraw the payment that replaced the refunded money first. A reversal
+only raises what the payment is worth, so its finance reconciliation
+allocations are untouched. The activity is `invoice.payment_refund_reversed`
+with `reason`, `previous_status`, `previous_refunded_amount`, `reversal_id` and
+`reverses_refund_id`; a refund's `invoice.payment_refunded` now also carries its
+`refund_id`.
+
+**The doors.** `payments.reverse_refund`
+(`POST /api/v1/workspaces/{workspace}/payments/{payment}/refunds/{refund}/reversal`,
+and the MCP tool of that name with `refund_id`) takes `expected_version`,
+`confirm: true`, `reason` and an optional `amount`, with an idempotency key, the
+same scopes and flags as `payments.refund`, and answers with the payment as
+`payments.list` returns it. `svc:billing:reverse-refund` is its console twin;
+when the refund named is not one it can reverse, it lists the payment's refunds
+not yet reversed. The invoice screen does not record refunds, so it offers no
+reversal either.
 
 ## Payment Workflow
 

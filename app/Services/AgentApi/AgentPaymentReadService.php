@@ -97,7 +97,7 @@ final class AgentPaymentReadService
         return ClientInvoicePayment::query()->select(AgentPaymentPresenter::COLUMNS)->where('workspace_id', $workspace->id)
             ->whereHas('invoice', fn (Builder $invoices) => $invoices->where('workspace_id', $workspace->id))
             ->with(['invoice' => fn ($invoices) => $invoices->where('workspace_id', $workspace->id)
-                ->select(['id', 'workspace_id', 'public_id'])]);
+                ->select(['id', 'workspace_id', 'public_id']), ...AgentPaymentPresenter::with($workspace)]);
     }
 
     /** @return array<string, mixed> */

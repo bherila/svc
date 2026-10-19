@@ -55,6 +55,7 @@ the majority order won and the minority is named as an inversion below.
 | 2 | `client_billing_schedules` | A schedule run starts from the schedule row and produces invoices |
 | 3 | `client_agreements` | Generation serialises on the agreement, because the invoice rows it guards against may not exist yet |
 | 4 | `client_invoice_payments` | Payment status and refund both start from the payment and reach the invoice through it — never the reverse |
+| 4b | `client_invoice_payment_refunds` | A hand-recorded payment's refund history (#472), share-locked under the payment's lock so a reversal reads the latest entries; `cipr_reverses_unique` behind it |
 | 5 | `payment_reconciliations` | Hangs off a payment already held |
 | 6 | `client_invoices` | Every generator has an agreement or a schedule before it has an invoice |
 | 7 | `client_invoice_lines` | Issued correction locks the invoice before preserving and changing its existing lines |
