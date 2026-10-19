@@ -8,6 +8,7 @@ use App\Models\ClientStripeEvent;
 use App\Models\ClientStripePaymentMethod;
 use App\Models\Workspace;
 use App\Support\Billing\InvoicePaymentStatus;
+use App\Support\Billing\StripeEventMustBeRetried;
 use App\Support\Billing\StripeRefundStatus;
 use App\Support\Concurrency\Locks;
 use App\Support\WorkspaceClock;
@@ -84,18 +85,21 @@ final class StripeWebhookService
         // Resolve scope outside the business transaction: its first ordinary
         // read must not establish a snapshot before the payment/invoice locks.
         $paymentWorkspaceId = null;
+        $standingRefunds = null;
         $type = (string) $event->type;
         if (str_starts_with($type, 'payment_intent.') || str_starts_with($type, 'charge.') || in_array($type, self::REFUND_UPDATES, true)) {
-            $probe = $this->paymentQuery($object)->first(['workspace_id']);
+            $probe = $this->paymentQuery($object)->first(['workspace_id', 'lock_version']);
             $paymentWorkspaceId = $probe !== null && $probe->workspace_id > 0 ? $probe->workspace_id : null;
+            // A refund that failed or was canceled is no longer refunded, and
+            // the event names only that one refund. What still stands is read
+            // from Stripe, outside the business transaction, so the same
+            // failure reported twice - or under both of its names - is applied
+            // once. The payment's revision is read first, so a write that lands
+            // while Stripe is being read is noticed under the lock.
+            if ($probe !== null && $paymentWorkspaceId !== null && $this->isUndoneRefund($type, $object)) {
+                $standingRefunds = [...$this->standingRefundTotal($object), 'version' => $probe->lock_version];
+            }
         }
-        // A refund that failed or was canceled is no longer refunded, and the
-        // event names only that one refund. What still stands is read from
-        // Stripe, outside the business transaction, so the same failure
-        // reported twice - or under both of its names - is applied once.
-        $standingRefunds = $paymentWorkspaceId !== null && $this->isUndoneRefund($type, $object)
-            ? $this->standingRefundTotal($object)
-            : null;
 
         return DB::transaction(function () use ($event, $object, $ledger, $paymentWorkspaceId, $standingRefunds): bool {
             if ($paymentWorkspaceId !== null) {
@@ -151,7 +155,7 @@ final class StripeWebhookService
 
     /**
      * @param  array<string, mixed>  $object
-     * @param  array{amount: int, currency: string}|null  $standingRefunds  for a refund that failed or was canceled, what Stripe still holds refunded on its charge
+     * @param  array{amount: int, currency: string, version: int}|null  $standingRefunds  for a refund that failed or was canceled, what Stripe still holds refunded on its charge, and the payment's revision read before Stripe was asked
      */
     private function handleInvoiceEvent(Event $event, array $object, ClientStripeEvent $ledger, ?int $paymentWorkspaceId, ?array $standingRefunds): void
     {
@@ -199,6 +203,12 @@ final class StripeWebhookService
             if ($standingRefunds['currency'] !== $payment->currency) {
                 throw new \DomainException('Stripe refund currency does not match the invoice payment.');
             }
+            // The total was read before this lock. Had the payment moved since
+            // - a newer refund recorded meanwhile - the read may predate it,
+            // so it is not applied; Stripe's retry reads afresh.
+            if ($payment->lock_version !== $standingRefunds['version']) {
+                throw new StripeEventMustBeRetried('The payment changed while Stripe was being read.');
+            }
             // Not subject to the payment's event ordering: the total was read
             // from Stripe just now, so it is current whenever this
             // notification was sent, and applying it twice changes nothing.
@@ -229,13 +239,39 @@ final class StripeWebhookService
                 }
             }
             if (! $this->isStalePaymentTransition($payment->status, $status)) {
-                $this->invoices->setPaymentStatus($payment, $status);
+                $disputedAmount = $status === InvoicePaymentStatus::Disputed->value ? $this->disputedAmount($object, $payment) : null;
+                if ($disputedAmount !== null) {
+                    $this->invoices->setPaymentDisputed($payment, $disputedAmount);
+                } else {
+                    $this->invoices->setPaymentStatus($payment, $status);
+                }
                 $this->recordPaymentEvent($payment, $providerCreatedAt, (string) $event->id);
             }
             $ledger->workspace_id = $payment->workspace_id;
         } elseif ($event->type === 'payment_intent.succeeded') {
             $this->createSuccessfulPayment($event, $object, $ledger);
         }
+    }
+
+    /**
+     * The part of the payment a dispute event says is contested, or null when
+     * it does not say - the whole payment is then held, as before amounts were
+     * recorded. An amount that is not part of the payment is refused.
+     *
+     * @param  array<string, mixed>  $object
+     */
+    private function disputedAmount(array $object, ClientInvoicePayment $payment): ?int
+    {
+        $amount = $object['amount'] ?? null;
+        if ($amount === null) {
+            return null;
+        }
+        $currency = is_string($object['currency'] ?? null) ? strtoupper($object['currency']) : '';
+        if (! is_int($amount) || $amount < 1 || $amount > (int) $payment->amount || $currency !== $payment->currency) {
+            throw new \DomainException('Stripe dispute does not match the disputed invoice payment.');
+        }
+
+        return $amount;
     }
 
     /** @param array<string, mixed> $object */

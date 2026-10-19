@@ -207,6 +207,8 @@ class StripeWebhookTest extends TestCase
         ], 100);
         $this->webhookPost($dispute, $this->signature($dispute))->assertOk();
         $this->assertSame('disputed', $payment->fresh()?->status);
+        $this->assertSame(400, $payment->fresh()?->disputed_amount);
+        $this->assertSame(400, $invoice->fresh()->balance_amount);
 
         $won = $this->eventPayload('evt_partial_dispute_won', 'charge.dispute.closed', [
             'id' => 'dp_partial', 'charge' => 'ch_partial', 'payment_intent' => 'pi_synthetic_billing', 'amount' => 400, 'currency' => 'usd', 'status' => 'won',
@@ -214,6 +216,7 @@ class StripeWebhookTest extends TestCase
         $this->webhookPost($won, $this->signature($won))->assertOk()->assertJsonPath('duplicate', false);
 
         $this->assertSame('succeeded', $payment->fresh()?->status);
+        $this->assertNull($payment->fresh()?->disputed_amount);
         $this->assertSame('paid', $invoice->fresh()->status);
         $this->assertDatabaseHas('client_stripe_events', ['stripe_event_id' => 'evt_partial_dispute_won', 'status' => 'processed']);
     }
@@ -271,7 +274,43 @@ class StripeWebhookTest extends TestCase
         ], 300);
         $this->webhookPost($again, $this->signature($again))->assertOk();
         $this->assertSame(0, $payment->fresh()?->refunded_amount);
-        $this->assertSame(2, ClientCompanyActivity::query()->where('action', 'invoice.payment_refunded')->count());
+        // The failure gave money back: recorded as a reversal, not a second refund.
+        $this->assertSame(1, ClientCompanyActivity::query()->where('action', 'invoice.payment_refunded')->count());
+        $reversal = ClientCompanyActivity::query()->where('action', 'invoice.payment_refund_reversed')->sole();
+        $this->assertSame(400, $reversal->payload['previous_refunded_amount'] ?? null);
+        $this->assertSame(0, $reversal->payload['refunded_amount'] ?? null);
+    }
+
+    public function test_a_refund_total_read_before_the_payment_moved_is_retried_not_applied(): void
+    {
+        [, , $payment] = $this->stripePayment('stale-refund-read');
+        $refund = $this->eventPayload('evt_stale_read_refund', 'charge.refunded', [
+            'id' => 'ch_stale_read', 'payment_intent' => 'pi_synthetic_billing', 'amount_refunded' => 400, 'currency' => 'usd',
+        ], 100);
+        $this->webhookPost($refund, $this->signature($refund))->assertOk();
+
+        // While Stripe is being read, a newer refund is recorded on the payment.
+        $this->fakeStripeRefunds([
+            ['id' => 're_stale_read', 'object' => 'refund', 'amount' => 400, 'currency' => 'usd', 'status' => 'failed', 'charge' => 'ch_stale_read'],
+        ], function () use ($payment): void {
+            app(InvoiceLifecycleService::class)->setRefundedAmount($payment->fresh(), 700);
+        });
+        $failed = $this->eventPayload('evt_stale_read_failed', 'charge.refund.updated', [
+            'id' => 're_stale_read', 'object' => 'refund', 'amount' => 400, 'currency' => 'usd', 'status' => 'failed',
+            'charge' => 'ch_stale_read', 'payment_intent' => 'pi_synthetic_billing',
+        ], 200);
+        $this->webhookPost($failed, $this->signature($failed))->assertStatus(503);
+
+        $this->assertSame(700, $payment->fresh()?->refunded_amount);
+        $this->assertDatabaseHas('client_stripe_events', ['stripe_event_id' => 'evt_stale_read_failed', 'status' => 'received']);
+
+        // Stripe's retry reads the current refunds and applies them.
+        $this->fakeStripeRefunds([
+            ['id' => 're_stale_read', 'object' => 'refund', 'amount' => 400, 'currency' => 'usd', 'status' => 'failed', 'charge' => 'ch_stale_read'],
+            ['id' => 're_stale_newer', 'object' => 'refund', 'amount' => 300, 'currency' => 'usd', 'status' => 'succeeded', 'charge' => 'ch_stale_read'],
+        ]);
+        $this->webhookPost($failed, $this->signature($failed))->assertOk()->assertJsonPath('duplicate', false);
+        $this->assertSame(300, $payment->fresh()?->refunded_amount);
     }
 
     public function test_a_failed_refund_counts_only_the_refunds_still_standing(): void
@@ -381,7 +420,7 @@ class StripeWebhookTest extends TestCase
         ], 250);
         $this->webhookPost($again, $this->signature($again))->assertOk();
         $this->assertSame(0, $payment->fresh()?->refunded_amount);
-        $this->assertSame(2, ClientCompanyActivity::query()->where('action', 'invoice.payment_refunded')->count());
+        $this->assertSame(1, ClientCompanyActivity::query()->where('action', 'invoice.payment_refund_reversed')->count());
     }
 
     public function test_a_won_dispute_on_an_invoice_paid_again_meanwhile_is_restored_as_an_overpayment(): void
@@ -848,15 +887,19 @@ class StripeWebhookTest extends TestCase
 
     /**
      * Answer Stripe's refund list for a charge with these refunds, and record
-     * the parameters of each request in {@see self::$stripeRequests}.
+     * the parameters of each request in {@see self::$stripeRequests}. Anything
+     * in `$whileReading` happens while Stripe is being read.
      *
      * @param  list<array<string, mixed>>  $refunds
      */
-    private function fakeStripeRefunds(array $refunds): void
+    private function fakeStripeRefunds(array $refunds, ?\Closure $whileReading = null): void
     {
         config(['services.stripe.secret_key' => 'sk_test_synthetic']);
-        $record = function (array $params): void {
+        $record = function (array $params) use ($whileReading): void {
             $this->stripeRequests[] = $params;
+            if ($whileReading !== null) {
+                $whileReading();
+            }
         };
         ApiRequestor::setHttpClient(new class($refunds, $record) implements ClientInterface
         {
