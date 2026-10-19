@@ -505,6 +505,46 @@ final class AgentOAuthLifecycleTest extends TestCase
     }
 
     /**
+     * The scheduled purge (#458) keeps an expired access token while a refresh
+     * token issued with it lives, so revoking a person still reaches a legacy
+     * refresh token that records no owner; and the fence, which lives in the
+     * cache rather than in any row, still revokes what a grant racing the
+     * revocation persists after a purge has run.
+     */
+    public function test_the_scheduled_purge_leaves_revocation_and_its_fence_intact(): void
+    {
+        $person = User::factory()->create();
+        $clientId = $this->registerClient();
+        $resource = OAuthResourceIndicator::resource(self::MCP);
+        $verifier = $this->verifier();
+        $legacy = $this->exchangeCode($clientId, $this->authorize($person, $clientId, $verifier), $verifier, $resource)->assertOk()->json();
+        $legacyId = OAuthResourceIndicator::tokenClaims($legacy['access_token'])['jti'];
+        // Issued 29 days ago, before refresh tokens recorded their owner.
+        Passport::token()->newQuery()->whereKey($legacyId)->update(['expires_at' => now()->subDays(29)]);
+        Passport::refreshToken()->newQuery()->where('access_token_id', $legacyId)->update(['provider_user_id' => null, 'client_id' => null, 'expires_at' => now()->addDay()]);
+        $inFlightVerifier = $this->verifier();
+        $inFlight = $this->authorize($person, $clientId, $inFlightVerifier);
+
+        $this->assertSame(0, Artisan::call('passport:purge --expired --hours=744'));
+        $this->assertSame(0, app(CredentialRevoker::class)->unattributedRefreshTokens());
+        $this->assertSame(0, Artisan::call('svc:auth:revoke-connections', ['user_public_id' => $person->public_id]));
+        $this->assertSame(['access_tokens' => 1, 'refresh_tokens' => 1, 'authorization_codes' => 1, 'unattributed_refresh_tokens' => 0], json_decode(trim(Artisan::output()), true));
+        $this->refresh($clientId, $legacy['refresh_token'], $resource)->assertBadRequest()->assertJsonPath('error', 'invalid_grant');
+
+        // A purge inside the window removes nothing the fence reads.
+        $this->assertSame(0, Artisan::call('passport:purge --expired --hours=744'));
+        $this->assertTrue(Passport::token()->newQuery()->whereKey($legacyId)->exists());
+        // Restore the code to play the grant that had already passed its check.
+        Passport::authCode()->newQuery()->where('client_id', $clientId)->update(['revoked' => false]);
+        $raced = $this->exchangeCode($clientId, $inFlight, $inFlightVerifier, $resource)->assertOk()->json();
+        $raceId = OAuthResourceIndicator::tokenClaims($raced['access_token'])['jti'];
+        $this->assertTrue((bool) Passport::token()->newQuery()->whereKey($raceId)->value('revoked'));
+        $this->assertTrue((bool) Passport::refreshToken()->newQuery()->where('access_token_id', $raceId)->value('revoked'));
+        Auth::forgetGuards();
+        $this->mcpInitialize($raced['access_token'])->assertUnauthorized();
+    }
+
+    /**
      * Each legacy refresh token takes its own parent's owner and provider
      * stamp, as the repository writes them; an owner already recorded is never
      * overwritten, and an orphan's is never guessed.
