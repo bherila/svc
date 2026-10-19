@@ -19,6 +19,7 @@ use Illuminate\Support\Str;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\Process\Process;
 use Tests\Concerns\UsesAProbeDatabase;
+use Tests\Support\OwnTables;
 use Tests\TestCase;
 
 /** Actual maintenance commands against concurrent generation, with observed row-lock waits. */
@@ -160,8 +161,7 @@ final class BillingMaintenanceConcurrencyTest extends TestCase
     private function snapshot(int $workspaceId): array
     {
         $rows = [];
-        foreach (Schema::getTables() as $table) {
-            $name = $table['name'];
+        foreach (OwnTables::names() as $name) {
             if (! Schema::hasColumn($name, 'workspace_id')) {
                 continue;
             }

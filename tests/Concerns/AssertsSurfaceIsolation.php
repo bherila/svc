@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Testing\TestResponse;
 use Inertia\Testing\AssertableInertia;
+use Tests\Support\OwnTables;
 
 /**
  * Cross-surface isolation invariants, extracted from the time-sheet suite.
@@ -140,10 +141,7 @@ trait AssertsSurfaceIsolation
     {
         $columnsByTable = [];
 
-        foreach (Schema::getTableListing() as $table) {
-            // The listing qualifies names with their schema (`main.workspaces`
-            // on SQLite); the grammar quotes the bare name.
-            $bare = str_contains($table, '.') ? substr($table, strrpos($table, '.') + 1) : $table;
+        foreach (OwnTables::names() as $bare) {
             $columns = [];
 
             foreach (Schema::getColumnListing($bare) as $column) {
