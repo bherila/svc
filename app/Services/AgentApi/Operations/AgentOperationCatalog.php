@@ -1358,7 +1358,7 @@ final class AgentOperationCatalog
             $this->tool(
                 'billing.audit_unplaceable_invoices',
                 'Audit unplaceable invoices',
-                'Get aggregate counts of invoices whose billing period or cycle cannot be placed safely.',
+                self::restDescription('billing.audit_unplaceable_invoices'),
                 [AgentMcpBillingAuditTools::class, 'unplaceableInvoices'],
                 Effect::Read,
                 true,
@@ -1369,7 +1369,7 @@ final class AgentOperationCatalog
             $this->tool(
                 'billing.audit_undated_collectible_invoices',
                 'Audit undated collectible invoices',
-                'Get aggregate counts and per-currency balances for collectible invoices without due dates.',
+                self::restDescription('billing.audit_undated_collectible_invoices'),
                 [AgentMcpBillingAuditTools::class, 'undatedCollectibleInvoices'],
                 Effect::Read,
                 true,
@@ -1380,7 +1380,7 @@ final class AgentOperationCatalog
             $this->tool(
                 'billing.audit_missing_billed_overage',
                 'Audit missing billed overage',
-                'Get aggregate counts of charged invoices missing billed-overage data.',
+                self::restDescription('billing.audit_missing_billed_overage'),
                 [AgentMcpBillingAuditTools::class, 'missingBilledOverage'],
                 Effect::Read,
                 true,
@@ -1391,7 +1391,7 @@ final class AgentOperationCatalog
             $this->tool(
                 'billing.audit_opening_rollover',
                 'Audit opening rollover',
-                'Get aggregate counts of agreements whose opening rollover changes their capacity ledger.',
+                self::restDescription('billing.audit_opening_rollover'),
                 [AgentMcpBillingAuditTools::class, 'openingRollover'],
                 Effect::Read,
                 true,
@@ -1402,7 +1402,7 @@ final class AgentOperationCatalog
             $this->tool(
                 'billing.preflight_schedule_generation',
                 'Preflight schedule generation',
-                'Workspace managers only. Classify every period each of the workspace\'s active billing schedules is due to bill through today, without writing, and count how many schedules would halt and why, as svc:billing:preflight-schedule-generation does for every workspace. Counts only. It examines at most 60 periods per schedule (the command examines 240), and complete is false when a backlog was longer, so the result is inconclusive rather than clean; a workspace gets 5 per ten minutes.',
+                self::restDescription('billing.preflight_schedule_generation'),
                 [AgentMcpBillingAuditTools::class, 'scheduleGenerationPreflight'],
                 Effect::Read,
                 true,
@@ -1413,7 +1413,7 @@ final class AgentOperationCatalog
             $this->tool(
                 'billing.audit_unlinked_proposal_agreements',
                 'Audit unlinked proposal agreements',
-                'Workspace managers only. Count the workspace\'s proposals whose agreement the duplicate guard in acceptance cannot see, as svc:engagement:audit-unlinked-proposal-agreements does for every workspace. Counts only; nothing is repaired or guessed.',
+                self::restDescription('billing.audit_unlinked_proposal_agreements'),
                 [AgentMcpBillingAuditTools::class, 'unlinkedProposalAgreements'],
                 Effect::Read,
                 true,
@@ -1736,6 +1736,14 @@ final class AgentOperationCatalog
             output: $output,
             requiresOperations: $requires,
         );
+    }
+
+    /** A tool described by its REST operation's prose, so the two cannot drift apart. */
+    private static function restDescription(string $id): string
+    {
+        $description = AgentRestDocumentation::operations()[$id]['description'] ?? null;
+
+        return is_string($description) ? $description : throw new LogicException("Operation [{$id}] documents no description.");
     }
 
     /** @return list<string> */

@@ -468,7 +468,7 @@ workflow is outside the read-GA authorization:
 | Agreement list/get with derived terms          | Implemented; manager-only `agreements.list` / `agreements.get`                                                                                           |
 | Signed monthly capacity ledger                 | Implemented; manager-only bounded `capacity_ledger.get` over `InvoiceLedgerBuilder`, with the agreement's deferred backlog (#366), on REST and MCP          |
 | Duplicate-time diagnostics                     | Deferred: no checked-in canonical query or privacy-reviewed grouping contract exists. It will not be inferred from raw time rows.                        |
-| Read-only `svc:billing:audit-*` operations     | Implemented as six aggregate-only, manager-scoped tools, including `billing.audit_opening_rollover` and `billing.preflight_schedule_generation`, over the same auditors used by their CLI workflows. They are MCP tools without REST routes, like the rest of this family. `svc:billing:audit-overpayment-credit` takes `--workspace=` and is not yet exposed |
+| Read-only `svc:billing:audit-*` operations     | Implemented as six aggregate-only, manager-scoped tools, including `billing.audit_opening_rollover` and `billing.preflight_schedule_generation`, over the same auditors used by their CLI workflows. Each is a `GET /workspaces/{workspace}/billing-audits/...` REST operation in the OpenAPI document, and its MCP tool reaches it through that route (#459), so the scope, the manager check, the preflight's 60-period cap and its 5-per-ten-minutes workspace budget apply to both. `svc:billing:audit-overpayment-credit` takes `--workspace=` and is not yet exposed |
 | Billing-schedule visibility                    | Implemented; manager-only `billing_schedules.list` / `billing_schedules.get`                                                                             |
 | Imported-duplicate maintenance preview/execute | Obsolete for #187 after #196 retired the importer; no maintenance write is authorized                                                                    |
 | One-workspace-per-session binding              | Per-call authorized selection is the accepted v1 contract; any pinned-session replacement requires a future versioned migration                          |
@@ -1114,6 +1114,17 @@ manager, and both `AGENT_API_WRITES_ENABLED` and
 | `invoices.preview_period` | `GET /agreements/{agreement}/invoices/preview?period_start=` | `billing:read` |
 | `invoices.pdf` | `GET /invoices/{invoice}/pdf-link` | `billing:read` |
 | `billing_audit.stale_and_missing` | `GET /billing-audits/stale-and-missing` | `billing:read` |
+| `billing.audit_unplaceable_invoices` | `GET /billing-audits/unplaceable-invoices` | `billing:read` |
+| `billing.audit_undated_collectible_invoices` | `GET /billing-audits/undated-collectible-invoices` | `billing:read` |
+| `billing.audit_missing_billed_overage` | `GET /billing-audits/missing-billed-overage` | `billing:read` |
+| `billing.audit_opening_rollover` | `GET /billing-audits/opening-rollover` | `billing:read` |
+| `billing.preflight_schedule_generation` | `GET /billing-audits/schedule-generation-preflight` | `billing:read` |
+| `billing.audit_unlinked_proposal_agreements` | `GET /billing-audits/unlinked-proposal-agreements` | `billing:read` |
+
+The aggregate audits answer 404 to a caller who does not manage the workspace,
+as for an unseen workspace, and the preflight answers 429 with `Retry-After`
+once a workspace has run it 5 times in ten minutes. Over MCP that refusal
+carries the same message, which says when to retry.
 
 Holding applies to scheduled or failed automatic delivery on an issued invoice.
 Release requires `confirm: true` and a held invoice; it schedules delivery through

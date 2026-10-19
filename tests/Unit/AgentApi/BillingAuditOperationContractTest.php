@@ -52,7 +52,8 @@ final class BillingAuditOperationContractTest extends TestCase
                 $this->assertSame([AgentMcpBillingAuditTools::class, $handler], $operation->mcp?->handler, $id);
                 $this->assertSame(AgentInlineSchemas::billingAuditInput(), $operation->input, $id);
                 $this->assertEquals(SchemaRef::responseOf($id), $operation->output, $id);
-                $this->assertStringStartsWith('Workspace managers only.', $operation->description, $id);
+                // One text for both: MCP describes the tool with its REST operation's prose.
+                $this->assertSame(AgentRestDocumentation::operations()[$id]['description'], $operation->description, $id);
 
                 $documented = AgentRestDocumentation::operations()[$id];
                 $this->assertSame(['WorkspaceId'], $documented['parameters'], $id);
@@ -66,21 +67,20 @@ final class BillingAuditOperationContractTest extends TestCase
 
     public function test_the_checked_components_are_exactly_the_declared_counts(): void
     {
-        $this->withCatalog(function (): void {
-            foreach (self::AUDITS as $id => [, , , $response]) {
-                $properties = AgentInlineSchemas::billingAuditProperties($id);
-                $component = substr($response, 0, -strlen('Response'));
-                $this->assertSame([
-                    'type' => 'object', 'additionalProperties' => false, 'required' => ['data'],
-                    'properties' => ['data' => ['$ref' => '#/components/schemas/'.$component]],
-                ], AgentApiResponseSchemaCatalog::schema($response), $id);
-                // Declared from the enums, so a new refusal reason or defect
-                // fails here until the document carries it too.
-                $this->assertSame([
-                    'type' => 'object', 'additionalProperties' => false, 'required' => array_keys($properties), 'properties' => $properties,
-                ], AgentApiResponseSchemaCatalog::schema($component), $id);
-            }
-        });
+        $schemas = json_decode((string) file_get_contents(dirname(__DIR__, 3).'/public/openapi/svc-agent-v1.json'), true, flags: JSON_THROW_ON_ERROR)['components']['schemas'];
+        foreach (self::AUDITS as $id => [, , , $response]) {
+            $properties = AgentInlineSchemas::billingAuditProperties($id);
+            $component = substr($response, 0, -strlen('Response'));
+            $this->assertSame([
+                'type' => 'object', 'additionalProperties' => false, 'required' => ['data'],
+                'properties' => ['data' => ['$ref' => '#/components/schemas/'.$component]],
+            ], $schemas[$response], $id);
+            // Declared from the enums, so a new refusal reason or defect
+            // fails here until the document carries it too.
+            $this->assertSame([
+                'type' => 'object', 'additionalProperties' => false, 'required' => array_keys($properties), 'properties' => $properties,
+            ], $schemas[$component], $id);
+        }
     }
 
     public function test_the_preflight_counts_every_refusal_reason_and_schedule_defect(): void
