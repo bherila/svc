@@ -1738,7 +1738,13 @@ final class AgentOperationCatalog
         );
     }
 
-    /** A tool described by its REST operation's prose, so the two cannot drift apart. */
+    /**
+     * A tool described by its REST operation's prose, so the two cannot drift apart.
+     *
+     * @infection-ignore-all The refusal is for an operation documented without
+     * prose, which none is: every caller names a documented operation, and
+     * BillingAuditOperationContractTest pins each one's text.
+     */
     private static function restDescription(string $id): string
     {
         $description = AgentRestDocumentation::operations()[$id]['description'] ?? null;
