@@ -93,6 +93,27 @@ final class AgentRestDocumentation
     ];
 
     /**
+     * The refusals of the aggregate billing audits (#459), by status. Each
+     * body is the shared `Error` schema.
+     *
+     * @var array<string, array<int, string>>
+     */
+    private const array BILLING_AUDIT_ERRORS = [
+        'audit' => [
+            401 => 'Not signed in, or the token is missing, expired or revoked.',
+            403 => 'The token lacks billing:read.',
+            404 => 'The workspace is not visible to the caller, or the caller is not a workspace owner or admin.',
+            429 => 'Too many requests (retry after Retry-After).',
+        ],
+        'preflight' => [
+            401 => 'Not signed in, or the token is missing, expired or revoked.',
+            403 => 'The token lacks billing:read.',
+            404 => 'The workspace is not visible to the caller, or the caller is not a workspace owner or admin.',
+            429 => 'Too many requests, or the workspace already ran 5 preflights in the last ten minutes (retry after Retry-After; the message says when).',
+        ],
+    ];
+
+    /**
      * The refusals of the writes MCP reaches over REST (#459), by status.
      * Each body is the shared `Error` schema; a 422 for a field carries its
      * messages under `errors`.
@@ -408,6 +429,66 @@ final class AgentRestDocumentation
                 'response' => 'StaleAndMissingInvoiceAuditResponse',
                 'response_description' => 'Authorized result',
                 'extensions' => ['x-svc-flags' => [], 'x-mcp-tool' => 'billing_audit.stale_and_missing'],
+            ],
+            'billing.audit_missing_billed_overage' => [
+                'method' => 'GET',
+                'scopes' => ['billing:read'],
+                'description' => 'Workspace managers only. Aggregate counts of the workspace\'s charged invoices missing billed-overage data, as svc:billing:audit-missing-billed-overage reports for every workspace. Counts only; no invoice is identified.',
+                'parameters' => ['WorkspaceId'],
+                'response' => 'MissingBilledOverageAuditResponse',
+                'response_description' => 'Aggregate counts for the workspace',
+                'errors' => self::BILLING_AUDIT_ERRORS['audit'],
+                'extensions' => ['x-svc-flags' => [], 'x-mcp-tool' => 'billing.audit_missing_billed_overage'],
+            ],
+            'billing.audit_opening_rollover' => [
+                'method' => 'GET',
+                'scopes' => ['billing:read'],
+                'description' => 'Workspace managers only. Aggregate counts of the workspace\'s agreements whose opening rollover changes their capacity ledger, and the capacity at stake in minutes, as svc:billing:audit-opening-rollover reports for every workspace. Counts only; no agreement is identified.',
+                'parameters' => ['WorkspaceId'],
+                'response' => 'OpeningRolloverAuditResponse',
+                'response_description' => 'Aggregate counts for the workspace',
+                'errors' => self::BILLING_AUDIT_ERRORS['audit'],
+                'extensions' => ['x-svc-flags' => [], 'x-mcp-tool' => 'billing.audit_opening_rollover'],
+            ],
+            'billing.audit_undated_collectible_invoices' => [
+                'method' => 'GET',
+                'scopes' => ['billing:read'],
+                'description' => 'Workspace managers only. Aggregate counts and per-currency balances, in minor units, of the workspace\'s collectible invoices without a due date, as svc:billing:audit-undated-collectible-invoices reports for every workspace. Counts only; no invoice is identified.',
+                'parameters' => ['WorkspaceId'],
+                'response' => 'UndatedCollectibleInvoiceAuditResponse',
+                'response_description' => 'Aggregate counts for the workspace',
+                'errors' => self::BILLING_AUDIT_ERRORS['audit'],
+                'extensions' => ['x-svc-flags' => [], 'x-mcp-tool' => 'billing.audit_undated_collectible_invoices'],
+            ],
+            'billing.audit_unlinked_proposal_agreements' => [
+                'method' => 'GET',
+                'scopes' => ['billing:read'],
+                'description' => 'Workspace managers only. Count the workspace\'s proposals whose agreement the duplicate guard in acceptance cannot see, as svc:engagement:audit-unlinked-proposal-agreements does for every workspace. Counts only; nothing is repaired or guessed.',
+                'parameters' => ['WorkspaceId'],
+                'response' => 'UnlinkedProposalAgreementAuditResponse',
+                'response_description' => 'Aggregate counts for the workspace',
+                'errors' => self::BILLING_AUDIT_ERRORS['audit'],
+                'extensions' => ['x-svc-flags' => [], 'x-mcp-tool' => 'billing.audit_unlinked_proposal_agreements'],
+            ],
+            'billing.audit_unplaceable_invoices' => [
+                'method' => 'GET',
+                'scopes' => ['billing:read'],
+                'description' => 'Workspace managers only. Aggregate counts of the workspace\'s invoices whose billing period or cycle cannot be placed safely, and the overage hours at stake, as svc:billing:audit-unplaceable-invoices reports for every workspace. Counts only; no invoice is identified.',
+                'parameters' => ['WorkspaceId'],
+                'response' => 'UnplaceableInvoiceAuditResponse',
+                'response_description' => 'Aggregate counts for the workspace',
+                'errors' => self::BILLING_AUDIT_ERRORS['audit'],
+                'extensions' => ['x-svc-flags' => [], 'x-mcp-tool' => 'billing.audit_unplaceable_invoices'],
+            ],
+            'billing.preflight_schedule_generation' => [
+                'method' => 'GET',
+                'scopes' => ['billing:read'],
+                'description' => 'Workspace managers only. Classify every period each of the workspace\'s active billing schedules is due to bill through today, without writing, and count how many schedules would halt and why, as svc:billing:preflight-schedule-generation does for every workspace. Counts only. It examines at most 60 periods per schedule (the command examines 240), and complete is false when a backlog was longer, so the result is inconclusive rather than clean. A workspace gets 5 per ten minutes, then 429 with Retry-After.',
+                'parameters' => ['WorkspaceId'],
+                'response' => 'ScheduleGenerationPreflightResponse',
+                'response_description' => 'Aggregate counts for the workspace',
+                'errors' => self::BILLING_AUDIT_ERRORS['preflight'],
+                'extensions' => ['x-svc-flags' => [], 'x-mcp-tool' => 'billing.preflight_schedule_generation'],
             ],
             'billing_schedules.create' => [
                 'method' => 'POST',

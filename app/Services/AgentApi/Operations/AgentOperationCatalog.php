@@ -75,6 +75,12 @@ final class AgentOperationCatalog
         'attachments.list' => ['attachments.index', '/workspaces/{workspace}/records/{recordType}/{recordPublicId}/attachments', [200]],
         'attachments.upload' => ['attachments.upload', '/workspaces/{workspace}/records/{recordType}/{recordPublicId}/attachments/upload', [201]],
         'attachments.upload_url' => ['attachments.upload-url', '/workspaces/{workspace}/records/{recordType}/{recordPublicId}/attachments/upload-url', [200]],
+        'billing.audit_missing_billed_overage' => ['billing-audits.missing-billed-overage', '/workspaces/{workspace}/billing-audits/missing-billed-overage', [200]],
+        'billing.audit_opening_rollover' => ['billing-audits.opening-rollover', '/workspaces/{workspace}/billing-audits/opening-rollover', [200]],
+        'billing.audit_undated_collectible_invoices' => ['billing-audits.undated-collectible-invoices', '/workspaces/{workspace}/billing-audits/undated-collectible-invoices', [200]],
+        'billing.audit_unlinked_proposal_agreements' => ['billing-audits.unlinked-proposal-agreements', '/workspaces/{workspace}/billing-audits/unlinked-proposal-agreements', [200]],
+        'billing.audit_unplaceable_invoices' => ['billing-audits.unplaceable-invoices', '/workspaces/{workspace}/billing-audits/unplaceable-invoices', [200]],
+        'billing.preflight_schedule_generation' => ['billing-audits.schedule-generation-preflight', '/workspaces/{workspace}/billing-audits/schedule-generation-preflight', [200]],
         'billing_audit.stale_and_missing' => ['billing_audit.stale_and_missing', '/workspaces/{workspace}/billing-audits/stale-and-missing', [200]],
         'billing_schedules.create' => ['billing-schedules.store', '/workspaces/{workspace}/billing-schedules', [201]],
         'billing_schedules.generate' => ['billing-schedules.generate', '/workspaces/{workspace}/billing-schedules/{schedule}/generate', [200]],
@@ -1359,8 +1365,6 @@ final class AgentOperationCatalog
                 'mcp.read.billing.audit_unplaceable_invoices',
                 manager: true,
                 input: AgentInlineSchemas::billingAuditInput(),
-                output: AgentInlineSchemas::billingAuditOutput(AgentInlineSchemas::billingAuditProperties('billing.audit_unplaceable_invoices')),
-                scopes: ['billing:read'],
             ),
             $this->tool(
                 'billing.audit_undated_collectible_invoices',
@@ -1372,8 +1376,6 @@ final class AgentOperationCatalog
                 'mcp.read.billing.audit_undated_collectible_invoices',
                 manager: true,
                 input: AgentInlineSchemas::billingAuditInput(),
-                output: AgentInlineSchemas::billingAuditOutput(AgentInlineSchemas::billingAuditProperties('billing.audit_undated_collectible_invoices')),
-                scopes: ['billing:read'],
             ),
             $this->tool(
                 'billing.audit_missing_billed_overage',
@@ -1385,8 +1387,6 @@ final class AgentOperationCatalog
                 'mcp.read.billing.audit_missing_billed_overage',
                 manager: true,
                 input: AgentInlineSchemas::billingAuditInput(),
-                output: AgentInlineSchemas::billingAuditOutput(AgentInlineSchemas::billingAuditProperties('billing.audit_missing_billed_overage')),
-                scopes: ['billing:read'],
             ),
             $this->tool(
                 'billing.audit_opening_rollover',
@@ -1398,8 +1398,6 @@ final class AgentOperationCatalog
                 'mcp.read.billing.audit_opening_rollover',
                 manager: true,
                 input: AgentInlineSchemas::billingAuditInput(),
-                output: AgentInlineSchemas::billingAuditOutput(AgentInlineSchemas::billingAuditProperties('billing.audit_opening_rollover')),
-                scopes: ['billing:read'],
             ),
             $this->tool(
                 'billing.preflight_schedule_generation',
@@ -1411,8 +1409,6 @@ final class AgentOperationCatalog
                 'mcp.read.billing.preflight_schedule_generation',
                 manager: true,
                 input: AgentInlineSchemas::billingAuditInput(),
-                output: AgentInlineSchemas::billingAuditOutput(AgentInlineSchemas::billingAuditProperties('billing.preflight_schedule_generation')),
-                scopes: ['billing:read'],
             ),
             $this->tool(
                 'billing.audit_unlinked_proposal_agreements',
@@ -1424,8 +1420,6 @@ final class AgentOperationCatalog
                 'mcp.read.billing.audit_unlinked_proposal_agreements',
                 manager: true,
                 input: AgentInlineSchemas::billingAuditInput(),
-                output: AgentInlineSchemas::billingAuditOutput(AgentInlineSchemas::billingAuditProperties('billing.audit_unlinked_proposal_agreements')),
-                scopes: ['billing:read'],
             ),
         ];
     }

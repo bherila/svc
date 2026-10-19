@@ -209,6 +209,108 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    '/workspaces/{workspace}/billing-audits/missing-billed-overage': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Workspace managers only. Aggregate counts of the workspace's charged invoices missing billed-overage data, as svc:billing:audit-missing-billed-overage reports for every workspace. Counts only; no invoice is identified. */
+        get: operations['billing.audit_missing_billed_overage'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/billing-audits/opening-rollover': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Workspace managers only. Aggregate counts of the workspace's agreements whose opening rollover changes their capacity ledger, and the capacity at stake in minutes, as svc:billing:audit-opening-rollover reports for every workspace. Counts only; no agreement is identified. */
+        get: operations['billing.audit_opening_rollover'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/billing-audits/undated-collectible-invoices': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Workspace managers only. Aggregate counts and per-currency balances, in minor units, of the workspace's collectible invoices without a due date, as svc:billing:audit-undated-collectible-invoices reports for every workspace. Counts only; no invoice is identified. */
+        get: operations['billing.audit_undated_collectible_invoices'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/billing-audits/unlinked-proposal-agreements': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Workspace managers only. Count the workspace's proposals whose agreement the duplicate guard in acceptance cannot see, as svc:engagement:audit-unlinked-proposal-agreements does for every workspace. Counts only; nothing is repaired or guessed. */
+        get: operations['billing.audit_unlinked_proposal_agreements'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/billing-audits/unplaceable-invoices': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Workspace managers only. Aggregate counts of the workspace's invoices whose billing period or cycle cannot be placed safely, and the overage hours at stake, as svc:billing:audit-unplaceable-invoices reports for every workspace. Counts only; no invoice is identified. */
+        get: operations['billing.audit_unplaceable_invoices'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/billing-audits/schedule-generation-preflight': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Workspace managers only. Classify every period each of the workspace's active billing schedules is due to bill through today, without writing, and count how many schedules would halt and why, as svc:billing:preflight-schedule-generation does for every workspace. Counts only. It examines at most 60 periods per schedule (the command examines 240), and complete is false when a backlog was longer, so the result is inconclusive rather than clean. A workspace gets 5 per ten minutes, then 429 with Retry-After. */
+        get: operations['billing.preflight_schedule_generation'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     '/workspaces/{workspace}/billing-audits/stale-and-missing': {
         parameters: {
             query?: never;
@@ -3060,6 +3162,27 @@ export interface components {
         };
         /** @enum {string} */
         LinkedTimeState: 'reserved' | 'consumed' | 'released';
+        MissingBilledOverageAudit: {
+            invoices: number;
+            without_a_billed_overage: number;
+            charged_of_those: number;
+            on_an_agreement_of_those: number;
+            agreements_affected: number;
+        };
+        MissingBilledOverageAuditResponse: {
+            data: components['schemas']['MissingBilledOverageAudit'];
+        };
+        OpeningRolloverAudit: {
+            agreements: number;
+            with_initial_rollover: number;
+            legacy_monthly_of_those: number;
+            affected: number;
+            capacity_at_stake_minutes: number;
+            longest_rollover_months: number;
+        };
+        OpeningRolloverAuditResponse: {
+            data: components['schemas']['OpeningRolloverAudit'];
+        };
         PaginationMeta: {
             next_cursor: string | null;
         };
@@ -3516,6 +3639,35 @@ export interface components {
              * @enum {string}
              */
             status: 'succeeded' | 'failed' | 'canceled';
+        };
+        ScheduleGenerationPreflight: {
+            schedules: number;
+            schedules_due: number;
+            periods_classified: number;
+            complete: boolean;
+            would_halt: number;
+            halted_by_a_refusal: number;
+            halted_by_a_pending_draft: number;
+            halted_by_a_schedule_defect: number;
+            schedules_truncated: number;
+            refusals_by_reason: {
+                dangling_schedule_link: number;
+                dangling_agreement_link: number;
+                contradictory_lineage: number;
+                unattributed_and_contested: number;
+                unknown_status: number;
+                unsupported_invoice_kind: number;
+                incomplete_period: number;
+                partial_overlap: number;
+                conflicting_exact_claims: number;
+            };
+            defects_by_kind: {
+                unreadable_cadence: number;
+                unreadable_line_template: number;
+            };
+        };
+        ScheduleGenerationPreflightResponse: {
+            data: components['schemas']['ScheduleGenerationPreflight'];
         };
         SearchResponse: {
             data: components['schemas']['SearchResult'][];
@@ -4418,6 +4570,52 @@ export interface components {
              */
             task_id?: string | null;
         } & unknown;
+        UndatedCollectibleInvoiceAudit: {
+            invoices: number;
+            collectible: number;
+            undated: number;
+            with_an_issue_date: number;
+            without_an_issue_date: number;
+            would_become_overdue_if_backfilled: number;
+            undated_balances: {
+                [key: string]: number;
+            };
+            would_become_overdue_balances: {
+                [key: string]: number;
+            };
+        };
+        UndatedCollectibleInvoiceAuditResponse: {
+            data: components['schemas']['UndatedCollectibleInvoiceAudit'];
+        };
+        UnlinkedProposalAgreementAudit: {
+            proposals: number;
+            sent_without_a_linked_agreement: number;
+            with_an_unlinked_agreement_on_the_company: number;
+            with_an_active_unlinked_agreement: number;
+            accepted_without_a_linked_agreement: number;
+            unlinked_agreements: number;
+        };
+        UnlinkedProposalAgreementAuditResponse: {
+            data: components['schemas']['UnlinkedProposalAgreementAudit'];
+        };
+        UnplaceableInvoiceAudit: {
+            invoices: number;
+            without_a_service_period: number;
+            without_a_service_period_start: number;
+            unplaceable_by_a_period_guard: number;
+            charged_of_those: number;
+            on_an_agreement_of_those: number;
+            affected: number;
+            overage_hours_at_stake: number;
+            without_a_cycle: number;
+            of_a_kind_read_by_cycle: number;
+            live_without_a_cycle: number;
+            cycle_affected: number;
+            cycle_overage_hours_at_stake: number;
+        };
+        UnplaceableInvoiceAuditResponse: {
+            data: components['schemas']['UnplaceableInvoiceAudit'];
+        };
         /** Format: uuid */
         Uuid: string;
         Version: string;
@@ -5039,6 +5237,360 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['AttachmentUploadUrlResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'billing.audit_missing_billed_overage': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Aggregate counts for the workspace */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['MissingBilledOverageAuditResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks billing:read. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace is not visible to the caller, or the caller is not a workspace owner or admin. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'billing.audit_opening_rollover': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Aggregate counts for the workspace */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['OpeningRolloverAuditResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks billing:read. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace is not visible to the caller, or the caller is not a workspace owner or admin. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'billing.audit_undated_collectible_invoices': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Aggregate counts for the workspace */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['UndatedCollectibleInvoiceAuditResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks billing:read. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace is not visible to the caller, or the caller is not a workspace owner or admin. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'billing.audit_unlinked_proposal_agreements': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Aggregate counts for the workspace */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['UnlinkedProposalAgreementAuditResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks billing:read. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace is not visible to the caller, or the caller is not a workspace owner or admin. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'billing.audit_unplaceable_invoices': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Aggregate counts for the workspace */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['UnplaceableInvoiceAuditResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks billing:read. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace is not visible to the caller, or the caller is not a workspace owner or admin. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'billing.preflight_schedule_generation': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Aggregate counts for the workspace */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ScheduleGenerationPreflightResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks billing:read. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace is not visible to the caller, or the caller is not a workspace owner or admin. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests, or the workspace already ran 5 preflights in the last ten minutes (retry after Retry-After; the message says when). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
                 };
             };
             default: components['responses']['Error'];

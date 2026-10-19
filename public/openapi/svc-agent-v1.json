@@ -998,6 +998,492 @@
                 "x-agent-mcp-tool": "attachments.upload_url"
             }
         },
+        "/workspaces/{workspace}/billing-audits/missing-billed-overage": {
+            "get": {
+                "operationId": "billing.audit_missing_billed_overage",
+                "description": "Workspace managers only. Aggregate counts of the workspace's charged invoices missing billed-overage data, as svc:billing:audit-missing-billed-overage reports for every workspace. Counts only; no invoice is identified.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "billing:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Aggregate counts for the workspace",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MissingBilledOverageAuditResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Not signed in, or the token is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The token lacks billing:read.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace is not visible to the caller, or the caller is not a workspace owner or admin.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "read",
+                "x-agent-idempotent": true,
+                "x-agent-mcp-tool": "billing.audit_missing_billed_overage",
+                "x-svc-flags": [],
+                "x-mcp-tool": "billing.audit_missing_billed_overage"
+            }
+        },
+        "/workspaces/{workspace}/billing-audits/opening-rollover": {
+            "get": {
+                "operationId": "billing.audit_opening_rollover",
+                "description": "Workspace managers only. Aggregate counts of the workspace's agreements whose opening rollover changes their capacity ledger, and the capacity at stake in minutes, as svc:billing:audit-opening-rollover reports for every workspace. Counts only; no agreement is identified.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "billing:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Aggregate counts for the workspace",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/OpeningRolloverAuditResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Not signed in, or the token is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The token lacks billing:read.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace is not visible to the caller, or the caller is not a workspace owner or admin.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "read",
+                "x-agent-idempotent": true,
+                "x-agent-mcp-tool": "billing.audit_opening_rollover",
+                "x-svc-flags": [],
+                "x-mcp-tool": "billing.audit_opening_rollover"
+            }
+        },
+        "/workspaces/{workspace}/billing-audits/undated-collectible-invoices": {
+            "get": {
+                "operationId": "billing.audit_undated_collectible_invoices",
+                "description": "Workspace managers only. Aggregate counts and per-currency balances, in minor units, of the workspace's collectible invoices without a due date, as svc:billing:audit-undated-collectible-invoices reports for every workspace. Counts only; no invoice is identified.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "billing:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Aggregate counts for the workspace",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/UndatedCollectibleInvoiceAuditResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Not signed in, or the token is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The token lacks billing:read.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace is not visible to the caller, or the caller is not a workspace owner or admin.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "read",
+                "x-agent-idempotent": true,
+                "x-agent-mcp-tool": "billing.audit_undated_collectible_invoices",
+                "x-svc-flags": [],
+                "x-mcp-tool": "billing.audit_undated_collectible_invoices"
+            }
+        },
+        "/workspaces/{workspace}/billing-audits/unlinked-proposal-agreements": {
+            "get": {
+                "operationId": "billing.audit_unlinked_proposal_agreements",
+                "description": "Workspace managers only. Count the workspace's proposals whose agreement the duplicate guard in acceptance cannot see, as svc:engagement:audit-unlinked-proposal-agreements does for every workspace. Counts only; nothing is repaired or guessed.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "billing:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Aggregate counts for the workspace",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/UnlinkedProposalAgreementAuditResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Not signed in, or the token is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The token lacks billing:read.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace is not visible to the caller, or the caller is not a workspace owner or admin.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "read",
+                "x-agent-idempotent": true,
+                "x-agent-mcp-tool": "billing.audit_unlinked_proposal_agreements",
+                "x-svc-flags": [],
+                "x-mcp-tool": "billing.audit_unlinked_proposal_agreements"
+            }
+        },
+        "/workspaces/{workspace}/billing-audits/unplaceable-invoices": {
+            "get": {
+                "operationId": "billing.audit_unplaceable_invoices",
+                "description": "Workspace managers only. Aggregate counts of the workspace's invoices whose billing period or cycle cannot be placed safely, and the overage hours at stake, as svc:billing:audit-unplaceable-invoices reports for every workspace. Counts only; no invoice is identified.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "billing:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Aggregate counts for the workspace",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/UnplaceableInvoiceAuditResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Not signed in, or the token is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The token lacks billing:read.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace is not visible to the caller, or the caller is not a workspace owner or admin.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "read",
+                "x-agent-idempotent": true,
+                "x-agent-mcp-tool": "billing.audit_unplaceable_invoices",
+                "x-svc-flags": [],
+                "x-mcp-tool": "billing.audit_unplaceable_invoices"
+            }
+        },
+        "/workspaces/{workspace}/billing-audits/schedule-generation-preflight": {
+            "get": {
+                "operationId": "billing.preflight_schedule_generation",
+                "description": "Workspace managers only. Classify every period each of the workspace's active billing schedules is due to bill through today, without writing, and count how many schedules would halt and why, as svc:billing:preflight-schedule-generation does for every workspace. Counts only. It examines at most 60 periods per schedule (the command examines 240), and complete is false when a backlog was longer, so the result is inconclusive rather than clean. A workspace gets 5 per ten minutes, then 429 with Retry-After.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "billing:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Aggregate counts for the workspace",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ScheduleGenerationPreflightResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Not signed in, or the token is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The token lacks billing:read.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace is not visible to the caller, or the caller is not a workspace owner or admin.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests, or the workspace already ran 5 preflights in the last ten minutes (retry after Retry-After; the message says when).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "read",
+                "x-agent-idempotent": true,
+                "x-agent-mcp-tool": "billing.preflight_schedule_generation",
+                "x-svc-flags": [],
+                "x-mcp-tool": "billing.preflight_schedule_generation"
+            }
+        },
         "/workspaces/{workspace}/billing-audits/stale-and-missing": {
             "get": {
                 "operationId": "billing_audit.stale_and_missing",
@@ -14618,6 +15104,102 @@
                     "released"
                 ]
             },
+            "MissingBilledOverageAudit": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "invoices",
+                    "without_a_billed_overage",
+                    "charged_of_those",
+                    "on_an_agreement_of_those",
+                    "agreements_affected"
+                ],
+                "properties": {
+                    "invoices": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "without_a_billed_overage": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "charged_of_those": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "on_an_agreement_of_those": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "agreements_affected": {
+                        "type": "integer",
+                        "minimum": 0
+                    }
+                }
+            },
+            "MissingBilledOverageAuditResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data"
+                ],
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/MissingBilledOverageAudit"
+                    }
+                }
+            },
+            "OpeningRolloverAudit": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "agreements",
+                    "with_initial_rollover",
+                    "legacy_monthly_of_those",
+                    "affected",
+                    "capacity_at_stake_minutes",
+                    "longest_rollover_months"
+                ],
+                "properties": {
+                    "agreements": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "with_initial_rollover": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "legacy_monthly_of_those": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "affected": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "capacity_at_stake_minutes": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "longest_rollover_months": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 120
+                    }
+                }
+            },
+            "OpeningRolloverAuditResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data"
+                ],
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/OpeningRolloverAudit"
+                    }
+                }
+            },
             "PaginationMeta": {
                 "type": "object",
                 "additionalProperties": false,
@@ -16207,6 +16789,143 @@
                             "canceled"
                         ],
                         "description": "succeeded: money recorded as pending cleared. failed: it bounced or was reversed. canceled: it was recorded in error and is withdrawn."
+                    }
+                }
+            },
+            "ScheduleGenerationPreflight": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "schedules",
+                    "schedules_due",
+                    "periods_classified",
+                    "complete",
+                    "would_halt",
+                    "halted_by_a_refusal",
+                    "halted_by_a_pending_draft",
+                    "halted_by_a_schedule_defect",
+                    "schedules_truncated",
+                    "refusals_by_reason",
+                    "defects_by_kind"
+                ],
+                "properties": {
+                    "schedules": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "schedules_due": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "periods_classified": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "complete": {
+                        "type": "boolean"
+                    },
+                    "would_halt": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "halted_by_a_refusal": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "halted_by_a_pending_draft": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "halted_by_a_schedule_defect": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "schedules_truncated": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "refusals_by_reason": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "dangling_schedule_link",
+                            "dangling_agreement_link",
+                            "contradictory_lineage",
+                            "unattributed_and_contested",
+                            "unknown_status",
+                            "unsupported_invoice_kind",
+                            "incomplete_period",
+                            "partial_overlap",
+                            "conflicting_exact_claims"
+                        ],
+                        "properties": {
+                            "dangling_schedule_link": {
+                                "type": "integer",
+                                "minimum": 0
+                            },
+                            "dangling_agreement_link": {
+                                "type": "integer",
+                                "minimum": 0
+                            },
+                            "contradictory_lineage": {
+                                "type": "integer",
+                                "minimum": 0
+                            },
+                            "unattributed_and_contested": {
+                                "type": "integer",
+                                "minimum": 0
+                            },
+                            "unknown_status": {
+                                "type": "integer",
+                                "minimum": 0
+                            },
+                            "unsupported_invoice_kind": {
+                                "type": "integer",
+                                "minimum": 0
+                            },
+                            "incomplete_period": {
+                                "type": "integer",
+                                "minimum": 0
+                            },
+                            "partial_overlap": {
+                                "type": "integer",
+                                "minimum": 0
+                            },
+                            "conflicting_exact_claims": {
+                                "type": "integer",
+                                "minimum": 0
+                            }
+                        }
+                    },
+                    "defects_by_kind": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "unreadable_cadence",
+                            "unreadable_line_template"
+                        ],
+                        "properties": {
+                            "unreadable_cadence": {
+                                "type": "integer",
+                                "minimum": 0
+                            },
+                            "unreadable_line_template": {
+                                "type": "integer",
+                                "minimum": 0
+                            }
+                        }
+                    }
+                }
+            },
+            "ScheduleGenerationPreflightResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data"
+                ],
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/ScheduleGenerationPreflight"
                     }
                 }
             },
@@ -20459,6 +21178,209 @@
                         }
                     }
                 ]
+            },
+            "UndatedCollectibleInvoiceAudit": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "invoices",
+                    "collectible",
+                    "undated",
+                    "with_an_issue_date",
+                    "without_an_issue_date",
+                    "would_become_overdue_if_backfilled",
+                    "undated_balances",
+                    "would_become_overdue_balances"
+                ],
+                "properties": {
+                    "invoices": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "collectible": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "undated": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "with_an_issue_date": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "without_an_issue_date": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "would_become_overdue_if_backfilled": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "undated_balances": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "integer",
+                            "minimum": 0
+                        },
+                        "maxProperties": 100
+                    },
+                    "would_become_overdue_balances": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "integer",
+                            "minimum": 0
+                        },
+                        "maxProperties": 100
+                    }
+                }
+            },
+            "UndatedCollectibleInvoiceAuditResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data"
+                ],
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/UndatedCollectibleInvoiceAudit"
+                    }
+                }
+            },
+            "UnlinkedProposalAgreementAudit": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "proposals",
+                    "sent_without_a_linked_agreement",
+                    "with_an_unlinked_agreement_on_the_company",
+                    "with_an_active_unlinked_agreement",
+                    "accepted_without_a_linked_agreement",
+                    "unlinked_agreements"
+                ],
+                "properties": {
+                    "proposals": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "sent_without_a_linked_agreement": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "with_an_unlinked_agreement_on_the_company": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "with_an_active_unlinked_agreement": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "accepted_without_a_linked_agreement": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "unlinked_agreements": {
+                        "type": "integer",
+                        "minimum": 0
+                    }
+                }
+            },
+            "UnlinkedProposalAgreementAuditResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data"
+                ],
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/UnlinkedProposalAgreementAudit"
+                    }
+                }
+            },
+            "UnplaceableInvoiceAudit": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "invoices",
+                    "without_a_service_period",
+                    "without_a_service_period_start",
+                    "unplaceable_by_a_period_guard",
+                    "charged_of_those",
+                    "on_an_agreement_of_those",
+                    "affected",
+                    "overage_hours_at_stake",
+                    "without_a_cycle",
+                    "of_a_kind_read_by_cycle",
+                    "live_without_a_cycle",
+                    "cycle_affected",
+                    "cycle_overage_hours_at_stake"
+                ],
+                "properties": {
+                    "invoices": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "without_a_service_period": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "without_a_service_period_start": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "unplaceable_by_a_period_guard": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "charged_of_those": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "on_an_agreement_of_those": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "affected": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "overage_hours_at_stake": {
+                        "type": "number",
+                        "minimum": 0
+                    },
+                    "without_a_cycle": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "of_a_kind_read_by_cycle": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "live_without_a_cycle": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "cycle_affected": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "cycle_overage_hours_at_stake": {
+                        "type": "number",
+                        "minimum": 0
+                    }
+                }
+            },
+            "UnplaceableInvoiceAuditResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data"
+                ],
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/UnplaceableInvoiceAudit"
+                    }
+                }
             },
             "Uuid": {
                 "type": "string",

@@ -129,27 +129,6 @@ final class AgentInlineSchemas
         ];
     }
 
-    /**
-     * @param  array<string, array<string, mixed>>  $properties
-     * @return array<string, mixed>
-     */
-    public static function billingAuditOutput(array $properties): array
-    {
-        return [
-            'type' => 'object',
-            'additionalProperties' => false,
-            'required' => ['data'],
-            'properties' => [
-                'data' => [
-                    'type' => 'object',
-                    'additionalProperties' => false,
-                    'required' => array_keys($properties),
-                    'properties' => $properties,
-                ],
-            ],
-        ];
-    }
-
     /** @return array<string, mixed> */
     public static function agreementListOutput(): array
     {
@@ -202,7 +181,9 @@ final class AgentInlineSchemas
     }
 
     /**
-     * The aggregate counts each billing audit reports.
+     * The aggregate counts each billing audit reports: the `data` of its
+     * response component in the checked OpenAPI document, which
+     * BillingAuditOperationContractTest holds to exactly this.
      *
      * @return array<string, array<string, mixed>>
      */
