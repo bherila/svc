@@ -375,6 +375,19 @@ final class AgentRestDocumentation
                 'response_description' => 'Result',
                 'extensions' => ['x-mcp-tool' => 'billing_schedules.list'],
             ],
+            'capacity_ledger.get' => [
+                'method' => 'GET',
+                'scopes' => ['billing:read'],
+                'description' => 'Manager-only trailing window of the computed agreement capacity ledger, and the agreement\'s deferred backlog: the outstanding deferred work the termination invoice would collect today, its amount at the hourly rate as that invoice would price it, and its monthly trend over the same months.',
+                'parameters' => [
+                    'WorkspaceId',
+                    self::uuidPath('agreement'),
+                    self::query('months', ['type' => 'integer', 'minimum' => 1, 'maximum' => 60, 'default' => 12]),
+                ],
+                'response' => 'CapacityLedgerResponse',
+                'response_description' => 'Result',
+                'extensions' => ['x-mcp-tool' => 'capacity_ledger.get'],
+            ],
             'clients.archive' => [
                 'method' => 'POST',
                 'scopes' => ['clients:write', 'clients:read'],
@@ -999,7 +1012,7 @@ final class AgentRestDocumentation
             'operations.summary' => [
                 'method' => 'GET',
                 'scopes' => ['identity:read'],
-                'description' => 'Always returns workspace_id; project, time, and invoice sections are omitted unless the token has their corresponding read scope.',
+                'description' => 'Always returns workspace_id; project, time, and invoice sections are omitted unless the token has their corresponding read scope. With billing:read, a workspace manager also receives deferred_backlog: the agreements with deferred work outstanding and what termination would charge for it.',
                 'parameters' => ['WorkspaceId'],
                 'response' => 'SummaryResponse',
                 'response_description' => 'Role-sensitive summary',

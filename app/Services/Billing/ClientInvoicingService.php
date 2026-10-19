@@ -19,6 +19,7 @@ use App\Support\Billing\BillingCadence;
 use App\Support\Billing\BillingCadenceLabel;
 use App\Support\Billing\CadenceOverageLineDescription;
 use App\Support\Billing\CarriedDeferredLine;
+use App\Support\Billing\DeferredTerminationPricing;
 use App\Support\Billing\HoursQuantity;
 use App\Support\Billing\InvoiceHoursStatement;
 use App\Support\Billing\InvoiceKind;
@@ -1670,7 +1671,11 @@ final class ClientInvoicingService
             'quantity' => $rateAmount === 0 ? '0' : HoursQuantity::decimal($hours),
             'unit_amount' => $rateAmount,
             'tax_amount' => 0,
-            'total_amount' => $rateAmount === 0 ? 0 : MoneyService::hourlyAmount($minutes, $rateAmount),
+            'total_amount' => match ($kind) {
+                CarriedDeferredLine::Applied => 0,
+                // Priced by the rule the deferred backlog quotes it by.
+                CarriedDeferredLine::BilledOnTermination => DeferredTerminationPricing::carriedTotal($minutes, $agreement),
+            },
             'type' => $kind->lineType()->value,
             'hours' => $hours,
             'line_date' => $lineDate,

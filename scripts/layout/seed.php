@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientPortalInvitation;
 use App\Models\ClientProject;
@@ -272,7 +273,40 @@ foreach ([
     ]);
 }
 
+// The agreement page's deferred backlog (#366): its own client, so no other
+// fixture's capacity or invoices change. Oversized on purpose - an unbroken
+// client and agreement name, and a shelf priced in the millions.
+$backlogAgreementPath = null;
+if (getenv('SVC_LAYOUT_DEFERRED_BACKLOG') === '1') {
+    $backlogCompany = ClientCompany::query()->create([
+        'workspace_id' => $workspace->id, 'name' => str_repeat('SyntheticBacklog', 5),
+        'slug' => 'synthetic-layout-backlog-client',
+    ]);
+    $backlogProject = ClientProject::query()->create([
+        'workspace_id' => $workspace->id, 'client_company_id' => $backlogCompany->id,
+        'name' => str_repeat('SyntheticBacklogProject', 4),
+    ]);
+    $backlogAgreement = ClientAgreement::query()->create([
+        'workspace_id' => $workspace->id, 'client_company_id' => $backlogCompany->id,
+        'title' => str_repeat('SyntheticRetainerAgreement', 4), 'status' => 'active', 'currency' => 'USD',
+        'billing_cadence' => 'monthly', 'starts_on' => CarbonImmutable::parse($date)->subMonthsNoOverflow(8)->startOfMonth()->toDateString(),
+        'retainer_minutes' => 1200, 'hourly_rate_amount' => 987_654,
+    ]);
+    foreach ([3, 2, 1, 0] as $monthsAgo) {
+        ClientTimeEntry::query()->create([
+            'workspace_id' => $workspace->id, 'client_company_id' => $backlogCompany->id,
+            'client_project_id' => $backlogProject->id, 'user_id' => $owner->id,
+            'worked_on' => CarbonImmutable::parse($date)->subMonthsNoOverflow($monthsAgo)->startOfMonth()->toDateString(),
+            'minutes' => 4_170 + 30 * $monthsAgo, 'description' => str_repeat('SyntheticDeferredBacklogWork', 6),
+            'is_billable' => true, 'is_deferred' => true, 'status' => 'approved',
+            'billing_rate_amount' => 987_654, 'currency' => 'USD',
+        ]);
+    }
+    $backlogAgreementPath = route('clients.agreement', [$workspace, $backlogCompany, $backlogAgreement], absolute: false);
+}
+
 file_put_contents($runtime.'/fixture.json', json_encode([
+    'agreement' => $backlogAgreementPath,
     'reminder_invoice' => route('clients.invoice', [$workspace, $company, $reminderInvoice], absolute: false),
     'square_explore' => route('square.explore', $workspace, absolute: false),
     'square_invoice' => route('clients.invoice', [$workspace, $company, $squareInvoice], absolute: false),

@@ -15,6 +15,7 @@ use App\Services\Authorization\AgentTimeEntryQuery;
 use App\Services\Authorization\PortalAccess;
 use App\Services\Authorization\PortalInvoiceQuery;
 use App\Services\Authorization\ProjectAccess;
+use App\Services\Billing\DeferredBacklogReadService;
 use App\Services\Billing\InvoiceCorrectionReadService;
 use App\Services\Mcp\AgentWithheldTools;
 use App\Support\AgentApi\AgentApiCursor;
@@ -55,6 +56,7 @@ final class AgentReadService
         private readonly AgentTaskPresenter $taskPresenter,
         private readonly AgentTimeEntryPresenter $timeEntryPresenter,
         private readonly AgentInvoicePresenter $invoicePresenter,
+        private readonly DeferredBacklogReadService $deferredBacklogs,
         private readonly WorkspaceClock $clock = new WorkspaceClock,
     ) {}
 
@@ -127,6 +129,11 @@ final class AgentReadService
                 'collectible_balances' => $this->amountsByCurrency($collectible, 'balance_amount'),
                 'overdue_balances' => $this->amountsByCurrency($overdue, 'balance_amount'),
             ];
+            // Agreement-rate prices are a manager's to read, as the capacity
+            // ledger they sit beside is.
+            if ($this->access->isWorkspaceManager($user, $workspace)) {
+                $data['deferred_backlog'] = $this->deferredBacklogs->summary($workspace);
+            }
         }
 
         return $data;

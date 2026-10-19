@@ -6,6 +6,8 @@ import {
     AgreementTitle,
     formatBytes,
 } from '@/components/agreements/agreement-editor';
+import { DeferredBacklogCard } from '@/components/agreements/deferred-backlog';
+import type { DeferredBacklog } from '@/components/agreements/deferred-backlog';
 import {
     AlertDialog,
     AlertDialogAction,
@@ -87,6 +89,7 @@ export default function ClientAgreementDetail({
     files,
     agreement,
     recurring_items: recurringItems,
+    deferred_backlog: deferredBacklog,
 }: {
     company: { id: string; name: string };
     /** Where "back" goes, since the two route families differ. */
@@ -96,6 +99,8 @@ export default function ClientAgreementDetail({
     files: AgreementFile[];
     agreement: AgreementTerms;
     recurring_items: RecurringItem[];
+    /** A manager's alone; null for everyone else and for the portal. */
+    deferred_backlog: DeferredBacklog | null;
 }) {
     const [editingTerms, setEditingTerms] = useState(false);
     // Removing a file is asked about rather than done, because it is not
@@ -119,7 +124,7 @@ export default function ClientAgreementDetail({
                 <header className="grid grid-cols-1 gap-1">
                     <Link
                         href={homeHref}
-                        className="text-sm text-muted-foreground underline-offset-4 hover:underline"
+                        className="text-sm wrap-anywhere text-muted-foreground underline-offset-4 hover:underline"
                     >
                         ← {company.name}
                     </Link>
@@ -346,6 +351,10 @@ export default function ClientAgreementDetail({
                         )}
                     </CardContent>
                 </Card>
+
+                {forOperator && deferredBacklog !== null && (
+                    <DeferredBacklogCard backlog={deferredBacklog} />
+                )}
 
                 <Card>
                     <CardHeader>

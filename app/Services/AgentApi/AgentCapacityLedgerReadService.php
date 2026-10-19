@@ -7,6 +7,8 @@ use App\Models\ClientAgreement;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\AgentAccess;
+use App\Services\Billing\Balances\MonthSummary;
+use App\Services\Billing\DeferredBacklogReadService;
 use App\Services\Billing\InvoiceLedgerBuilder;
 use App\Support\AgentApi\Presenters\CapacityLedgerPresenter;
 use App\Support\WorkspaceClock;
@@ -20,10 +22,11 @@ final class AgentCapacityLedgerReadService
         private readonly AgentAccess $access,
         private readonly InvoiceLedgerBuilder $ledgers,
         private readonly CapacityLedgerPresenter $presenter,
+        private readonly DeferredBacklogReadService $deferredBacklogs,
         private readonly WorkspaceClock $clock = new WorkspaceClock,
     ) {}
 
-    /** @return array{agreement_id:string,through:string,months:list<array<string, int|float|string|bool|null>>} */
+    /** @return array{agreement_id:string,through:string,months:list<array<string, int|float|string|bool|null>>,deferred_backlog:array<string, mixed>} */
     public function get(User|AgentPrincipal $user, Workspace $workspace, string $agreementId, int $months): array
     {
         $this->requireManager($user, $workspace);
@@ -32,7 +35,8 @@ final class AgentCapacityLedgerReadService
             ->where('public_id', $agreementId)
             ->with('clientCompany')
             ->firstOrFail();
-        $through = Carbon::instance($this->clock->today($workspace));
+        $today = $this->clock->today($workspace);
+        $through = Carbon::instance($today);
         $ledger = $this->ledgers->buildAgreementLedgerThrough($agreement->clientCompany, $agreement, $through);
         $rows = array_slice($ledger, -$months);
 
@@ -40,6 +44,16 @@ final class AgentCapacityLedgerReadService
             'agreement_id' => $agreement->public_id,
             'through' => $through->toDateString(),
             'months' => array_map($this->presenter->present(...), $rows),
+            // Its trend reads the same months as the rows beside it.
+            'deferred_backlog' => $this->deferredBacklogs->forAgreement(
+                $workspace,
+                $agreement,
+                // One per calendar month: a period ledger anchored mid-month
+                // can give two rows the same month.
+                array_values(array_unique(array_map(static fn (MonthSummary $row): string => $row->yearMonth, $rows))),
+                $today,
+                $this->deferredBacklogs->carriedMinutes($workspace, $agreement, $ledger, $today),
+            ),
         ];
     }
 

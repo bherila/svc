@@ -201,6 +201,12 @@ For payment reminders, dispatch with `reminder_layout: true`: its
 oversized recipients and reasons, the send confirmation, and the client cadence
 switch on settings. Locally, `node scripts/check-layout.mjs --reminders`.
 
+For the deferred backlog on the operator agreement page (#366), run
+`node scripts/check-layout.mjs --deferred-backlog`. It seeds a separate
+synthetic client with an unbroken name, an agreement whose title has no break,
+and a shelf priced in the millions, and captures the agreement page at every
+required width.
+
 Run from a checkout without an active Vite dev server. The command refuses an
 existing `public/hot` marker and leaves it untouched. It builds current assets,
 creates a fresh synthetic SQLite database,

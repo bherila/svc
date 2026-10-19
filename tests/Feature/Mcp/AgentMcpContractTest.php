@@ -196,6 +196,7 @@ final class AgentMcpContractTest extends TestCase
             'billing_schedules.generate' => ['billing:deliver', 'billing:read'],
             'billing_schedules.get' => ['billing:read'],
             'billing_schedules.list' => ['billing:read'],
+            'capacity_ledger.get' => ['billing:read'],
             'clients.archive' => ['clients:write', 'clients:read'],
             'clients.create' => ['clients:write'],
             'clients.get' => ['clients:read'],
