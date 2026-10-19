@@ -224,12 +224,12 @@ final class SquareMirrorSync
             $ids = $this->mapper->paymentIds($order, explode('|', $invoice['basis'], 3)[1] !== '');
             if ($ids === null) {
                 $this->mirror->markPaymentIdsUnresolvable($workspace, $invoice['square_invoice_id'], $invoice['basis'],
-                    retryAfter: ! $this->mapper->exceedsTenderBound($order) && $this->mapper->holdsAuthorization($order) ? $this->now() : null, readAt: $invoice['read_at']);
+                    retryAfter: ! $this->mapper->exceedsTenderBound($order) && $this->mapper->holdsAuthorization($order) ? $this->now() : null, read: $invoice['read']);
             } elseif ($ids === []) {
                 // Every queued invoice may hold a payment; an order showing no
                 // settled tender yet is retried, not taken as having none.
-                $this->mirror->markPaymentIdsUnresolvable($workspace, $invoice['square_invoice_id'], $invoice['basis'], retryAfter: $this->now(), readAt: $invoice['read_at']);
-            } elseif ($this->mirror->storePaymentIds($workspace, $invoice['square_invoice_id'], $invoice['basis'], $ids, rereadAfter: $this->now(), readAt: $invoice['read_at'])) {
+                $this->mirror->markPaymentIdsUnresolvable($workspace, $invoice['square_invoice_id'], $invoice['basis'], retryAfter: $this->now(), read: $invoice['read']);
+            } elseif ($this->mirror->storePaymentIds($workspace, $invoice['square_invoice_id'], $invoice['basis'], $ids, rereadAfter: $this->now(), read: $invoice['read'])) {
                 $tally->paymentsResolved++;
             }
         }
