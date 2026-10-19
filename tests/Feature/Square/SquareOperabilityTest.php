@@ -263,10 +263,17 @@ final class SquareOperabilityTest extends TestCase
         $stuck->forceFill(['status' => SquareSyncRun::COMPLETED, 'finished_at' => now(), 'truncated' => true])->save();
         $this->assertSame(1, Artisan::call('svc:square:status', ['--format' => 'json']), 'Completed, but short of Square.');
         $this->assertTrue(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['last_run']['truncated']);
+        $this->artisan('svc:square:status')->expectsOutputToContain('completed (schedule), truncated')->assertFailed();
         // A newer run retrying it does not make the truncated mirror healthy.
         SquareSyncRun::query()->create(['workspace_id' => $workspace->id, 'trigger' => SquareSyncRun::TRIGGER_SCHEDULE, 'status' => SquareSyncRun::RUNNING, 'api_version' => '2026-09-16']);
         $this->assertSame(1, Artisan::call('svc:square:status', ['--format' => 'json']));
         $this->assertTrue(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['last_completed_truncated']);
+        $this->artisan('svc:square:status')->expectsOutputToContain('Last completed run truncated')->assertFailed();
+        // An older run finishing after the truncated one does not replace it as the newer generation.
+        SquareSyncRun::query()->where('workspace_id', $workspace->id)->where('id', '<', $stuck->id)->where('status', SquareSyncRun::COMPLETED)->update(['finished_at' => now()->addMinute()]);
+        $this->assertSame(1, Artisan::call('svc:square:status', ['--format' => 'json']));
+        $this->assertTrue(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['last_completed_truncated']);
+        SquareSyncRun::query()->where('workspace_id', $workspace->id)->where('id', '<', $stuck->id)->where('status', SquareSyncRun::COMPLETED)->update(['finished_at' => '2030-02-02 11:51:00']);
         $stuck->delete();
         $this->travel(30)->minutes();
         $this->assertSame(1, Artisan::call('svc:square:status', ['--format' => 'json']), 'No completed sync for over an hour.');

@@ -66,7 +66,9 @@ final class SquareStatusCommand extends Command
         // whether it is the latest run, or the completed one a newer run is
         // still retrying.
         $lastCompleted = $workspace === null ? null : SquareSyncRun::query()->where('workspace_id', $workspace->id)->where('status', SquareSyncRun::COMPLETED)
-            ->orderByDesc('finished_at')->orderByDesc('id')->first(['truncated']);
+            // Generation order, as the mirror fences it: overlapping runs can
+            // finish out of order.
+            ->orderByDesc('id')->first(['truncated']);
         $status['last_completed_truncated'] = $lastCompleted?->truncated === true;
         $healthy = $workspace !== null && ! $abandoned && ! $overdue && ! $status['last_completed_truncated']
             && ($lastRun === null || ($lastRun['status'] !== SquareSyncRun::FAILED && $lastRun['truncated'] !== true));
@@ -80,7 +82,8 @@ final class SquareStatusCommand extends Command
             $this->components->twoColumnDetail('Workspace present', $status['workspace_present'] ? 'yes' : 'no');
             $this->components->twoColumnDetail('Webhook signature key', $status['webhook_signature_key_present'] ? 'present' : 'absent');
             $this->components->twoColumnDetail('Last completed sync', $status['last_synced_at'] ?? 'never');
-            $this->components->twoColumnDetail('Last run', $lastRun === null ? 'none' : sprintf('%s (%s)%s%s', $lastRun['status'], $lastRun['trigger'], $lastRun['error_code'] === null ? '' : ', '.$lastRun['error_code'], $abandoned ? ', abandoned' : ''));
+            $this->components->twoColumnDetail('Last run', $lastRun === null ? 'none' : sprintf('%s (%s)%s%s%s', $lastRun['status'], $lastRun['trigger'], $lastRun['error_code'] === null ? '' : ', '.$lastRun['error_code'], $abandoned ? ', abandoned' : '', $lastRun['truncated'] === true ? ', truncated' : ''));
+            $this->components->twoColumnDetail('Last completed run truncated', $status['last_completed_truncated'] ? 'yes' : 'no');
             $this->components->twoColumnDetail('Sync overdue', $overdue ? 'yes' : 'no');
         }
 
