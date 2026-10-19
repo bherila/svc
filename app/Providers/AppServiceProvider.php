@@ -82,6 +82,10 @@ class AppServiceProvider extends ServiceProvider
             exceptions: $app->make(ExceptionHandler::class),
             outerRequest: $app->make('request'),
             application: $app,
+            // The REST route runs on the caller's own scheme and host, so the
+            // links it returns (web_url, signed downloads) point where the
+            // caller reached SVC rather than at a bare `localhost`.
+            apiPrefix: $app->make('request')->getSchemeAndHttpHost().'/api/v1',
             allowedHeaders: ['Idempotency-Key', 'X-Request-Id'],
             temporaryFilePrefix: 'svc-agent-',
         ));

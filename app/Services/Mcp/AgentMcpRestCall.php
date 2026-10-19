@@ -39,7 +39,7 @@ final class AgentMcpRestCall
      */
     public function call(string $operationId, array $path, ?array $body = null, ?string $idempotencyKey = null, array $query = []): array
     {
-        $rest = $this->operations->find($operationId)?->rest
+        $rest = $this->operations->find($operationId)->rest
             ?? throw new LogicException("Operation [{$operationId}] has no REST binding.");
         $names = $rest->pathParameters;
         $given = array_keys($path);
