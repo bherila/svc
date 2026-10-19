@@ -2,6 +2,7 @@
 
 namespace App\Services\Mcp;
 
+use App\Services\Finance\FinanceReconciliationOperations;
 use App\Support\Finance\FinancePaymentQuery;
 use App\Support\Finance\ReconciliationTarget;
 use Mcp\Capability\Attribute\Schema;
@@ -9,7 +10,7 @@ use Mcp\Capability\Attribute\Schema;
 /**
  * Finance reconciliation over MCP (#457): each tool is its REST operation,
  * dispatched through {@see AgentMcpRestCall}, so the tool and the route run
- * one {@see \App\Services\Finance\FinanceReconciliationOperations} with the
+ * one {@see FinanceReconciliationOperations} with the
  * same refusals.
  */
 final class AgentMcpFinanceTools
