@@ -114,6 +114,11 @@ switches it from numbered pages to change order:
   its opaque revision, which also moves when one of its allocations does. Two
   changes in the same second still give two versions.
 
+The finance system's other reads take the same window: `invoices.list`
+(`billing:read`) and `clients.list` (`clients:read`) page by id as before, and
+switch to this change order - with `meta.watermark` - when a request names
+`updated_since` or `watermark`. A cursor from one order is refused in the other.
+
 `PUT /api/v1/workspaces/{workspace}/invoice-payments/{payment}/reconciliations/{external-system}/{transaction-uuid}` (`finance.reconciliations.upsert`)
 
 - Accepts `allocated_amount`, `currency`, optional `reconciled_on`, and

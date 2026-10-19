@@ -515,6 +515,8 @@ final class AgentRestDocumentation
                     self::query('status', ['type' => 'string', 'enum' => ['active', 'archived']]),
                     'Limit',
                     'Cursor',
+                    'UpdatedSince',
+                    'Watermark',
                 ],
                 'response' => 'ClientCompanyListResponse',
                 'response_description' => 'Authorized result',
@@ -1002,6 +1004,8 @@ final class AgentRestDocumentation
                     ],
                     self::query('collectible', ['type' => 'boolean']),
                     self::query('overdue', ['type' => 'boolean']),
+                    'UpdatedSince',
+                    'Watermark',
                 ],
                 'response' => 'InvoiceListResponse',
                 'response_description' => 'Authorized invoices',
@@ -1779,7 +1783,7 @@ final class AgentRestDocumentation
             'UpdatedSince' => [
                 'name' => 'updated_since',
                 'in' => 'query',
-                'description' => 'Only records changed at or after this time (inclusive): the previous pass\'s watermark. Naming updated_since or watermark switches a listing to change order - newest change first inside a snapshot watermark returned in meta - and a cursor from one order is refused in the other.',
+                'description' => 'Only records changed at or after this time (inclusive): the previous pass\'s watermark. Naming updated_since or watermark switches a listing that otherwise pages to change order - newest change first inside a snapshot watermark returned in meta - and a cursor from one order is refused in the other.',
                 'schema' => ['type' => 'string', 'format' => 'date-time'],
             ],
             'Watermark' => [

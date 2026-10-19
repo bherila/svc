@@ -1959,7 +1959,10 @@ export interface components {
         };
         ClientCompanyListResponse: {
             data: components['schemas']['ClientCompany'][];
-            meta: components['schemas']['PaginationMeta'];
+            /** @description ChangeFeedMeta when the request named updated_since or watermark; PaginationMeta otherwise. */
+            meta:
+                | components['schemas']['PaginationMeta']
+                | components['schemas']['ChangeFeedMeta'];
         };
         ClientCompanyResponse: {
             data: components['schemas']['ClientCompany'];
@@ -2623,7 +2626,10 @@ export interface components {
         };
         InvoiceListResponse: {
             data: components['schemas']['Invoice'][];
-            meta: components['schemas']['PaginationMeta'];
+            /** @description ChangeFeedMeta when the request named updated_since or watermark; PaginationMeta otherwise. */
+            meta:
+                | components['schemas']['PaginationMeta']
+                | components['schemas']['ChangeFeedMeta'];
         };
         InvoiceManualLine: {
             /** Format: uuid */
@@ -4273,7 +4279,7 @@ export interface components {
         TaskId: string;
         TimeEntryId: string;
         InvoiceId: string;
-        /** @description Only records changed at or after this time (inclusive): the previous pass's watermark. Naming updated_since or watermark switches a listing to change order - newest change first inside a snapshot watermark returned in meta - and a cursor from one order is refused in the other. */
+        /** @description Only records changed at or after this time (inclusive): the previous pass's watermark. Naming updated_since or watermark switches a listing that otherwise pages to change order - newest change first inside a snapshot watermark returned in meta - and a cursor from one order is refused in the other. */
         UpdatedSince: string;
         /** @description The pass's snapshot upper bound. Fixed by its first page (now when omitted, never in the future) and returned by every page; with a cursor, omit it or send the same one. */
         Watermark: string;
@@ -4922,6 +4928,10 @@ export interface operations {
                 status?: 'active' | 'archived';
                 limit?: components['parameters']['Limit'];
                 cursor?: components['parameters']['Cursor'];
+                /** @description Only records changed at or after this time (inclusive): the previous pass's watermark. Naming updated_since or watermark switches a listing that otherwise pages to change order - newest change first inside a snapshot watermark returned in meta - and a cursor from one order is refused in the other. */
+                updated_since?: components['parameters']['UpdatedSince'];
+                /** @description The pass's snapshot upper bound. Fixed by its first page (now when omitted, never in the future) and returned by every page; with a cursor, omit it or send the same one. */
+                watermark?: components['parameters']['Watermark'];
             };
             header?: never;
             path: {
@@ -6518,7 +6528,7 @@ export interface operations {
                 received_to?: string;
                 per_page?: number;
                 page?: number;
-                /** @description Only records changed at or after this time (inclusive): the previous pass's watermark. Naming updated_since or watermark switches a listing to change order - newest change first inside a snapshot watermark returned in meta - and a cursor from one order is refused in the other. */
+                /** @description Only records changed at or after this time (inclusive): the previous pass's watermark. Naming updated_since or watermark switches a listing that otherwise pages to change order - newest change first inside a snapshot watermark returned in meta - and a cursor from one order is refused in the other. */
                 updated_since?: components['parameters']['UpdatedSince'];
                 /** @description The pass's snapshot upper bound. Fixed by its first page (now when omitted, never in the future) and returned by every page; with a cursor, omit it or send the same one. */
                 watermark?: components['parameters']['Watermark'];
@@ -6853,6 +6863,10 @@ export interface operations {
                 };
                 collectible?: boolean;
                 overdue?: boolean;
+                /** @description Only records changed at or after this time (inclusive): the previous pass's watermark. Naming updated_since or watermark switches a listing that otherwise pages to change order - newest change first inside a snapshot watermark returned in meta - and a cursor from one order is refused in the other. */
+                updated_since?: components['parameters']['UpdatedSince'];
+                /** @description The pass's snapshot upper bound. Fixed by its first page (now when omitted, never in the future) and returned by every page; with a cursor, omit it or send the same one. */
+                watermark?: components['parameters']['Watermark'];
             };
             header?: never;
             path: {

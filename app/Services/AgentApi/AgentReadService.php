@@ -21,6 +21,8 @@ use App\Services\Mcp\AgentWithheldTools;
 use App\Support\AgentApi\AgentApiCursor;
 use App\Support\AgentApi\AgentApiScopes;
 use App\Support\AgentApi\AgentWriteCutover;
+use App\Support\AgentApi\ChangeFeedPage;
+use App\Support\AgentApi\ChangeWindow;
 use App\Support\AgentApi\InvoiceListFilters;
 use App\Support\AgentApi\Presenters\AgentInvoicePresenter;
 use App\Support\AgentApi\Presenters\AgentProjectPresenter;
@@ -294,11 +296,17 @@ final class AgentReadService
         }, $ids);
     }
 
-    /** @return array{data:list<array<string, mixed>>,meta:array{next_cursor:?string}} */
-    public function invoices(User|AgentPrincipal $user, Workspace $workspace, ?string $status, int $limit, ?string $cursor, ?InvoiceListFilters $filters = null): array
+    /**
+     * Visible invoices by id, or - when the window names `updated_since` or a
+     * watermark - newest change first inside a snapshot watermark
+     * ({@see ChangeFeedPage}), with the same filters and visibility.
+     *
+     * @return array{data:list<array<string, mixed>>,meta:array{next_cursor:?string, watermark?: string}}
+     */
+    public function invoices(User|AgentPrincipal $user, Workspace $workspace, ?string $status, int $limit, ?string $cursor, ?InvoiceListFilters $filters = null, ?ChangeWindow $window = null): array
     {
         $this->requireWorkspace($user, $workspace);
-        $query = $this->invoiceQuery($user, $workspace)->with(['clientCompany' => fn ($companies) => $companies->where('workspace_id', $workspace->id)])->orderBy('id');
+        $query = $this->invoiceQuery($user, $workspace)->with(['clientCompany' => fn ($companies) => $companies->where('workspace_id', $workspace->id)]);
         if ($status !== null && $status !== '') {
             $query->where('status', $status);
         }
@@ -347,7 +355,13 @@ final class AgentReadService
             $queryKey .= '|filters='.json_encode($values, JSON_THROW_ON_ERROR);
         }
 
-        $page = $this->page($query, $workspace, $queryKey, $limit, $cursor);
+        if ($window !== null && $window->requested()) {
+            return ChangeFeedPage::run($workspace, $queryKey, $query, $limit, $cursor, $window,
+                static function (): void {},
+                fn (ClientInvoice $invoice): array => $this->invoicePresenter->present($workspace, $invoice, $includeNotes));
+        }
+
+        $page = $this->page($query->orderBy('id'), $workspace, $queryKey, $limit, $cursor);
         $data = [];
         foreach ($page['records'] as $invoice) {
             if (! $invoice instanceof ClientInvoice) {

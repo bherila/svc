@@ -1498,6 +1498,12 @@
                     },
                     {
                         "$ref": "#/components/parameters/Cursor"
+                    },
+                    {
+                        "$ref": "#/components/parameters/UpdatedSince"
+                    },
+                    {
+                        "$ref": "#/components/parameters/Watermark"
                     }
                 ],
                 "responses": {
@@ -4965,6 +4971,12 @@
                         "schema": {
                             "type": "boolean"
                         }
+                    },
+                    {
+                        "$ref": "#/components/parameters/UpdatedSince"
+                    },
+                    {
+                        "$ref": "#/components/parameters/Watermark"
                     }
                 ],
                 "responses": {
@@ -9342,7 +9354,7 @@
             "UpdatedSince": {
                 "name": "updated_since",
                 "in": "query",
-                "description": "Only records changed at or after this time (inclusive): the previous pass's watermark. Naming updated_since or watermark switches a listing to change order - newest change first inside a snapshot watermark returned in meta - and a cursor from one order is refused in the other.",
+                "description": "Only records changed at or after this time (inclusive): the previous pass's watermark. Naming updated_since or watermark switches a listing that otherwise pages to change order - newest change first inside a snapshot watermark returned in meta - and a cursor from one order is refused in the other.",
                 "schema": {
                     "type": "string",
                     "format": "date-time"
@@ -10416,7 +10428,15 @@
                         }
                     },
                     "meta": {
-                        "$ref": "#/components/schemas/PaginationMeta"
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/PaginationMeta"
+                            },
+                            {
+                                "$ref": "#/components/schemas/ChangeFeedMeta"
+                            }
+                        ],
+                        "description": "ChangeFeedMeta when the request named updated_since or watermark; PaginationMeta otherwise."
                     }
                 }
             },
@@ -12918,7 +12938,15 @@
                         }
                     },
                     "meta": {
-                        "$ref": "#/components/schemas/PaginationMeta"
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/PaginationMeta"
+                            },
+                            {
+                                "$ref": "#/components/schemas/ChangeFeedMeta"
+                            }
+                        ],
+                        "description": "ChangeFeedMeta when the request named updated_since or watermark; PaginationMeta otherwise."
                     }
                 }
             },
