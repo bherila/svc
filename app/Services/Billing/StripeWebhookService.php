@@ -193,14 +193,22 @@ final class StripeWebhookService
             // the refunded total where `charge.refunded` put it, and is not
             // recorded as the payment's latest event: that would make the
             // `charge.refunded` it may have overtaken look older and skip it.
-            if ($standingRefunds === null || $this->isOlderPaymentEvent($payment, $providerCreatedAt, InvoicePaymentStatus::Refunded->value)) {
+            if ($standingRefunds === null) {
                 return;
             }
             if ($standingRefunds['currency'] !== $payment->currency) {
                 throw new \DomainException('Stripe refund currency does not match the invoice payment.');
             }
+            // Not subject to the payment's event ordering: the total was read
+            // from Stripe just now, so it is current whenever this
+            // notification was sent, and applying it twice changes nothing.
+            // Only a notification newer than the payment's latest becomes it,
+            // so an older one cannot let a still older event through.
+            $older = $this->isOlderPaymentEvent($payment, $providerCreatedAt, InvoicePaymentStatus::Refunded->value);
             $this->invoices->setRefundedAmount($payment, $standingRefunds['amount']);
-            $this->recordPaymentEvent($payment, $providerCreatedAt, (string) $event->id);
+            if (! $older) {
+                $this->recordPaymentEvent($payment, $providerCreatedAt, (string) $event->id);
+            }
         } elseif ($status !== null && $payment !== null) {
             if ($this->isOlderPaymentEvent($payment, $providerCreatedAt, $status)) {
                 $ledger->workspace_id = $payment->workspace_id;
