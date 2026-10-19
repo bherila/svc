@@ -553,7 +553,10 @@ final class AgentPaymentsTest extends TestCase
             'params' => ['name' => 'payments.record', 'arguments' => [...$payload, 'workspace_id' => $workspace->public_id, 'idempotency_key' => $key]],
         ], $headers)->assertOk()->json();
         if ($expected !== 201) {
-            $this->assertArrayHasKey('error', $result, json_encode($result));
+            // An input the tool's schema refuses is a protocol error; anything
+            // the route refuses comes back as a tool error carrying its
+            // refusal (#459), never the SDK's internal error.
+            $this->assertTrue(($result['error']['code'] ?? null) === -32602 || ($result['result']['isError'] ?? false), (string) json_encode($result));
             if (! $reachesTheAction) {
                 return null;
             }

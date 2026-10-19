@@ -33,39 +33,20 @@ use Throwable;
  */
 final class AgentMcpWriteToolRestDispatchTest extends TestCase
 {
-    /**
-     * Write tools that still run their action directly, with the reason.
-     * Shrink only: an entry that starts dispatching through REST fails below.
-     *
-     * @var array<string, string>
-     */
-    private const array DIRECT = [
-        'payments.correct' => 'Payment tools move with the payment routes and scopes (#457, #473).',
-        'payments.record' => 'Payment tools move with the payment routes and scopes (#457, #473).',
-        'payments.refund' => 'Payment tools move with the payment routes and scopes (#457, #473).',
-        'payments.set_status' => 'Payment tools move with the payment routes and scopes (#457, #473).',
-    ];
-
     public function test_every_write_tool_sends_one_request_to_its_own_rest_operation(): void
     {
         $writes = $this->writeTools();
         $this->assertNotEmpty($writes);
-        // The finance reconciliation writes (#457) dispatch like every other.
-        foreach (['finance.reconciliations.upsert', 'finance.reconciliations.deactivate'] as $finance) {
-            $this->assertArrayHasKey($finance, $writes);
-            $this->assertArrayNotHasKey($finance, self::DIRECT);
+        // The finance reconciliation (#457) and payment (#459) writes dispatch
+        // like every other: no write tool runs its action directly any more.
+        foreach (['finance.reconciliations.upsert', 'finance.reconciliations.deactivate', 'payments.record', 'payments.correct', 'payments.set_status', 'payments.refund'] as $id) {
+            $this->assertArrayHasKey($id, $writes);
         }
-        $this->assertSame([], array_values(array_diff(array_keys(self::DIRECT), array_keys($writes))), 'An allowlisted tool is no longer a write tool.');
 
         foreach ($writes as $id => $operation) {
             $rest = $operation->rest;
             $this->assertNotNull($rest, "{$id} is an MCP write tool with no REST operation.");
             [$requests, $failure] = $this->dispatch($operation);
-            if (isset(self::DIRECT[$id])) {
-                $this->assertSame([], $requests, "{$id} now reaches REST: remove it from DIRECT.");
-
-                continue;
-            }
             $this->assertNull($failure, "{$id} did not reach its REST operation: ".($failure?->getMessage() ?? ''));
             $this->assertCount(1, $requests, "{$id} must send exactly one request.");
             $pattern = '#^'.preg_replace('/\\\\\{[^}]+\\\\\}/', '[^/?]+', preg_quote(ltrim($rest->path, '/'), '#')).'(\?.*)?$#';

@@ -283,7 +283,7 @@ response as for an inaccessible agreement.
 
 `time_entries.log`, `time_entries.update`, and `time_entries.delete` appear
 only while the time-entry write flag is enabled and the token has the needed
-scope. Like every MCP write tool except the payment tools, they and
+scope. Like every MCP write tool, they and
 `tasks.create` / `tasks.update` run their REST operation (see
 [Write tools run their REST operation](#write-tools-run-their-rest-operation)).
 For `time_entries.log`, supplying `client_visible_description`
@@ -352,9 +352,11 @@ into it (`approve` on `time_entries.log` answers to `time_entries.approve`,
 that can answer in a read's shape, whether to ask for `?view=read`.
 `AgentMcpWriteToolRestDispatchTest` calls every write tool's handler against a
 recording transport and fails if one sends anything but exactly one request to
-its own operation's route. The payment tools (`payments.record`,
-`payments.correct`, `payments.set_status`, `payments.refund`) still run their
-actions directly and are its only allowlisted exceptions.
+its own operation's route. It has no exceptions: the payment tools
+(`payments.record`, `payments.correct`, `payments.set_status`,
+`payments.refund`) send the same body to their route
+as any REST client, so a receipt written over either transport replays over the
+other.
 
 Every agent operation is declared once in `AgentOperationCatalog`, on the shared
 operation registry (`bherila/mcp-laravel-bridge`, #408); `AgentMcpToolSchemas`
