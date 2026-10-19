@@ -35,13 +35,6 @@ final class WebApiParityTest extends TestCase
         'bherila-auth.credentials.tokens.destroy' => 'deliberate:credentials are managed only by the signed-in person',
         'bherila-auth.credentials.tokens.store' => 'deliberate:credentials are issued only by the signed-in person',
         'clients.manage' => 'web-only:redirect',
-        // Portal access from client settings (P5); no agent operation yet (#386).
-        'clients.portal-access.destroy' => 'operation:clients.portal_access.revoke',
-        'clients.portal-access.store' => 'operation:clients.portal_access.grant',
-        'clients.portal-access.update' => 'operation:clients.portal_access.update',
-        'clients.portal-invitations.destroy' => 'operation:clients.portal_invitations.revoke',
-        'clients.portal-invitations.resend' => 'operation:clients.portal_invitations.resend',
-        'clients.portal-invitations.store' => 'operation:clients.portal_invitations.create',
         'clients.store' => 'operation:clients.create',
         'clients.update' => 'operation:clients.update',
         'logout' => 'web-only:sign-out',

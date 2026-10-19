@@ -53,6 +53,7 @@ describe('apiRequest refusals', () => {
         });
         expect(await apiRequest('PATCH', '/api/v1/example', {})).toMatchObject({
             message: 'The due date is not a date.',
+            errors: { due_date: ['The due date is not a date.'] },
         });
 
         respond(409, {

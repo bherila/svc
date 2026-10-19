@@ -6,7 +6,13 @@ export type ApiSchema<Name extends keyof components['schemas']> =
 
 export type ApiResult<T> =
     | { ok: true; status: number; data: T }
-    | { ok: false; status: number; message: string };
+    | {
+          ok: false;
+          status: number;
+          message: string;
+          /** A validation refusal's messages by field, when it named any. */
+          errors?: Record<string, string[]>;
+      };
 
 /**
  * Call `/api/v1` as the signed-in website.
@@ -58,11 +64,32 @@ export async function apiRequest<T = unknown>(
         return { ok: true, status: response.status, data: data as T };
     }
 
+    const errors = fieldErrors(payload);
+
     return {
         ok: false,
         status: response.status,
         message: errorMessage(response.status, payload),
+        ...(errors === undefined ? {} : { errors }),
     };
+}
+
+function fieldErrors(payload: unknown): Record<string, string[]> | undefined {
+    if (!isRecord(payload) || !isRecord(payload.errors)) {
+        return undefined;
+    }
+
+    return Object.fromEntries(
+        Object.entries(payload.errors).map(([field, messages]) => [
+            field,
+            Array.isArray(messages)
+                ? messages.filter(
+                      (message): message is string =>
+                          typeof message === 'string',
+                  )
+                : [],
+        ]),
+    );
 }
 
 function errorMessage(status: number, payload: unknown): string {

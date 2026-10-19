@@ -14,6 +14,7 @@ use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\AgentApi\AgentPortalContactReadService;
 use App\Services\AgentApi\AgentTaskMutationAction;
 use App\Services\AgentApi\TimeEntryMutationService;
 use App\Services\Billing\ClientInvoicingService;
@@ -262,6 +263,7 @@ final class TenantScopedWriteStatementsTest extends TestCase
             $this->artisan('svc:portal:project-access', [
                 'company' => $this->company->public_id,
                 'email' => $portalUser->email,
+                '--confirm' => true, '--expected-version' => $this->portalVersion($portalUser),
                 '--project' => [$this->project->public_id],
             ])->assertSuccessful();
         });
@@ -271,6 +273,7 @@ final class TenantScopedWriteStatementsTest extends TestCase
             $this->artisan('svc:portal:project-access', [
                 'company' => $this->company->public_id,
                 'email' => $portalUser->email,
+                '--confirm' => true, '--expected-version' => $this->portalVersion($portalUser),
                 '--company-wide' => true,
             ])->assertSuccessful();
         });
@@ -484,5 +487,13 @@ final class TenantScopedWriteStatementsTest extends TestCase
         } finally {
             Carbon::setTestNow();
         }
+    }
+
+    /** The contact's current version, which the console command takes as the API does. */
+    private function portalVersion(User $user): string
+    {
+        $company = $this->company->fresh();
+
+        return (string) app(AgentPortalContactReadService::class)->contact($company->workspace()->firstOrFail(), $company, $user->public_id)['version'];
     }
 }

@@ -5,7 +5,6 @@ namespace App\Http\Controllers;
 use App\Models\ClientAgreement;
 use App\Models\ClientAgreementRecurringItem;
 use App\Models\ClientCompany;
-use App\Models\ClientCompanyMembership;
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceAdministratorNotification;
 use App\Models\ClientInvoiceEmailDelivery;
@@ -22,6 +21,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Queries\ClientHome\OperatorClientHomeQuery;
 use App\Services\Access\PortalInvitations;
+use App\Services\AgentApi\AgentPortalContactReadService;
 use App\Services\Authorization\BillingRecordAccess;
 use App\Services\Authorization\ProjectAccess;
 use App\Services\Billing\InvoiceCorrectionReadService;
@@ -30,7 +30,6 @@ use App\Services\Billing\InvoiceEmailService;
 use App\Services\Square\Mirror\SquareInvoicePage;
 use App\Services\Square\SquareLinkRepository;
 use App\Services\WorkspaceAuthorization;
-use App\Support\Access\PortalAccessScope;
 use App\Support\Access\PortalInvitationStatus;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\AgentApi\Presenters\AgentInvoicePresenter;
@@ -45,9 +44,7 @@ use App\Support\Files\AttachmentListing;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
-use Illuminate\Database\Query\JoinClause;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -838,48 +835,21 @@ class ClientDirectoryController extends Controller
 
     /**
      * Who can use this client's portal, and what each of them reaches, with
-     * the finished URLs the settings page posts to. Three queries: the
-     * memberships, their people, and every project limit at once - and, with
-     * portal invitations on, one more for the open and not-applied ones.
+     * the finished `/api/v1` URLs the settings page sends its changes to
+     * (#385). Each contact is the API's own presentation, carrying the version
+     * a change or removal must name; with portal invitations on, one more
+     * query for the open and not-applied invitations.
      *
      * @return array{add_url: string, members: list<array<string, mixed>>, invite_url: string|null, invitations: list<array<string, mixed>>, invitation_pagination: array{next_url: string|null, previous_url: string|null}}
      */
     private function portalAccess(Workspace $workspace, ClientCompany $clientCompany): array
     {
-        $memberships = ClientCompanyMembership::query()
-            ->where('workspace_id', $workspace->id)
-            ->where('client_company_id', $clientCompany->id)
-            ->with('user')
-            ->orderBy('id')
-            ->get();
-
-        $limits = DB::table('client_portal_project_access')
-            ->join('client_projects', function (JoinClause $join): void {
-                $join->on('client_projects.id', '=', 'client_portal_project_access.client_project_id')
-                    ->on('client_projects.workspace_id', '=', 'client_portal_project_access.workspace_id');
-            })
-            ->where('client_portal_project_access.workspace_id', $workspace->id)
-            ->whereIn('client_portal_project_access.client_company_membership_id', $memberships->pluck('id')->all())
-            ->orderBy('client_projects.name')
-            ->get(['client_portal_project_access.client_company_membership_id as membership_id', 'client_projects.public_id'])
-            ->groupBy('membership_id');
-
-        $base = '/workspaces/'.$workspace->public_id.'/clients/'.$clientCompany->public_id.'/portal-access';
+        $client = [$workspace, $clientCompany->public_id];
 
         return [
-            'add_url' => $base,
-            'members' => array_values($memberships
-                ->filter(fn (ClientCompanyMembership $membership): bool => $membership->user instanceof User)
-                ->map(fn (ClientCompanyMembership $membership): array => [
-                    'id' => $membership->user->public_id,
-                    'name' => $membership->user->name,
-                    'email' => $membership->user->email,
-                    // Anything but `projects` reaches the whole client, as PortalAccess reads it.
-                    'scope' => $membership->access_scope === PortalAccessScope::Projects->value ? PortalAccessScope::Projects->value : PortalAccessScope::Company->value,
-                    'projects' => $limits->get($membership->id, collect())->pluck('public_id')->map(strval(...))->values()->all(),
-                    'url' => $base.'/'.$membership->user->public_id,
-                ])->all()),
-            'invite_url' => PortalInvitations::enabled() ? '/workspaces/'.$workspace->public_id.'/clients/'.$clientCompany->public_id.'/portal-invitations' : null,
+            'add_url' => route('agent-api.v1.clients.portal-access.store', $client, absolute: false),
+            'members' => app(AgentPortalContactReadService::class)->all($workspace, $clientCompany),
+            'invite_url' => PortalInvitations::enabled() ? route('agent-api.v1.clients.portal-invitations.store', $client, absolute: false) : null,
             ...(PortalInvitations::enabled() ? $this->portalInvitations($workspace, $clientCompany) : [
                 'invitations' => [],
                 'invitation_pagination' => ['next_url' => null, 'previous_url' => null],
@@ -898,7 +868,6 @@ class ClientDirectoryController extends Controller
      */
     private function portalInvitations(Workspace $workspace, ClientCompany $clientCompany): array
     {
-        $base = '/workspaces/'.$workspace->public_id.'/clients/'.$clientCompany->public_id.'/portal-invitations/';
         $invitations = ClientPortalInvitation::query()
             ->where('workspace_id', $workspace->id)
             ->where('client_company_id', $clientCompany->id)
@@ -913,8 +882,9 @@ class ClientDirectoryController extends Controller
             ->whereIn('id', $invitations->flatMap(static fn (ClientPortalInvitation $invitation): array => $invitation->projectIds())->unique()->values()->all())
             ->pluck('public_id', 'id');
 
-        $rows = array_values($invitations->getCollection()->map(static function (ClientPortalInvitation $invitation) use ($base, $projects): array {
+        $rows = array_values($invitations->getCollection()->map(static function (ClientPortalInvitation $invitation) use ($workspace, $clientCompany, $projects): array {
             $status = $invitation->currentStatus();
+            $route = [$workspace, $clientCompany->public_id, $invitation->public_id];
 
             return [
                 'id' => $invitation->public_id,
@@ -928,8 +898,8 @@ class ClientDirectoryController extends Controller
                 'expires_at' => $invitation->expires_at?->toIso8601String(),
                 'email_sent' => $invitation->email_sent,
                 'link' => $status === PortalInvitationStatus::Pending ? $invitation->link : null,
-                'resend_url' => $status->isOpen() ? $base.$invitation->public_id.'/resend' : null,
-                'revoke_url' => $base.$invitation->public_id,
+                'resend_url' => $status->isOpen() ? route('agent-api.v1.clients.portal-invitations.resend', $route, absolute: false) : null,
+                'revoke_url' => route('agent-api.v1.clients.portal-invitations.destroy', $route, absolute: false),
             ];
         })->all());
 

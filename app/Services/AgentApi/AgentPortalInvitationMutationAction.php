@@ -5,12 +5,11 @@ namespace App\Services\AgentApi;
 use App\Models\AgentMutationReceipt;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Access\PortalAccessOperation;
 use App\Services\Access\PortalInvitations;
 use App\Services\Access\WorkspaceAccess;
 use App\Support\Access\AccessMutationContext;
 use App\Support\Access\PortalAccessScope;
-use Illuminate\Support\Facades\Validator;
-use Illuminate\Validation\Rule;
 
 /**
  * Portal invitation writes for agents: the same {@see PortalInvitations}
@@ -47,18 +46,10 @@ final class AgentPortalInvitationMutationAction
             $company = $this->reads->company($actor, $workspace, $companyId);
             $rules = ['confirm' => ['required', 'boolean', 'accepted']];
             if ($operation === self::CREATE) {
-                $rules += [
-                    'email' => ['required', 'string', 'email', 'max:255'],
-                    'scope' => ['required', Rule::enum(PortalAccessScope::class)],
-                    'projects' => ['array', 'max:500', Rule::requiredIf(($payload['scope'] ?? null) === 'projects'),
-                        Rule::prohibitedIf(($payload['scope'] ?? null) === 'company' && ($payload['projects'] ?? []) !== [])],
-                    'projects.*' => ['required', 'uuid', 'distinct'],
-                ];
+                // The same address and reach rules as granting access directly.
+                $rules += ['email' => ['required', 'string', 'email', 'max:255']] + PortalAccessOperation::scopeRules($payload);
             }
-            $fields = array_values(array_filter(array_keys($rules), static fn (string $field): bool => ! str_contains($field, '.')));
-            Validator::make(['body' => $payload], ['body' => ['required', 'array:'.implode(',', $fields)]])->validate();
-            $data = Validator::make($payload, $rules)->validate();
-            abort_unless($data['confirm'] === true, 422, 'Explicit confirmation is required.');
+            $data = PortalAccessOperation::validated($rules, $payload);
 
             $invitation = match ($operation) {
                 self::CREATE => $this->invitations->invite($context, $company, (string) $data['email'], PortalAccessScope::from((string) $data['scope']),

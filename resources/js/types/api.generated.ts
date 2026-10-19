@@ -339,7 +339,7 @@ export interface paths {
         /** @description List portal contacts for a client as a workspace owner/admin, including scope, selected projects and finished mutation URLs. */
         get: operations['clients.portal_access.list'];
         put?: never;
-        /** @description Grant portal access to an existing account found by exact email and bound to the configured identity provider. Requires explicit confirmation and an idempotency key. */
+        /** @description Grant portal access to an existing account found by exact email (ignoring case) and bound to the configured identity provider. When nobody signs in with the address, the 422 names `email`, or `invite` while portal invitations are enabled: create a portal invitation for the address instead. Requires explicit confirmation and an idempotency key. */
         post: operations['clients.portal_access.grant'];
         delete?: never;
         options?: never;
@@ -4736,6 +4736,51 @@ export interface operations {
                     'application/json': components['schemas']['PortalContactListResponse'];
                 };
             };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The caller is not a workspace owner or admin, or the token lacks clients:read. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace or client is not visible to the caller. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description limit is out of range, or the cursor is malformed or belongs to another client. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
             default: components['responses']['Error'];
         };
     };
@@ -4764,6 +4809,60 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['PortalContactResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The caller is not a workspace owner or admin (checked again under the access lock, also on a replay), or the token lacks the operation's scopes. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace or client is not visible to the caller, or an agent write cutover is switched off. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key was already used with a different request. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key header is missing, the body has an unknown field, confirm is not true, or a field is invalid (`errors` names it). Also when nobody signs in with the address (`email`, or `invite` while invitations are enabled), the person already has portal access, or a project does not belong to the client. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
                 };
             };
             default: components['responses']['Error'];
@@ -4797,6 +4896,60 @@ export interface operations {
                     'application/json': components['schemas']['PortalAccessRevokedResponse'];
                 };
             };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The caller is not a workspace owner or admin (checked again under the access lock, also on a replay), or the token lacks the operation's scopes. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace, client or contact is not visible to the caller, or an agent write cutover is switched off. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description expected_version is no longer current (read the contact again), or the Idempotency-Key was already used with a different request. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key header is missing, the body has an unknown field, confirm is not true, or a field is invalid (`errors` names it). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
             default: components['responses']['Error'];
         };
     };
@@ -4828,6 +4981,60 @@ export interface operations {
                     'application/json': components['schemas']['PortalContactResponse'];
                 };
             };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The caller is not a workspace owner or admin (checked again under the access lock, also on a replay), or the token lacks the operation's scopes. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace, client or contact is not visible to the caller, or an agent write cutover is switched off. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description expected_version is no longer current (read the contact again), or the Idempotency-Key was already used with a different request. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key header is missing, the body has an unknown field, confirm is not true, or a field is invalid (`errors` names it). Also when a project does not belong to the client. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
             default: components['responses']['Error'];
         };
     };
@@ -4853,6 +5060,51 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['PortalInvitationListResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The caller is not a workspace owner or admin, or the token lacks clients:read. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace or client is not visible to the caller, or portal invitations are disabled. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description limit is out of range, or the cursor is malformed or belongs to another client. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
                 };
             };
             default: components['responses']['Error'];
@@ -4883,6 +5135,69 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['PortalInvitationResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The caller is not a workspace owner or admin (checked again under the access lock, also on a replay), or the token lacks the operation's scopes. Also when the identity provider will not let this account send invitations. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace or client is not visible to the caller, an agent write cutover is switched off, or portal invitations are disabled. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key was already used with a different request, or another invitation to this address is being sent (retry after Retry-After). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key header is missing, the body has an unknown field, confirm is not true, or a field is invalid (`errors` names it). Also when the address already signs in here, a local account holds it unlinked, a project does not belong to the client, or the identity provider refuses the address. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests, or the identity provider is limiting invitations (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The identity provider is unavailable or misconfigured; nothing was invited. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
                 };
             };
             default: components['responses']['Error'];
@@ -4916,6 +5231,69 @@ export interface operations {
                     'application/json': components['schemas']['PortalInvitationResponse'];
                 };
             };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The caller is not a workspace owner or admin (checked again under the access lock, also on a replay), or the token lacks the operation's scopes. Also when the identity provider will not let this account send invitations. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace, client or invitation is not visible to the caller, an agent write cutover is switched off, or portal invitations are disabled. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key was already used with a different request; the invitation was already accepted or withdrawn, or the identity provider no longer has it; or another change to this address is in progress (retry after Retry-After). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key header is missing, the body has an unknown field, or confirm is not true. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests, or the identity provider is limiting invitations (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The identity provider is unavailable or misconfigured; the invitation was not sent again. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
             default: components['responses']['Error'];
         };
     };
@@ -4945,6 +5323,69 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['PortalInvitationResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The caller is not a workspace owner or admin (checked again under the access lock, also on a replay), or the token lacks the operation's scopes. Also when the identity provider will not let this account withdraw invitations. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace, client or invitation is not visible to the caller, an agent write cutover is switched off, or portal invitations are disabled. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key was already used with a different request; the invitation was already accepted or withdrawn, or the identity provider no longer has it; or another change to this address is in progress (retry after Retry-After). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key header is missing, the body has an unknown field, or confirm is not true. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests, or the identity provider is limiting invitations (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The identity provider withdrawal did not finish. Access is already withdrawn: repeat the same request with the same Idempotency-Key to finish it. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
                 };
             };
             default: components['responses']['Error'];

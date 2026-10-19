@@ -4,24 +4,25 @@ namespace App\Console\Commands;
 
 use App\Exceptions\AccessMutationRefused;
 use App\Models\ClientCompany;
-use App\Models\ClientCompanyMembership;
-use App\Models\ClientProject;
 use App\Models\User;
-use App\Services\Access\WorkspaceAccess;
+use App\Services\Access\PortalAccessOperation;
+use App\Services\AgentApi\AgentPortalContactReadService;
 use App\Support\Access\AccessMutationContext;
-use App\Support\Access\AccessRefusal;
 use App\Support\Access\PortalAccessScope;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 /**
  * Narrows a portal user to specific projects, or puts them back to seeing the
  * whole company.
  *
- * Without this the restriction is unreachable: `access_scope` defaults to
- * `company` and nothing in the application writes it, so the enforcement would
- * sit in the code with no way to switch it on short of editing production
- * tables by hand.
+ * The operator's way to make the change the client's settings page, REST and
+ * MCP make as `clients.portal_access.update`: the same
+ * {@see PortalAccessOperation}, with the same fields and validation - the
+ * contact's current version (printed by `--show`) and explicit confirmation -
+ * run as the system actor, still bound by the access boundary's tenant
+ * scoping, locks and audit trail.
  */
 final class PortalProjectAccessCommand extends Command
 {
@@ -30,11 +31,13 @@ final class PortalProjectAccessCommand extends Command
         {email : Portal user email}
         {--project=* : Project public ids the user may see; repeatable}
         {--company-wide : Return the user to seeing every client-visible project}
-        {--show : Report the current scope without changing it}';
+        {--expected-version= : The contact\'s current version, as --show prints it}
+        {--confirm : Confirm the change}
+        {--show : Report the current scope and version without changing it}';
 
     protected $description = 'Limit a portal user to specific projects, or restore company-wide access';
 
-    public function handle(): int
+    public function handle(PortalAccessOperation $operation, AgentPortalContactReadService $contacts): int
     {
         $company = ClientCompany::query()->where('public_id', $this->argument('company'))->first();
         if (! $company instanceof ClientCompany) {
@@ -43,96 +46,93 @@ final class PortalProjectAccessCommand extends Command
             return self::FAILURE;
         }
 
-        $user = User::query()->where('email', $this->argument('email'))->first();
+        // Scoped on the workspace as well as the company, as every caller of
+        // the operation resolves the person.
+        $user = $operation->memberByEmail($company, (string) $this->argument('email'));
         if (! $user instanceof User) {
-            $this->components->error('No user matches that email.');
-
-            return self::FAILURE;
-        }
-
-        // Scoped on the workspace as well as the company: this command grants
-        // and revokes portal access, so a membership migrated in before #113's
-        // composite key and now naming another tenant must not be reachable.
-        $membership = ClientCompanyMembership::query()
-            ->where('workspace_id', $company->workspace_id)
-            ->where('client_company_id', $company->id)
-            ->where('user_id', $user->id)
-            ->first();
-
-        if (! $membership instanceof ClientCompanyMembership) {
             $this->components->error('That user is not a portal member of that company.');
 
             return self::FAILURE;
         }
 
         if ($this->option('show')) {
-            return $this->report($company, $membership);
+            return $this->report($contacts->contact($company->workspace()->firstOrFail(), $company, $user->public_id));
         }
 
-        // An operator tool: trusted as the system actor, and still bound by
-        // the access boundary's own rules - its tenant scoping, its locks and
-        // its audit trail.
-        $access = app(WorkspaceAccess::class);
-        $context = AccessMutationContext::system();
-
-        if ($this->option('company-wide')) {
-            $access->changePortalScope($context, $company, $user, PortalAccessScope::Company);
-
-            $this->components->info('That user sees every client-visible project again.');
-
-            return self::SUCCESS;
-        }
-
-        /** @var list<string> $publicIds */
-        $publicIds = (array) $this->option('project');
-        if ($publicIds === []) {
+        /** @var list<string> $projects */
+        $projects = (array) $this->option('project');
+        if ($projects === [] && ! $this->option('company-wide')) {
             $this->components->error('Give at least one --project, or --company-wide to remove the restriction.');
 
             return self::FAILURE;
         }
 
+        $companyWide = (bool) $this->option('company-wide');
+        $payload = [
+            'scope' => ($companyWide ? PortalAccessScope::Company : PortalAccessScope::Projects)->value,
+            'projects' => $projects,
+            'expected_version' => $this->option('expected-version'),
+            'confirm' => (bool) $this->option('confirm'),
+        ];
+
         try {
-            // Replace rather than add: the granted set is what was asked for.
-            $access->changePortalScope($context, $company, $user, PortalAccessScope::Projects, $publicIds);
+            $operation->perform(AccessMutationContext::system(), $company, PortalAccessOperation::UPDATE, $user->public_id, $payload);
+        } catch (ValidationException $invalid) {
+            foreach ($invalid->errors() as $field => $messages) {
+                $this->components->error(self::flag($field).': '.implode(' ', $messages));
+            }
+
+            return self::FAILURE;
         } catch (AccessMutationRefused $refused) {
-            $this->components->error($refused->reason === AccessRefusal::ProjectOutsideCompany
-                ? 'One or more projects do not belong to that company.'
-                : $refused->getMessage());
+            $this->components->error($refused->getMessage());
+
+            return self::FAILURE;
+        } catch (HttpException $refused) {
+            $this->components->error($refused->getMessage());
 
             return self::FAILURE;
         }
 
-        $this->components->info(sprintf('That user now sees %d project(s) and nothing else.', count(array_unique($publicIds))));
+        $this->components->info($companyWide
+            ? 'That user sees every client-visible project again.'
+            : sprintf('That user now sees %d project(s) and nothing else.', count($projects)));
 
         return self::SUCCESS;
     }
 
-    private function report(ClientCompany $company, ClientCompanyMembership $membership): int
+    /** The command-line spelling of an operation field. */
+    private static function flag(string $field): string
     {
-        $this->components->twoColumnDetail('scope', (string) $membership->access_scope);
+        return match (true) {
+            $field === 'expected_version' => '--expected-version',
+            $field === 'confirm' => '--confirm',
+            str_starts_with($field, 'projects') => '--project',
+            default => $field,
+        };
+    }
 
-        if ($membership->access_scope !== ClientCompanyMembership::SCOPE_PROJECTS) {
+    /** @param array<string, mixed> $contact the contact as the API presents it */
+    private function report(array $contact): int
+    {
+        $this->components->twoColumnDetail('scope', (string) $contact['scope']);
+        $this->components->twoColumnDetail('version', (string) $contact['version']);
+
+        /** @var list<array{name: string}> $projects */
+        $projects = $contact['projects'];
+        if ($contact['scope'] !== PortalAccessScope::Projects->value) {
             $this->line('  Sees every client-visible project the company owns.');
 
             return self::SUCCESS;
         }
 
-        $names = ClientProject::query()
-            ->where('client_company_id', $company->id)
-            ->whereIn('id', DB::table('client_portal_project_access')
-                ->where('client_company_membership_id', $membership->id)
-                ->select('client_project_id'))
-            ->orderBy('name')
-            ->pluck('name');
-
-        if ($names->isEmpty()) {
+        if ($projects === []) {
             $this->line('  Granted nothing, so this user currently sees no projects.');
 
             return self::SUCCESS;
         }
 
-        foreach ($names as $name) {
-            $this->line("  {$name}");
+        foreach (collect($projects)->pluck('name')->sort()->values() as $name) {
+            $this->line('  '.$name);
         }
 
         return self::SUCCESS;

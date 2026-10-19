@@ -119,7 +119,10 @@ granted. `PortalAccess` exists to be that one decision;
 shows which surfaces currently ask it, which is the question to ask when adding
 one rather than a list this page can keep true.
 `svc:portal:project-access` sets and clears the scope, as the system actor of
-`App\Services\Access\WorkspaceAccess`.
+`App\Services\Access\WorkspaceAccess`. It runs `App\Services\Access\PortalAccessOperation`,
+the operation behind `clients.portal_access.update` that the settings page, REST
+and MCP also use, with the same fields and validation: it takes the contact's
+current version (`--show` prints it) as `--expected-version`, and `--confirm`.
 
 **Changing access.** Staff memberships, staff project assignments and portal
 memberships are written only through `App\Services\Access\WorkspaceAccess`

@@ -50,7 +50,7 @@ final class AgentPortalAccessController extends Controller
     {
         $context = $this->contexts->from($request);
         try {
-            $data = $this->mutations->run($context->user, $workspace, $context->oauthClientId, $context->idempotencyKey, $operation, $client, $user, $request->all());
+            $data = $this->mutations->run($this->contexts->forAccess($request, $workspace, $context, $operation), $context->user, $workspace, $context->oauthClientId, $context->idempotencyKey, $operation, $client, $user, $request->all());
         } catch (AccessMutationRefused $refused) {
             abort_if($refused->reason === AccessRefusal::NotAuthorized, 403, $refused->getMessage());
             abort_if($refused->reason === AccessRefusal::PortalRevisionConflict, 409, $refused->getMessage());

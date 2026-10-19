@@ -1584,7 +1584,7 @@
         "/workspaces/{workspace}/clients/{client}/portal-access": {
             "post": {
                 "operationId": "clients.portal_access.grant",
-                "description": "Grant portal access to an existing account found by exact email and bound to the configured identity provider. Requires explicit confirmation and an idempotency key.",
+                "description": "Grant portal access to an existing account found by exact email (ignoring case) and bound to the configured identity provider. When nobody signs in with the address, the 422 names `email`, or `invite` while portal invitations are enabled: create a portal invitation for the address instead. Requires explicit confirmation and an idempotency key.",
                 "security": [
                     {
                         "oauth2": [
@@ -1629,6 +1629,66 @@
                             "application/json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/PortalContactResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Not signed in, or the token is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The caller is not a workspace owner or admin (checked again under the access lock, also on a replay), or the token lacks the operation's scopes.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace or client is not visible to the caller, or an agent write cutover is switched off.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "The Idempotency-Key was already used with a different request.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "The Idempotency-Key header is missing, the body has an unknown field, confirm is not true, or a field is invalid (`errors` names it). Also when nobody signs in with the address (`email`, or `invite` while invitations are enabled), the person already has portal access, or a project does not belong to the client.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
                                 }
                             }
                         }
@@ -1690,6 +1750,56 @@
                             "application/json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/PortalContactListResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Not signed in, or the token is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The caller is not a workspace owner or admin, or the token lacks clients:read.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace or client is not visible to the caller.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "limit is out of range, or the cursor is malformed or belongs to another client.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
                                 }
                             }
                         }
@@ -1763,6 +1873,66 @@
                             "application/json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/PortalAccessRevokedResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Not signed in, or the token is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The caller is not a workspace owner or admin (checked again under the access lock, also on a replay), or the token lacks the operation's scopes.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace, client or contact is not visible to the caller, or an agent write cutover is switched off.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "expected_version is no longer current (read the contact again), or the Idempotency-Key was already used with a different request.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "The Idempotency-Key header is missing, the body has an unknown field, confirm is not true, or a field is invalid (`errors` names it).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
                                 }
                             }
                         }
@@ -1846,6 +2016,66 @@
                             }
                         }
                     },
+                    "401": {
+                        "description": "Not signed in, or the token is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The caller is not a workspace owner or admin (checked again under the access lock, also on a replay), or the token lacks the operation's scopes.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace, client or contact is not visible to the caller, or an agent write cutover is switched off.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "expected_version is no longer current (read the contact again), or the Idempotency-Key was already used with a different request.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "The Idempotency-Key header is missing, the body has an unknown field, confirm is not true, or a field is invalid (`errors` names it). Also when a project does not belong to the client.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
                     "default": {
                         "$ref": "#/components/responses/Error"
                     }
@@ -1917,6 +2147,76 @@
                             }
                         }
                     },
+                    "401": {
+                        "description": "Not signed in, or the token is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The caller is not a workspace owner or admin (checked again under the access lock, also on a replay), or the token lacks the operation's scopes. Also when the identity provider will not let this account send invitations.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace or client is not visible to the caller, an agent write cutover is switched off, or portal invitations are disabled.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "The Idempotency-Key was already used with a different request, or another invitation to this address is being sent (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "The Idempotency-Key header is missing, the body has an unknown field, confirm is not true, or a field is invalid (`errors` names it). Also when the address already signs in here, a local account holds it unlinked, a project does not belong to the client, or the identity provider refuses the address.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests, or the identity provider is limiting invitations (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "The identity provider is unavailable or misconfigured; nothing was invited.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
                     "default": {
                         "$ref": "#/components/responses/Error"
                     }
@@ -1975,6 +2275,56 @@
                             "application/json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/PortalInvitationListResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Not signed in, or the token is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The caller is not a workspace owner or admin, or the token lacks clients:read.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace or client is not visible to the caller, or portal invitations are disabled.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "limit is out of range, or the cursor is malformed or belongs to another client.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
                                 }
                             }
                         }
@@ -2049,6 +2399,76 @@
                             "application/json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/PortalInvitationResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Not signed in, or the token is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The caller is not a workspace owner or admin (checked again under the access lock, also on a replay), or the token lacks the operation's scopes. Also when the identity provider will not let this account send invitations.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace, client or invitation is not visible to the caller, an agent write cutover is switched off, or portal invitations are disabled.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "The Idempotency-Key was already used with a different request; the invitation was already accepted or withdrawn, or the identity provider no longer has it; or another change to this address is in progress (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "The Idempotency-Key header is missing, the body has an unknown field, or confirm is not true.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests, or the identity provider is limiting invitations (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "The identity provider is unavailable or misconfigured; the invitation was not sent again.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
                                 }
                             }
                         }
@@ -2129,6 +2549,76 @@
                             "application/json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/PortalInvitationResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Not signed in, or the token is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The caller is not a workspace owner or admin (checked again under the access lock, also on a replay), or the token lacks the operation's scopes. Also when the identity provider will not let this account withdraw invitations.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace, client or invitation is not visible to the caller, an agent write cutover is switched off, or portal invitations are disabled.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "The Idempotency-Key was already used with a different request; the invitation was already accepted or withdrawn, or the identity provider no longer has it; or another change to this address is in progress (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "The Idempotency-Key header is missing, the body has an unknown field, or confirm is not true.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests, or the identity provider is limiting invitations (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "The identity provider withdrawal did not finish. Access is already withdrawn: repeat the same request with the same Idempotency-Key to finish it.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
                                 }
                             }
                         }

@@ -281,19 +281,29 @@ describe('client screens under data that does not fit', () => {
                 assignable={[{ id: 'user-1', name: LONG_NAME }]}
                 portal={{
                     add_url:
-                        '/workspaces/workspace-1/clients/company-1/portal-access',
+                        '/api/v1/workspaces/workspace-1/clients/company-1/portal-access',
                     members: [
                         {
                             id: 'contact-1',
                             name: LONG_NAME,
                             email: `${LONG_NAME}@example.test`,
                             scope: 'projects',
-                            projects: ['project-1'],
-                            url: '/workspaces/workspace-1/clients/company-1/portal-access/contact-1',
+                            projects: [
+                                {
+                                    id: 'project-1',
+                                    name: LONG_NAME,
+                                    href: '/api/v1/workspaces/workspace-1/projects/project-1',
+                                },
+                            ],
+                            version: 'a'.repeat(64),
+                            update_href:
+                                '/api/v1/workspaces/workspace-1/clients/company-1/portal-access/contact-1',
+                            revoke_href:
+                                '/api/v1/workspaces/workspace-1/clients/company-1/portal-access/contact-1',
                         },
                     ],
                     invite_url:
-                        '/workspaces/workspace-1/clients/company-1/portal-invitations',
+                        '/api/v1/workspaces/workspace-1/clients/company-1/portal-invitations',
                     invitations: [
                         {
                             id: 'invitation-1',
@@ -306,9 +316,9 @@ describe('client screens under data that does not fit', () => {
                             email_sent: false,
                             link: `https://identity.example.test/invitations/${LONG_NAME}`,
                             resend_url:
-                                '/workspaces/workspace-1/clients/company-1/portal-invitations/invitation-1/resend',
+                                '/api/v1/workspaces/workspace-1/clients/company-1/portal-invitations/invitation-1/resend',
                             revoke_url:
-                                '/workspaces/workspace-1/clients/company-1/portal-invitations/invitation-1',
+                                '/api/v1/workspaces/workspace-1/clients/company-1/portal-invitations/invitation-1',
                         },
                     ],
                 }}

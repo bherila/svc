@@ -69,4 +69,38 @@ final class PortalOperationContractTest extends TestCase
             Container::setInstance($previous);
         }
     }
+
+    public function test_every_portal_operation_documents_its_refusals_with_the_error_schema(): void
+    {
+        $previous = Container::getInstance();
+        new Application(dirname(__DIR__, 3));
+        AgentApiResponseSchemaCatalog::flush();
+        try {
+            $registry = (new AgentOperationCatalog)->registry();
+            foreach (['access', 'invitations'] as $family) {
+                foreach (['list', $family === 'access' ? 'grant' : 'create', $family === 'access' ? 'update' : 'resend', 'revoke'] as $kind) {
+                    $id = "clients.portal_{$family}.{$kind}";
+                    $responses = $registry->find($id)?->rest?->responses ?? [];
+                    $expected = $kind === 'list' ? [401, 403, 404, 422, 429] : [401, 403, 404, 409, 422, 429];
+                    if ($family === 'invitations' && $kind !== 'list') {
+                        $expected[] = 503;
+                    }
+                    $this->assertSame($expected, array_keys($responses), $id);
+                    foreach ($responses as $status => $response) {
+                        $this->assertNotSame('', $response['description'], "{$id} {$status}");
+                        $this->assertSame(['$ref' => '#/components/schemas/Error'], $response['content']['application/json']['schema'], "{$id} {$status}");
+                    }
+                }
+            }
+            $this->assertStringContainsString('`invite`', $registry->find('clients.portal_access.grant')->rest->responses[422]['description']);
+            // Declared refusals sit beside, and never replace, a download's own success response.
+            $this->assertSame([200 => [
+                'description' => 'Authorized result',
+                'content' => ['application/pdf' => ['schema' => ['type' => 'string', 'format' => 'binary']]],
+            ]], $registry->find('invoices.download_pdf')?->rest?->responses);
+        } finally {
+            AgentApiResponseSchemaCatalog::flush();
+            Container::setInstance($previous);
+        }
+    }
 }
