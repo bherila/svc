@@ -6571,7 +6571,7 @@
             },
             "post": {
                 "operationId": "payments.record",
-                "description": "Owner/admin bookkeeping for money already received, with the same fields as the invoice screen's payment form. Never initiates a charge. Explicit invoice, minor-unit amount, currency and method required. received_on is the day the money arrived and defaults to today on the workspace calendar; reference, notes and the finance system's transaction id are optional; status is succeeded (the default) or pending for money not yet cleared, which payments.set_status later settles. Read invoices.get with billing:read for the current invoice expected_version; confirm: true is required. A succeeded payment over the balance is refused, and so is any payment while another on the invoice is pending or while Square collects the invoice (invoices.get reports pending_payments and collection_owner). A retry with the same Idempotency-Key and body returns the original payment without recording again. Requires both outer workflow and payment write flags.",
+                "description": "Owner/admin bookkeeping for money already received, with the same fields as the invoice screen's payment form. Never initiates a charge. Explicit invoice, minor-unit amount, currency and method required. received_on is the day the money arrived and defaults to today on the workspace calendar; reference, notes and the finance system's transaction id are optional; status is succeeded (the default) or pending for money not yet cleared, which payments.set_status later settles. An optional finance_reconciliation (external_system_slug, external_transaction_uuid, allocated_amount) also writes the payment's finance allocation in the same transaction and receipt, as finance.reconciliations.upsert would; it needs finance:reconcile and a succeeded payment. Read invoices.get with billing:read for the current invoice expected_version; confirm: true is required. A succeeded payment over the balance is refused, and so is any payment while another on the invoice is pending or while Square collects the invoice (invoices.get reports pending_payments and collection_owner). A retry with the same Idempotency-Key and body returns the original payment without recording again. Requires both outer workflow and payment write flags.",
                 "security": [
                     {
                         "oauth2": [
@@ -6623,7 +6623,7 @@
                         }
                     },
                     "403": {
-                        "description": "The caller is not a workspace owner or admin, or the token lacks payments:record or billing:read. Each is checked again on a replay.",
+                        "description": "The caller is not a workspace owner or admin, or the token lacks payments:record or billing:read; with finance_reconciliation, also without finance:reconcile. Each is checked again on a replay.",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -6653,7 +6653,7 @@
                         }
                     },
                     "422": {
-                        "description": "The Idempotency-Key header is missing, the body has an unknown field, confirm is not true, or a field is invalid (`errors` names it). Also, checked under the invoice lock: the invoice is a draft or void, a succeeded payment exceeds the balance, another payment on the invoice is pending (pending_payments on invoices.get), or Square collects the invoice (collection_owner square).",
+                        "description": "The Idempotency-Key header is missing, the body has an unknown field (finance_reconciliation is a closed object too), confirm is not true, or a field is invalid (`errors` names it). Also, checked under the invoice lock: the invoice is a draft or void, a succeeded payment exceeds the balance, another payment on the invoice is pending (pending_payments on invoices.get), or Square collects the invoice (collection_owner square); and with finance_reconciliation, a pending payment or an allocated_amount over the payment amount.",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -15993,7 +15993,38 @@
                             "null"
                         ],
                         "format": "uuid",
-                        "description": "The finance system's transaction this payment was received as."
+                        "description": "The finance system's transaction this payment was received as. Superseded by finance_reconciliation, which records the allocation itself; this column is kept for existing callers."
+                    },
+                    "finance_reconciliation": {
+                        "type": [
+                            "object",
+                            "null"
+                        ],
+                        "additionalProperties": false,
+                        "required": [
+                            "external_system_slug",
+                            "external_transaction_uuid",
+                            "allocated_amount"
+                        ],
+                        "description": "Also write this payment's finance reconciliation allocation, in the same transaction and receipt: what finance.reconciliations.upsert would write for the new payment, active, in the payment's currency. Needs finance:reconcile and status succeeded; allocated_amount is at most amount. Omitted or null writes none.",
+                        "properties": {
+                            "external_system_slug": {
+                                "type": "string",
+                                "maxLength": 80,
+                                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                                "description": "The external finance system, as a lowercase slug."
+                            },
+                            "external_transaction_uuid": {
+                                "type": "string",
+                                "format": "uuid",
+                                "description": "That system's transaction the payment is reconciled to."
+                            },
+                            "allocated_amount": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "description": "Minor units of the payment the transaction covers."
+                            }
+                        }
                     },
                     "confirm": {
                         "type": "boolean",

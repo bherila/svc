@@ -17765,7 +17765,38 @@
                                     "null"
                                 ],
                                 "format": "uuid",
-                                "description": "The finance system's transaction this payment was received as."
+                                "description": "The finance system's transaction this payment was received as. Superseded by finance_reconciliation, which records the allocation itself; this column is kept for existing callers."
+                            },
+                            "finance_reconciliation": {
+                                "type": [
+                                    "object",
+                                    "null"
+                                ],
+                                "additionalProperties": false,
+                                "required": [
+                                    "external_system_slug",
+                                    "external_transaction_uuid",
+                                    "allocated_amount"
+                                ],
+                                "description": "Also write this payment's finance reconciliation allocation, in the same transaction and receipt: what finance.reconciliations.upsert would write for the new payment, active, in the payment's currency. Needs finance:reconcile and status succeeded; allocated_amount is at most amount. Omitted or null writes none.",
+                                "properties": {
+                                    "external_system_slug": {
+                                        "type": "string",
+                                        "maxLength": 80,
+                                        "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                                        "description": "The external finance system, as a lowercase slug."
+                                    },
+                                    "external_transaction_uuid": {
+                                        "type": "string",
+                                        "format": "uuid",
+                                        "description": "That system's transaction the payment is reconciled to."
+                                    },
+                                    "allocated_amount": {
+                                        "type": "integer",
+                                        "minimum": 1,
+                                        "description": "Minor units of the payment the transaction covers."
+                                    }
+                                }
                             }
                         },
                         "required": [
@@ -17780,7 +17811,7 @@
                         ],
                         "additionalProperties": false
                     },
-                    "description": "Record money already received using an explicit invoice, amount in minor units, currency and method. Give the actual payment date as received_on (it defaults to today, never the invoice date); reference, notes and the finance transaction id are optional; status is succeeded, or pending for money that has not cleared. Current invoice version, explicit user confirmation and idempotency key required. Owner/admin only; overpayments refused, and so is any payment while another on the invoice is pending or Square collects it (invoices.get shows pending_payments and collection_owner). Never charges a customer or issues a refund.",
+                    "description": "Record money already received using an explicit invoice, amount in minor units, currency and method. Give the actual payment date as received_on (it defaults to today, never the invoice date); reference, notes and the finance transaction id are optional; status is succeeded, or pending for money that has not cleared. finance_reconciliation (external system slug, transaction UUID, allocated amount; needs finance:reconcile) also writes the payment's finance allocation in the same transaction. Current invoice version, explicit user confirmation and idempotency key required. Owner/admin only; overpayments refused, and so is any payment while another on the invoice is pending or Square collects it (invoices.get shows pending_payments and collection_owner). Never charges a customer or issues a refund.",
                     "annotations": {
                         "readOnlyHint": false,
                         "destructiveHint": false,
@@ -28446,7 +28477,7 @@
                 "operations.summary": "0db82875e0823846",
                 "payments.correct": "f23dd37fdcc72186",
                 "payments.list": "a911cc9b30a4c54a",
-                "payments.record": "4ccfe24441a026fb",
+                "payments.record": "6e97fdf4cc486dc1",
                 "payments.refund": "80c0a9955b9c1756",
                 "payments.reverse_refund": "12db1ed6c5733d4e",
                 "payments.set_status": "dbf7e8a65c846db0",
@@ -32822,7 +32853,7 @@
                 "operations.summary": "0db82875e0823846",
                 "payments.correct": "f23dd37fdcc72186",
                 "payments.list": "a911cc9b30a4c54a",
-                "payments.record": "4ccfe24441a026fb",
+                "payments.record": "6e97fdf4cc486dc1",
                 "payments.refund": "80c0a9955b9c1756",
                 "payments.reverse_refund": "12db1ed6c5733d4e",
                 "payments.set_status": "dbf7e8a65c846db0",
@@ -32984,7 +33015,7 @@
                 "operations.summary": "0db82875e0823846",
                 "payments.correct": "f23dd37fdcc72186",
                 "payments.list": "a911cc9b30a4c54a",
-                "payments.record": "4ccfe24441a026fb",
+                "payments.record": "6e97fdf4cc486dc1",
                 "payments.refund": "80c0a9955b9c1756",
                 "payments.reverse_refund": "12db1ed6c5733d4e",
                 "payments.set_status": "dbf7e8a65c846db0",
@@ -34742,7 +34773,7 @@
                 "operations.summary": "0db82875e0823846",
                 "payments.correct": "f23dd37fdcc72186",
                 "payments.list": "a911cc9b30a4c54a",
-                "payments.record": "4ccfe24441a026fb",
+                "payments.record": "6e97fdf4cc486dc1",
                 "payments.refund": "80c0a9955b9c1756",
                 "payments.reverse_refund": "12db1ed6c5733d4e",
                 "payments.set_status": "dbf7e8a65c846db0",
@@ -34903,7 +34934,7 @@
                 "operations.summary": "0db82875e0823846",
                 "payments.correct": "f23dd37fdcc72186",
                 "payments.list": "a911cc9b30a4c54a",
-                "payments.record": "4ccfe24441a026fb",
+                "payments.record": "6e97fdf4cc486dc1",
                 "payments.refund": "80c0a9955b9c1756",
                 "payments.reverse_refund": "12db1ed6c5733d4e",
                 "payments.set_status": "dbf7e8a65c846db0",
@@ -35711,7 +35742,7 @@
                 "operations.summary": "0db82875e0823846",
                 "payments.correct": "f23dd37fdcc72186",
                 "payments.list": "a911cc9b30a4c54a",
-                "payments.record": "4ccfe24441a026fb",
+                "payments.record": "6e97fdf4cc486dc1",
                 "payments.refund": "80c0a9955b9c1756",
                 "payments.reverse_refund": "12db1ed6c5733d4e",
                 "payments.set_status": "dbf7e8a65c846db0",
@@ -35871,7 +35902,7 @@
                 "operations.summary": "0db82875e0823846",
                 "payments.correct": "f23dd37fdcc72186",
                 "payments.list": "a911cc9b30a4c54a",
-                "payments.record": "4ccfe24441a026fb",
+                "payments.record": "6e97fdf4cc486dc1",
                 "payments.refund": "80c0a9955b9c1756",
                 "payments.reverse_refund": "12db1ed6c5733d4e",
                 "payments.set_status": "dbf7e8a65c846db0",
@@ -37500,7 +37531,7 @@
                 "operations.summary": "0db82875e0823846",
                 "payments.correct": "f23dd37fdcc72186",
                 "payments.list": "a911cc9b30a4c54a",
-                "payments.record": "4ccfe24441a026fb",
+                "payments.record": "6e97fdf4cc486dc1",
                 "payments.refund": "80c0a9955b9c1756",
                 "payments.reverse_refund": "12db1ed6c5733d4e",
                 "payments.set_status": "dbf7e8a65c846db0",
@@ -37663,7 +37694,7 @@
                 "operations.summary": "0db82875e0823846",
                 "payments.correct": "f23dd37fdcc72186",
                 "payments.list": "a911cc9b30a4c54a",
-                "payments.record": "4ccfe24441a026fb",
+                "payments.record": "6e97fdf4cc486dc1",
                 "payments.refund": "80c0a9955b9c1756",
                 "payments.reverse_refund": "12db1ed6c5733d4e",
                 "payments.set_status": "dbf7e8a65c846db0",

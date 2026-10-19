@@ -1161,7 +1161,7 @@ export interface paths {
         /** @description List received payments for an explicit invoice_id or company_id (at least one required). Invoice visibility applies; private processor and reconciliation data is excluded. */
         get: operations['payments.list'];
         put?: never;
-        /** @description Owner/admin bookkeeping for money already received, with the same fields as the invoice screen's payment form. Never initiates a charge. Explicit invoice, minor-unit amount, currency and method required. received_on is the day the money arrived and defaults to today on the workspace calendar; reference, notes and the finance system's transaction id are optional; status is succeeded (the default) or pending for money not yet cleared, which payments.set_status later settles. Read invoices.get with billing:read for the current invoice expected_version; confirm: true is required. A succeeded payment over the balance is refused, and so is any payment while another on the invoice is pending or while Square collects the invoice (invoices.get reports pending_payments and collection_owner). A retry with the same Idempotency-Key and body returns the original payment without recording again. Requires both outer workflow and payment write flags. */
+        /** @description Owner/admin bookkeeping for money already received, with the same fields as the invoice screen's payment form. Never initiates a charge. Explicit invoice, minor-unit amount, currency and method required. received_on is the day the money arrived and defaults to today on the workspace calendar; reference, notes and the finance system's transaction id are optional; status is succeeded (the default) or pending for money not yet cleared, which payments.set_status later settles. An optional finance_reconciliation (external_system_slug, external_transaction_uuid, allocated_amount) also writes the payment's finance allocation in the same transaction and receipt, as finance.reconciliations.upsert would; it needs finance:reconcile and a succeeded payment. Read invoices.get with billing:read for the current invoice expected_version; confirm: true is required. A succeeded payment over the balance is refused, and so is any payment while another on the invoice is pending or while Square collects the invoice (invoices.get reports pending_payments and collection_owner). A retry with the same Idempotency-Key and body returns the original payment without recording again. Requires both outer workflow and payment write flags. */
         post: operations['payments.record'];
         delete?: never;
         options?: never;
@@ -3427,9 +3427,21 @@ export interface components {
             status: 'pending' | 'succeeded';
             /**
              * Format: uuid
-             * @description The finance system's transaction this payment was received as.
+             * @description The finance system's transaction this payment was received as. Superseded by finance_reconciliation, which records the allocation itself; this column is kept for existing callers.
              */
             external_finance_transaction_uuid?: string | null;
+            /** @description Also write this payment's finance reconciliation allocation, in the same transaction and receipt: what finance.reconciliations.upsert would write for the new payment, active, in the payment's currency. Needs finance:reconcile and status succeeded; allocated_amount is at most amount. Omitted or null writes none. */
+            finance_reconciliation?: {
+                /** @description The external finance system, as a lowercase slug. */
+                external_system_slug: string;
+                /**
+                 * Format: uuid
+                 * @description That system's transaction the payment is reconciled to.
+                 */
+                external_transaction_uuid: string;
+                /** @description Minor units of the payment the transaction covers. */
+                allocated_amount: number;
+            } | null;
             /**
              * @description Explicit user confirmation is required.
              * @constant
@@ -8047,7 +8059,7 @@ export interface operations {
                     'application/json': components['schemas']['Error'];
                 };
             };
-            /** @description The caller is not a workspace owner or admin, or the token lacks payments:record or billing:read. Each is checked again on a replay. */
+            /** @description The caller is not a workspace owner or admin, or the token lacks payments:record or billing:read; with finance_reconciliation, also without finance:reconcile. Each is checked again on a replay. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -8074,7 +8086,7 @@ export interface operations {
                     'application/json': components['schemas']['Error'];
                 };
             };
-            /** @description The Idempotency-Key header is missing, the body has an unknown field, confirm is not true, or a field is invalid (`errors` names it). Also, checked under the invoice lock: the invoice is a draft or void, a succeeded payment exceeds the balance, another payment on the invoice is pending (pending_payments on invoices.get), or Square collects the invoice (collection_owner square). */
+            /** @description The Idempotency-Key header is missing, the body has an unknown field (finance_reconciliation is a closed object too), confirm is not true, or a field is invalid (`errors` names it). Also, checked under the invoice lock: the invoice is a draft or void, a succeeded payment exceeds the balance, another payment on the invoice is pending (pending_payments on invoices.get), or Square collects the invoice (collection_owner square); and with finance_reconciliation, a pending payment or an allocated_amount over the payment amount. */
             422: {
                 headers: {
                     [name: string]: unknown;
