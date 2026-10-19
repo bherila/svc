@@ -26,6 +26,7 @@ final class ManualPaymentOperationContractTest extends TestCase
             foreach ([
                 'payments.set_status' => ['paymentsSetStatus', 'payments.status', '/workspaces/{workspace}/payments/{payment}/status', 'ReceivedPaymentStatusRequest'],
                 'payments.refund' => ['paymentsRefund', 'payments.refund', '/workspaces/{workspace}/payments/{payment}/refunds', 'ReceivedPaymentRefundRequest'],
+                'payments.reverse_refund' => ['paymentsReverseRefund', 'payments.refunds.reverse', '/workspaces/{workspace}/payments/{payment}/refunds/{refund}/reversal', 'ReceivedPaymentRefundReversalRequest'],
             ] as $id => [$handler, $route, $path, $request]) {
                 $operation = $registry->find($id);
                 $this->assertNotNull($operation, $id);
@@ -46,8 +47,13 @@ final class ManualPaymentOperationContractTest extends TestCase
                 $this->assertSame('ReceivedPaymentResponse', AgentApiResponseSchemaCatalog::operationComponent($id), $id);
                 $this->assertSame($request, AgentApiResponseSchemaCatalog::catalog()->requestComponent($id), $id);
                 $named = array_map(static fn (mixed $parameter): mixed => is_array($parameter) ? ($parameter['name'] ?? null) : $parameter, $operation->rest->parameters ?? []);
-                $this->assertSame(['WorkspaceId', 'PaymentId', 'IdempotencyKey'], $named, $id);
+                $this->assertSame($id === 'payments.reverse_refund' ? ['WorkspaceId', 'PaymentId', 'refund', 'IdempotencyKey'] : ['WorkspaceId', 'PaymentId', 'IdempotencyKey'], $named, $id);
             }
+            // The refund named by the reversal's path (#472) is a required UUID.
+            $refund = $registry->find('payments.reverse_refund')?->rest?->parameters[2] ?? null;
+            $this->assertIsArray($refund);
+            $this->assertSame(['name' => 'refund', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'string', 'format' => 'uuid']],
+                array_diff_key($refund, ['description' => true]));
         } finally {
             AgentApiResponseSchemaCatalog::flush();
             Container::setInstance($previous);

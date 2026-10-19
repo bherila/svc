@@ -1182,6 +1182,20 @@ final class AgentRestDocumentation
                 'response' => 'ReceivedPaymentResponse',
                 'response_description' => 'Payment with the refund recorded',
             ],
+            'payments.reverse_refund' => [
+                'method' => 'POST',
+                'scopes' => ['payments:record', 'payments:read'],
+                'description' => 'Owner/admin correction of a refund that was recorded in error against a payment recorded by hand - the money was never returned to the client. Records a reversing entry linked to the refund, which stays in the payment\'s refunds unchanged: the refund is never edited or deleted. amount reverses part of the refund, in minor units; omitted, the whole refund is reversed. A refund is reversed at most once and never by more than it was, and a reversal is not itself reversed - if the money was returned after all, record the refund again with payments.refund. The payment\'s refunded_amount falls by the amount, a fully refunded payment becomes succeeded again, and the invoice\'s paid amount, balance and status are recomputed, so an invoice can be paid again. Requires confirm: true, the payment version and the refund id from payments.list, and a reason, which is kept in the client history with both entries\' ids. A stale version is refused with 409. Refused with 422: a payment recorded by a processor (Stripe, Square), whose refunds follow its own events; a refund already reversed, a reversal, or an id that is not a refund of this payment; more than the refund or than the payment\'s refunded amount; a void invoice; or successful payments that would exceed the invoice total. Never initiates a charge and never moves money. Requires both outer workflow and payment write flags.',
+                'parameters' => [
+                    'WorkspaceId',
+                    'PaymentId',
+                    ['name' => 'refund', 'in' => 'path', 'required' => true, 'description' => 'The refund to reverse: a refunds[].id of kind refund from payments.list.', 'schema' => ['type' => 'string', 'format' => 'uuid']],
+                    'IdempotencyKey',
+                ],
+                'request' => 'ReceivedPaymentRefundReversalRequest',
+                'response' => 'ReceivedPaymentResponse',
+                'response_description' => 'Payment with the reversal recorded',
+            ],
             'payments.set_status' => [
                 'method' => 'POST',
                 'scopes' => ['payments:record', 'payments:read'],

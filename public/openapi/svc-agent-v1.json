@@ -6528,6 +6528,77 @@
                 "x-agent-mcp-tool": "payments.refund"
             }
         },
+        "/workspaces/{workspace}/payments/{payment}/refunds/{refund}/reversal": {
+            "post": {
+                "operationId": "payments.reverse_refund",
+                "description": "Owner/admin correction of a refund that was recorded in error against a payment recorded by hand - the money was never returned to the client. Records a reversing entry linked to the refund, which stays in the payment's refunds unchanged: the refund is never edited or deleted. amount reverses part of the refund, in minor units; omitted, the whole refund is reversed. A refund is reversed at most once and never by more than it was, and a reversal is not itself reversed - if the money was returned after all, record the refund again with payments.refund. The payment's refunded_amount falls by the amount, a fully refunded payment becomes succeeded again, and the invoice's paid amount, balance and status are recomputed, so an invoice can be paid again. Requires confirm: true, the payment version and the refund id from payments.list, and a reason, which is kept in the client history with both entries' ids. A stale version is refused with 409. Refused with 422: a payment recorded by a processor (Stripe, Square), whose refunds follow its own events; a refund already reversed, a reversal, or an id that is not a refund of this payment; more than the refund or than the payment's refunded amount; a void invoice; or successful payments that would exceed the invoice total. Never initiates a charge and never moves money. Requires both outer workflow and payment write flags.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "payments:record",
+                            "payments:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ReceivedPaymentRefundReversalRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/PaymentId"
+                    },
+                    {
+                        "name": "refund",
+                        "in": "path",
+                        "required": true,
+                        "description": "The refund to reverse: a refunds[].id of kind refund from payments.list.",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Payment with the reversal recorded",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ReceivedPaymentResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "destructive",
+                "x-agent-idempotent": true,
+                "x-agent-write-safety": {
+                    "idempotency_key": "header_and_argument",
+                    "expected_version": true,
+                    "confirm": true
+                },
+                "x-agent-mcp-tool": "payments.reverse_refund"
+            }
+        },
         "/workspaces/{workspace}/payments/{payment}/status": {
             "post": {
                 "operationId": "payments.set_status",
@@ -15226,6 +15297,7 @@
                     "status",
                     "manual",
                     "refunded_amount",
+                    "refunds",
                     "version"
                 ],
                 "properties": {
@@ -15302,7 +15374,14 @@
                     },
                     "manual": {
                         "type": "boolean",
-                        "description": "Recorded by hand rather than by a payment processor. Only a manual payment can be moved by payments.set_status or payments.refund."
+                        "description": "Recorded by hand rather than by a payment processor. Only a manual payment can be moved by payments.set_status, payments.refund or payments.reverse_refund."
+                    },
+                    "refunds": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/ReceivedPaymentRefund"
+                        },
+                        "description": "The refunds recorded by hand against this payment and their reversals, oldest first, at most 50; refunded_amount is the refunds less their reversals. Empty for a processor (Stripe, Square) payment, whose refunds are reported by the processor as a total."
                     }
                 }
             },
@@ -15492,6 +15571,66 @@
                     }
                 }
             },
+            "ReceivedPaymentRefund": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "id",
+                    "kind",
+                    "amount",
+                    "reason",
+                    "reverses_refund_id",
+                    "reversed_by_id",
+                    "recorded_at"
+                ],
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "kind": {
+                        "type": "string",
+                        "enum": [
+                            "refund",
+                            "reversal"
+                        ],
+                        "description": "refund: money returned to the client outside SVC. reversal: a refund recorded in error, answered; the refund it names is unchanged."
+                    },
+                    "amount": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Minor units, in the payment's currency."
+                    },
+                    "reason": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 500,
+                        "description": "Why, as recorded. Null unless the reader is a workspace owner/admin."
+                    },
+                    "reverses_refund_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "uuid",
+                        "description": "For a reversal, the refund it reverses; null for a refund."
+                    },
+                    "reversed_by_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "uuid",
+                        "description": "For a refund, the reversal that answers it, or null while none has; a refund is reversed at most once. Always null for a reversal."
+                    },
+                    "recorded_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
             "ReceivedPaymentRefundRequest": {
                 "type": "object",
                 "additionalProperties": false,
@@ -15520,6 +15659,39 @@
                         "type": "integer",
                         "minimum": 1,
                         "description": "What was returned to the client now, in minor units; at most what is left unrefunded."
+                    }
+                }
+            },
+            "ReceivedPaymentRefundReversalRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "expected_version",
+                    "confirm",
+                    "reason"
+                ],
+                "properties": {
+                    "expected_version": {
+                        "$ref": "#/components/schemas/Version"
+                    },
+                    "confirm": {
+                        "type": "boolean",
+                        "const": true,
+                        "description": "Explicit user confirmation is required."
+                    },
+                    "reason": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 500,
+                        "description": "Why the refund was recorded in error, kept in the client history."
+                    },
+                    "amount": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "minimum": 1,
+                        "description": "How much of the refund to reverse, in minor units, at most the refund; omitted or null reverses all of it."
                     }
                 }
             },

@@ -3,6 +3,7 @@
 namespace App\Support\Billing;
 
 use App\Models\ClientInvoicePayment;
+use App\Models\ClientInvoicePaymentRefund;
 
 /**
  * What a hand-recorded payment change found and did, measured on the locked
@@ -17,5 +18,8 @@ final readonly class ManualPaymentOutcome
         public int $previousRefundedAmount,
         public string $lockedVersion,
         public bool $changed,
+        // The refund or reversal entry the change recorded (#472); null for a
+        // status change.
+        public ?ClientInvoicePaymentRefund $entry = null,
     ) {}
 }

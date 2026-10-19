@@ -3,13 +3,6 @@
 namespace App\Services\Mcp;
 
 use App\Models\ClientInvoicePayment;
-use App\Models\User;
-use App\Models\Workspace;
-use App\Services\AgentApi\AgentPaymentReadService;
-use App\Services\AgentApi\ChangeManualPaymentAction;
-use App\Services\AgentApi\CorrectPaymentAction;
-use App\Services\AgentApi\RecordPaymentAction;
-use App\Services\Mcp\Context\McpAccountContextResolver;
 use App\Services\Mcp\Context\McpRequestContext;
 use App\Support\AgentApi\ReadView;
 use App\Support\Billing\InvoiceEmailDraft;
@@ -24,8 +17,6 @@ final class AgentMcpWriteTools
     public function __construct(
         private readonly AgentMcpRestCall $rest,
         private readonly RequestArguments $requestArguments,
-        private readonly McpAccountContextResolver $accounts,
-        private readonly ?McpRequestContext $requestContext = null,
     ) {}
 
     /** @return array<string,mixed> */
@@ -124,14 +115,12 @@ final class AgentMcpWriteTools
         #[Schema(enum: ['pending', 'succeeded'])] ?string $status = null,
         #[Schema(format: 'uuid')] ?string $external_finance_transaction_uuid = null,
     ): array {
-        $context = $this->accounts->resolve($this->context('payments:record'), $workspace_id);
-        $workspace = $this->workspace($context);
-        $actor = User::query()->findOrFail($context->principal->subject->id);
-        $ids = app(RecordPaymentAction::class)->run($actor, $workspace,
-            $context->principal->clientId, $idempotency_key,
-            compact('invoice_id', 'amount', 'currency', 'received_on', 'method', 'reference', 'notes', 'status', 'external_finance_transaction_uuid', 'expected_version', 'confirm'));
-
-        return app(AgentPaymentReadService::class)->result($actor, $workspace, $ids);
+        // The body the tool always sent, nulls included: the route reads an
+        // explicit null exactly as an omitted field, so receipts written
+        // before the tool reached REST replay unchanged.
+        return $this->rest->call('payments.record', ['workspace' => $workspace_id],
+            compact('invoice_id', 'amount', 'currency', 'received_on', 'method', 'reference', 'notes', 'status', 'external_finance_transaction_uuid', 'expected_version', 'confirm'),
+            $idempotency_key);
     }
 
     /**
@@ -153,18 +142,9 @@ final class AgentMcpWriteTools
         #[Schema(format: 'date')] ?string $received_on = null,
         #[Schema(maxLength: ReceivedPaymentData::NOTES_MAX_LENGTH)] ?string $notes = null,
     ): array {
-        $body = compact('expected_version', 'reason', 'confirm');
-        foreach (compact('method', 'reference', 'notes', 'received_on') as $name => $value) {
-            if ($this->requestArguments->has($request, $name)) {
-                $body[$name] = $value;
-            }
-        }
-        $context = $this->accounts->resolve($this->context('payments:record'), $workspace_id);
-        $workspace = $this->workspace($context);
-        $actor = User::query()->findOrFail($context->principal->subject->id);
-        $ids = app(CorrectPaymentAction::class)->run($actor, $workspace, $context->principal->clientId, $idempotency_key, $payment_id, $body);
-
-        return ['data' => app(AgentPaymentReadService::class)->result($actor, $workspace, $ids)['data'][0]];
+        return $this->rest->call('payments.correct', ['workspace' => $workspace_id, 'payment' => $payment_id],
+            compact('expected_version', 'reason', 'confirm') + $this->provided($request, compact('method', 'reference', 'notes', 'received_on')),
+            $idempotency_key);
     }
 
     /**
@@ -181,10 +161,7 @@ final class AgentMcpWriteTools
         #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key,
         #[Schema] bool $confirm,
     ): array {
-        [$actor, $workspace, $client] = $this->paymentWriter($workspace_id);
-        $ids = app(ChangeManualPaymentAction::class)->setStatus($actor, $workspace, $client, $idempotency_key, $payment_id, compact('status', 'expected_version', 'reason', 'confirm'));
-
-        return ['data' => app(AgentPaymentReadService::class)->result($actor, $workspace, $ids)['data'][0]];
+        return $this->rest->call('payments.set_status', ['workspace' => $workspace_id, 'payment' => $payment_id], compact('status', 'expected_version', 'reason', 'confirm'), $idempotency_key);
     }
 
     /**
@@ -201,19 +178,29 @@ final class AgentMcpWriteTools
         #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key,
         #[Schema] bool $confirm,
     ): array {
-        [$actor, $workspace, $client] = $this->paymentWriter($workspace_id);
-        $ids = app(ChangeManualPaymentAction::class)->refund($actor, $workspace, $client, $idempotency_key, $payment_id, compact('amount', 'expected_version', 'reason', 'confirm'));
-
-        return ['data' => app(AgentPaymentReadService::class)->result($actor, $workspace, $ids)['data'][0]];
+        return $this->rest->call('payments.refund', ['workspace' => $workspace_id, 'payment' => $payment_id], compact('amount', 'expected_version', 'reason', 'confirm'), $idempotency_key);
     }
 
-    /** @return array{User, Workspace, string} */
-    private function paymentWriter(string $workspaceId): array
-    {
-        $context = $this->accounts->resolve($this->context('payments:record'), $workspaceId);
-        $workspace = $this->workspace($context);
-
-        return [User::query()->findOrFail($context->principal->subject->id), $workspace, $context->principal->clientId];
+    /**
+     * Answer a refund recorded in error with a reversing entry (#472): all of
+     * it, or `amount` of it when sent.
+     *
+     * @return array<string, mixed>
+     */
+    public function paymentsReverseRefund(
+        #[Schema(format: 'uuid')] string $workspace_id,
+        #[Schema(format: 'uuid')] string $payment_id,
+        #[Schema(format: 'uuid')] string $refund_id,
+        #[Schema(minLength: 64, maxLength: 64)] string $expected_version,
+        #[Schema(minLength: 1, maxLength: 500)] string $reason,
+        #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key,
+        #[Schema] bool $confirm,
+        RequestContext $request,
+        #[Schema(minimum: 1)] ?int $amount = null,
+    ): array {
+        return $this->rest->call('payments.reverse_refund', ['workspace' => $workspace_id, 'payment' => $payment_id, 'refund' => $refund_id],
+            compact('expected_version', 'reason', 'confirm') + $this->provided($request, compact('amount')),
+            $idempotency_key);
     }
 
     public function forContext(McpRequestContext $context): self
@@ -221,8 +208,6 @@ final class AgentMcpWriteTools
         return new self(
             $this->rest->forContext($context),
             $this->requestArguments,
-            $this->accounts,
-            $context,
         );
     }
 
@@ -665,25 +650,5 @@ final class AgentMcpWriteTools
     private function provided(RequestContext $request, array $values): array
     {
         return array_filter($values, fn (string $name): bool => $this->requestArguments->has($request, $name), ARRAY_FILTER_USE_KEY);
-    }
-
-    private function context(string $scope): McpRequestContext
-    {
-        $context = $this->requestContext ?? throw new \LogicException('MCP write tools require a request context.');
-        if (! $context->principal->hasScope($scope)) {
-            throw new ToolCallException('This connection lacks the required permission.');
-        }
-
-        return $context;
-    }
-
-    private function workspace(McpRequestContext $context): Workspace
-    {
-        $workspace = $context->workspace;
-        if (! $workspace instanceof Workspace) {
-            throw new \LogicException('MCP write tools require a workspace context.');
-        }
-
-        return $workspace;
     }
 }

@@ -49,7 +49,7 @@ final class AgentOperationRegistryTest extends TestCase
             'companies.square_customer.clear', 'companies.square_customer.set', 'expense_schedules.generate',
             'invoices.correct', 'invoices.discard_draft', 'invoices.generate_period', 'invoices.issue',
             'invoices.release_delivery', 'invoices.send', 'invoices.send_reminder', 'invoices.square_link', 'invoices.square_unlink', 'invoices.void',
-            'payments.correct', 'payments.record', 'payments.refund', 'payments.set_status', 'projects.archive', 'projects.create', 'projects.members.update', 'projects.update',
+            'payments.correct', 'payments.record', 'payments.refund', 'payments.reverse_refund', 'payments.set_status', 'projects.archive', 'projects.create', 'projects.members.update', 'projects.update',
             'proposals.accept', 'proposals.send', 'square.import_customer',
         ];
         sort($expected);

@@ -162,6 +162,8 @@ Route::prefix('v1')
             ->whereUuid('payment');
         $operation('payments.refund', [AgentPaymentController::class, 'refund'])
             ->whereUuid('payment');
+        $operation('payments.reverse_refund', [AgentPaymentController::class, 'reverseRefund'])
+            ->whereUuid(['payment', 'refund']);
         $operation('invoices.list', [AgentReadController::class, 'invoices']);
         $operation('invoices.get', [AgentReadController::class, 'invoice'])
             ->whereUuid('invoice');

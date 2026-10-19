@@ -283,7 +283,7 @@ response as for an inaccessible agreement.
 
 `time_entries.log`, `time_entries.update`, and `time_entries.delete` appear
 only while the time-entry write flag is enabled and the token has the needed
-scope. Like every MCP write tool except the payment tools, they and
+scope. Like every MCP write tool, they and
 `tasks.create` / `tasks.update` run their REST operation (see
 [Write tools run their REST operation](#write-tools-run-their-rest-operation)).
 For `time_entries.log`, supplying `client_visible_description`
@@ -352,9 +352,11 @@ into it (`approve` on `time_entries.log` answers to `time_entries.approve`,
 that can answer in a read's shape, whether to ask for `?view=read`.
 `AgentMcpWriteToolRestDispatchTest` calls every write tool's handler against a
 recording transport and fails if one sends anything but exactly one request to
-its own operation's route. The payment tools (`payments.record`,
-`payments.correct`, `payments.set_status`, `payments.refund`) still run their
-actions directly and are its only allowlisted exceptions.
+its own operation's route. It has no exceptions: the payment tools
+(`payments.record`, `payments.correct`, `payments.set_status`,
+`payments.refund`, `payments.reverse_refund`) send the same body to their route
+as any REST client, so a receipt written over either transport replays over the
+other.
 
 Every agent operation is declared once in `AgentOperationCatalog`, on the shared
 operation registry (`bherila/mcp-laravel-bridge`, #408); `AgentMcpToolSchemas`
@@ -615,7 +617,12 @@ The reference, the operator's private `notes` and the
 to workspace owners/admins - who alone may write them - and are null for every
 other reader. Processor identifiers and finance reconciliation allocations are
 never part of this response. `manual` says whether the payment was recorded by
-hand rather than by a processor. Each row carries an opaque `version`, which
+hand rather than by a processor. `refunds` lists a hand-recorded payment's
+refunds and the reversals answering them, oldest first, each with its `id`,
+`kind` (`refund` or `reversal`), `amount`, the `reverses_refund_id` /
+`reversed_by_id` linking the two, `recorded_at` and a `reason` returned to
+owners/admins only; a processor payment's list is empty, because its refunds are
+the processor's report of a total. Each row carries an opaque `version`, which
 every payment write requires. The operator's invoice screen renders each payment
 and line through the same presenters as `payments.list` and `invoices.get`, so
 the screen and the API cannot drift apart.
@@ -740,9 +747,23 @@ key; every gate is rechecked before a receipt replays.
   [payments.md](client-management/payments.md#withdrawing-failing-or-refunding-a-payment-recorded-by-hand)
   are refused. The response is the payment exactly as `payments.list` returns it.
 
+`payments.reverse_refund`
+(`POST .../payments/{payment}/refunds/{refund}/reversal`, #472) corrects a
+refund recorded in error - the money never left - with a reversing entry linked
+to it, gated and confirmed exactly as above. The refund is named by its
+`refunds[].id` from `payments.list` (`refund_id` over MCP) and is never edited:
+the reversal is a second entry, and the activity records both ids. `amount`
+reverses part of the refund; omitted, all of it. A refund is reversed once,
+never by more than it was, and a reversal is not itself reversed. The money
+counts again, so a fully refunded payment succeeds again and the invoice is
+recomputed - refused on a void invoice or where successful payments would exceed
+the invoice total. A processor payment's refunds follow its own events and are
+refused. See
+[payments.md](client-management/payments.md#reversing-a-refund-recorded-in-error).
+
 Operators use the same rules without the agent gates through
-`svc:billing:payment-status` and `svc:billing:refund-payment`, each with
-`--expected-version` and `--dry-run`.
+`svc:billing:payment-status`, `svc:billing:refund-payment` and
+`svc:billing:reverse-refund`, each with `--expected-version` and `--dry-run`.
 
 ### Finance reconciliation (#457)
 

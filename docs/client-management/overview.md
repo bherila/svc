@@ -793,6 +793,9 @@ payment recorded by hand is withdrawn, failed, cleared or refunded through
 `changeManualPayment()` - `payments.set_status`, `payments.refund` and their
 console twins - with a reason and the rules in
 [payments.md](payments.md#withdrawing-failing-or-refunding-a-payment-recorded-by-hand).
+A refund recorded in error is answered by a reversing entry linked to it
+(`payments.reverse_refund`, `svc:billing:reverse-refund`), never edited; see
+[payments.md](payments.md#reversing-a-refund-recorded-in-error).
 
 Paid and balance amounts are **derived**. `InvoiceLifecycleService::refreshStatus()`
 sums each `succeeded` payment's amount less its `refunded_amount`, floors each
