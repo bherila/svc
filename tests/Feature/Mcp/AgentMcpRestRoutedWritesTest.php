@@ -79,6 +79,38 @@ final class AgentMcpRestRoutedWritesTest extends TestCase
         $this->assertDatabaseCount('agent_mutation_receipts', 0);
     }
 
+    public function test_expense_writes_answer_as_the_rest_route_and_share_its_receipts(): void
+    {
+        config(['agent_api.expense_writes_enabled' => true]);
+        [$workspace, $project] = $this->fixture();
+        $owner = $this->member($workspace, 'owner');
+        $company = ClientCompany::query()->findOrFail($project->client_company_id);
+        $this->actingAsMcp($owner, [AgentApiScopes::MCP_USE, AgentApiScopes::EXPENSES_READ, AgentApiScopes::EXPENSES_WRITE]);
+        $session = $this->initialize();
+        $base = "/api/v1/workspaces/{$workspace->public_id}/expenses";
+        $entry = ['company_id' => $company->public_id, 'project_id' => $project->public_id, 'spent_on' => '2026-10-01', 'amount' => 1250, 'currency' => 'USD', 'description' => 'Synthetic routed expense'];
+
+        $logged = $this->data($this->callTool($session, 'expenses.log', ['workspace_id' => $workspace->public_id, 'entries' => [$entry], 'idempotency_key' => 'routed-expense-log']));
+        $this->assertSame($this->withHeader('Idempotency-Key', 'routed-expense-log')->postJson($base, ['entries' => [$entry]])->assertCreated()->json('data'), $logged);
+        $expense = $logged[0];
+
+        // A blank description passes the tool's schema and is refused by the route's rules.
+        $blank = [...$entry, 'description' => '   '];
+        $refused = $this->withHeader('Idempotency-Key', 'routed-expense-blank-rest')->postJson($base, ['entries' => [$blank]])->assertUnprocessable();
+        $this->assertRefusal(AgentMcpApiFailure::message(422, $refused->json()), $this->callTool($session, 'expenses.log', ['workspace_id' => $workspace->public_id, 'entries' => [$blank], 'idempotency_key' => 'routed-expense-blank']));
+
+        // An omitted project keeps the attribution.
+        $facts = ['spent_on' => '2026-10-02', 'amount' => 1300, 'currency' => 'USD', 'description' => 'Synthetic revised expense'];
+        $updated = $this->data($this->callTool($session, 'expenses.update', ['workspace_id' => $workspace->public_id, 'expense_id' => $expense['id'], 'expected_version' => $expense['version'], 'idempotency_key' => 'routed-expense-update', ...$facts]));
+        $this->assertSame([1300, $project->public_id], [$updated['amount'], $updated['project_id']]);
+        $stale = $this->withHeader('Idempotency-Key', 'routed-expense-stale-rest')->patchJson("{$base}/{$expense['id']}", ['expected_version' => $expense['version'], ...$facts])->assertConflict();
+        $this->assertRefusal(AgentMcpApiFailure::message(409, $stale->json()), $this->callTool($session, 'expenses.delete', ['workspace_id' => $workspace->public_id, 'expense_id' => $expense['id'], 'expected_version' => $expense['version'], 'idempotency_key' => 'routed-expense-stale']));
+
+        $deleted = $this->data($this->callTool($session, 'expenses.delete', ['workspace_id' => $workspace->public_id, 'expense_id' => $expense['id'], 'expected_version' => $updated['version'], 'idempotency_key' => 'routed-expense-delete']));
+        $this->assertSame(['deleted_id' => $expense['id']], $deleted);
+        $this->assertSame($deleted, $this->withHeader('Idempotency-Key', 'routed-expense-delete')->deleteJson("{$base}/{$expense['id']}", ['expected_version' => $updated['version']])->assertOk()->json('data'));
+    }
+
     /** @param array<string, mixed> $body
      * @return array<string, mixed> */
     private function data(array $body): array
@@ -95,6 +127,14 @@ final class AgentMcpRestRoutedWritesTest extends TestCase
         $this->assertArrayNotHasKey('error', $body, json_encode($body, JSON_THROW_ON_ERROR));
         $this->assertTrue($body['result']['isError'] ?? false, json_encode($body, JSON_THROW_ON_ERROR));
         $this->assertSame($message, $body['result']['content'][0]['text'] ?? null);
+    }
+
+    private function member(Workspace $workspace, string $role): User
+    {
+        $user = User::factory()->create(['email' => 'synthetic-'.Str::uuid().'@example.test']);
+        $workspace->memberships()->create(['user_id' => $user->id, 'role' => $role]);
+
+        return $user;
     }
 
     /** @return array{Workspace, ClientProject, User} */

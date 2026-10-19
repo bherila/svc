@@ -7,8 +7,6 @@ use App\Models\ClientInvoicePayment;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
-use App\Services\AgentApi\AgentExpenseMutationAction;
-use App\Services\AgentApi\AgentExpenseReadService;
 use App\Services\AgentApi\AgentPaymentReadService;
 use App\Services\AgentApi\AgentReadService;
 use App\Services\AgentApi\ChangeManualPaymentAction;
@@ -248,12 +246,7 @@ final class AgentMcpWriteTools
      * @return array<string,mixed> */
     public function expensesLog(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(minItems: 1, maxItems: 20)] array $entries, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
     {
-        $context = $this->workspaceContext($workspace_id, 'expenses:write');
-        $workspace = $this->workspace($context);
-        $actor = User::query()->findOrFail($context->principal->subject->id);
-        $ids = app(AgentExpenseMutationAction::class)->log($actor, $workspace, $context->principal->clientId, $idempotency_key, compact('entries'));
-
-        return ['data' => app(AgentExpenseReadService::class)->results($actor, $workspace, $ids)];
+        return $this->rest->call('expenses.log', ['workspace' => $workspace_id], compact('entries'), $idempotency_key);
     }
 
     /** @return array<string,mixed> */
@@ -269,27 +262,14 @@ final class AgentMcpWriteTools
         RequestContext $request,
         #[Schema(format: 'uuid')] ?string $project_id = null,
     ): array {
-        $body = compact('expected_version', 'spent_on', 'amount', 'currency', 'description');
-        if ($this->requestArguments->has($request, 'project_id')) {
-            $body['project_id'] = $project_id;
-        }
-        $context = $this->workspaceContext($workspace_id, 'expenses:write');
-        $workspace = $this->workspace($context);
-        $actor = User::query()->findOrFail($context->principal->subject->id);
-        $ids = app(AgentExpenseMutationAction::class)->update($actor, $workspace, $context->principal->clientId, $idempotency_key, $expense_id, $body);
-
-        return ['data' => app(AgentExpenseReadService::class)->results($actor, $workspace, $ids)[0]];
+        // An omitted project keeps the attribution; an explicit null clears it.
+        return $this->rest->call('expenses.update', ['workspace' => $workspace_id, 'expense' => $expense_id], compact('expected_version', 'spent_on', 'amount', 'currency', 'description') + $this->provided($request, compact('project_id')), $idempotency_key);
     }
 
     /** @return array<string,mixed> */
     public function expensesDelete(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $expense_id, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
     {
-        $context = $this->workspaceContext($workspace_id, 'expenses:write');
-        $workspace = $this->workspace($context);
-        $actor = User::query()->findOrFail($context->principal->subject->id);
-        $id = app(AgentExpenseMutationAction::class)->delete($actor, $workspace, $context->principal->clientId, $idempotency_key, $expense_id, compact('expected_version'));
-
-        return ['data' => ['deleted_id' => $id]];
+        return $this->rest->call('expenses.delete', ['workspace' => $workspace_id, 'expense' => $expense_id], compact('expected_version'), $idempotency_key);
     }
 
     /** @return array<string,mixed> */
