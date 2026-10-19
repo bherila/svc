@@ -1208,6 +1208,18 @@ final class InvoiceLifecycleService
     }
 
     /**
+     * Record a processor's dispute of part of a payment: the payment is
+     * `disputed`, and only `$disputedAmount` of it stops counting toward the
+     * invoice - the processor withholds what it contests and nothing more.
+     * Called again with another amount, it records the new one. Reconciliation
+     * allocations are flagged as {@see self::setPaymentStatus()} flags them.
+     */
+    public function setPaymentDisputed(ClientInvoicePayment $payment, int $disputedAmount, ?Workspace $workspace = null): ClientInvoicePayment
+    {
+        return $this->writePaymentStatus($payment, InvoicePaymentStatus::Disputed, $workspace, disputedAmount: $disputedAmount);
+    }
+
+    /**
      * Change what a payment recorded by hand is worth, saying why (#455).
      *
      * The operation behind `payments.set_status`, `payments.refund` and
@@ -1278,6 +1290,7 @@ final class InvoiceLifecycleService
      * @param  (callable(ClientInvoicePayment): bool)|null  $guard  asked of the locked payment before anything else; false means leave it as it is
      * @param  (callable(): array<string, string|null>)|null  $extra  more for the activity, read after the guard
      * @param  bool  $manual  a hand-recorded change: leaving `succeeded` must fit the reconciliations, and the invoice must be read current
+     * @param  int|null  $disputedAmount  for `disputed`, the part of the payment a processor withholds; null is all of it
      */
     private function writePaymentStatus(
         ClientInvoicePayment $payment,
@@ -1286,8 +1299,9 @@ final class InvoiceLifecycleService
         ?callable $guard = null,
         ?callable $extra = null,
         bool $manual = false,
+        ?int $disputedAmount = null,
     ): ClientInvoicePayment {
-        return DB::transaction(function () use ($payment, $next, $workspace, $guard, $extra, $manual): ClientInvoicePayment {
+        return DB::transaction(function () use ($payment, $next, $workspace, $guard, $extra, $manual, $disputedAmount): ClientInvoicePayment {
             BillingMaintenance::share($workspace->id ?? $payment->workspace_id);
             $query = ClientInvoicePayment::query()->where('workspace_id', $payment->workspace_id)->whereKey($payment->id)->tap(Locks::forUpdate());
             if ($workspace !== null) {
@@ -1297,6 +1311,14 @@ final class InvoiceLifecycleService
             if ($guard !== null && ! $guard($lockedPayment)) {
                 return $lockedPayment;
             }
+            if ($disputedAmount !== null && ($disputedAmount < 1 || $disputedAmount > $lockedPayment->amount)) {
+                throw new DomainException('A disputed amount must be part of the payment: more than zero and no more than its amount.');
+            }
+            // Leaving `disputed` releases what the dispute held; entering or
+            // staying in it records what is now held.
+            $nextDisputedAmount = $next === InvoicePaymentStatus::Disputed ? $disputedAmount : null;
+            $disputeMoved = $lockedPayment->status === $next->value && $next === InvoicePaymentStatus::Disputed
+                && $lockedPayment->disputed_amount !== $nextDisputedAmount;
             // Asked after the payment lock and before the invoice's, in the
             // order LockResource declares, with a current read of the
             // allocations.
@@ -1331,35 +1353,52 @@ final class InvoiceLifecycleService
             if ($manual) {
                 $this->assertCurrentInvoiceSnapshot($invoice);
             }
+            if ($disputeMoved) {
+                // The same dispute now holds a different amount.
+                $this->flagActiveReconciliations($lockedPayment, ReconciliationReviewReason::ProcessorDispute);
+                $this->overpaymentCreditService->recordPoolChange((int) $invoice->workspace_id, (int) $invoice->client_company_id);
+                $lockedPayment->forceFill(['disputed_amount' => $nextDisputedAmount])->save();
+                $this->refreshStatus($invoice);
+
+                return ClientInvoicePayment::query()->where('workspace_id', $lockedPayment->workspace_id)->whereKey($lockedPayment->id)->firstOrFail();
+            }
             if ($lockedPayment->status === $next->value) {
                 return $lockedPayment;
             }
             $restoredOverpayment = null;
+            // A processor returning a disputed payment's money reports money
+            // the business holds; refusing it would leave the payment disputed
+            // and the processor's notification failing for good.
+            $processorRestoration = ! $manual && $next === InvoicePaymentStatus::Succeeded
+                && $lockedPayment->status === InvoicePaymentStatus::Disputed->value;
+            $review = null;
             if ($next === InvoicePaymentStatus::Succeeded && $invoice->status === 'void') {
-                throw new DomainException('A payment succeeded against a void invoice; refund it or un-void the invoice before recording it.');
+                if (! $processorRestoration) {
+                    throw new DomainException('A payment succeeded against a void invoice; refund it or un-void the invoice before recording it.');
+                }
+                // Recorded, and the invoice stays void: the money belongs to
+                // no live invoice, so it is named for review instead.
+                $review = 'restored_on_void_invoice';
             }
             if ($next === InvoicePaymentStatus::Succeeded) {
                 // A positive filter, so another row of an unreadable status is
                 // not counted here and this check can pass on an understated
                 // total. `refreshStatus()` below is the backstop: it refuses to
                 // total a set containing one and rolls this transaction back.
+                // What every other payment already pays, a partly disputed one
+                // included ({@see ClientInvoicePayment::paidContribution()}).
                 $otherPaid = (int) $invoice->payments()
                     ->where('workspace_id', $invoice->workspace_id)
                     ->where('id', '!=', $lockedPayment->id)
-                    ->where('status', InvoicePaymentStatus::Succeeded->value)
-                    ->get(['amount', 'refunded_amount'])
-                    ->sum(fn (ClientInvoicePayment $other): int => max(0, $other->amount - $other->refunded_amount));
+                    ->get(['status', 'amount', 'refunded_amount', 'disputed_amount'])
+                    ->sum(fn (ClientInvoicePayment $other): int => $other->paidContribution());
                 $overpaid = ($lockedPayment->amount - $lockedPayment->refunded_amount) - ($invoice->total_amount - $otherPaid);
-                if ($overpaid > 0) {
-                    // A processor returning a disputed payment's money - a won
-                    // dispute, a closed inquiry - reports money the business
-                    // holds, possibly after the invoice was paid again in the
-                    // meantime. Refusing it would leave the payment disputed
-                    // and the processor's notification failing for good, so it
-                    // is restored and the excess is left to the derived
-                    // overpayment credit, named in the activity for review.
-                    // Everything else is still refused.
-                    if ($manual || $lockedPayment->status !== InvoicePaymentStatus::Disputed->value) {
+                if ($overpaid > 0 && $review === null) {
+                    // A restoration possibly arrives after the invoice was paid
+                    // again in the meantime: it is recorded and the excess is
+                    // left to the derived overpayment credit, named in the
+                    // activity for review. Everything else is still refused.
+                    if (! $processorRestoration) {
                         throw new DomainException('Successful payments cannot exceed the invoice total.');
                     }
                     $restoredOverpayment = min($overpaid, $lockedPayment->amount - $lockedPayment->refunded_amount);
@@ -1378,6 +1417,7 @@ final class InvoiceLifecycleService
                 'refunded_amount' => $next === InvoicePaymentStatus::Refunded
                     ? $lockedPayment->amount
                     : $lockedPayment->refunded_amount,
+                'disputed_amount' => $nextDisputedAmount,
             ])->save();
 
             // After the write, deliberately. This is the one operation that can
@@ -1401,6 +1441,8 @@ final class InvoiceLifecycleService
                 $this->recordPaymentActivity($invoice, $lockedPayment, $action, (string) Str::uuid(), [
                     ...($extra === null ? [] : $extra()),
                     ...($restoredOverpayment === null ? [] : ['overpaid_amount' => $restoredOverpayment]),
+                    ...($review === null ? [] : ['review' => $review]),
+                    ...($nextDisputedAmount === null ? [] : ['disputed_amount' => $nextDisputedAmount]),
                 ]);
             }
             if ($next === InvoicePaymentStatus::Succeeded) {
@@ -1703,10 +1745,13 @@ final class InvoiceLifecycleService
                         : InvoicePaymentStatus::Succeeded->value),
             ])->save();
             $this->refreshStatus($invoice);
+            // A processor's lower total gives money back - a refund that
+            // failed or was canceled - and is recorded as that, not as a
+            // second refund.
             $this->recordPaymentActivity(
                 $invoice,
                 $lockedPayment,
-                'invoice.payment_refunded',
+                $amount < $previousAmount ? 'invoice.payment_refund_reversed' : 'invoice.payment_refunded',
                 (string) Str::uuid(),
                 ['previous_refunded_amount' => $previousAmount, ...($extra === null ? [] : $extra())],
             );
@@ -1788,7 +1833,7 @@ final class InvoiceLifecycleService
         // through applyPayment().
         $paid = 0;
 
-        foreach ($invoice->payments()->where('workspace_id', $invoice->workspace_id)->get(['public_id', 'status', 'amount', 'refunded_amount']) as $payment) {
+        foreach ($invoice->payments()->where('workspace_id', $invoice->workspace_id)->get(['public_id', 'status', 'amount', 'refunded_amount', 'disputed_amount']) as $payment) {
             $paymentStatus = InvoicePaymentStatus::tryFrom((string) $payment->status);
 
             if ($paymentStatus === null) {
@@ -1802,9 +1847,9 @@ final class InvoiceLifecycleService
                 );
             }
 
-            if ($paymentStatus->contributesToPaidAmount()) {
-                $paid += max(0, (int) $payment->amount - (int) $payment->refunded_amount);
-            }
+            // A succeeded payment net of refunds, and the undisputed part of a
+            // partly disputed one.
+            $paid += $payment->paidContribution();
         }
 
         $paid = min($paid, (int) $invoice->total_amount);

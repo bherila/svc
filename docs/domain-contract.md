@@ -149,8 +149,10 @@ workflow. It is intentionally provider-neutral and contains no production data.
   path — form request, API, console or MCP — can store another value
 - amount/currency, received date, method, reference, notes, optional provider and
   provider payment identifier, and optional external finance transaction UUID
-- successful non-refunded payments determine invoice paid and balance amounts;
-  transitions are idempotent. That sum is a *positive* filter, so a stored
+- successful non-refunded payments determine invoice paid and balance amounts,
+  together with the undisputed part of a partly disputed one: `disputed_amount`
+  is what a processor's dispute holds back (null: the whole payment, as for
+  every dispute recorded before amounts were); transitions are idempotent. That sum is a *positive* filter, so a stored
   status outside the vocabulary is **not** silently counted as zero:
   recomputation refuses, rather than leaving money already received outstanding
   and collectible a second time. Reclassifying the row through

@@ -141,6 +141,23 @@ class FinanceReconciliationApiTest extends TestCase
             ->assertJsonPath('data.0.reconciliations.0.needs_review', false);
     }
 
+    public function test_a_disputed_payment_reports_what_its_dispute_holds_back(): void
+    {
+        [$owner, $workspace, $payment] = $this->payment('Disputed API', 6000);
+        $token = $owner->createToken('read disputed', ['finance.read'], now()->addHour())->plainTextToken;
+        $path = "/api/v1/workspaces/{$workspace->public_id}/invoice-payments";
+        $this->withToken($token)->getJson($path)->assertJsonPath('data.0.disputed_amount', null);
+
+        app(InvoiceLifecycleService::class)->setPaymentDisputed($payment, 2000, $workspace);
+        $this->withToken($token)->getJson($path.'?status=disputed')
+            ->assertOk()
+            ->assertJsonPath('data.0.status', 'disputed')
+            ->assertJsonPath('data.0.disputed_amount', 2000);
+
+        app(InvoiceLifecycleService::class)->setPaymentStatus($payment, 'disputed', $workspace);
+        $this->withToken($token)->getJson($path.'?status=disputed')->assertJsonPath('data.0.disputed_amount', 6000);
+    }
+
     public function test_workspace_viewer_can_read_but_cannot_reconcile(): void
     {
         [, $workspace, $payment] = $this->payment('Viewer API');

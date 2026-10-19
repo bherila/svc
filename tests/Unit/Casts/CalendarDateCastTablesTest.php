@@ -144,8 +144,10 @@ final class CalendarDateCastTablesTest extends TestCase
                 'id' => 'int',
                 'amount' => 'integer',
                 'refunded_amount' => 'integer',
+                'disputed_amount' => 'integer',
                 'received_on' => DateOnly::class,
                 'provider_event_created_at' => 'integer',
+                'provider_dispute_updated_at_ms' => 'integer',
             ],
             ClientBillingSchedule::class => [
                 'id' => 'int',

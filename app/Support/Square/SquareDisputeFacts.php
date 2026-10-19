@@ -4,6 +4,8 @@ namespace App\Support\Square;
 
 use App\Services\Square\SquareClient;
 use App\Services\Square\SquareRequestFailed;
+use Carbon\CarbonImmutable;
+use Throwable;
 
 /** Only facts returned by RetrieveDispute, never facts from a webhook payload. */
 final readonly class SquareDisputeFacts
@@ -32,6 +34,7 @@ final readonly class SquareDisputeFacts
         public string $currency,
         public int $amount,
         public bool $resolvedForMerchant,
+        public int $updatedAtMs,
     ) {}
 
     /** @param array<string, mixed> $dispute */
@@ -55,6 +58,25 @@ final readonly class SquareDisputeFacts
             throw SquareRequestFailed::unreadable();
         }
 
-        return new self($expectedId, $paymentId, $state, $currency, $amount, self::STATES[$state]);
+        return new self($expectedId, $paymentId, $state, $currency, $amount, self::STATES[$state], self::updatedAtMs($dispute['updated_at'] ?? null));
+    }
+
+    /**
+     * Square's own update time, to the millisecond: what orders two reads of
+     * one dispute that reach the payment in the wrong order. Refused when it
+     * is not an RFC 3339 timestamp, rather than ordered by guesswork.
+     */
+    private static function updatedAtMs(mixed $updatedAt): int
+    {
+        if (! is_string($updatedAt) || preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/D', $updatedAt) !== 1) {
+            throw SquareRequestFailed::unreadable();
+        }
+        try {
+            $parsed = CarbonImmutable::parse($updatedAt);
+        } catch (Throwable) {
+            throw SquareRequestFailed::unreadable();
+        }
+
+        return (int) $parsed->getTimestampMs();
     }
 }

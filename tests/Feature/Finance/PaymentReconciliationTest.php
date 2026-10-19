@@ -228,6 +228,45 @@ class PaymentReconciliationTest extends TestCase
         $this->assertNull($deactivated->review_flagged_at);
     }
 
+    public function test_a_partial_dispute_holds_back_only_the_disputed_amount(): void
+    {
+        [, $workspace, $payment] = $this->payment('Partial dispute', 10000);
+        $lifecycle = app(InvoiceLifecycleService::class);
+
+        $disputed = $lifecycle->setPaymentDisputed($payment, 2500, $workspace);
+        $invoice = $disputed->invoice()->firstOrFail();
+        $this->assertSame('disputed', $disputed->status);
+        $this->assertSame(2500, $disputed->disputed_amount);
+        $this->assertSame(7500, $invoice->paid_amount);
+        $this->assertSame(2500, $invoice->balance_amount);
+        $this->assertSame('partially_paid', $invoice->status);
+
+        // The processor raises the contested amount; then the whole payment.
+        $this->assertSame(4000, $lifecycle->setPaymentDisputed($payment, 4000, $workspace)->disputed_amount);
+        $this->assertSame(4000, $invoice->fresh()->balance_amount);
+        $this->assertNull($lifecycle->setPaymentStatus($payment, 'disputed', $workspace)->disputed_amount);
+        $this->assertSame(10000, $invoice->fresh()->balance_amount);
+
+        $restored = $lifecycle->setPaymentStatus($payment, 'succeeded', $workspace);
+        $this->assertNull($restored->disputed_amount);
+        $this->assertSame('paid', $invoice->fresh()->status);
+    }
+
+    public function test_a_disputed_amount_must_be_part_of_the_payment(): void
+    {
+        [, $workspace, $payment] = $this->payment('Disputed amount bounds', 10000);
+        $lifecycle = app(InvoiceLifecycleService::class);
+        foreach ([0, 10001] as $amount) {
+            try {
+                $lifecycle->setPaymentDisputed($payment, $amount, $workspace);
+                $this->fail("A disputed amount of {$amount} must be refused.");
+            } catch (DomainException $exception) {
+                $this->assertStringContainsString('disputed amount', $exception->getMessage());
+            }
+        }
+        $this->assertSame('succeeded', $payment->fresh()->status);
+    }
+
     public function test_reconciliation_date_must_be_a_real_calendar_date(): void
     {
         [$creator, $workspace, $payment] = $this->payment('Invalid calendar date', 1000);

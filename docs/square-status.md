@@ -31,24 +31,38 @@ or unreadable individual records can be skipped so other records are reconciled.
 Completed full and partial payments use the received-payment service, with
 provider `square` and the payment identifier as the existing unique provider key.
 Refunds apply the existing received-payment correction and are cumulative, so a
-slower response cannot restore refunded money. A refund or dispute is recorded
+slower response cannot restore refunded money. A draft, void invoice, currency
+mismatch, over-balance payment, invalid data or ambiguous tip allocation is
+refused instead of changing the ledger. A refund or dispute is recorded
 whatever the payment's finance reconciliation allocations; they are kept and
 flagged for review (see [the finance reconciliation API](finance-api.md)).
+Failed events release their durable claim and answer 503 for retry;
+successfully completed event IDs do no more work.
 
-A dispute notification names the dispute, which is re-fetched. A dispute on a
-payment svc recorded moves it to `disputed` while an inquiry or chargeback is
-open and when it is lost or accepted, and back to `succeeded` when it is won -
-in part or in full, since the disputed amount may be part of the payment - or
-when an inquiry closes. If the invoice was paid again while the dispute was
-open, the restored payment is still recorded; the excess shows as the invoice's
-overpayment, feeds the derived overpayment credit, and is named as
-`overpaid_amount` in the `invoice.payment_received` activity for review. A refunded payment stays refunded. A dispute on a
-payment svc never recorded changes nothing; an unknown state, another currency
-or an amount above the payment is refused and released for retry. The sweep
-does not read disputes, so a missed dispute notification is not recovered. A draft, void invoice, currency
-mismatch, over-balance payment, invalid data or ambiguous tip allocation is
-refused instead of changing the ledger. Failed events release their durable
-claim and answer 503 for retry; successfully completed event IDs do no more work.
+A dispute notification names the dispute, which is re-fetched. On a payment svc
+recorded:
+
+- An open inquiry or chargeback, and a lost or accepted dispute, make the
+  payment `disputed` and hold back only the amount Square contests
+  (`disputed_amount`): a 5,000 dispute against a 12,345 payment reopens the
+  invoice by 5,000, not 12,345. A changed amount is recorded again.
+- A won dispute (in part or in full) or a closed inquiry restores it to
+  `succeeded`. If the invoice was paid again while the dispute was open, the
+  restoration is still recorded: the excess is the invoice's overpayment, feeds
+  the derived overpayment credit, and is named as `overpaid_amount` in the
+  `invoice.payment_received` activity for review. If the invoice was voided
+  meanwhile, the payment is restored, the invoice stays void, and the activity
+  carries `review: restored_on_void_invoice`.
+- A refunded payment stays refunded.
+- Square's own update time of the dispute last applied is kept on the payment,
+  so a read of the dispute older than one already applied changes nothing; two
+  notifications fetched around a state change cannot undo it in the wrong
+  order.
+
+A dispute on a payment svc never recorded changes nothing. An unknown state,
+another currency, an amount above the payment or an unreadable update time is
+refused and released for retry. The sweep does not read disputes, so a missed
+dispute notification is not recovered.
 The received date comes from the card capture timeline in the workspace's time
 zone. Payments without a trustworthy completion timestamp fail closed; creation
 and last-update times are not substituted for the day money was received.

@@ -125,8 +125,11 @@ final class SquareWebhookTest extends TestCase
         $this->squareDisputes['dispute_fixture_1'] = self::squareDispute('dispute_fixture_1', 'pay_fixture_1', 'EVIDENCE_REQUIRED', 5_000);
         $this->deliver(['event_id' => 'evt_fixture_dispute_created', 'type' => 'dispute.created', 'data' => ['type' => 'dispute', 'id' => 'dispute_fixture_1', 'object' => ['dispute' => ['state' => 'WON']]]])->assertOk();
 
+        // Square holds only the 5,000 it contests; the rest still pays the invoice.
         $this->assertSame('disputed', $payment->fresh()->status);
-        $this->assertSame(12_345, $invoice->fresh()->balance_amount);
+        $this->assertSame(5_000, $payment->fresh()->disputed_amount);
+        $this->assertSame(5_000, $invoice->fresh()->balance_amount);
+        $this->assertSame('partially_paid', $invoice->fresh()->status);
         $this->assertSame(ReconciliationReviewReason::ProcessorDispute, $allocation->fresh()->review_reason);
         $this->assertTrue($allocation->fresh()->is_active);
 
@@ -135,8 +138,58 @@ final class SquareWebhookTest extends TestCase
         $this->deliver(['event_id' => 'evt_fixture_dispute_won', 'type' => 'dispute.state.updated', 'data' => ['type' => 'dispute', 'id' => 'dispute_fixture_1']])->assertOk();
 
         $this->assertSame('succeeded', $payment->fresh()->status);
+        $this->assertNull($payment->fresh()->disputed_amount);
         $this->assertSame('paid', $invoice->fresh()->status);
         $this->assertSame(1, $invoice->payments()->count());
+    }
+
+    public function test_an_older_dispute_read_cannot_undo_a_newer_one(): void
+    {
+        [$workspace, , , $invoice] = $this->paymentFixture();
+        app(SquarePaymentReconciler::class)->invoice($workspace, 'inv_fixture_1');
+        $payment = $invoice->payments()->firstOrFail();
+        $this->squareDisputes['dispute_fixture_7'] = [...self::squareDispute('dispute_fixture_7', 'pay_fixture_1', 'EVIDENCE_REQUIRED'), 'updated_at' => '2030-02-02T10:00:00.100Z'];
+        $this->deliver(['event_id' => 'evt_fixture_stale_open', 'type' => 'dispute.created', 'data' => ['type' => 'dispute', 'id' => 'dispute_fixture_7']])->assertOk();
+        $this->squareDisputes['dispute_fixture_7'] = [...self::squareDispute('dispute_fixture_7', 'pay_fixture_1', 'WON'), 'updated_at' => '2030-02-02T11:00:00.200Z'];
+        $this->deliver(['event_id' => 'evt_fixture_stale_won', 'type' => 'dispute.state.updated', 'data' => ['type' => 'dispute', 'id' => 'dispute_fixture_7']])->assertOk();
+        $this->assertSame('succeeded', $payment->fresh()->status);
+
+        // A request that read the dispute before it was won reaches the
+        // payment last; Square's own update time says it is older.
+        $this->squareDisputes['dispute_fixture_7'] = [...self::squareDispute('dispute_fixture_7', 'pay_fixture_1', 'EVIDENCE_REQUIRED'), 'updated_at' => '2030-02-02T10:00:00.100Z'];
+        $this->deliver(['event_id' => 'evt_fixture_stale_late', 'type' => 'dispute.state.updated', 'data' => ['type' => 'dispute', 'id' => 'dispute_fixture_7']])->assertOk();
+
+        $this->assertSame('succeeded', $payment->fresh()->status);
+        $this->assertSame('paid', $invoice->fresh()->status);
+        $this->assertSame(1, DB::table('square_webhook_receipts')->where('workspace_id', $workspace->id)->where('event_hash', hash('sha256', 'evt_fixture_stale_late'))->whereNotNull('completed_at')->count());
+    }
+
+    public function test_a_dispute_without_a_readable_update_time_is_released_for_retry(): void
+    {
+        [$workspace, , , $invoice] = $this->paymentFixture();
+        app(SquarePaymentReconciler::class)->invoice($workspace, 'inv_fixture_1');
+        $this->squareDisputes['dispute_fixture_8'] = [...self::squareDispute('dispute_fixture_8', 'pay_fixture_1', 'EVIDENCE_REQUIRED'), 'updated_at' => 'yesterday'];
+        $this->deliver(['event_id' => 'evt_fixture_bad_time', 'type' => 'dispute.created', 'data' => ['type' => 'dispute', 'id' => 'dispute_fixture_8']])->assertStatus(503);
+        $this->assertSame('succeeded', $invoice->payments()->firstOrFail()->status);
+    }
+
+    public function test_a_won_dispute_on_an_invoice_voided_meanwhile_is_recorded_without_reviving_it(): void
+    {
+        [$workspace, , , $invoice] = $this->paymentFixture();
+        app(SquarePaymentReconciler::class)->invoice($workspace, 'inv_fixture_1');
+        $payment = $invoice->payments()->firstOrFail();
+        $this->squareDisputes['dispute_fixture_9'] = self::squareDispute('dispute_fixture_9', 'pay_fixture_1', 'EVIDENCE_REQUIRED');
+        $this->deliver(['event_id' => 'evt_fixture_void_open', 'type' => 'dispute.created', 'data' => ['type' => 'dispute', 'id' => 'dispute_fixture_9']])->assertOk();
+        app(InvoiceLifecycleService::class)->void($invoice->fresh(), $workspace, 'Synthetic void during dispute');
+        $this->assertSame('void', $invoice->fresh()->status);
+
+        $this->squareDisputes['dispute_fixture_9'] = [...$this->squareDisputes['dispute_fixture_9'], 'state' => 'WON', 'updated_at' => '2030-02-02T11:00:00Z'];
+        $this->deliver(['event_id' => 'evt_fixture_void_won', 'type' => 'dispute.state.updated', 'data' => ['type' => 'dispute', 'id' => 'dispute_fixture_9']])->assertOk();
+
+        $this->assertSame('succeeded', $payment->fresh()->status);
+        $this->assertSame('void', $invoice->fresh()->status);
+        $received = ClientCompanyActivity::query()->where('action', 'invoice.payment_received')->where('subject_public_id', $payment->public_id)->latest('id')->firstOrFail();
+        $this->assertSame('restored_on_void_invoice', $received->payload['review'] ?? null);
     }
 
     public function test_a_won_dispute_after_the_invoice_was_paid_again_is_restored_not_retried_forever(): void

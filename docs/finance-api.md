@@ -89,7 +89,10 @@ exactly as written and flagged instead:
 A full refund leaves the payment `refunded`; a partial one leaves it `succeeded`
 with `refunded_amount` raised, so key on amounts rather than status. A disputed
 payment is `disputed` until the dispute is won (in part or in full), when it is
-`succeeded` again; the flag stays until reviewed. An allocation may therefore
+`succeeded` again; the flag stays until reviewed. While a payment is `disputed`,
+`disputed_amount` is what the processor's dispute holds back - only that part
+leaves the invoice - and the whole amount when the processor did not say; it is
+null for any other status. An allocation may therefore
 exceed `net_amount` while it is flagged. To clear the flag, write the
 allocation again with an amount that fits the net (`PUT`), or deactivate it
 (`DELETE`), which clears it too. A `PUT` is refused on a payment that is no
