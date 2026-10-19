@@ -21,9 +21,9 @@ enum StripeRefundStatus: string
      * A status Stripe adds later counts as refunded until it is understood, so
      * it can never make received money look larger than it is.
      */
-    public static function stillStands(?string $status): bool
+    public static function stillStands(string $status): bool
     {
-        return match (self::tryFrom((string) $status)) {
+        return match (self::tryFrom($status)) {
             self::Failed, self::Canceled => false,
             self::Pending, self::RequiresAction, self::Succeeded, null => true,
         };

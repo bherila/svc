@@ -234,7 +234,7 @@ final class StripeWebhookService
     private function isUndoneRefund(string $type, array $object): bool
     {
         return in_array($type, self::REFUND_UPDATES, true)
-            && ! StripeRefundStatus::stillStands(is_string($object['status'] ?? null) ? $object['status'] : null);
+            && ! StripeRefundStatus::stillStands(is_string($object['status'] ?? null) ? $object['status'] : '');
     }
 
     /**
@@ -257,7 +257,7 @@ final class StripeWebhookService
             if (strtoupper($refund->currency) !== $currency) {
                 throw new \DomainException('Stripe refunds on one charge disagree about its currency.');
             }
-            if (StripeRefundStatus::stillStands($refund->status)) {
+            if (StripeRefundStatus::stillStands($refund->status ?? '')) {
                 $total += max(0, $refund->amount);
             }
         }

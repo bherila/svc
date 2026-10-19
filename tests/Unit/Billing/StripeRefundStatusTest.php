@@ -19,6 +19,6 @@ final class StripeRefundStatusTest extends TestCase
     public function test_an_unknown_or_missing_status_still_counts_as_refunded(): void
     {
         $this->assertTrue(StripeRefundStatus::stillStands('something_new'));
-        $this->assertTrue(StripeRefundStatus::stillStands(null));
+        $this->assertTrue(StripeRefundStatus::stillStands(''));
     }
 }
