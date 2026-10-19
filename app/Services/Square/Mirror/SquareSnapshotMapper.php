@@ -35,7 +35,10 @@ final class SquareSnapshotMapper
     public const array PAYMENT_STATUSES = ['PAID', 'PARTIALLY_PAID', 'PARTIALLY_REFUNDED', 'REFUNDED', 'PAYMENT_PENDING'];
 
     /** The tender rules payment ids are read by; see {@see paymentIds()}. */
-    public const string TENDER_RULES = 't2';
+    public const string TENDER_RULES = 't3';
+
+    /** How invoice amounts are derived; see money(). */
+    private const string INVOICE_DERIVATION = 'd2';
 
     /** The default state of a tender whose type carries none. */
     private const string CAPTURED = 'CAPTURED';
@@ -93,7 +96,9 @@ final class SquareSnapshotMapper
             'public_url' => $presented['public_url'],
             'autopay' => array_any($requests, static fn (array $request): bool => ($request['automatic_payment_source'] ?? null) === 'CARD_ON_FILE'),
             'payment_requests' => json_encode($requests, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
-            'fingerprint' => self::fingerprint($presented),
+            // The derivation version is part of an invoice's fingerprint, so a
+            // change to how amounts are derived rewrites every row once.
+            'fingerprint' => self::fingerprint([...$presented, '_derivation' => self::INVOICE_DERIVATION]),
         ];
     }
 

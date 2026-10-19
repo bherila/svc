@@ -16,6 +16,22 @@ final class SquareSnapshotPaymentIdsTest extends TestCase
 {
     use FakesSquare;
 
+    public function test_an_invoice_row_carries_every_column_and_a_fingerprint_of_its_derivation(): void
+    {
+        $raw = self::squareInvoice('inv_fixture_1');
+        $row = (new SquareSnapshotMapper(new SquarePresenter))->invoice($raw);
+        $this->assertNotNull($row);
+
+        $this->assertSame([
+            'square_invoice_id', 'square_version', 'square_location_id', 'square_order_id', 'square_customer_id', 'square_subscription_id', 'invoice_number',
+            'series_key', 'series_occurrence', 'title', 'recipient_name', 'status', 'currency', 'total_amount', 'paid_amount', 'next_payment_amount', 'due_on',
+            'scheduled_at', 'sale_or_service_date', 'square_created_at', 'square_updated_at', 'public_url', 'autopay', 'payment_requests', 'fingerprint',
+        ], array_keys($row));
+        $this->assertSame('inv_fixture_1', $row['square_invoice_id']);
+        $presented = (new SquarePresenter)->invoice($raw);
+        $this->assertSame(hash('sha256', (string) json_encode([...$presented, '_derivation' => 'd2'], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)), $row['fingerprint'], 'A change to how amounts are derived rewrites every row once.');
+    }
+
     public function test_a_request_whose_amount_cannot_be_read_leaves_the_total_unknown(): void
     {
         $invoice = self::squareInvoice('inv_fixture_1');
@@ -128,14 +144,14 @@ final class SquareSnapshotPaymentIdsTest extends TestCase
     {
         $basis = SquareSnapshotMapper::paymentIdsBasis('PAID', 12_345);
 
-        $this->assertSame('PAID|12345|t2', $basis);
-        $this->assertSame('PAID||t2|p', SquareSnapshotMapper::pendingBasis('PAID', null));
-        $this->assertFalse(SquareSnapshotMapper::paymentIdsCurrent('PAID', null, 'order_fixture_1', 'PAID||t2|p'), 'Pending is not current.');
+        $this->assertSame('PAID|12345|t3', $basis);
+        $this->assertSame('PAID||t3|p', SquareSnapshotMapper::pendingBasis('PAID', null));
+        $this->assertFalse(SquareSnapshotMapper::paymentIdsCurrent('PAID', null, 'order_fixture_1', 'PAID||t3|p'), 'Pending is not current.');
         $this->assertTrue(SquareSnapshotMapper::mayHoldPayment('PAID', 1));
         $this->assertFalse(SquareSnapshotMapper::mayHoldPayment('PAID', 0));
         $this->assertTrue(SquareSnapshotMapper::mayHoldPayment('PARTIALLY_REFUNDED', null));
         $this->assertFalse(SquareSnapshotMapper::mayHoldPayment('CANCELED', null));
-        $this->assertSame('UNPAID||t2', SquareSnapshotMapper::paymentIdsBasis('UNPAID', null));
+        $this->assertSame('UNPAID||t3', SquareSnapshotMapper::paymentIdsBasis('UNPAID', null));
         $this->assertTrue(SquareSnapshotMapper::paymentIdsCurrent('PAID', 12_345, 'order_fixture_1', $basis));
         $this->assertFalse(SquareSnapshotMapper::paymentIdsCurrent('PAID', 12_345, 'order_fixture_1', 'PAID|12345'), 'Read by older tender rules.');
         $this->assertFalse(SquareSnapshotMapper::paymentIdsCurrent('PAID', 12_345, 'order_fixture_1', null));
@@ -147,9 +163,9 @@ final class SquareSnapshotPaymentIdsTest extends TestCase
         $this->assertTrue(SquareSnapshotMapper::paymentIdsCurrent('UNPAID', 0, 'order_fixture_1', null), 'Nothing paid.');
         $this->assertTrue(SquareSnapshotMapper::paymentIdsCurrent('UNPAID', null, 'order_fixture_1', null), 'Unknown amount, and no payment to hold.');
         $this->assertFalse(SquareSnapshotMapper::paymentIdsCurrent('PAID', null, 'order_fixture_1', null), 'Unknown amount on a paid invoice is read.');
-        $this->assertFalse(SquareSnapshotMapper::paymentIdsCurrent('PAID', null, 'order_fixture_1', 'PAID||t2'), 'An unknown amount is current only as a reread stamp.');
-        $this->assertTrue(SquareSnapshotMapper::paymentIdsCurrent('PAID', null, 'order_fixture_1', 'PAID||t2|r'));
-        $this->assertSame('PAID||t2|r', SquareSnapshotMapper::rereadBasis('PAID'));
+        $this->assertFalse(SquareSnapshotMapper::paymentIdsCurrent('PAID', null, 'order_fixture_1', 'PAID||t3'), 'An unknown amount is current only as a reread stamp.');
+        $this->assertTrue(SquareSnapshotMapper::paymentIdsCurrent('PAID', null, 'order_fixture_1', 'PAID||t3|r'));
+        $this->assertSame('PAID||t3|r', SquareSnapshotMapper::rereadBasis('PAID'));
         $this->assertFalse(SquareSnapshotMapper::paymentIdsCurrent('PAID', 1, 'order_fixture_1', null), 'One minor unit paid is a payment.');
     }
 }

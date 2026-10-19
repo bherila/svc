@@ -191,7 +191,7 @@ final class SquareBillingAuditTest extends TestCase
 
         $this->assertFalse(app(SquareBillingAudit::class)->report($workspace)['complete']);
         $due = $repository->invoicesNeedingPaymentIds($workspace, 10);
-        $this->assertSame([['square_invoice_id' => 'inv_audit_1', 'square_order_id' => 'order_audit_1', 'square_location_id' => 'LOCFIXTURE01', 'basis' => 'PAID|12345|t2']], $due);
+        $this->assertSame([['square_invoice_id' => 'inv_audit_1', 'square_order_id' => 'order_audit_1', 'square_location_id' => 'LOCFIXTURE01', 'basis' => 'PAID|12345|t3']], $due);
 
         $this->assertTrue($repository->storePaymentIds($workspace, 'inv_audit_1', $due[0]['basis'], ['pay_audit_tender']));
         $report = app(SquareBillingAudit::class)->report($workspace);
@@ -204,8 +204,8 @@ final class SquareBillingAuditTest extends TestCase
         $this->snapshot($workspace, 'inv_audit_2', 2, '2030-02-15', 'PAID', ['paid_amount' => null, 'total_amount' => null, 'square_order_id' => 'order_audit_2']);
         $this->snapshot($workspace, 'inv_audit_3', 3, '2030-03-15', 'UNPAID', ['paid_amount' => null, 'square_order_id' => 'order_audit_3']);
         $this->assertFalse(app(SquareBillingAudit::class)->report($workspace)['complete']);
-        $this->assertSame([['square_invoice_id' => 'inv_audit_2', 'square_order_id' => 'order_audit_2', 'square_location_id' => 'LOCFIXTURE01', 'basis' => 'PAID||t2']], $repository->invoicesNeedingPaymentIds($workspace, 10));
-        $this->assertTrue($repository->storePaymentIds($workspace, 'inv_audit_2', 'PAID||t2', []));
+        $this->assertSame([['square_invoice_id' => 'inv_audit_2', 'square_order_id' => 'order_audit_2', 'square_location_id' => 'LOCFIXTURE01', 'basis' => 'PAID||t3']], $repository->invoicesNeedingPaymentIds($workspace, 10));
+        $this->assertTrue($repository->storePaymentIds($workspace, 'inv_audit_2', 'PAID||t3', []));
         $this->assertTrue(app(SquareBillingAudit::class)->report($workspace)['complete']);
     }
 
@@ -231,11 +231,11 @@ final class SquareBillingAuditTest extends TestCase
         $repository = app(SquareMirrorRepository::class);
 
         $this->assertSame(['inv_audit_1'], array_column($repository->invoicesNeedingPaymentIds($workspace, 1), 'square_invoice_id'));
-        $this->assertTrue($repository->markPaymentIdsUnresolvable($workspace, 'inv_audit_1', 'PAID|12345|t2'));
-        $this->assertFalse($repository->markPaymentIdsUnresolvable($workspace, 'inv_audit_1', 'UNPAID||t2'), 'Stamped only for the state it was read in.');
+        $this->assertTrue($repository->markPaymentIdsUnresolvable($workspace, 'inv_audit_1', 'PAID|12345|t3'));
+        $this->assertFalse($repository->markPaymentIdsUnresolvable($workspace, 'inv_audit_1', 'UNPAID||t3'), 'Stamped only for the state it was read in.');
 
         $this->assertSame(['inv_audit_2'], array_column($repository->invoicesNeedingPaymentIds($workspace, 1), 'square_invoice_id'));
-        $this->assertTrue($repository->storePaymentIds($workspace, 'inv_audit_2', 'PAID|12345|t2', []));
+        $this->assertTrue($repository->storePaymentIds($workspace, 'inv_audit_2', 'PAID|12345|t3', []));
         $this->assertSame([], $repository->invoicesNeedingPaymentIds($workspace, 10));
         $this->assertFalse(app(SquareBillingAudit::class)->report($workspace)['complete']);
         // A change to the invoice queues it again.
@@ -246,7 +246,7 @@ final class SquareBillingAuditTest extends TestCase
     public function test_the_lookup_queue_skips_current_and_unresolvable_rows_in_the_query(): void
     {
         [$workspace] = $this->fixture();
-        foreach (['current' => 'PAID|12345|t2', 'stamped' => 'PAID|12345|t2|x', 'unknown_current' => 'PAID||t2'] as $name => $basis) {
+        foreach (['current' => 'PAID|12345|t3', 'stamped' => 'PAID|12345|t3|x', 'unknown_current' => 'PAID||t3'] as $name => $basis) {
             $this->snapshot($workspace, 'inv_'.$name, null, '2030-01-15', 'PAID', ['series_key' => null, 'invoice_number' => '00000'.strlen($name), 'paid_amount' => str_starts_with($name, 'unknown') ? null : 12_345, 'square_order_id' => 'order_'.$name, 'payment_ids' => [], 'payment_ids_basis' => $basis, 'synced_at' => '2030-01-01 00:00:00']);
         }
         $this->snapshot($workspace, 'inv_due', null, '2030-01-15', 'PAID', ['series_key' => null, 'invoice_number' => '000999', 'paid_amount' => 12_345, 'square_order_id' => 'order_due', 'synced_at' => '2030-02-01 00:00:00']);
@@ -255,8 +255,8 @@ final class SquareBillingAuditTest extends TestCase
         $this->assertSame(['inv_due'], array_column($repository->invoicesNeedingPaymentIds($workspace, 1), 'square_invoice_id'));
 
         // Another sync resolved the ids for this state first: they are kept.
-        $this->assertTrue($repository->storePaymentIds($workspace, 'inv_due', 'PAID|12345|t2', ['pay_audit_kept']));
-        $this->assertFalse($repository->markPaymentIdsUnresolvable($workspace, 'inv_due', 'PAID|12345|t2'));
+        $this->assertTrue($repository->storePaymentIds($workspace, 'inv_due', 'PAID|12345|t3', ['pay_audit_kept']));
+        $this->assertFalse($repository->markPaymentIdsUnresolvable($workspace, 'inv_due', 'PAID|12345|t3'));
         $this->assertSame(['pay_audit_kept'], SquareInvoiceSnapshot::query()->where('workspace_id', $workspace->id)->where('square_invoice_id', 'inv_due')->value('payment_ids'));
     }
 
@@ -353,7 +353,7 @@ final class SquareBillingAuditTest extends TestCase
         $this->snapshot($workspace, 'inv_pending', null, '2030-01-15', 'PAID', ['series_key' => null, 'invoice_number' => '000501', 'paid_amount' => null, 'square_order_id' => 'order_pending', 'synced_at' => '2030-01-01 00:00:00']);
         $this->snapshot($workspace, 'inv_unread', null, '2030-01-15', 'PAID', ['series_key' => null, 'invoice_number' => '000502', 'paid_amount' => 12_345, 'square_order_id' => 'order_unread', 'synced_at' => '2030-02-01 00:00:00']);
         $repository = app(SquareMirrorRepository::class);
-        $this->assertTrue($repository->markPaymentIdsUnresolvable($workspace, 'inv_pending', 'PAID||t2', retryAfter: CarbonImmutable::parse('2030-01-01 00:00:00')));
+        $this->assertTrue($repository->markPaymentIdsUnresolvable($workspace, 'inv_pending', 'PAID||t3', retryAfter: CarbonImmutable::parse('2030-01-01 00:00:00')));
 
         $this->assertSame(['inv_unread'], array_column($repository->invoicesNeedingPaymentIds($workspace, 1), 'square_invoice_id'));
         $this->assertSame(['inv_unread', 'inv_pending'], array_column($repository->invoicesNeedingPaymentIds($workspace, 10), 'square_invoice_id'));
@@ -361,12 +361,12 @@ final class SquareBillingAuditTest extends TestCase
 
         // Pending orders take turns: one retried goes behind another.
         $this->snapshot($workspace, 'inv_pending_2', null, '2030-01-15', 'PAID', ['series_key' => null, 'invoice_number' => '000503', 'paid_amount' => null, 'square_order_id' => 'order_pending_2', 'synced_at' => '2030-01-02 00:00:00']);
-        $this->assertTrue($repository->markPaymentIdsUnresolvable($workspace, 'inv_pending_2', 'PAID||t2', retryAfter: CarbonImmutable::parse('2030-01-02 00:00:00')));
-        $this->assertTrue($repository->storePaymentIds($workspace, 'inv_unread', 'PAID|12345|t2', []));
+        $this->assertTrue($repository->markPaymentIdsUnresolvable($workspace, 'inv_pending_2', 'PAID||t3', retryAfter: CarbonImmutable::parse('2030-01-02 00:00:00')));
+        $this->assertTrue($repository->storePaymentIds($workspace, 'inv_unread', 'PAID|12345|t3', []));
         $this->assertSame(['inv_pending', 'inv_pending_2'], array_column($repository->invoicesNeedingPaymentIds($workspace, 10), 'square_invoice_id'));
-        $this->assertTrue($repository->markPaymentIdsUnresolvable($workspace, 'inv_pending', 'PAID||t2', retryAfter: CarbonImmutable::parse('2030-03-20 12:00:00')));
+        $this->assertTrue($repository->markPaymentIdsUnresolvable($workspace, 'inv_pending', 'PAID||t3', retryAfter: CarbonImmutable::parse('2030-03-20 12:00:00')));
         $this->assertSame(['inv_pending_2', 'inv_pending'], array_column($repository->invoicesNeedingPaymentIds($workspace, 10), 'square_invoice_id'));
-        $this->assertTrue($repository->markPaymentIdsUnresolvable($workspace, 'inv_pending_2', 'PAID||t2'), 'Without a retry time it is final.');
+        $this->assertTrue($repository->markPaymentIdsUnresolvable($workspace, 'inv_pending_2', 'PAID||t3'), 'Without a retry time it is final.');
         $this->assertSame(['inv_pending'], array_column($repository->invoicesNeedingPaymentIds($workspace, 10), 'square_invoice_id'));
     }
 
@@ -395,14 +395,17 @@ final class SquareBillingAuditTest extends TestCase
         $this->snapshot($workspace, 'inv_unread', null, '2030-01-15', 'PAID', ['series_key' => null, 'invoice_number' => '000602', 'paid_amount' => 12_345, 'square_order_id' => 'order_unread', 'synced_at' => '2030-02-01 00:00:00']);
         $repository = app(SquareMirrorRepository::class);
 
-        $this->assertTrue($repository->storePaymentIds($workspace, 'inv_unknown', 'PARTIALLY_PAID||t2', ['pay_partial_1'], rereadAfter: CarbonImmutable::parse('2030-03-20 12:00:00')));
-        $this->assertSame('PARTIALLY_PAID||t2|r', SquareInvoiceSnapshot::query()->where('workspace_id', $workspace->id)->where('square_invoice_id', 'inv_unknown')->value('payment_ids_basis'));
+        $this->assertTrue($repository->storePaymentIds($workspace, 'inv_unknown', 'PARTIALLY_PAID||t3', ['pay_partial_1'], rereadAfter: CarbonImmutable::parse('2030-03-20 12:00:00')));
+        $this->assertSame('PARTIALLY_PAID||t3|r', SquareInvoiceSnapshot::query()->where('workspace_id', $workspace->id)->where('square_invoice_id', 'inv_unknown')->value('payment_ids_basis'));
         $this->assertSame(['inv_unread', 'inv_unknown'], array_column($repository->invoicesNeedingPaymentIds($workspace, 10), 'square_invoice_id'), 'Read again, after invoices never read.');
-        $this->assertTrue($repository->storePaymentIds($workspace, 'inv_unread', 'PAID|12345|t2', []));
+        $this->assertTrue($repository->storePaymentIds($workspace, 'inv_unread', 'PAID|12345|t3', []));
         $this->assertSame(['inv_unknown'], array_column($repository->invoicesNeedingPaymentIds($workspace, 10), 'square_invoice_id'));
         $this->assertTrue(app(SquareBillingAudit::class)->report($workspace)['complete'], 'The read is current meanwhile.');
-        $this->assertFalse($repository->markPaymentIdsUnresolvable($workspace, 'inv_unknown', 'PARTIALLY_PAID||t2', retryAfter: CarbonImmutable::parse('2030-03-20 12:00:00')), 'A slower reader never undoes a reread.');
-        $this->assertSame('PARTIALLY_PAID||t2|r', SquareInvoiceSnapshot::query()->where('workspace_id', $workspace->id)->where('square_invoice_id', 'inv_unknown')->value('payment_ids_basis'));
+        $this->assertFalse($repository->markPaymentIdsUnresolvable($workspace, 'inv_unknown', 'PARTIALLY_PAID||t3', retryAfter: CarbonImmutable::parse('2030-03-20 12:00:00')), 'A slower reader never undoes a reread.');
+        $this->assertSame('PARTIALLY_PAID||t3|r', SquareInvoiceSnapshot::query()->where('workspace_id', $workspace->id)->where('square_invoice_id', 'inv_unknown')->value('payment_ids_basis'));
+        // Once the amount is known, the old reread stamp no longer protects the row.
+        SquareInvoiceSnapshot::query()->where('workspace_id', $workspace->id)->where('square_invoice_id', 'inv_unknown')->update(['paid_amount' => 500]);
+        $this->assertTrue($repository->markPaymentIdsUnresolvable($workspace, 'inv_unknown', 'PARTIALLY_PAID|500|t3'));
     }
 
     public function test_a_linked_member_past_the_series_bound_is_still_checked(): void
