@@ -76,6 +76,11 @@ this door **every** finance operation requires a workspace owner or admin, the
 listing included, and the tools are offered only to someone who manages a
 workspace. The finance token's member listing is not extended to OAuth.
 
+A first-party finance system is registered once with
+`svc:auth:register-first-party-client` and, to connect without a consent
+screen, allow-listed in `AGENT_API_FIRST_PARTY_OAUTH_CLIENTS` (see
+[first-party applications](mcp.md#first-party-applications)).
+
 Before trusting a connection, the finance system reads `context.get`
 (`identity:read`): its `provider_subject` is the person's subject at the trusted
 identity provider (null for an account not bound to it), to compare with the

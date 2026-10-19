@@ -46,4 +46,12 @@ return [
         explode(',', (string) env('AGENT_API_MCP_ALLOWED_HOSTS', '')),
     ))),
     'dynamic_client_retention_days' => (int) env('AGENT_API_DYNAMIC_CLIENT_RETENTION_DAYS', 30),
+    // OAuth client ids of first-party applications approved without a consent
+    // screen (comma-separated). Only an operator-registered, confidential,
+    // authorization-code client qualifies (App\Support\Auth\OAuthClient); register
+    // one with svc:auth:register-first-party-client.
+    'first_party_oauth_clients' => array_values(array_filter(array_map(
+        static fn (string $id): string => strtolower(trim($id)),
+        explode(',', (string) env('AGENT_API_FIRST_PARTY_OAUTH_CLIENTS', '')),
+    ))),
 ];

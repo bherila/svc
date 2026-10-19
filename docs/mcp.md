@@ -206,6 +206,41 @@ with the actor, the person's public UUID, the name, the count and the credential
 To cut off every agent credential a person holds, see
 [emergency revocation](mcp-operations.md#emergency-revocation-of-a-persons-agent-connections).
 
+### First-party applications
+
+Another of the operator's own applications that acts in SVC for a person - a
+finance system reconciling payments, for example - connects through the same
+authorization server as any agent, as a pre-registered confidential client:
+
+```bash
+php artisan svc:auth:register-first-party-client "Finance" \
+  --redirect-uri=https://finance.example.test/oauth/svc/callback \
+  --scope=identity:read --scope=finance:read --scope=finance:reconcile
+```
+
+The client is ownerless, confidential and registered for the authorization
+code grant with refresh only; its scopes (REST operation scopes, never
+`mcp:use`) are its ceiling, and its redirect URIs must be https or loopback
+http. A second live client with the same name is refused. The command prints
+`client_id` and `client_secret` once as JSON (only the secret's hash is kept)
+and logs `oauth_client.registered` with the client id.
+
+Registering does not skip consent. A person signed in through the identity
+provider connects such a client with no consent screen only once its id is in
+`AGENT_API_FIRST_PARTY_OAUTH_CLIENTS` (comma-separated), and only while it is
+still what the command made: a client a person registered (it has an owner),
+a dynamically registered one, a revoked one, or one allowed any other grant
+asks for consent even when listed (`App\Support\Auth\OAuthClient`). PKCE, the
+resource binding and the scope ceiling apply either way.
+
+Two protections hold for every client. Every authorization response - a code
+or an error, from the consent screen or a skipped one - carries RFC 9207's
+`iss`, and the metadata advertises `authorization_response_iss_parameter_supported`,
+so a client of several authorization servers can check which one answered
+before it exchanges a code. And `grant_type=client_credentials` is refused at
+`/oauth/token` with `unsupported_grant_type`, whatever the client: every
+credential acts for a person.
+
 ## Public capability inventory
 
 With all read scopes, discovery exposes these read-only tools, in this order:
