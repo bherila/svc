@@ -7,6 +7,7 @@ use App\Support\Tenancy\TenantReferenceInventory;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use Tests\Support\OwnTables;
 use Tests\TestCase;
 
 /**
@@ -117,7 +118,7 @@ final class TenantForeignKeyInventoryTest extends TestCase
         }
 
         $tenantTables = array_values(array_filter(
-            array_map(static fn (array $table): string => $table['name'], Schema::getTables()),
+            OwnTables::names(),
             static fn (string $table): bool => Schema::hasColumn($table, 'workspace_id'),
         ));
 

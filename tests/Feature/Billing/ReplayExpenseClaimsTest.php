@@ -14,10 +14,10 @@ use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Concerns\BuildsSyntheticExpenses;
+use Tests\Support\OwnTables;
 use Tests\TestCase;
 
 final class ReplayExpenseClaimsTest extends TestCase
@@ -127,10 +127,7 @@ final class ReplayExpenseClaimsTest extends TestCase
     private function fingerprint(): array
     {
         $snapshot = [];
-        foreach (Schema::getTableListing() as $table) {
-            if (str_starts_with($table, 'sqlite_')) {
-                continue;
-            }
+        foreach (OwnTables::names() as $table) {
             $rows = array_map(static fn ($row): string => json_encode($row, JSON_THROW_ON_ERROR), DB::table($table)->get()->all());
             sort($rows, SORT_STRING);
             $snapshot[$table] = hash('sha256', json_encode($rows, JSON_THROW_ON_ERROR));
