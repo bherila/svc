@@ -14,8 +14,10 @@ use App\Models\SquareSyncRun;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Square\Audit\SquareBillingAudit;
+use App\Services\Square\Audit\SquareBillingAuditRepository;
 use App\Services\Square\Mirror\SquareMirrorRepository;
 use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
@@ -264,6 +266,28 @@ final class SquareBillingAuditTest extends TestCase
         $this->assertFalse(app(SquareBillingAudit::class)->report($workspace)['complete']);
         $run->forceFill(['status' => SquareSyncRun::FAILED, 'error_code' => 'unauthorized'])->save();
         $this->assertFalse(app(SquareBillingAudit::class)->report($workspace)['complete']);
+    }
+
+    public function test_payment_ids_past_the_bound_are_left_unchecked_and_say_so(): void
+    {
+        [$workspace] = $this->fixture();
+        $ids = array_map(static fn (int $index): string => 'pay_bound_'.$index, range(1, SquareBillingAuditRepository::MAX_PAYMENT_IDS));
+        // Loaded newest first: the older invoice is the one past the bound.
+        $this->snapshot($workspace, 'inv_audit_2', 2, '2030-02-15', 'PAID', ['paid_amount' => 12_345, 'payment_ids' => ['pay_past_bound']]);
+        $this->snapshot($workspace, 'inv_audit_1', 1, '2030-01-15', 'PAID', ['paid_amount' => 12_345, 'payment_ids' => $ids]);
+        $queries = 0;
+        DB::listen(function (QueryExecuted $query) use (&$queries): void {
+            if (str_contains($query->sql, 'client_invoice_payments')) {
+                $queries++;
+            }
+        });
+
+        $report = app(SquareBillingAudit::class)->report($workspace);
+
+        $this->assertFalse($report['complete']);
+        $this->assertSame(SquareBillingAuditRepository::MAX_PAYMENT_IDS, $report['unmatched_payments']['count']);
+        $this->assertNotContains('pay_past_bound', array_column($report['unmatched_payments']['payments'], 'payment_id'));
+        $this->assertSame(SquareBillingAuditRepository::MAX_PAYMENT_IDS / 500, $queries);
     }
 
     public function test_an_imported_annual_series_mirrors_its_amount_once_per_cycle(): void

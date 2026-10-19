@@ -15572,7 +15572,7 @@
                 "properties": {
                     "complete": {
                         "type": "boolean",
-                        "description": "False unless the newest sync run completed and listed every Square invoice (a run still going, failed or truncated leaves the mirror between generations), when the audit reached a bound (5,000 members of billed-in-Square series, 5,000 other mirrored invoices, or 500 agreements), or when the mirror has yet to read the payment ids of a paid invoice in reach. Every count is then a floor; series_not_mirrored needs a complete sync, series_drift is withheld when series members were bounded, and unlinked_customer_balances when other invoices were."
+                        "description": "False unless the newest sync run completed and listed every Square invoice (a run still going, failed or truncated leaves the mirror between generations), when the audit reached a bound (5,000 members of billed-in-Square series, 5,000 other mirrored invoices, 500 agreements, or 10,000 payment ids checked), or when the mirror has yet to read the payment ids of a paid invoice in reach. Every count is then a floor; series_not_mirrored needs a complete sync, series_drift is withheld when series members were bounded, and unlinked_customer_balances when other invoices were."
                     },
                     "unmirrored_series_periods": {
                         "type": "object",

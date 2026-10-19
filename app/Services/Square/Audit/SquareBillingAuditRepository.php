@@ -28,6 +28,9 @@ final class SquareBillingAuditRepository
     /** Mirrored invoices in reach read at most, besides series members: decades of a small practice's billing. */
     public const int MAX_INVOICES = 5000;
 
+    /** Square payment ids checked against svc's ledger at most: 20 lookups. */
+    public const int MAX_PAYMENT_IDS = 10_000;
+
     /** Members of billed-in-Square series read at most. */
     public const int MAX_SERIES_MEMBERS = 5000;
 
@@ -78,10 +81,18 @@ final class SquareBillingAuditRepository
 
         $squareInvoiceIds = [];
         $paymentIds = [];
+        $deferred = [];
         $customerIds = [];
         foreach ($snapshots as $snapshot) {
             $squareInvoiceIds[] = $snapshot->square_invoice_id;
-            foreach ($snapshot->payment_ids ?? [] as $paymentId) {
+            // Past the bound, an invoice's payments are left unchecked - and
+            // say so - rather than looked up in ever more queries.
+            $ids = $snapshot->payment_ids ?? [];
+            if (count($paymentIds) + count($ids) > self::MAX_PAYMENT_IDS) {
+                $deferred[$snapshot->square_invoice_id] = true;
+                $ids = [];
+            }
+            foreach ($ids as $paymentId) {
                 $paymentIds[$paymentId] = true;
             }
             if ($snapshot->square_customer_id !== null) {
@@ -109,7 +120,8 @@ final class SquareBillingAuditRepository
                 $snapshot->autopay,
                 array_values(array_filter($snapshot->payment_ids ?? [], 'is_string')),
                 $links[$snapshot->square_invoice_id] ?? null,
-                SquareSnapshotMapper::paymentIdsCurrent($snapshot->status, $snapshot->paid_amount, $snapshot->square_order_id, $snapshot->payment_ids_basis),
+                ! isset($deferred[$snapshot->square_invoice_id])
+                    && SquareSnapshotMapper::paymentIdsCurrent($snapshot->status, $snapshot->paid_amount, $snapshot->square_order_id, $snapshot->payment_ids_basis),
             );
         }
 

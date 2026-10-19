@@ -3359,7 +3359,7 @@ export interface components {
         };
         /** @description Phase-two Square billing-audit flags, read from svc's mirror as of its last sync. Empty where Square does not serve the workspace. Nothing here writes to Square. */
         SquareBillingAudit: {
-            /** @description False unless the newest sync run completed and listed every Square invoice (a run still going, failed or truncated leaves the mirror between generations), when the audit reached a bound (5,000 members of billed-in-Square series, 5,000 other mirrored invoices, or 500 agreements), or when the mirror has yet to read the payment ids of a paid invoice in reach. Every count is then a floor; series_not_mirrored needs a complete sync, series_drift is withheld when series members were bounded, and unlinked_customer_balances when other invoices were. */
+            /** @description False unless the newest sync run completed and listed every Square invoice (a run still going, failed or truncated leaves the mirror between generations), when the audit reached a bound (5,000 members of billed-in-Square series, 5,000 other mirrored invoices, 500 agreements, or 10,000 payment ids checked), or when the mirror has yet to read the payment ids of a paid invoice in reach. Every count is then a floor; series_not_mirrored needs a complete sync, series_drift is withheld when series members were bounded, and unlinked_customer_balances when other invoices were. */
             complete: boolean;
             /** @description Billed members of a series an agreement is billed in, within the agreement (from its start to its end, once it has one), with no svc invoice linked. SCHEDULED, DRAFT, CANCELED and FAILED members are not flagged. */
             unmirrored_series_periods: {
