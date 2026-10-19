@@ -135,11 +135,11 @@ final class SquareMirrorRepository
     /**
      * Stamps an invoice whose order could not be read into payment ids for
      * the state named by `$basis`. Its payment ids stay unresolved. An
-     * oversized order is skipped until the invoice changes; with `$retry`
+     * oversized order is skipped until the invoice changes; with `$retryAfter`
      * (an authorization that may yet settle) it is retried after the
-     * invoices never read.
+     * invoices never read, behind the other pending ones.
      */
-    public function markPaymentIdsUnresolvable(Workspace $workspace, string $invoiceId, string $basis, bool $retry = false): bool
+    public function markPaymentIdsUnresolvable(Workspace $workspace, string $invoiceId, string $basis, ?CarbonImmutable $retryAfter = null): bool
     {
         [$status, $paid] = explode('|', $basis, 3);
 
@@ -153,7 +153,9 @@ final class SquareMirrorRepository
             ->where(static fn (Builder $query) => $query->whereNull('payment_ids_basis')->orWhere('payment_ids_basis', '!=', $basis))
             ->update([
                 'payment_ids' => null,
-                'payment_ids_basis' => $basis.($retry ? '|p' : '|x'),
+                'payment_ids_basis' => $basis.($retryAfter !== null ? '|p' : '|x'),
+                // A retried order goes behind the others it waits with.
+                ...($retryAfter !== null ? ['synced_at' => $retryAfter->utc()->format('Y-m-d H:i:s')] : []),
             ]) > 0;
     }
 

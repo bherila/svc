@@ -95,7 +95,10 @@ final class SquareBillingAuditRepository
         $links = $this->links($workspace, $squareInvoiceIds);
         $customerIds = array_map(strval(...), array_keys($customerIds));
         $mappedCustomers = $this->mappedCustomers($workspace, $customerIds);
-        $billedSeries = array_fill_keys($seriesKeys, true);
+        $ambiguous = SquareBillingAuditPolicy::ambiguousSeries($agreements, array_map(static fn (SquareInvoiceSnapshot $snapshot): array => [
+            $snapshot->series_key, $snapshot->status, $snapshot->due_on?->toDateString() ?? $snapshot->scheduled_at?->toDateString(), $snapshot->square_location_id,
+        ], array_values($snapshots)));
+        $billedSeries = array_diff_key(array_fill_keys($seriesKeys, true), $ambiguous);
 
         // Payment ids are read only for invoices whose payments the audit
         // checks and whose ids are current, a batch at a time, and only up to
@@ -153,6 +156,7 @@ final class SquareBillingAuditRepository
             );
         }
 
+        $retired = $this->retiredCustomers($workspace, $customerIds);
         $after = $this->newestRun($workspace);
         $mirrorComplete = $before !== null && $after !== null && $before->id === $after->id
             && $before->status === SquareSyncRun::COMPLETED && $after->status === SquareSyncRun::COMPLETED && ! $after->truncated;
@@ -162,7 +166,7 @@ final class SquareBillingAuditRepository
             $agreements,
             $invoices,
             $mappedCustomers,
-            $this->retiredCustomers($workspace, $customerIds),
+            $retired,
             $this->recordedPayments($workspace, array_map(strval(...), array_keys($paymentIds))),
             $complete,
             $seriesComplete,

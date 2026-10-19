@@ -3874,7 +3874,7 @@ export interface components {
             /** Format: uri */
             agreement_url: string;
             series_key: components['schemas']['SquareSeriesKey'];
-            /** @description multiple_locations: the series prefix is used in more than one Square location among the billed members, which Square allows, so the series is not compared. billed_after_end: Square billed a member after the agreement ended. */
+            /** @description multiple_locations: the series prefix is used in more than one Square location among the bills since the agreement began, which Square allows; the series is not compared, and no unmirrored period or unmatched payment is derived from it. billed_after_end: Square billed a member after the agreement ended. */
             codes: (
                 | 'cadence'
                 | 'currency'
@@ -3996,7 +3996,7 @@ export interface components {
             open_invoice_count: number;
             /** @description Null when the open invoices are in more than one currency. */
             currency: string | null;
-            /** @description Minor units; null when the open invoices are in more than one currency. */
+            /** @description Minor units; null when the open invoices are in more than one currency or one of them has no known amount. */
             open_amount: number | null;
             /** Format: uri */
             explore_url: string;

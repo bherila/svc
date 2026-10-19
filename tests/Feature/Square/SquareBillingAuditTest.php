@@ -18,6 +18,7 @@ use App\Services\Square\Audit\SquareBillingAuditRepository;
 use App\Services\Square\Mirror\SquareMirrorRepository;
 use App\Services\Square\Mirror\SquareSnapshotMapper;
 use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Date;
@@ -352,11 +353,21 @@ final class SquareBillingAuditTest extends TestCase
         $this->snapshot($workspace, 'inv_pending', null, '2030-01-15', 'PAID', ['series_key' => null, 'invoice_number' => '000501', 'paid_amount' => null, 'square_order_id' => 'order_pending', 'synced_at' => '2030-01-01 00:00:00']);
         $this->snapshot($workspace, 'inv_unread', null, '2030-01-15', 'PAID', ['series_key' => null, 'invoice_number' => '000502', 'paid_amount' => 12_345, 'square_order_id' => 'order_unread', 'synced_at' => '2030-02-01 00:00:00']);
         $repository = app(SquareMirrorRepository::class);
-        $this->assertTrue($repository->markPaymentIdsUnresolvable($workspace, 'inv_pending', 'PAID||t2', retry: true));
+        $this->assertTrue($repository->markPaymentIdsUnresolvable($workspace, 'inv_pending', 'PAID||t2', retryAfter: CarbonImmutable::parse('2030-01-01 00:00:00')));
 
         $this->assertSame(['inv_unread'], array_column($repository->invoicesNeedingPaymentIds($workspace, 1), 'square_invoice_id'));
         $this->assertSame(['inv_unread', 'inv_pending'], array_column($repository->invoicesNeedingPaymentIds($workspace, 10), 'square_invoice_id'));
         $this->assertFalse(app(SquareBillingAudit::class)->report($workspace)['complete']);
+
+        // Pending orders take turns: one retried goes behind another.
+        $this->snapshot($workspace, 'inv_pending_2', null, '2030-01-15', 'PAID', ['series_key' => null, 'invoice_number' => '000503', 'paid_amount' => null, 'square_order_id' => 'order_pending_2', 'synced_at' => '2030-01-02 00:00:00']);
+        $this->assertTrue($repository->markPaymentIdsUnresolvable($workspace, 'inv_pending_2', 'PAID||t2', retryAfter: CarbonImmutable::parse('2030-01-02 00:00:00')));
+        $this->assertTrue($repository->storePaymentIds($workspace, 'inv_unread', 'PAID|12345|t2', []));
+        $this->assertSame(['inv_pending', 'inv_pending_2'], array_column($repository->invoicesNeedingPaymentIds($workspace, 10), 'square_invoice_id'));
+        $this->assertTrue($repository->markPaymentIdsUnresolvable($workspace, 'inv_pending', 'PAID||t2', retryAfter: CarbonImmutable::parse('2030-03-20 12:00:00')));
+        $this->assertSame(['inv_pending_2', 'inv_pending'], array_column($repository->invoicesNeedingPaymentIds($workspace, 10), 'square_invoice_id'));
+        $this->assertTrue($repository->markPaymentIdsUnresolvable($workspace, 'inv_pending_2', 'PAID||t2'), 'Without a retry time it is final.');
+        $this->assertSame(['inv_pending'], array_column($repository->invoicesNeedingPaymentIds($workspace, 10), 'square_invoice_id'));
     }
 
     public function test_a_sync_that_finishes_while_the_mirror_is_read_leaves_the_audit_incomplete(): void

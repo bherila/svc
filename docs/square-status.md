@@ -110,7 +110,8 @@ Square dashboard URLs, and `truncated`:
   `SCHEDULED` members are not billed yet, and members dated before the
   agreement's start are history; both are left out. Square numbers invoices
   uniquely per location only, so a prefix used in more than one location is
-  reported as `multiple_locations` and not compared, and Square still billing
+  reported as `multiple_locations` and nothing else is derived from it - no
+  comparison, unmirrored period or unmatched payment - and Square still billing
   after the agreement ended is reported as `billed_after_end`. The agreement's amount
   is its retainer fee for one whole cycle; an agreement that sells no retainer fee
   is not compared on amount, and a series with fewer than two dated billed members

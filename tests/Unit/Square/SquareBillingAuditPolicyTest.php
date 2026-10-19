@@ -216,17 +216,18 @@ final class SquareBillingAuditPolicyTest extends TestCase
         $this->assertSame([], $findings->unmatchedPayments);
     }
 
-    public function test_an_unknown_amount_owes_nothing_and_an_unknown_payment_is_none(): void
+    public function test_an_unknown_amount_leaves_the_balance_unknown_and_an_unknown_payment_is_none(): void
     {
         $findings = self::classify([
             self::invoice('inv_a1', null, '2030-01-10', 'UNPAID', series: null, customer: 'cust_a', total: null),
             self::invoice('inv_a2', null, '2030-01-11', 'UNPAID', series: null, customer: 'cust_a', total: 3_000, paid: null),
             self::invoice('inv_z1', null, '2030-01-11', 'UNPAID', series: null, customer: 'cust_z', total: 0),
+            self::invoice('inv_p1', null, '2030-01-11', 'UNPAID', series: null, customer: 'cust_p', total: 3_000, paid: null),
             self::invoice('inv_y1', null, '2030-01-11', 'UNPAID', series: null, customer: 'cust_y', total: 1, currency: 'EUR'),
             self::invoice('inv_y2', null, '2030-01-11', 'UNPAID', series: null, customer: 'cust_y', total: 1),
         ]);
 
-        $this->assertSame([['cust_a', 3_000], ['cust_z', 0], ['cust_y', null]], array_map(static fn (array $customer): array => [$customer['customer_id'], $customer['open_amount']], $findings->unlinkedCustomerBalances));
+        $this->assertSame([['cust_p', 3_000], ['cust_z', 0], ['cust_a', null], ['cust_y', null]], array_map(static fn (array $customer): array => [$customer['customer_id'], $customer['open_amount']], $findings->unlinkedCustomerBalances));
     }
 
     public function test_drift_reads_members_in_occurrence_order_whatever_order_they_were_loaded_in(): void
@@ -396,6 +397,28 @@ final class SquareBillingAuditPolicyTest extends TestCase
         $members[] = new SquareAuditInvoice('inv_history_elsewhere', '000123-R-0000', '000123', 0, 'cust_other', null, 'LOCFIXTURE02', 'PAID', 'USD', 12_345, 0, '2029-09-15', null, false, [], null, true);
 
         $this->assertSame([], self::classify($members)->seriesDrift);
+    }
+
+    public function test_a_prefix_in_two_locations_derives_no_periods_or_payments(): void
+    {
+        $members = [
+            self::invoice('inv_here', 1, '2030-01-15', 'UNPAID', payments: ['pay_here']),
+            new SquareAuditInvoice('inv_there', '000123-R-0001', '000123', 1, 'cust_other', null, 'LOCFIXTURE02', 'PAID', 'USD', 12_345, 12_345, '2030-01-20', null, false, ['pay_there'], null, true),
+        ];
+
+        $findings = self::classify($members);
+
+        $this->assertSame([], $findings->unmirroredPeriods);
+        $this->assertSame([], $findings->unmatchedPayments);
+        $this->assertSame([[SquareBillingAuditPolicy::DRIFT_MULTIPLE_LOCATIONS]], array_column($findings->seriesDrift, 'codes'));
+        $this->assertSame([], SquareBillingAuditPolicy::ambiguousSeries([self::agreement()], [['000123', 'PAID', '2029-01-01', 'LOCFIXTURE02'], ['000123', 'SCHEDULED', '2030-05-01', 'LOCFIXTURE03'], ['000123', 'PAID', null, 'LOCFIXTURE01'], ['000999', 'PAID', null, 'LOCFIXTURE09'], [null, 'PAID', null, 'LOCFIXTURE08'], ['000123', 'PAID', '2030-02-01', null]]));
+        $this->assertSame(['000123' => true], SquareBillingAuditPolicy::ambiguousSeries([self::agreement()], [['000123', 'PAID', '2030-01-01', 'LOCFIXTURE02'], ['000123', 'PAID', null, 'LOCFIXTURE01']]));
+        $other = new SquareAuditAgreement('00000000-0000-4000-8000-00000000a009', self::COMPANY, '000999', '2030-01-01', BillingCadence::Monthly, 1, 'USD');
+        $this->assertSame(['000123' => true, '000999' => true], SquareBillingAuditPolicy::ambiguousSeries([self::agreement(), $other], [
+            ['000123', 'PAID', null, 'LOCFIXTURE01'], ['000123', 'PAID', null, 'LOCFIXTURE01'], ['000123', 'PAID', null, 'LOCFIXTURE02'],
+            ['000999', 'PAID', null, 'LOCFIXTURE01'], ['000999', 'PAID', null, 'LOCFIXTURE02'],
+        ]));
+        $this->assertSame([], SquareBillingAuditPolicy::ambiguousSeries([self::agreement()], [['000123', 'PAID', null, 'LOCFIXTURE01'], ['000123', 'PAID', null, 'LOCFIXTURE01']]), 'One location twice is one location.');
     }
 
     public function test_absence_is_not_claimed_when_the_series_load_was_bounded(): void

@@ -18292,7 +18292,7 @@
                                 "billed_after_end"
                             ]
                         },
-                        "description": "multiple_locations: the series prefix is used in more than one Square location among the billed members, which Square allows, so the series is not compared. billed_after_end: Square billed a member after the agreement ended."
+                        "description": "multiple_locations: the series prefix is used in more than one Square location among the bills since the agreement began, which Square allows; the series is not compared, and no unmirrored period or unmatched payment is derived from it. billed_after_end: Square billed a member after the agreement ended."
                     },
                     "agreement_cadence": {
                         "type": [
@@ -18740,7 +18740,7 @@
                             "null"
                         ],
                         "minimum": 0,
-                        "description": "Minor units; null when the open invoices are in more than one currency."
+                        "description": "Minor units; null when the open invoices are in more than one currency or one of them has no known amount."
                     },
                     "explore_url": {
                         "type": "string",

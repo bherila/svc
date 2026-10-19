@@ -75,11 +75,50 @@ final class SquareBillingAuditPolicy
             || ($customerId !== null && isset($mappedCustomers[$customerId]));
     }
 
+    /**
+     * The series keys whose bills, from each agreement's start on, come from
+     * more than one Square location. Square numbers invoices uniquely per
+     * location only, so such a prefix is two series.
+     *
+     * @param  list<SquareAuditAgreement>  $agreements
+     * @param  iterable<array{string|null, string, string|null, string|null}>  $members  [series key, status, date, location]
+     * @return array<string, true>
+     */
+    public static function ambiguousSeries(array $agreements, iterable $members): array
+    {
+        $starts = [];
+        foreach ($agreements as $agreement) {
+            $starts[$agreement->seriesKey] = $agreement->startsOn;
+        }
+        $locations = [];
+        foreach ($members as [$seriesKey, $status, $date, $location]) {
+            if ($seriesKey === null || $location === null || ! isset($starts[$seriesKey]) || in_array($status, self::UNBILLED_STATUSES, true)
+                || ($date !== null && $date < $starts[$seriesKey])) {
+                continue;
+            }
+            $locations[$seriesKey][] = $location;
+        }
+        $ambiguous = [];
+        foreach ($locations as $seriesKey => $seen) {
+            if (count(array_unique($seen)) > 1) {
+                // @infection-ignore-all PHP normalises array keys either way; the cast only states the string key static analysis requires.
+                $ambiguous[(string) $seriesKey] = true;
+            }
+        }
+
+        return $ambiguous;
+    }
+
     public static function classify(SquareBillingAuditFacts $facts): SquareBillingAuditFindings
     {
+        $ambiguous = self::ambiguousSeries($facts->agreements, array_map(static fn (SquareAuditInvoice $invoice): array => [$invoice->seriesKey, $invoice->status, $invoice->date(), $invoice->locationId], $facts->invoices));
+        // A prefix shared by two locations is two series svc cannot tell
+        // apart, so nothing is derived from it but that finding.
         $agreements = [];
         foreach ($facts->agreements as $agreement) {
-            $agreements[$agreement->seriesKey] = $agreement;
+            if (! isset($ambiguous[$agreement->seriesKey])) {
+                $agreements[$agreement->seriesKey] = $agreement;
+            }
         }
 
         [$payments, $paymentsResolved] = self::unmatchedPayments($facts, $agreements);
@@ -88,7 +127,7 @@ final class SquareBillingAuditPolicy
             self::unmirroredPeriods($facts, $agreements),
             $payments,
             self::unlinkedCustomerBalances($facts),
-            self::drift($facts),
+            self::drift($facts, $ambiguous),
             $facts->complete && $facts->mirrorComplete && $paymentsResolved,
         );
     }
@@ -167,13 +206,16 @@ final class SquareBillingAuditPolicy
                 || ! in_array($invoice->status, SquareSeriesSummary::OPEN_STATUSES, true)) {
                 continue;
             }
-            $customer = $customers[$id] ?? ['customer_id' => $id, 'currencies' => [], 'count' => 0, 'amount' => 0, 'recipient_name' => null];
+            $customer = $customers[$id] ?? ['customer_id' => $id, 'currencies' => [], 'count' => 0, 'amount' => 0, 'unknown' => false, 'recipient_name' => null];
             $customer['count']++;
             if ($invoice->currency !== null && ! in_array($invoice->currency, $customer['currencies'], true)) {
                 $customer['currencies'][] = $invoice->currency;
             }
-            // An invoice with no amount owes nothing known; an overpaid one owes nothing.
-            if ($invoice->totalAmount !== null) {
+            // An invoice with no known amount leaves the balance unknown; an
+            // overpaid one owes nothing.
+            if ($invoice->totalAmount === null) {
+                $customer['unknown'] = true;
+            } else {
                 $customer['amount'] += max(0, $invoice->totalAmount - ($invoice->paidAmount ?? 0));
             }
             $customer['recipient_name'] ??= $invoice->recipientName;
@@ -187,7 +229,7 @@ final class SquareBillingAuditPolicy
                 'recipient_name' => $customer['recipient_name'],
                 'open_invoice_count' => $customer['count'],
                 'currency' => $single ? ($customer['currencies'][0] ?? null) : null,
-                'open_amount' => $single ? $customer['amount'] : null,
+                'open_amount' => $single && ! $customer['unknown'] ? $customer['amount'] : null,
             ];
         }
         // Most owed first; a balance in several currencies cannot be ranked, so it comes last.
@@ -197,8 +239,11 @@ final class SquareBillingAuditPolicy
         return $balances;
     }
 
-    /** @return list<array{agreement: SquareAuditAgreement, codes: non-empty-list<string>, series_cadence: string|null, series_currency: string|null, series_amount: int|null}> */
-    private static function drift(SquareBillingAuditFacts $facts): array
+    /**
+     * @param  array<string, true>  $ambiguous  series keys used in more than one location
+     * @return list<array{agreement: SquareAuditAgreement, codes: non-empty-list<string>, series_cadence: string|null, series_currency: string|null, series_amount: int|null}>
+     */
+    private static function drift(SquareBillingAuditFacts $facts, array $ambiguous): array
     {
         $members = [];
         foreach ($facts->invoices as $invoice) {
@@ -232,11 +277,7 @@ final class SquareBillingAuditPolicy
             $after = array_filter($allBilled, static fn (SquareAuditInvoice $invoice): bool => $agreement->endedBefore($invoice->date()));
             $afterEnd = $after !== [];
             $billed = array_filter($allBilled, static fn (SquareAuditInvoice $invoice): bool => $agreement->governs($invoice->date()));
-            // Square numbers invoices uniquely per location only, so one
-            // prefix in two locations is two series svc cannot tell apart -
-            // among the bills it would compare or report, not history.
-            $locations = array_unique(array_filter(array_map(static fn (SquareAuditInvoice $invoice): ?string => $invoice->locationId, [...$billed, ...$after]), 'is_string'));
-            if (count($locations) > 1) {
+            if (isset($ambiguous[$agreement->seriesKey])) {
                 $drift[] = ['agreement' => $agreement, 'codes' => [self::DRIFT_MULTIPLE_LOCATIONS], 'series_cadence' => null, 'series_currency' => null, 'series_amount' => null];
 
                 continue;
