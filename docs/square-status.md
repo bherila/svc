@@ -21,7 +21,11 @@ with `GET /v2/payouts/{id}/payout-entries` (the access token needs Square's
 each charged payment with its arrival date and fee (see
 [processor settlement and payouts](finance-api.md#processor-settlement-and-payouts)).
 Reconciling a payment also records its capture time and Square's processing fee
-so far. Payout history is filled by `svc:finance:backfill-payouts`, which lists
+so far, as a fee charged (positive). Square's documents disagree on the sign of
+`processing_fee` amounts - the payments guide reports deductions as negative,
+the ProcessingFee reference assessments as positive - so the sign of the
+`INITIAL` fee decides which convention a response uses, and adjustments net in
+it. Payout history is filled by `svc:finance:backfill-payouts`, which lists
 each location's payouts with `GET /v2/payouts`.
 No raw webhook body or signature key is stored in a receipt.
 

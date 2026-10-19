@@ -74,11 +74,20 @@ final readonly class SquarePaymentFacts
     }
 
     /**
-     * The total of Square's processing fees on the payment (an adjustment may
-     * be negative), or null when Square has not reported them yet or reports
-     * them in a shape this does not read. The fee only informs the finance
-     * listing; it never decides whether the payment itself is readable, so it
-     * is not a reason to refuse one.
+     * Square's processing fee on the payment so far, as a fee charged:
+     * positive, with adjustments netted. Null when Square has not reported one
+     * yet, or reports it in a shape this does not read. The fee only informs
+     * the finance listing; it never decides whether the payment itself is
+     * readable, so it is not a reason to refuse one.
+     *
+     * Square's own documents disagree on the sign. The payments guide says the
+     * `processing_fee` amounts are "always negative or zero, representing
+     * money deducted from the payment" (its GetPayment example shows -425);
+     * the ProcessingFee reference says "positive values represent funds being
+     * assessed, while negative values represent funds being returned". So the
+     * sign of the `INITIAL` fee - always an assessment - says which convention
+     * a response uses, and the net is read in it. Without a non-zero initial
+     * fee the convention cannot be told, and only a zero total is known.
      */
     private static function processingFee(mixed $fees, string $currency): ?int
     {
@@ -86,15 +95,23 @@ final readonly class SquarePaymentFacts
             return null;
         }
         $total = 0;
+        $initial = 0;
         foreach ($fees as $fee) {
             $money = is_array($fee) ? ($fee['amount_money'] ?? null) : null;
             if (! is_array($money) || ! is_int($money['amount'] ?? null) || ($money['currency'] ?? null) !== $currency) {
                 return null;
             }
             $total += $money['amount'];
+            if (($fee['type'] ?? null) === 'INITIAL') {
+                $initial += $money['amount'];
+            }
         }
 
-        return $total;
+        return match (true) {
+            $initial < 0 => -$total,
+            $initial > 0 => $total,
+            default => $total === 0 ? 0 : null,
+        };
     }
 
     private static function money(mixed $money, string $currency): int
