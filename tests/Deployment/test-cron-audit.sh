@@ -119,6 +119,8 @@ legacy=(
     '* * * * * cd $HOME/.deployments/svc-laravel/releases/old && php artisan schedule:run'
     "* * * * * /usr/bin/php $home/svc-laravel/artisan schedule:run"
     '* * * * * php artisan schedule:run # JOB:svc-laravel-scheduler'
+    '* * * * * php artisan schedule:run # JOB:svc-laravel-scheduler   '
+    '* * * * * php artisan schedule:run # JOB:svc-laravel-scheduler (legacy)'
 )
 for line in "${legacy[@]}"; do
     write_crontab "$canonical" "$line"

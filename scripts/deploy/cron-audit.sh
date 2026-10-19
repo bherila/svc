@@ -57,9 +57,17 @@ counts=$(LC_ALL=C awk -v app="$stable_dir" -v canonical="$canonical" '
         }
         return 0
     }
-    function has_job(line,   tag) {
-        tag = "# JOB:" app "-scheduler"
-        return length(line) >= length(tag) && substr(line, length(line) - length(tag) + 1) == tag
+    # The scheduler job id anywhere it ends at an id boundary: trailing spaces or an annotation
+    # after it must not hide a legacy scheduler.
+    function has_job(line,   tag, offset, relative, start) {
+        tag = "JOB:" app "-scheduler"
+        offset = 1
+        while ((relative = index(substr(line, offset), tag)) != 0) {
+            start = offset + relative - 1
+            if (!component(substr(line, start + length(tag), 1))) return 1
+            offset = start + 1
+        }
+        return 0
     }
     /^[[:space:]]*(#|$)/ { next }
     /^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*[[:space:]]*=/ { next }

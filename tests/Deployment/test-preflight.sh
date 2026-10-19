@@ -130,6 +130,8 @@ unmanaged=(
     '* * * * * cd $HOME/.deployments/svc-laravel/releases/old && php artisan schedule:run'
     "* * * * * php $fixture_home/svc-laravel/artisan schedule:run"
     '* * * * * php artisan schedule:run # JOB:svc-laravel-scheduler'
+    '* * * * * php artisan schedule:run # JOB:svc-laravel-scheduler   '
+    '* * * * * php artisan schedule:run # JOB:svc-laravel-scheduler (legacy)'
 )
 
 rm -f "$crontab_file"
