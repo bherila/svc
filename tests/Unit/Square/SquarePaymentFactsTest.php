@@ -108,6 +108,33 @@ final class SquarePaymentFactsTest extends TestCase
     }
 
     /** @return array<string, mixed> */
+    /** S7: Square's processing fees so far, summed; unknown rather than refused when unreadable. */
+    public function test_the_processing_fee_is_summed_and_unknown_when_it_cannot_be_read(): void
+    {
+        $raw = $this->fixture();
+        $this->assertNull(SquarePaymentFacts::from($raw, 'pay_fixture_1')->processingFee);
+        $raw['processing_fee'] = [];
+        $this->assertNull(SquarePaymentFacts::from($raw, 'pay_fixture_1')->processingFee);
+        $raw['processing_fee'] = [
+            ['type' => 'INITIAL', 'amount_money' => ['amount' => 65, 'currency' => 'USD']],
+            ['type' => 'ADJUSTMENT', 'amount_money' => ['amount' => -5, 'currency' => 'USD']],
+        ];
+        $this->assertSame(60, SquarePaymentFacts::from($raw, 'pay_fixture_1')->processingFee);
+        foreach ([
+            [['amount_money' => ['amount' => 65, 'currency' => 'EUR']]],
+            [['amount_money' => ['amount' => '65', 'currency' => 'USD']]],
+            [['type' => 'INITIAL']],
+            ['initial' => ['amount_money' => ['amount' => 65, 'currency' => 'USD']]],
+            'INITIAL',
+        ] as $unreadable) {
+            $raw['processing_fee'] = $unreadable;
+            $facts = SquarePaymentFacts::from($raw, 'pay_fixture_1');
+            $this->assertNull($facts->processingFee, (string) json_encode($unreadable));
+            // The payment itself is still read.
+            $this->assertSame(1200, $facts->amount);
+        }
+    }
+
     private function fixture(): array
     {
         return ['id' => 'pay_fixture_1', 'status' => 'COMPLETED', 'order_id' => 'order_fixture_1', 'location_id' => 'LOCFIXTURE01', 'amount_money' => ['amount' => 1200, 'currency' => 'USD'], 'created_at' => '2030-02-01T16:00:00Z', 'source_type' => 'CARD', 'card_details' => ['card_payment_timeline' => ['captured_at' => '2030-02-01T16:00:00Z']]];

@@ -18,6 +18,8 @@ final readonly class SquarePaymentFacts
         public int $amount,
         public int $refundedAmount,
         public CarbonImmutable $receivedAt,
+        /** Square's processing fee so far, positive for a fee charged; null until Square reports one. */
+        public ?int $processingFee = null,
     ) {}
 
     /** @param array<string, mixed> $payment */
@@ -68,7 +70,31 @@ final readonly class SquarePaymentFacts
             throw SquareRequestFailed::unreadable();
         }
 
-        return new self($expectedId, $order, $location, $currency, $amount, $refund, $received);
+        return new self($expectedId, $order, $location, $currency, $amount, $refund, $received, self::processingFee($payment['processing_fee'] ?? null, $currency));
+    }
+
+    /**
+     * The total of Square's processing fees on the payment (an adjustment may
+     * be negative), or null when Square has not reported them yet or reports
+     * them in a shape this does not read. The fee only informs the finance
+     * listing; it never decides whether the payment itself is readable, so it
+     * is not a reason to refuse one.
+     */
+    private static function processingFee(mixed $fees, string $currency): ?int
+    {
+        if (! is_array($fees) || $fees === [] || ! array_is_list($fees)) {
+            return null;
+        }
+        $total = 0;
+        foreach ($fees as $fee) {
+            $money = is_array($fee) ? ($fee['amount_money'] ?? null) : null;
+            if (! is_array($money) || ! is_int($money['amount'] ?? null) || ($money['currency'] ?? null) !== $currency) {
+                return null;
+            }
+            $total += $money['amount'];
+        }
+
+        return $total;
     }
 
     private static function money(mixed $money, string $currency): int
