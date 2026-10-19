@@ -212,6 +212,22 @@ class PaymentReconciliationTest extends TestCase
         $this->assertNull($reviewed->review_flagged_at);
     }
 
+    public function test_deactivating_a_flagged_allocation_resolves_its_review_even_on_a_refunded_payment(): void
+    {
+        [$creator, $workspace, $payment] = $this->payment('Review resolved by deactivation', 10000);
+        $service = app(PaymentReconciliationService::class);
+        $attributes = $this->attributes(10000, 'USD');
+        $allocation = $service->upsert($workspace, $payment, $creator, $attributes);
+        app(InvoiceLifecycleService::class)->setRefundedAmount($payment, 10000, $workspace);
+        $this->assertSame(ReconciliationReviewReason::ProcessorRefund, $allocation->fresh()->review_reason);
+
+        $deactivated = $service->deactivate($workspace, $payment->fresh(), 'ledger', $attributes['external_transaction_uuid']);
+
+        $this->assertFalse($deactivated->is_active);
+        $this->assertNull($deactivated->review_reason);
+        $this->assertNull($deactivated->review_flagged_at);
+    }
+
     public function test_reconciliation_date_must_be_a_real_calendar_date(): void
     {
         [$creator, $workspace, $payment] = $this->payment('Invalid calendar date', 1000);

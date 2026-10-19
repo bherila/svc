@@ -71,6 +71,7 @@ no provider binding are unaffected.
 
 - Requires `finance.reconcile` and workspace owner/admin access.
 - Deactivates the allocation for auditability; it does not delete its history.
+  It also clears a processor review flag (below).
 
 ## Processor refunds and disputes
 
@@ -91,7 +92,9 @@ payment is `disputed` until the dispute is won (in part or in full), when it is
 `succeeded` again; the flag stays until reviewed. An allocation may therefore
 exceed `net_amount` while it is flagged. To clear the flag, write the
 allocation again with an amount that fits the net (`PUT`), or deactivate it
-(`DELETE`); a `PUT` is refused on a payment that is no longer `succeeded`.
+(`DELETE`), which clears it too. A `PUT` is refused on a payment that is no
+longer `succeeded` (fully refunded or disputed), so there `DELETE` is the way to
+resolve the review. An inactive allocation never reports `needs_review`.
 
 Cross-workspace resource combinations return `404`. Missing or expired tokens
 return `401`; missing abilities or insufficient workspace roles return `403`;

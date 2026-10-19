@@ -170,7 +170,7 @@ workflow. It is intentionally provider-neutral and contains no production data.
 - a payment processor's refund or dispute is recorded regardless: active
   allocations are kept as written and flagged with `review_reason`
   (`processor_refund` or `processor_dispute`) and `review_flagged_at`, which the
-  next finance write that fits the payment clears
+  next finance write that fits the payment, or deactivation, clears
 - deactivation preserves reconciliation history instead of deleting it
 
 `client_billing_schedules`

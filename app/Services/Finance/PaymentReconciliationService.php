@@ -162,7 +162,10 @@ final class PaymentReconciliationService
                 ->tap(Locks::forUpdate())
                 ->firstOrFail();
 
-            $reconciliation->forceFill(['is_active' => false])->save();
+            // Deactivating is how the finance system resolves a flagged
+            // allocation it no longer stands behind - and the only way left on
+            // a payment that is no longer succeeded, where a PUT is refused.
+            $reconciliation->forceFill(['is_active' => false, 'review_reason' => null, 'review_flagged_at' => null])->save();
 
             return $reconciliation->fresh();
         });

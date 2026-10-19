@@ -128,8 +128,17 @@ class FinanceReconciliationApiTest extends TestCase
             ->assertJsonPath('data.0.reconciliations.0.review_reason', 'processor_refund')
             ->assertJsonPath('data.0.reconciliations.0.review_flagged_at', fn (mixed $at): bool => is_string($at) && $at !== '');
 
-        // The finance write path keeps its capacity rule.
+        // The finance write path keeps its capacity rule; on a refunded
+        // payment a PUT is refused outright, so DELETE is how the review ends.
         $this->withToken($token)->putJson($path, ['allocated_amount' => 6000, 'currency' => 'USD'])->assertUnprocessable();
+        $this->withToken($token)->deleteJson($path)
+            ->assertOk()
+            ->assertJsonPath('data.is_active', false)
+            ->assertJsonPath('data.needs_review', false)
+            ->assertJsonPath('data.review_reason', null)
+            ->assertJsonPath('data.review_flagged_at', null);
+        $this->withToken($token)->getJson("/api/v1/workspaces/{$workspace->public_id}/invoice-payments?status=refunded")
+            ->assertJsonPath('data.0.reconciliations.0.needs_review', false);
     }
 
     public function test_workspace_viewer_can_read_but_cannot_reconcile(): void

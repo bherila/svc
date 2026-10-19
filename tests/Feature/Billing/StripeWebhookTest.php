@@ -344,6 +344,70 @@ class StripeWebhookTest extends TestCase
         $this->assertSame('disputed', $fresh?->status);
     }
 
+    public function test_a_refund_reversal_delivered_after_a_newer_payment_event_is_still_applied(): void
+    {
+        [, , $payment] = $this->stripePayment('late-refund-reversal');
+        $refund = $this->eventPayload('evt_late_reversal_refund', 'charge.refunded', [
+            'id' => 'ch_late_reversal', 'payment_intent' => 'pi_synthetic_billing', 'amount_refunded' => 400, 'currency' => 'usd',
+        ], 100);
+        $this->webhookPost($refund, $this->signature($refund))->assertOk();
+        $dispute = $this->eventPayload('evt_late_reversal_dispute', 'charge.dispute.created', [
+            'id' => 'dp_late_reversal', 'charge' => 'ch_late_reversal', 'payment_intent' => 'pi_synthetic_billing', 'amount' => 1000, 'currency' => 'usd',
+        ], 300);
+        $this->webhookPost($dispute, $this->signature($dispute))->assertOk();
+
+        // Stripe does not order its events: the refund failed at 200 but the
+        // notification arrives after the dispute's at 300. What Stripe holds
+        // refunded now is read live, so it is applied whatever came before.
+        $this->fakeStripeRefunds([
+            ['id' => 're_late_reversal', 'object' => 'refund', 'amount' => 400, 'currency' => 'usd', 'status' => 'failed', 'charge' => 'ch_late_reversal'],
+        ]);
+        $failed = $this->eventPayload('evt_late_reversal_failed', 'charge.refund.updated', [
+            'id' => 're_late_reversal', 'object' => 'refund', 'amount' => 400, 'currency' => 'usd', 'status' => 'failed',
+            'charge' => 'ch_late_reversal', 'payment_intent' => 'pi_synthetic_billing',
+        ], 200);
+        $this->webhookPost($failed, $this->signature($failed))->assertOk()->assertJsonPath('duplicate', false);
+
+        $fresh = $payment->fresh();
+        $this->assertSame(0, $fresh?->refunded_amount);
+        $this->assertSame('disputed', $fresh?->status);
+        // The older event does not become the payment's latest.
+        $this->assertSame(300, $fresh?->provider_event_created_at);
+        $this->assertSame('evt_late_reversal_dispute', $fresh?->provider_event_id);
+
+        $again = $this->eventPayload('evt_late_reversal_failed_again', 'refund.failed', [
+            'id' => 're_late_reversal', 'object' => 'refund', 'amount' => 400, 'currency' => 'usd', 'status' => 'failed',
+            'charge' => 'ch_late_reversal', 'payment_intent' => 'pi_synthetic_billing',
+        ], 250);
+        $this->webhookPost($again, $this->signature($again))->assertOk();
+        $this->assertSame(0, $payment->fresh()?->refunded_amount);
+        $this->assertSame(2, ClientCompanyActivity::query()->where('action', 'invoice.payment_refunded')->count());
+    }
+
+    public function test_a_won_dispute_on_an_invoice_paid_again_meanwhile_is_restored_as_an_overpayment(): void
+    {
+        [, $workspace, $payment, $invoice] = $this->stripePayment('won-after-repayment');
+        $dispute = $this->eventPayload('evt_repaid_dispute', 'charge.dispute.created', [
+            'id' => 'dp_repaid', 'charge' => 'ch_repaid', 'payment_intent' => 'pi_synthetic_billing', 'amount' => 1000, 'currency' => 'usd',
+        ], 100);
+        $this->webhookPost($dispute, $this->signature($dispute))->assertOk();
+        app(InvoiceLifecycleService::class)->applyPayment($invoice->fresh(), [
+            'amount' => 1000, 'currency' => 'USD', 'method' => 'wire', 'status' => 'succeeded', 'idempotency_key' => 'repaid-during-dispute',
+        ], $workspace);
+        $this->assertSame('paid', $invoice->fresh()->status);
+
+        $won = $this->eventPayload('evt_repaid_dispute_won', 'charge.dispute.closed', [
+            'id' => 'dp_repaid', 'charge' => 'ch_repaid', 'payment_intent' => 'pi_synthetic_billing', 'amount' => 1000, 'currency' => 'usd', 'status' => 'won',
+        ], 200);
+        $this->webhookPost($won, $this->signature($won))->assertOk()->assertJsonPath('duplicate', false);
+
+        $this->assertSame('succeeded', $payment->fresh()?->status);
+        $this->assertSame('paid', $invoice->fresh()->status);
+        $this->assertSame(0, $invoice->fresh()->balance_amount);
+        $received = ClientCompanyActivity::query()->where('action', 'invoice.payment_received')->where('subject_public_id', $payment->public_id)->latest('id')->firstOrFail();
+        $this->assertSame(1000, $received->payload['overpaid_amount'] ?? null);
+    }
+
     public function test_out_of_order_processing_event_cannot_reopen_a_paid_invoice(): void
     {
         [, $workspace, $company] = $this->tenant('late-processing');

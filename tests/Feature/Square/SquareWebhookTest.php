@@ -2,8 +2,10 @@
 
 namespace Tests\Feature\Square;
 
+use App\Models\ClientCompanyActivity;
 use App\Models\ClientInvoicePayment;
 use App\Models\InvoiceSquareLink;
+use App\Services\Billing\InvoiceLifecycleService;
 use App\Services\Finance\PaymentReconciliationService;
 use App\Services\Square\SquareLinkService;
 use App\Services\Square\SquarePaymentReconciler;
@@ -135,6 +137,32 @@ final class SquareWebhookTest extends TestCase
         $this->assertSame('succeeded', $payment->fresh()->status);
         $this->assertSame('paid', $invoice->fresh()->status);
         $this->assertSame(1, $invoice->payments()->count());
+    }
+
+    public function test_a_won_dispute_after_the_invoice_was_paid_again_is_restored_not_retried_forever(): void
+    {
+        [$workspace, , , $invoice] = $this->paymentFixture();
+        app(SquarePaymentReconciler::class)->invoice($workspace, 'inv_fixture_1');
+        $payment = $invoice->payments()->firstOrFail();
+        $this->squareDisputes['dispute_fixture_6'] = self::squareDispute('dispute_fixture_6', 'pay_fixture_1', 'EVIDENCE_REQUIRED');
+        $this->deliver(['event_id' => 'evt_fixture_repaid_dispute', 'type' => 'dispute.created', 'data' => ['type' => 'dispute', 'id' => 'dispute_fixture_6']])->assertOk();
+        app(InvoiceLifecycleService::class)->applyPayment($invoice->fresh(), [
+            'amount' => 12_345, 'currency' => 'USD', 'method' => 'wire', 'status' => 'succeeded', 'idempotency_key' => 'synthetic-repaid-square',
+        ], $workspace);
+
+        foreach (['WON', 'INQUIRY_CLOSED'] as $index => $state) {
+            if ($index === 1) {
+                $this->squareDisputes['dispute_fixture_6']['state'] = 'EVIDENCE_REQUIRED';
+                $this->deliver(['event_id' => 'evt_fixture_repaid_reopened', 'type' => 'dispute.state.updated', 'data' => ['type' => 'dispute', 'id' => 'dispute_fixture_6']])->assertOk();
+                $this->assertSame('disputed', $payment->fresh()->status);
+            }
+            $this->squareDisputes['dispute_fixture_6']['state'] = $state;
+            $this->deliver(['event_id' => 'evt_fixture_repaid_'.$state, 'type' => 'dispute.state.updated', 'data' => ['type' => 'dispute', 'id' => 'dispute_fixture_6']])->assertOk();
+            $this->assertSame('succeeded', $payment->fresh()->status, $state);
+            $this->assertSame('paid', $invoice->fresh()->status, $state);
+        }
+        $received = ClientCompanyActivity::query()->where('action', 'invoice.payment_received')->where('subject_public_id', $payment->public_id)->latest('id')->firstOrFail();
+        $this->assertSame(12_345, $received->payload['overpaid_amount'] ?? null);
     }
 
     public function test_a_lost_or_accepted_dispute_keeps_the_payment_disputed(): void
