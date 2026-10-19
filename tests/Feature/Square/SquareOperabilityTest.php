@@ -4,13 +4,23 @@ namespace Tests\Feature\Square;
 
 use App\Models\AgentMutationAudit;
 use App\Models\AgentMutationReceipt;
+use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
+use App\Models\InvoiceSquareLink;
 use App\Models\SquareSyncRun;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Square\SquareInvoiceReconciliation;
+use App\Services\Square\SquareLinkService;
 use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
+use App\Support\AgentApi\AgentApiVersion;
+use App\Support\Square\SquareInvoiceReference;
+use App\Support\Square\SquareMatchMethod;
+use Illuminate\Cache\RateLimiter;
+use Illuminate\Contracts\Cache\Repository;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Factory as HttpFactory;
+use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\Http;
@@ -126,6 +136,68 @@ final class SquareOperabilityTest extends TestCase
         $this->assertSame(['paid', 1], [$invoice->fresh()->status, $invoice->payments()->count()]);
     }
 
+    public function test_a_square_invoice_re_linked_before_square_is_read_records_nothing_anywhere(): void
+    {
+        [$workspace, $owner, $company, $invoice] = $this->paymentFixture();
+        config(['agent_api.writes_enabled' => true]);
+        $other = $this->otherInvoice($workspace, $company);
+        // Another manager re-points the Square invoice after the request has
+        // found its link, before Square is read: the budget check sits between.
+        $relink = fn () => $this->relink($workspace, $owner, $invoice, $other);
+        $this->app->instance(RateLimiter::class, new class(app('cache')->store(), $relink) extends RateLimiter
+        {
+            public function __construct(Repository $cache, private \Closure $relink)
+            {
+                parent::__construct($cache);
+            }
+
+            public function attempt($key, $maxAttempts, \Closure $callback, $decaySeconds = 60)
+            {
+                ($this->relink)();
+
+                return parent::attempt($key, $maxAttempts, $callback, $decaySeconds);
+            }
+        });
+        $this->actingAsMcp($owner, self::SCOPES);
+
+        $this->postJson($this->url($workspace, $invoice), [], ['Idempotency-Key' => 'synthetic-relinked'])->assertUnprocessable()
+            ->assertJsonPath('message', 'The invoice\'s Square link changed while it was being reconciled. Read the invoice and try again.');
+
+        $this->assertSame([0, 0], [$invoice->payments()->count(), $other->payments()->count()]);
+    }
+
+    public function test_a_square_invoice_re_linked_while_square_is_read_records_nothing_anywhere(): void
+    {
+        [$workspace, $owner, $company, $invoice] = $this->paymentFixture();
+        config(['agent_api.writes_enabled' => true]);
+        $other = $this->otherInvoice($workspace, $company);
+        $relinked = false;
+        Http::swap(new HttpFactory);
+        Http::preventStrayRequests();
+        Http::fake(function (Request $request) use ($workspace, $owner, $invoice, $other, &$relinked) {
+            $path = rawurldecode((string) parse_url($request->url(), PHP_URL_PATH));
+            if ($path === '/v2/invoices/inv_fixture_1') {
+                if (! $relinked) {
+                    $relinked = true;
+                    $this->relink($workspace, $owner, $invoice, $other);
+                }
+
+                return Http::response(['invoice' => $this->paymentInvoice]);
+            }
+            if ($path === '/v2/orders/order_fixture_1') {
+                return Http::response(['order' => $this->paymentOrder]);
+            }
+
+            return Http::response(['payment' => $this->squarePayments[substr($path, strlen('/v2/payments/'))] ?? null]);
+        });
+        $this->actingAsMcp($owner, self::SCOPES);
+
+        $this->postJson($this->url($workspace, $invoice), [], ['Idempotency-Key' => 'synthetic-relinked'])->assertUnprocessable();
+
+        $this->assertTrue($relinked);
+        $this->assertSame([0, 0], [$invoice->payments()->count(), $other->payments()->count()]);
+    }
+
     public function test_the_command_reconciles_one_invoice_by_its_public_id(): void
     {
         [$workspace, , $company, $invoice] = $this->paymentFixture();
@@ -198,6 +270,20 @@ final class SquareOperabilityTest extends TestCase
         $this->assertSame(1, Artisan::call('svc:square:status', ['--format' => 'json']));
         $this->assertFalse(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['workspace_present']);
         $this->artisan('svc:square:status', ['--format' => 'yaml'])->assertExitCode(2);
+    }
+
+    private function otherInvoice(Workspace $workspace, ClientCompany $company): ClientInvoice
+    {
+        return ClientInvoice::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'invoice_number' => 'SYNTHETIC-OTHER', 'invoice_kind' => 'ad_hoc', 'status' => 'issued', 'currency' => 'USD', 'total_amount' => 12_345, 'balance_amount' => 12_345, 'is_visible_to_client' => true]);
+    }
+
+    private function relink(Workspace $workspace, User $owner, ClientInvoice $from, ClientInvoice $to): void
+    {
+        if (InvoiceSquareLink::query()->where('workspace_id', $workspace->id)->where('active_invoice_slot', $to->id)->exists()) {
+            return;
+        }
+        app(SquareLinkService::class)->unlink($workspace, $from->refresh(), $owner, AgentApiVersion::for($from));
+        app(SquareLinkService::class)->link($workspace, $to->refresh(), $owner, AgentApiVersion::for($to), new SquareInvoiceReference('inv_fixture_1', '000001-R-0001', 'USD', SquareMatchMethod::Manual), false);
     }
 
     private function url(Workspace $workspace, ClientInvoice $invoice): string

@@ -10,6 +10,7 @@ use App\Services\Billing\OverpaymentCreditAuditor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Tests\Concerns\WritesLegacyCrossTenantRows;
 use Tests\TestCase;
 
 /**
@@ -22,6 +23,7 @@ use Tests\TestCase;
 class AuditOverpaymentCreditCommandTest extends TestCase
 {
     use RefreshDatabase;
+    use WritesLegacyCrossTenantRows;
 
     public function test_a_pool_that_spent_its_credit_twice_is_reported_as_a_deficit(): void
     {
@@ -223,6 +225,32 @@ class AuditOverpaymentCreditCommandTest extends TestCase
         $this->assertSame([$short->public_id, $other->public_id], array_column($this->report(['--list' => true])['pools'], 'company'));
         $this->assertSame(2, $this->report()['summary']['in_deficit']);
         $this->assertSame([$workspace->id], array_map(static fn ($pool): int => $pool->workspaceId, app(OverpaymentCreditAuditor::class)->partitions($workspace)));
+    }
+
+    public function test_a_scoped_listing_never_reads_a_company_of_another_workspace(): void
+    {
+        $mine = $this->company('scoped-mine');
+        $theirs = $this->company('scoped-theirs');
+        // A legacy invoice of this workspace naming the other workspace's company.
+        $this->writingLegacyCrossTenantRows(function () use ($mine, $theirs): void {
+            $invoice = $this->overpaid($mine, 5000);
+            DB::table('client_invoices')->where('id', $invoice->id)->update(['client_company_id' => $theirs->id]);
+        });
+        $workspace = Workspace::query()->findOrFail($mine->workspace_id);
+        $reads = [];
+        DB::listen(function ($query) use (&$reads): void {
+            if (str_contains($query->sql, 'client_companies')) {
+                $reads[] = $query->sql;
+            }
+        });
+
+        $pools = $this->report(['--workspace' => $workspace->public_id, '--list' => true])['pools'];
+
+        $this->assertSame(['missing'], array_column($pools, 'company'));
+        $this->assertNotEmpty($reads);
+        foreach ($reads as $sql) {
+            $this->assertStringContainsString('workspace_id', $sql);
+        }
     }
 
     public function test_an_unknown_workspace_option_is_refused(): void

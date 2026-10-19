@@ -167,7 +167,7 @@ final class AuditOverpaymentCreditCommand extends Command
         $names = [];
         $companyIds = array_values(array_unique(array_merge([], ...array_values($companies))));
         foreach (array_chunk($companyIds, 500) as $chunk) {
-            foreach (DB::table('client_companies')->whereIn('id', $chunk)->get(['id', 'workspace_id', 'public_id']) as $company) {
+            foreach (DB::table('client_companies')->whereIn('workspace_id', $workspaceIds)->whereIn('id', $chunk)->get(['id', 'workspace_id', 'public_id']) as $company) {
                 $names[(int) $company->workspace_id][(int) $company->id] = (string) $company->public_id;
             }
         }

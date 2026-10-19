@@ -62,30 +62,23 @@ final class SquareInvoiceReconciliation
         } catch (SquareRequestFailed|DomainException $failure) {
             $refetched = $failure;
         }
+        $settle = function () use ($user, $workspace, $link, $refetched): void {
+            $this->admit($user, $workspace);
+            if ($refetched instanceof \Throwable) {
+                throw $refetched;
+            }
+            $this->applyPinned($workspace, $link, $refetched);
+        };
         $this->mutations->run($user, $workspace, $clientId, 'invoices.square_reconcile', $idempotencyKey, ['invoice_id' => $invoiceId],
-            function () use ($user, $workspace, $invoice, $refetched): array {
-                $this->admit($user, $workspace);
-                if ($refetched instanceof \Throwable) {
-                    throw $refetched;
-                }
-                if ($refetched !== null) {
-                    $this->reconciler->apply($workspace, $refetched);
-                }
+            function () use ($settle, $invoice): array {
+                $settle();
 
                 return [$invoice->public_id];
             },
             // A replayed key does not re-run the callback, so this attempt's
             // outcome is applied here too: a Square failure is raised and
             // audited as one, and fresh facts reach the ledger.
-            function (array $ids) use ($user, $workspace, $refetched): void {
-                $this->admit($user, $workspace);
-                if ($refetched instanceof \Throwable) {
-                    throw $refetched;
-                }
-                if ($refetched !== null) {
-                    $this->reconciler->apply($workspace, $refetched);
-                }
-            },
+            fn (array $ids) => $settle(),
         );
 
         return $invoice->refresh();
@@ -101,9 +94,22 @@ final class SquareInvoiceReconciliation
     public function reconcile(Workspace $workspace, string $invoiceId): ClientInvoice
     {
         [$invoice, $link] = $this->linked($workspace, $invoiceId);
-        $this->reconciler->invoice($workspace, $link->square_invoice_id);
+        $this->applyPinned($workspace, $link, $this->reconciler->refetch($workspace, $link->square_invoice_id));
 
         return $invoice->refresh();
+    }
+
+    /**
+     * Applies Square's facts only to the link that was asked about: if the
+     * Square invoice was re-linked to another invoice meanwhile, nothing is
+     * recorded on either, and the caller is told.
+     */
+    private function applyPinned(Workspace $workspace, InvoiceSquareLink $link, ?SquareInvoiceRefetch $refetched): void
+    {
+        if ($refetched === null || $refetched->activeLink?->id !== $link->id) {
+            throw new DomainException('The invoice\'s Square link changed while it was being reconciled. Read the invoice and try again.');
+        }
+        $this->reconciler->apply($workspace, $refetched);
     }
 
     /** @return array{ClientInvoice, InvoiceSquareLink} */
