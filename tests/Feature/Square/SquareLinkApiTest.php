@@ -9,13 +9,18 @@ use App\Models\ClientCompanyActivity;
 use App\Models\ClientInvoice;
 use App\Models\CompanySquareCustomer;
 use App\Models\InvoiceSquareLink;
+use App\Models\SquareInvoiceCoverage;
 use App\Models\SquareInvoiceSnapshot;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Square\SquareLinkService;
 use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
 use App\Support\AgentApi\AgentApiVersion;
+use App\Support\Concurrency\LockOrderRecorder;
+use App\Support\Concurrency\LockResource;
 use App\Support\Square\SquareIdentifiers;
+use App\Support\Square\SquareInvoiceReference;
+use App\Support\Square\SquareMatchMethod;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
@@ -317,6 +322,99 @@ final class SquareLinkApiTest extends TestCase
     }
 
     /**
+     * One svc invoice covering what Square split into several (#487): the
+     * primary pair is linked and each other Square invoice is recorded as
+     * covered by it. A coverage is not a link and never stands beside one.
+     */
+    #[DataProvider('transports')]
+    public function test_a_linked_invoice_records_the_square_invoices_it_covers_besides(string $transport): void
+    {
+        [$workspace, $owner, $company, $invoice] = $this->fixture();
+        $other = $this->invoice($company, 'SYN-2');
+        $void = $this->invoice($company, 'SYN-VOID', 'void');
+        $this->actingAsMcp($owner, self::SCOPES);
+        $cover = fn (ClientInvoice $record, array $body, string $key) => $this->send($transport, 'invoices.square_cover', $workspace, ['invoice_id' => $record->public_id], ['expected_version' => AgentApiVersion::for($record->refresh()), 'confirm' => true, ...$body], $key);
+        $second = ['square_invoice_id' => 'inv:0-covered2', 'square_invoice_number' => '000001-R-0002'];
+
+        // Not linked yet: there is no primary pair to cover besides.
+        $this->refused($cover($invoice, $second, 'synthetic-unlinked-cover'), 422);
+        $this->success($transport, 'invoices.square_link', $workspace, ['invoice_id' => $invoice->public_id], ['expected_version' => AgentApiVersion::for($invoice), 'square_invoice_id' => 'inv:0-primary', 'square_invoice_number' => '000001-R-0001'], 'synthetic-primary');
+        $this->refused($cover($void, $second, 'synthetic-void-cover'), 422);
+        $this->refused($cover($invoice, [...$second, 'currency' => 'EUR'], 'synthetic-other-currency'), 422);
+        $this->refused($cover($invoice, ['square_invoice_id' => 'inv:0-primary', 'square_invoice_number' => '000001-R-0001'], 'synthetic-cover-primary'), 409);
+
+        $covered = $this->success($transport, 'invoices.square_cover', $workspace, ['invoice_id' => $invoice->public_id], ['expected_version' => AgentApiVersion::for($invoice->refresh()), 'confirm' => true, ...$second, 'currency' => 'USD'], 'synthetic-cover');
+        $this->assertSame([['inv:0-covered2', '000001-R-0002']], array_map(static fn (array $coverage): array => [$coverage['square_invoice_id'], $coverage['square_invoice_number']], $covered['data']['covers']));
+        $this->assertSame('inv:0-primary', $covered['data']['link']['square_invoice_id'], 'The link is unchanged.');
+        $this->assertSame($covered['data']['covers'], $this->getJson("/api/v1/workspaces/{$workspace->public_id}/invoices/{$invoice->public_id}")->assertOk()->json('data.square.covers'));
+        // Covered once, anywhere; and a covered Square invoice is not linked.
+        $this->refused($cover($invoice, $second, 'synthetic-cover-again'), 409);
+        $this->success($transport, 'invoices.square_link', $workspace, ['invoice_id' => $other->public_id], ['expected_version' => AgentApiVersion::for($other), 'square_invoice_id' => 'inv:0-other', 'square_invoice_number' => '000001-R-0003'], 'synthetic-other-primary');
+        $this->refused($cover($other, $second, 'synthetic-cover-elsewhere'), 409);
+        $third = $this->invoice($company, 'SYN-3');
+        $this->refused($this->send($transport, 'invoices.square_link', $workspace, ['invoice_id' => $third->public_id], ['expected_version' => AgentApiVersion::for($third), ...$second], 'synthetic-link-covered'), 409);
+        $this->assertSame(409, $this->rest('invoices.square_link', $workspace, ['invoice_id' => $other->public_id], ['expected_version' => AgentApiVersion::for($other->refresh()), 'replace' => true, ...$second], 'synthetic-relink-covered')->status());
+        // Unlinked, the invoice could be collected by SVC while what it covers still reads as accounted for.
+        $this->refused($this->send($transport, 'invoices.square_unlink', $workspace, ['invoice_id' => $invoice->public_id], ['expected_version' => AgentApiVersion::for($invoice->refresh()), 'confirm' => true], 'synthetic-unlink-covering'), 409);
+        $this->assertNotNull(InvoiceSquareLink::query()->where('workspace_id', $workspace->id)->where('active_invoice_slot', $invoice->id)->first());
+        // Another invoice cannot remove it; this one can, and it stays as history.
+        $this->refused($this->send($transport, 'invoices.square_uncover', $workspace, ['invoice_id' => $other->public_id], ['expected_version' => AgentApiVersion::for($other->refresh()), 'confirm' => true, 'square_invoice_id' => 'inv:0-covered2'], 'synthetic-uncover-elsewhere'), 409);
+        $cleared = $this->success($transport, 'invoices.square_uncover', $workspace, ['invoice_id' => $invoice->public_id], ['expected_version' => AgentApiVersion::for($invoice->refresh()), 'confirm' => true, 'square_invoice_id' => 'inv:0-covered2'], 'synthetic-uncover');
+        $this->assertSame([], $cleared['data']['covers']);
+        $this->rest('invoices.square_uncover', $workspace, ['invoice_id' => $invoice->public_id], ['expected_version' => $cleared['data']['invoice_version'], 'confirm' => true, 'square_invoice_id' => 'inv:0-covered2'], 'synthetic-uncover-again')->assertConflict();
+        $this->assertSame(1, SquareInvoiceCoverage::query()->where('workspace_id', $workspace->id)->whereNotNull('cleared_at')->whereNull('active_square_invoice_slot')->count());
+        $this->assertSame(['invoice.square_linked', 'invoice.square_coverage_added', 'invoice.square_linked', 'invoice.square_coverage_removed'], $this->activity($workspace));
+        // Free again, it may be covered by the other invoice.
+        $this->success($transport, 'invoices.square_cover', $workspace, ['invoice_id' => $other->public_id], ['expected_version' => AgentApiVersion::for($other->refresh()), 'confirm' => true, ...$second], 'synthetic-cover-freed');
+    }
+
+    /**
+     * A link and a coverage claim a Square invoice in two tables whose unique
+     * indexes cannot see each other, and each locks only its own invoice. Both
+     * take the workspace row next, before reading the other table, so two
+     * claims on one Square invoice are serialised.
+     */
+    public function test_links_and_coverages_serialise_on_the_workspace_after_the_invoice(): void
+    {
+        [$workspace, $owner, $company, $invoice] = $this->fixture();
+        $other = $this->invoice($company, 'SYN-2');
+        $links = app(SquareLinkService::class);
+        LockOrderRecorder::start();
+        try {
+            $links->link($workspace, $invoice, $owner, AgentApiVersion::for($invoice), new SquareInvoiceReference('inv:0-primary', '000001-R-0001', null, SquareMatchMethod::Manual), false);
+            $links->cover($workspace, $invoice->refresh(), $owner, AgentApiVersion::for($invoice), new SquareInvoiceReference('inv:0-covered2', '000001-R-0002', null, SquareMatchMethod::Manual));
+            $links->link($workspace, $other, $owner, AgentApiVersion::for($other), new SquareInvoiceReference('inv:0-other', '000001-R-0003', null, SquareMatchMethod::Manual), false);
+            $sequences = LockOrderRecorder::sequences();
+        } finally {
+            LockOrderRecorder::stop();
+        }
+
+        $this->assertCount(3, $sequences);
+        foreach ($sequences as $sequence) {
+            $this->assertSame([LockResource::ClientInvoice, LockResource::Workspace], array_slice($sequence, 0, 2));
+        }
+    }
+
+    /** Another workspace's invoice is never covered from here, and its coverage of the same Square id blocks nothing here. */
+    public function test_coverage_is_scoped_to_the_workspace(): void
+    {
+        [$workspace, $owner, $company, $invoice] = $this->fixture();
+        [$elsewhere, $stranger, $otherCompany, $foreign] = $this->fixture('synthetic-square-cover-elsewhere');
+        app(SquareLinkService::class)->link($elsewhere, $foreign, $stranger, AgentApiVersion::for($foreign), new SquareInvoiceReference('inv:0-primary', '000001-R-0001', null, SquareMatchMethod::Manual), false);
+        app(SquareLinkService::class)->cover($elsewhere, $foreign->refresh(), $stranger, AgentApiVersion::for($foreign), new SquareInvoiceReference('inv:0-covered2', '000001-R-0002', null, SquareMatchMethod::Manual));
+        $this->actingAsMcp($owner, self::SCOPES);
+
+        $this->rest('invoices.square_cover', $workspace, ['invoice_id' => $foreign->public_id], ['expected_version' => AgentApiVersion::for($foreign->refresh()), 'confirm' => true, 'square_invoice_id' => 'inv:0-covered3', 'square_invoice_number' => '000001-R-0003'], 'synthetic-cross-cover')->assertNotFound();
+        $this->rest('invoices.square_uncover', $workspace, ['invoice_id' => $foreign->public_id], ['expected_version' => AgentApiVersion::for($foreign), 'confirm' => true, 'square_invoice_id' => 'inv:0-covered2'], 'synthetic-cross-uncover')->assertNotFound();
+        $this->success('rest', 'invoices.square_link', $workspace, ['invoice_id' => $invoice->public_id], ['expected_version' => AgentApiVersion::for($invoice), 'square_invoice_id' => 'inv:0-primary', 'square_invoice_number' => '000001-R-0001'], 'synthetic-same-ids-primary');
+        $covered = $this->success('rest', 'invoices.square_cover', $workspace, ['invoice_id' => $invoice->public_id], ['expected_version' => AgentApiVersion::for($invoice->refresh()), 'confirm' => true, 'square_invoice_id' => 'inv:0-covered2', 'square_invoice_number' => '000001-R-0002'], 'synthetic-same-ids-cover');
+        $this->assertSame(['inv:0-covered2'], array_column($covered['data']['covers'], 'square_invoice_id'));
+        $this->assertSame(1, SquareInvoiceCoverage::query()->where('workspace_id', $elsewhere->id)->whereNotNull('active_square_invoice_slot')->count());
+        $this->assertSame($otherCompany->workspace_id, $elsewhere->id);
+        $this->assertSame($company->workspace_id, $workspace->id);
+    }
+
+    /**
      * Square numbers invoices uniquely per location only (#488): one prefix in
      * two locations is two series, each of which may mark its own agreement.
      * Without location_id the marker takes the one location the mirror holds
@@ -496,6 +594,8 @@ final class SquareLinkApiTest extends TestCase
         [$method, $path] = match ($operation) {
             'invoices.square_link' => ['POST', "invoices/{$ids['invoice_id']}/square-link"],
             'invoices.square_unlink' => ['DELETE', "invoices/{$ids['invoice_id']}/square-link"],
+            'invoices.square_cover' => ['POST', "invoices/{$ids['invoice_id']}/square-coverage"],
+            'invoices.square_uncover' => ['DELETE', "invoices/{$ids['invoice_id']}/square-coverage"],
             'companies.square_customer.get' => ['GET', "clients/{$ids['client_id']}/square-customer"],
             'companies.square_customer.set' => ['PUT', "clients/{$ids['client_id']}/square-customer"],
             'companies.square_customer.clear' => ['DELETE', "clients/{$ids['client_id']}/square-customer"],

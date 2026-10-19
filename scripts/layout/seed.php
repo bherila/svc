@@ -255,6 +255,9 @@ $squareRow = app(SquareSnapshotMapper::class)->invoice([
 app(SquareMirrorRepository::class)->storeInvoices($workspace, [$squareRow], CarbonImmutable::now('UTC'));
 app(SquareLinkService::class)->link($workspace, $squareInvoice, $owner, AgentApiVersion::for($squareInvoice),
     new SquareInvoiceReference('inv_fixture_layout', '000001-R-0001', 'USD', SquareMatchMethod::Manual), false);
+// A Square invoice it covers besides (#487), numbered with no break in it.
+app(SquareLinkService::class)->cover($workspace, $squareInvoice->refresh(), $owner, AgentApiVersion::for($squareInvoice),
+    new SquareInvoiceReference('inv_fixture_layout_covered', 'SYNTHETICCOVERED'.str_repeat('X', 120), 'USD', SquareMatchMethod::Manual));
 app(RecordReceivedPayment::class)->record($workspace, $squareInvoice, ReceivedPaymentData::from([
     'amount' => 12_345, 'currency' => 'USD', 'received_on' => $date, 'method' => 'cash',
 ]));

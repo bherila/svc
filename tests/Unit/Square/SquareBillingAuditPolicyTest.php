@@ -431,6 +431,23 @@ final class SquareBillingAuditPolicyTest extends TestCase
     }
 
     /**
+     * A series member recorded as covered by an svc invoice besides that
+     * invoice's linked one (#487) is accounted for: not an unmirrored period.
+     * Its payments are still checked like any unlinked member's.
+     */
+    public function test_a_covered_series_member_is_not_an_unmirrored_period(): void
+    {
+        $findings = self::classify([
+            self::invoice('inv_primary', 1, '2030-01-15', 'UNPAID', linked: true),
+            self::invoice('inv_covered', 2, '2030-02-15', 'PAID', payments: ['pay_covered'], paid: 12_345, covered: true),
+            self::invoice('inv_unmirrored', 3, '2030-03-15', 'UNPAID'),
+        ]);
+
+        $this->assertSame(['inv_unmirrored'], array_map(static fn (array $period): string => $period['invoice']->squareInvoiceId, $findings->unmirroredPeriods));
+        $this->assertSame([['pay_covered', SquareBillingAuditPolicy::PAYMENT_INVOICE_NOT_LINKED]], array_map(static fn (array $payment): array => [$payment['payment_id'], $payment['reason']], $findings->unmatchedPayments));
+    }
+
+    /**
      * Square numbers invoices uniquely per location only (#488). A series is
      * its prefix in the agreement's location, so one prefix in two locations
      * is two agreements' series, each audited on its own members; a bill
@@ -589,6 +606,7 @@ final class SquareBillingAuditPolicyTest extends TestCase
         ?string $currency = 'USD',
         ?string $name = null,
         ?string $location = 'LOCFIXTURE01',
+        bool $covered = false,
     ): SquareAuditInvoice {
         return new SquareAuditInvoice(
             $id,
@@ -608,6 +626,7 @@ final class SquareBillingAuditPolicyTest extends TestCase
             $payments,
             $linked ? new SquareAuditLinkedInvoice('00000000-0000-4000-8000-0000000b'.substr(md5($id), 0, 4), self::COMPANY) : null,
             true,
+            $covered ? new SquareAuditLinkedInvoice('00000000-0000-4000-8000-0000000c'.substr(md5($id), 0, 4), self::COMPANY) : null,
         );
     }
 }

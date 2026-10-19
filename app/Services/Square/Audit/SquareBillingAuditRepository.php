@@ -12,6 +12,7 @@ use App\Models\SquareSyncRun;
 use App\Models\Workspace;
 use App\Services\Square\Mirror\SquareSeriesSummary;
 use App\Services\Square\Mirror\SquareSnapshotMapper;
+use App\Support\Billing\InvoiceStatus;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 
@@ -99,6 +100,7 @@ final class SquareBillingAuditRepository
             }
         }
         $links = $this->links($workspace, $squareInvoiceIds);
+        $coverages = $this->coverages($workspace, $squareInvoiceIds);
         $customerIds = array_map(strval(...), array_keys($customerIds));
         $mappedCustomers = $this->mappedCustomers($workspace, $customerIds);
         $ambiguous = SquareBillingAuditPolicy::ambiguousSeries($agreements, array_map(static fn (SquareInvoiceSnapshot $snapshot): array => [
@@ -168,6 +170,7 @@ final class SquareBillingAuditRepository
                 $links[$snapshot->square_invoice_id] ?? null,
                 ! isset($deferred[$snapshot->square_invoice_id])
                     && SquareSnapshotMapper::paymentIdsCurrent($snapshot->status, $snapshot->paid_amount, $snapshot->square_version, $snapshot->square_order_id, $snapshot->payment_ids_basis),
+                $coverages[$snapshot->square_invoice_id] ?? null,
             );
         }
 
@@ -246,6 +249,30 @@ final class SquareBillingAuditRepository
         }
 
         return $links;
+    }
+
+    /**
+     * The svc invoice each of these Square invoices is recorded as covered
+     * by (#487). A void invoice covers nothing.
+     *
+     * @param  list<string>  $squareInvoiceIds
+     * @return array<string, SquareAuditLinkedInvoice>
+     */
+    private function coverages(Workspace $workspace, array $squareInvoiceIds): array
+    {
+        $coverages = [];
+        foreach (array_chunk($squareInvoiceIds, self::CHUNK) as $chunk) {
+            $rows = DB::table('square_invoice_coverages as v')->where('v.workspace_id', $workspace->id)->whereIn('v.active_square_invoice_slot', $chunk)
+                ->join('client_invoices as i', static fn ($join) => $join->on('i.id', '=', 'v.client_invoice_id')->where('i.workspace_id', $workspace->id))
+                ->join('client_companies as c', static fn ($join) => $join->on('c.id', '=', 'i.client_company_id')->where('c.workspace_id', $workspace->id))
+                ->where('i.status', '!=', InvoiceStatus::Void->value)
+                ->get(['v.active_square_invoice_slot', 'i.public_id as invoice_public_id', 'c.public_id as company_public_id']);
+            foreach ($rows as $row) {
+                $coverages[(string) $row->active_square_invoice_slot] = new SquareAuditLinkedInvoice((string) $row->invoice_public_id, (string) $row->company_public_id);
+            }
+        }
+
+        return $coverages;
     }
 
     /**

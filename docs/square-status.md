@@ -118,7 +118,8 @@ location only:
 
 - `unmirrored_series_periods`: a member of a series an agreement is billed in
   (`square_series_key` in its `square_location_id`), within the agreement (from its start to its end, once it
-  has one), that no svc invoice is linked to. `SCHEDULED` members are not billed yet, and `DRAFT`, `CANCELED` and
+  has one), that no svc invoice is linked to or recorded as covering
+  (`invoices.square_cover`, #487; a void invoice covers nothing). `SCHEDULED` members are not billed yet, and `DRAFT`, `CANCELED` and
   `FAILED` ones are no bill, so none of them is flagged.
 - `unmatched_payments`: a Square payment id on an invoice in svc's reach (actively
   linked, a billed-in-Square series member within its agreement, or of a confirmed

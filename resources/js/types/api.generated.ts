@@ -1151,6 +1151,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    '/workspaces/{workspace}/invoices/{invoice}/square-coverage': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Workspace managers only. When one SVC invoice covers what Square split into several invoices, record another Square invoice as covered by this one (#487), as confirmed by a person. The invoice must already be linked to its primary Square invoice (invoices.square_link) and must not be void; a Square invoice linked or covered anywhere is refused with 409. When currency is given it must equal the invoice's. A coverage is not a link: SVC collects, reconciles and records no payment through it. It tells the billing audit the Square invoice is accounted for, so it is not reported as an unmirrored series period. Requires the invoice's current expected_version and confirm: true. Square ids are checked for shape only; nothing is sent to Square. */
+        post: operations['invoices.square_cover'];
+        /** @description Workspace managers only. Stop recording a Square invoice as covered by this invoice. The record is kept as history and the Square invoice may be covered or linked again. Requires the invoice's current expected_version and confirm: true; a Square invoice this invoice does not cover is refused with 409. */
+        delete: operations['invoices.square_uncover'];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     '/workspaces/{workspace}/invoices/{invoice}/square-link': {
         parameters: {
             query?: never;
@@ -3096,6 +3114,8 @@ export interface components {
             invoice_version: components['schemas']['Version'];
             /** @description The active link to a Square invoice, or null. */
             link: components['schemas']['SquareInvoiceLink'] | null;
+            /** @description Square invoices this invoice is recorded as covering besides its linked one (#487), oldest first. */
+            covers: components['schemas']['SquareInvoiceCoverage'][];
             /** @description The Square series of the agreement this invoice was generated under, when that agreement is billed in Square. */
             agreement_series_key: string | null;
             /** @description True when the invoice is linked or its agreement is billed in Square. SVC then never emails it to the client, charges it or offers a payment link; issuing stays open, and so does recording a payment on the website, but payments.record refuses. */
@@ -3104,6 +3124,18 @@ export interface components {
             collection_refusal: string | null;
             payment_mismatch:
                 components['schemas']['SquarePaymentMismatch'] | null;
+        };
+        InvoiceSquareCoverRequest: {
+            expected_version: components['schemas']['Version'];
+            square_invoice_id: components['schemas']['SquareInvoiceId'];
+            square_invoice_number: components['schemas']['SquareInvoiceNumber'];
+            /** @description The Square invoice's currency. When given it must equal the SVC invoice's. */
+            currency?: string;
+            /**
+             * @description Explicit user confirmation is required.
+             * @constant
+             */
+            confirm: true;
         };
         InvoiceSquareLinkRequest: {
             expected_version: components['schemas']['Version'];
@@ -3135,6 +3167,15 @@ export interface components {
         InvoiceSquareReconcileRequest: Record<string, never>;
         InvoiceSquareResponse: {
             data: components['schemas']['InvoiceSquare'];
+        };
+        InvoiceSquareUncoverRequest: {
+            expected_version: components['schemas']['Version'];
+            square_invoice_id: components['schemas']['SquareInvoiceId'];
+            /**
+             * @description Explicit user confirmation is required.
+             * @constant
+             */
+            confirm: true;
         };
         InvoiceSquareUnlinkRequest: {
             expected_version: components['schemas']['Version'];
@@ -3897,6 +3938,15 @@ export interface components {
             /** @description True when Square sent more payment requests than are listed. */
             payment_requests_truncated: boolean;
             attachment_count: number;
+        };
+        /** @description A Square invoice this invoice covers besides its linked one: not a link, so SVC collects and records nothing through it. */
+        SquareInvoiceCoverage: {
+            square_invoice_id: components['schemas']['SquareInvoiceId'];
+            square_invoice_number: components['schemas']['SquareInvoiceNumber'];
+            /** Format: date-time */
+            covered_at: string;
+            /** @description Who recorded it, when known. */
+            covered_by: string | null;
         };
         /** @description A Square invoice id, held as an opaque string. SVC checks its shape only; it never resolves it against Square. */
         SquareInvoiceId: string;
@@ -8349,6 +8399,66 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['SquareCandidateListResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'invoices.square_cover': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                invoice: components['parameters']['InvoiceId'];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['InvoiceSquareCoverRequest'];
+            };
+        };
+        responses: {
+            /** @description Square invoice recorded as covered */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['InvoiceSquareResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'invoices.square_uncover': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                invoice: components['parameters']['InvoiceId'];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['InvoiceSquareUncoverRequest'];
+            };
+        };
+        responses: {
+            /** @description Square invoice no longer covered */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['InvoiceSquareResponse'];
                 };
             };
             default: components['responses']['Error'];

@@ -94,6 +94,47 @@ final class AgentSquareLinkController extends Controller
         return response()->json(['data' => $this->presenter->invoice($this->invoice($workspace, $invoice, $context->user))]);
     }
 
+    public function cover(Request $request, Workspace $workspace, string $invoice): JsonResponse
+    {
+        $context = $this->contexts->from($request);
+        $this->mutations->run($context->user, $workspace, $context->oauthClientId, 'invoices.square_cover', $context->idempotencyKey, ['invoice_id' => $invoice, 'body' => $request->all()], function () use ($request, $workspace, $invoice, $context): array {
+            $record = $this->invoice($workspace, $invoice, $context->user);
+            $data = $this->validated($request, [
+                ...$this->confirmedVersion(),
+                'square_invoice_id' => SquareIdentifiers::invoiceIdRule(),
+                'square_invoice_number' => ['required', 'string', 'max:191', 'regex:'.SquareIdentifiers::INVOICE_NUMBER_PATTERN],
+                'currency' => ['sometimes', 'string', 'regex:/^[A-Z]{3}$/D'],
+            ]);
+            $this->square->cover($workspace, $record, $context->user, $data['expected_version'], new SquareInvoiceReference(
+                $data['square_invoice_id'],
+                $data['square_invoice_number'],
+                $data['currency'] ?? null,
+                SquareMatchMethod::Manual,
+            ));
+
+            return [$record->public_id];
+        }, fn (array $ids) => $this->requireManager($context->user, $workspace));
+
+        return response()->json(['data' => $this->presenter->invoice($this->invoice($workspace, $invoice, $context->user))]);
+    }
+
+    public function uncover(Request $request, Workspace $workspace, string $invoice): JsonResponse
+    {
+        $context = $this->contexts->from($request);
+        $this->mutations->run($context->user, $workspace, $context->oauthClientId, 'invoices.square_uncover', $context->idempotencyKey, ['invoice_id' => $invoice, 'body' => $request->all()], function () use ($request, $workspace, $invoice, $context): array {
+            $record = $this->invoice($workspace, $invoice, $context->user);
+            $data = $this->validated($request, [
+                ...$this->confirmedVersion(),
+                'square_invoice_id' => SquareIdentifiers::invoiceIdRule(),
+            ]);
+            $this->square->uncover($workspace, $record, $context->user, $data['expected_version'], $data['square_invoice_id']);
+
+            return [$record->public_id];
+        }, fn (array $ids) => $this->requireManager($context->user, $workspace));
+
+        return response()->json(['data' => $this->presenter->invoice($this->invoice($workspace, $invoice, $context->user))]);
+    }
+
     public function customer(Request $request, Workspace $workspace, string $client): JsonResponse
     {
         $actor = $request->user();

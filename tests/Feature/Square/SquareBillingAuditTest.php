@@ -9,6 +9,7 @@ use App\Models\ClientInvoicePayment;
 use App\Models\CompanySquareCustomer;
 use App\Models\InvoiceSquareLink;
 use App\Models\SquareCustomerSnapshot;
+use App\Models\SquareInvoiceCoverage;
 use App\Models\SquareInvoiceSnapshot;
 use App\Models\SquareSyncRun;
 use App\Models\User;
@@ -18,7 +19,11 @@ use App\Services\Square\Audit\SquareBillingAuditRepository;
 use App\Services\Square\Mirror\SquareMirrorRepository;
 use App\Services\Square\Mirror\SquarePaymentIdsRead;
 use App\Services\Square\Mirror\SquareSnapshotMapper;
+use App\Services\Square\SquareLinkService;
 use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
+use App\Support\AgentApi\AgentApiVersion;
+use App\Support\Square\SquareInvoiceReference;
+use App\Support\Square\SquareMatchMethod;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -168,6 +173,34 @@ final class SquareBillingAuditTest extends TestCase
         $drift = app(SquareBillingAudit::class)->report($workspace)['series_drift']['agreements'];
         $this->assertSame([[$second->public_id, 'LOCFIXTURE02', route('square.explore', [$workspace, 'series_key' => '000123', 'location_id' => 'LOCFIXTURE02'])]],
             array_map(static fn (array $entry): array => [$entry['agreement_id'], $entry['square_location_id'], $entry['explore_url']], $drift));
+    }
+
+    /**
+     * A Square series member recorded as covered by an svc invoice (#487) is
+     * not an unmirrored period - unless that invoice is void, or the coverage
+     * is another workspace's.
+     */
+    public function test_a_covered_series_member_is_not_reported_as_unmirrored(): void
+    {
+        [$workspace, $owner, $company] = $this->fixture();
+        $covering = $this->invoice($workspace, $company, 'SYN-AUDIT-COVER');
+        $voided = $this->invoice($workspace, $company, 'SYN-AUDIT-VOIDED');
+        foreach ([1 => 'inv_cover_primary', 2 => 'inv_cover_covered', 3 => 'inv_cover_by_void', 4 => 'inv_cover_elsewhere'] as $occurrence => $id) {
+            $this->snapshot($workspace, $id, $occurrence, sprintf('2030-%02d-15', $occurrence), 'UNPAID');
+        }
+        $this->link($workspace, $covering, 'inv_cover_primary');
+        $links = app(SquareLinkService::class);
+        $links->cover($workspace, $covering->refresh(), $owner, AgentApiVersion::for($covering), new SquareInvoiceReference('inv_cover_covered', '000123-R-0002', 'USD', SquareMatchMethod::Manual));
+        SquareInvoiceCoverage::query()->create(['workspace_id' => $workspace->id, 'client_invoice_id' => $voided->id, 'square_invoice_id' => 'inv_cover_by_void', 'square_invoice_number' => '000123-R-0003', 'active_square_invoice_slot' => 'inv_cover_by_void', 'covered_at' => now()]);
+        $voided->forceFill(['status' => 'void'])->save();
+        $other = Workspace::query()->create(['name' => 'Synthetic audit cover other', 'slug' => 'synthetic-audit-cover-other']);
+        $otherCompany = ClientCompany::query()->create(['workspace_id' => $other->id, 'name' => 'Synthetic other company', 'slug' => 'synthetic-other-company']);
+        $otherInvoice = $this->invoice($other, $otherCompany, 'SYN-AUDIT-COVER-OTHER');
+        SquareInvoiceCoverage::query()->create(['workspace_id' => $other->id, 'client_invoice_id' => $otherInvoice->id, 'square_invoice_id' => 'inv_cover_elsewhere', 'square_invoice_number' => '000123-R-0004', 'active_square_invoice_slot' => 'inv_cover_elsewhere', 'covered_at' => now()]);
+
+        $audit = app(SquareBillingAudit::class)->report($workspace);
+
+        $this->assertSame(['inv_cover_by_void', 'inv_cover_elsewhere'], array_column($audit['unmirrored_series_periods']['periods'], 'square_invoice_id'));
     }
 
     public function test_nothing_is_reported_without_a_square_connection(): void

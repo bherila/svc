@@ -930,6 +930,19 @@
             "mcp.switch:invoices.square_candidates"
         ]
     },
+    "invoices.square_cover": {
+        "scopes": [
+            "billing:write",
+            "billing:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.invoices",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:invoices.square_cover"
+        ]
+    },
     "invoices.square_link": {
         "scopes": [
             "billing:write",
@@ -955,6 +968,19 @@
             "mcp",
             "mcp.switch:mcp.write",
             "mcp.switch:invoices.square_reconcile"
+        ]
+    },
+    "invoices.square_uncover": {
+        "scopes": [
+            "billing:write",
+            "billing:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.invoices",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:invoices.square_uncover"
         ]
     },
     "invoices.square_unlink": {

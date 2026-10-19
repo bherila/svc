@@ -12,7 +12,7 @@ use Carbon\CarbonImmutable;
  * - **Unmirrored series period:** a billed member of a series an agreement is
  *   billed in, falling within the agreement (from its start to its end, once
  *   it has one), that no svc invoice
- *   is linked to. A SCHEDULED member is not billed yet, and a canceled, draft
+ *   is linked to or recorded as covering (#487). A SCHEDULED member is not billed yet, and a canceled, draft
  *   or failed one is no bill, so neither is flagged.
  * - **Unmatched payment:** a Square payment on an invoice in svc's reach - an
  *   actively linked invoice, a member of a billed-in-Square series, or an
@@ -179,7 +179,9 @@ final class SquareBillingAuditPolicy
         $periods = [];
         foreach ($facts->invoices as $invoice) {
             $agreement = self::agreementOf($agreements, $invoice->seriesKey, $invoice->locationId);
-            if ($agreement === null || $invoice->linked !== null || in_array($invoice->status, self::UNBILLED_STATUSES, true)) {
+            // A covered member is accounted for by the svc invoice that
+            // covers it besides its own linked one.
+            if ($agreement === null || $invoice->linked !== null || $invoice->coveredBy !== null || in_array($invoice->status, self::UNBILLED_STATUSES, true)) {
                 continue;
             }
             // History before svc's agreement began, or after it ended, is not

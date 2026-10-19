@@ -48,7 +48,7 @@ final class AgentOperationRegistryTest extends TestCase
             'clients.portal_invitations.create', 'clients.portal_invitations.resend', 'clients.portal_invitations.revoke',
             'companies.square_customer.clear', 'companies.square_customer.set', 'expense_schedules.generate',
             'invoices.correct', 'invoices.discard_draft', 'invoices.generate_period', 'invoices.issue',
-            'invoices.release_delivery', 'invoices.send', 'invoices.send_reminder', 'invoices.square_link', 'invoices.square_unlink', 'invoices.void',
+            'invoices.release_delivery', 'invoices.send', 'invoices.send_reminder', 'invoices.square_cover', 'invoices.square_link', 'invoices.square_uncover', 'invoices.square_unlink', 'invoices.void',
             'payments.correct', 'payments.record', 'payments.refund', 'payments.reverse_refund', 'payments.set_status', 'projects.archive', 'projects.create', 'projects.members.update', 'projects.update',
             'proposals.accept', 'proposals.send', 'square.import_customer',
         ];
@@ -190,7 +190,7 @@ final class AgentOperationRegistryTest extends TestCase
                 $checked++;
             }
         }
-        $this->assertSame(59, $checked);
+        $this->assertSame(61, $checked);
     }
 
     public function test_an_under_scoped_rest_call_is_refused_by_the_gate_with_its_reason(): void

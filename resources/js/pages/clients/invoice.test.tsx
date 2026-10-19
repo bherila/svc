@@ -855,6 +855,7 @@ describe('the Square link on an invoice', () => {
         invoice_id: 'invoice-1',
         invoice_version: version,
         link: null,
+        covers: [],
         agreement_series_key: null,
         square_collects: false,
         payment_mismatch: null,

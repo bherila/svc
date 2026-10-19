@@ -9,6 +9,7 @@ use App\Models\ClientInvoiceEmailDelivery;
 use App\Models\ClientInvoicePayment;
 use App\Models\CompanySquareCustomer;
 use App\Models\InvoiceSquareLink;
+use App\Models\SquareInvoiceCoverage;
 use App\Models\SquareInvoiceSnapshot;
 use App\Support\Billing\InvoicePaymentStatus;
 use App\Support\Concurrency\Locks;
@@ -25,6 +26,9 @@ use Illuminate\Support\Collection;
  */
 final class SquareLinkRepository
 {
+    /** Square invoices one svc invoice may be recorded as covering besides its linked one. */
+    public const int MAX_COVERAGES = 50;
+
     public function activeLink(ClientInvoice $invoice): ?InvoiceSquareLink
     {
         return InvoiceSquareLink::query()
@@ -56,6 +60,33 @@ final class SquareLinkRepository
             ->where('active_square_invoice_slot', $squareInvoiceId)
             ->tap(Locks::forShare())
             ->first();
+    }
+
+    /** The svc invoice recorded as covering this Square invoice in the workspace, if any (#487). */
+    public function activeCoverage(int $workspaceId, string $squareInvoiceId): ?SquareInvoiceCoverage
+    {
+        return SquareInvoiceCoverage::query()
+            ->where('workspace_id', $workspaceId)
+            ->where('active_square_invoice_slot', $squareInvoiceId)
+            ->first();
+    }
+
+    /**
+     * The Square invoices this invoice is recorded as covering besides its
+     * linked one, oldest first.
+     *
+     * @return Collection<int, SquareInvoiceCoverage>
+     */
+    public function activeCoveragesOf(ClientInvoice $invoice): Collection
+    {
+        return SquareInvoiceCoverage::query()
+            ->where('workspace_id', $invoice->workspace_id)
+            ->where('client_invoice_id', $invoice->id)
+            ->whereNotNull('active_square_invoice_slot')
+            ->orderBy('covered_at')
+            ->orderBy('id')
+            ->limit(self::MAX_COVERAGES)
+            ->get();
     }
 
     public function activeCustomer(ClientCompany $company): ?CompanySquareCustomer

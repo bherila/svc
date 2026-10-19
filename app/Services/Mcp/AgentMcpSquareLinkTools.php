@@ -55,6 +55,37 @@ final class AgentMcpSquareLinkTools
     }
 
     /** @return array<string, mixed> */
+    public function cover(
+        #[Schema(format: 'uuid')] string $workspace_id,
+        #[Schema(format: 'uuid')] string $invoice_id,
+        #[Schema(minLength: 64, maxLength: 64)] string $expected_version,
+        #[Schema(maxLength: 191)] string $square_invoice_id,
+        #[Schema(maxLength: 191)] string $square_invoice_number,
+        #[Schema] bool $confirm,
+        #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key,
+        #[Schema(pattern: '^[A-Z]{3}$')] ?string $currency = null,
+    ): array {
+        $body = compact('expected_version', 'confirm', 'square_invoice_id', 'square_invoice_number');
+        if ($currency !== null) {
+            $body['currency'] = $currency;
+        }
+
+        return $this->send('POST', "workspaces/{$workspace_id}/invoices/{$invoice_id}/square-coverage", $body, $idempotency_key);
+    }
+
+    /** @return array<string, mixed> */
+    public function uncover(
+        #[Schema(format: 'uuid')] string $workspace_id,
+        #[Schema(format: 'uuid')] string $invoice_id,
+        #[Schema(minLength: 64, maxLength: 64)] string $expected_version,
+        #[Schema(maxLength: 191)] string $square_invoice_id,
+        #[Schema] bool $confirm,
+        #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key,
+    ): array {
+        return $this->send('DELETE', "workspaces/{$workspace_id}/invoices/{$invoice_id}/square-coverage", compact('expected_version', 'confirm', 'square_invoice_id'), $idempotency_key);
+    }
+
+    /** @return array<string, mixed> */
     public function customer(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $client_id): array
     {
         return $this->send('GET', "workspaces/{$workspace_id}/clients/{$client_id}/square-customer", null);

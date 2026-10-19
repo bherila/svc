@@ -6,9 +6,10 @@ use App\Services\Square\Mirror\SquareSeriesSummary;
 
 /**
  * One mirrored Square invoice, with the svc invoice it is actively linked to
- * when it is (#438). Dates are calendar days (Y-m-d). `paymentIdsResolved` is
- * false while the mirror has yet to read the payment ids for what the invoice
- * now is, so `paymentIds` may be short.
+ * when it is (#438), and the svc invoice recorded as covering it besides that
+ * invoice's own linked one, when it is (#487). Dates are calendar days
+ * (Y-m-d). `paymentIdsResolved` is false while the mirror has yet to read the
+ * payment ids for what the invoice now is, so `paymentIds` may be short.
  */
 final readonly class SquareAuditInvoice
 {
@@ -31,6 +32,7 @@ final readonly class SquareAuditInvoice
         public array $paymentIds,
         public ?SquareAuditLinkedInvoice $linked,
         public bool $paymentIdsResolved,
+        public ?SquareAuditLinkedInvoice $coveredBy = null,
     ) {}
 
     /** The day the invoice falls due, else the day Square schedules it. */

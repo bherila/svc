@@ -7,6 +7,7 @@ use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use App\Models\InvoiceSquareLink;
+use App\Models\SquareInvoiceCoverage;
 use App\Models\SquareInvoiceSnapshot;
 use App\Models\User;
 use App\Models\Workspace;
@@ -115,7 +116,9 @@ final class SquareCandidateService
                 continue;
             }
             $link = $linkedTo[$snapshot->square_invoice_id] ?? null;
-            if ($link !== null && $link['client_invoice_id'] !== $invoice->id) {
+            // A Square invoice recorded as covered (#487) is claimed even by
+            // this invoice: it cannot be linked until the coverage is cleared.
+            if ($link !== null && ($link['covered'] || $link['client_invoice_id'] !== $invoice->id)) {
                 if (count($meta['excluded']['linked_elsewhere']) < 20) {
                     $meta['excluded']['linked_elsewhere'][] = [
                         'square_invoice_id' => $snapshot->square_invoice_id,
@@ -193,25 +196,32 @@ final class SquareCandidateService
     }
 
     /**
-     * The svc invoice each of these Square invoices is actively linked to.
+     * The svc invoice each of these Square invoices is actively linked to, or
+     * recorded as covered by (#487).
      *
      * @param  list<string>  $squareInvoiceIds
-     * @return array<string, array{client_invoice_id: int, invoice_id: string|null, invoice_number: string|null}>
+     * @return array<string, array{client_invoice_id: int, invoice_id: string|null, invoice_number: string|null, covered: bool}>
      */
     private function activeLinks(Workspace $workspace, array $squareInvoiceIds): array
     {
         if ($squareInvoiceIds === []) {
             return [];
         }
-        $links = InvoiceSquareLink::query()->where('workspace_id', $workspace->id)->whereIn('active_square_invoice_slot', $squareInvoiceIds)->get(['square_invoice_id', 'client_invoice_id']);
-        $invoices = ClientInvoice::query()->where('workspace_id', $workspace->id)->whereKey($links->pluck('client_invoice_id')->all())->get(['id', 'public_id', 'invoice_number'])->keyBy('id');
+        $claims = [
+            ...InvoiceSquareLink::query()->where('workspace_id', $workspace->id)->whereIn('active_square_invoice_slot', $squareInvoiceIds)->get(['square_invoice_id', 'client_invoice_id'])
+                ->map(static fn (InvoiceSquareLink $link): array => [$link->square_invoice_id, $link->client_invoice_id, false])->all(),
+            ...SquareInvoiceCoverage::query()->where('workspace_id', $workspace->id)->whereIn('active_square_invoice_slot', $squareInvoiceIds)->get(['square_invoice_id', 'client_invoice_id'])
+                ->map(static fn (SquareInvoiceCoverage $coverage): array => [$coverage->square_invoice_id, $coverage->client_invoice_id, true])->all(),
+        ];
+        $invoices = ClientInvoice::query()->where('workspace_id', $workspace->id)->whereKey(array_column($claims, 1))->get(['id', 'public_id', 'invoice_number'])->keyBy('id');
         $linked = [];
-        foreach ($links as $link) {
-            $invoice = $invoices->get($link->client_invoice_id);
-            $linked[$link->square_invoice_id] = [
-                'client_invoice_id' => $link->client_invoice_id,
+        foreach ($claims as [$squareInvoiceId, $invoiceId, $covered]) {
+            $invoice = $invoices->get($invoiceId);
+            $linked[$squareInvoiceId] ??= [
+                'client_invoice_id' => $invoiceId,
                 'invoice_id' => $invoice?->public_id,
                 'invoice_number' => $invoice?->invoice_number,
+                'covered' => $covered,
             ];
         }
 

@@ -99,6 +99,22 @@ final class SquareCandidateImportApiTest extends TestCase
         $this->getJson($this->candidatesUrl($invoice))->assertOk()->assertJsonPath('data.*.square_invoice_id', ['inv_fixture_1', 'inv_fixture_2']);
     }
 
+    /** A Square invoice recorded as covered (#487) is never offered to link, not even to the invoice covering it. */
+    public function test_candidates_exclude_covered_square_invoices(): void
+    {
+        $company = $this->company();
+        $invoice = $this->invoice($company);
+        $links = app(SquareLinkService::class);
+        $links->setCustomer($this->workspace, $company, $this->owner, AgentApiVersion::for($company), 'cust_fixture_a');
+        $links->link($this->workspace, $invoice, $this->owner, AgentApiVersion::for($invoice), new SquareInvoiceReference('inv_fixture_1', '000001-R-0001', 'USD', SquareMatchMethod::Manual), false);
+        $links->cover($this->workspace, $invoice->refresh(), $this->owner, AgentApiVersion::for($invoice), new SquareInvoiceReference('inv_fixture_2', '000001-R-0002', 'USD', SquareMatchMethod::Manual));
+
+        $this->getJson($this->candidatesUrl($invoice))->assertOk()
+            ->assertJsonPath('data.*.square_invoice_id', ['inv_fixture_1'])
+            ->assertJsonPath('meta.excluded.linked_elsewhere.0.square_invoice_id', 'inv_fixture_2')
+            ->assertJsonPath('meta.excluded.linked_elsewhere.0.linked_to_invoice_id', $invoice->public_id);
+    }
+
     public function test_candidates_exclude_canceled_other_currency_and_linked_elsewhere_and_validate_queries(): void
     {
         $company = $this->company();

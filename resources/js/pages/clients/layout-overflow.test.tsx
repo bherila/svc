@@ -450,6 +450,14 @@ describe('client screens under data that does not fit', () => {
                         linked_at: '2026-10-08T12:00:00Z',
                         linked_by: LONG_NAME,
                     },
+                    covers: [
+                        {
+                            square_invoice_id: `${LONG_SQUARE_ID}-covered`,
+                            square_invoice_number: LONG_SQUARE_ID,
+                            covered_at: '2026-10-09T12:00:00Z',
+                            covered_by: LONG_NAME,
+                        },
+                    ],
                     agreement_series_key: '000001',
                     square_collects: true,
                     payment_mismatch: {
