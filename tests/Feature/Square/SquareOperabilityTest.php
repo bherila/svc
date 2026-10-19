@@ -25,6 +25,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\Http;
 use Mcp\Capability\Discovery\SchemaValidator;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Concerns\CallsMcp;
 use Tests\Concerns\FakesSquarePaymentSync;
 use Tests\TestCase;
@@ -166,10 +167,22 @@ final class SquareOperabilityTest extends TestCase
         $this->assertSame([0, 0], [$invoice->payments()->count(), $other->payments()->count()]);
     }
 
-    public function test_a_square_invoice_re_linked_while_square_is_read_records_nothing_anywhere(): void
+    /** @return iterable<string, array{bool}> */
+    public static function squareStates(): iterable
+    {
+        yield 'with a payment to record' => [true];
+        yield 'with nothing to record' => [false];
+    }
+
+    #[DataProvider('squareStates')]
+    public function test_a_square_invoice_re_linked_while_square_is_read_records_nothing_anywhere(bool $paid): void
     {
         [$workspace, $owner, $company, $invoice] = $this->paymentFixture();
         config(['agent_api.writes_enabled' => true]);
+        if (! $paid) {
+            $this->paymentInvoice['status'] = 'UNPAID';
+            $this->squarePayments['pay_fixture_1']['status'] = 'PENDING';
+        }
         $other = $this->otherInvoice($workspace, $company);
         $relinked = false;
         Http::swap(new HttpFactory);
@@ -195,6 +208,7 @@ final class SquareOperabilityTest extends TestCase
         $this->postJson($this->url($workspace, $invoice), [], ['Idempotency-Key' => 'synthetic-relinked'])->assertUnprocessable();
 
         $this->assertTrue($relinked);
+        $this->assertSame(0, AgentMutationReceipt::query()->where('workspace_id', $workspace->id)->where('operation', 'invoices.square_reconcile')->count());
         $this->assertSame([0, 0], [$invoice->payments()->count(), $other->payments()->count()]);
     }
 

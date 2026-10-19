@@ -106,7 +106,11 @@ final class SquareInvoiceReconciliation
      */
     private function applyPinned(Workspace $workspace, InvoiceSquareLink $link, ?SquareInvoiceRefetch $refetched): void
     {
-        if ($refetched === null || $refetched->activeLink?->id !== $link->id) {
+        // Read again after Square was, so a re-link during the reads is seen
+        // even when there is nothing to record. Recording a payment checks the
+        // link once more, under the invoice's lock.
+        $current = $this->links->activeLinkForSquareInvoice($workspace->id, $link->square_invoice_id);
+        if ($refetched === null || $refetched->activeLink?->id !== $link->id || $current?->id !== $link->id) {
             throw new DomainException('The invoice\'s Square link changed while it was being reconciled. Read the invoice and try again.');
         }
         $this->reconciler->apply($workspace, $refetched);

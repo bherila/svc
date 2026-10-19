@@ -164,7 +164,9 @@ is configured, its workspace exists, a sync completed within the hour and the
 latest run neither failed nor was abandoned, and 1 otherwise - so a stopped
 scheduler shows up even though nothing else marks its runs while it is down. The
 post-deploy probe runs it beside `svc:stripe:status` and `svc:brevo:status`, and,
-as for those, treats exit 1 as a report rather than a deploy failure.
+as for those, treats exit 1 as a report rather than a deploy failure - but only
+when the probe printed its JSON report, so a probe that crashed still fails the
+deploy.
 
 Payment reminders for linked invoices carry the mirrored Square payment page;
 see [payment reminders](client-management/invoice-delivery.md#payment-reminders).
