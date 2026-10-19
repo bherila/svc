@@ -19,9 +19,16 @@ final class ReadView
 
     public const string READ = 'read';
 
-    /** Whether the caller asked for the read shape; any other view is refused before anything is written. */
+    /**
+     * Whether the caller asked for the read shape. Any other view, and a
+     * `view` sent in the body - where it would otherwise pass unnoticed - are
+     * refused before anything is written.
+     */
     public static function requested(Request $request): bool
     {
+        if ($request->json()->has(self::PARAMETER) || $request->request->has(self::PARAMETER)) {
+            throw ValidationException::withMessages([self::PARAMETER => 'The view is a query parameter, not a field.']);
+        }
         if (! $request->query->has(self::PARAMETER)) {
             return false;
         }
@@ -33,18 +40,13 @@ final class ReadView
     }
 
     /**
-     * The request without the view, for the rules and the digest. A `view`
-     * sent in the body is not the view and stays, to be refused by name.
+     * The request without the view, for the rules and the digest. Call it
+     * after {@see requested()}, which refuses a view anywhere but the query.
      *
      * @return array<string, mixed>
      */
     public static function payload(Request $request): array
     {
-        $payload = $request->all();
-        if ($request->query->has(self::PARAMETER) && ! $request->json()->has(self::PARAMETER) && ! $request->request->has(self::PARAMETER)) {
-            unset($payload[self::PARAMETER]);
-        }
-
-        return $payload;
+        return array_diff_key($request->all(), [self::PARAMETER => true]);
     }
 }

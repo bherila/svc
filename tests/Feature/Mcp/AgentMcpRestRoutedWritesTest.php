@@ -133,6 +133,9 @@ final class AgentMcpRestRoutedWritesTest extends TestCase
 
         // Any other view is refused before anything is written.
         $this->withHeader('Idempotency-Key', 'routed-time-other-view')->postJson("{$base}?view=list", ['entries' => [$entry]])->assertUnprocessable()->assertJsonValidationErrors('view');
+        // So is a view sent as a field, where it would otherwise pass unnoticed.
+        $this->withHeader('Idempotency-Key', 'routed-time-body-view')->postJson($base, ['entries' => [$entry], 'view' => 'read'])->assertUnprocessable()->assertJsonValidationErrors('view');
+        $this->withHeader('Idempotency-Key', 'routed-time-both-views')->postJson("{$base}?view=read", ['entries' => [$entry], 'view' => 'other'])->assertUnprocessable()->assertJsonValidationErrors('view');
         $this->assertSame(1, ClientTimeEntry::query()->where('workspace_id', $workspace->id)->count());
 
         $time = $logged[0];

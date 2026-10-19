@@ -455,6 +455,7 @@ final class AgentMcpInvoiceIssueTest extends TestCase
         $this->actingAsMcp($user, [AgentApiScopes::MCP_USE, AgentApiScopes::BILLING_DELIVER]);
         $unread = $this->withHeader('Idempotency-Key', 'issue-view')->postJson("{$path}?view=read", $body)->assertOk()->json('data');
         $this->assertSame(array_keys($plain), array_keys($unread), 'without billing:read the view falls back to the write shape');
+        $this->withHeader('Idempotency-Key', 'issue-view')->postJson($path, [...$body, 'view' => 'read'])->assertUnprocessable()->assertJsonValidationErrors('view');
         $this->assertSame(1, AgentMutationReceipt::query()->where('operation', 'invoices.issue')->where('status', 'completed')->count());
     }
 
