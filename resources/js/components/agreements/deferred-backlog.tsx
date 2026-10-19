@@ -67,7 +67,7 @@ export function DeferredBacklogCard({ backlog }: { backlog: DeferredBacklog }) {
                                         amount.currency,
                                     )}
                                 </span>
-                                {' at hourly rate)'}
+                                {' if billed on termination)'}
                             </>
                         )}
                         {trend !== null && `, ${trend}`}
@@ -81,8 +81,12 @@ export function DeferredBacklogCard({ backlog }: { backlog: DeferredBacklog }) {
                                 ? '1 entry'
                                 : `${backlog.entry_count} entries`}
                             , the oldest worked on{' '}
-                            {formatDay(backlog.oldest_worked_on)}. Billed at the
-                            hourly rate only on termination.
+                            {formatDay(backlog.oldest_worked_on)}. Billed only
+                            on termination, at the agreement&apos;s hourly rate
+                            {backlog.flat_hourly_hours !== null &&
+                                backlog.flat_hourly_hours > 0 &&
+                                ' (flat-hourly work at its subcontractor rate)'}
+                            .
                         </p>
                     )}
                 {backlog.issue_message !== null && (

@@ -48,7 +48,9 @@ final class AgentCapacityLedgerReadService
             'deferred_backlog' => $this->deferredBacklogs->forAgreement(
                 $workspace,
                 $agreement,
-                array_map(static fn (MonthSummary $row): string => $row->yearMonth, $rows),
+                // One per calendar month: a period ledger anchored mid-month
+                // can give two rows the same month.
+                array_values(array_unique(array_map(static fn (MonthSummary $row): string => $row->yearMonth, $rows))),
                 $today,
                 $this->deferredBacklogs->carriedMinutes($workspace, $agreement, $ledger, $today),
             ),

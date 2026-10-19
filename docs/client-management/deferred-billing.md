@@ -98,13 +98,16 @@ that shows it still renders. Amounts are added with
 `MoneyService::sum()`, so a total past the integer range is unpriced rather
 than an error.
 
-**One segment, one backlog.** Agreements for the same project scope hand over
-to each other as invoice generation walks them
+**Where a segment ends.** Agreements for the same project scope hand over to
+each other as invoice generation walks them
 (`AgreementSelector::successorAgreementForGeneration()`). An agreement reads
-its backlog through the earliest of today, its own end (where its capacity
-ledger stops) and the day before a successor starts (`through` says which day),
-and one with a predecessor reads it from its own start. The same hours are never quoted by two agreements, and never at a rate
-that has been superseded.
+its backlog, and its re-carried balance, through the earliest of today, its own
+end (where its capacity ledger stops) and the day before a successor starts
+(`through` says which day), so a successor's later work is never quoted at the
+outgoing agreement's rate. There is no lower bound, because the allocator and
+the termination collection apply none: a successor quotes older unlinked work
+its own invoices could still collect. Until the outgoing final invoice links
+such work, both agreements show it, as either may bill it.
 
 **The re-carried balance.** Deferred work an invoice applied beyond free
 capacity stays linked to that invoice, but the ledger carries the excess

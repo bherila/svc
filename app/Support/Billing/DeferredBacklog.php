@@ -53,8 +53,6 @@ final readonly class DeferredBacklog
      * @param  list<string>  $periods  `Y-m` months for the trend, oldest first
      * @param  int|null  $carriedMinutes  the ledger's re-carried deferred balance, which termination
      *                                    bills on its own line; null where the ledger was not read
-     * @param  CarbonImmutable|null  $from  the first day of the agreement's segment where a predecessor
-     *                                      for the same scope owns the work before it
      */
     public static function calculate(
         ClientAgreement $agreement,
@@ -64,7 +62,6 @@ final readonly class DeferredBacklog
         iterable $history,
         array $periods,
         ?int $carriedMinutes = 0,
-        ?CarbonImmutable $from = null,
     ): self {
         $currency = (string) $agreement->currency;
         if (! $projectChainsAgree) {
@@ -89,7 +86,7 @@ final readonly class DeferredBacklog
         $minutes = 0;
         $oldest = null;
         foreach ($outstanding as $entry) {
-            if (! self::inSegment($entry, $from, $through)) {
+            if ($entry->worked_on->gt($through)) {
                 continue;
             }
             $entries[] = $entry;
@@ -128,7 +125,7 @@ final readonly class DeferredBacklog
             amount: $amount,
             carriedMinutes: $carriedMinutes,
             entryIds: array_map(static fn (ClientTimeEntry $entry): int => $entry->id, $entries),
-            trend: self::trend($history, $periods, $from, $through),
+            trend: self::trend($history, $periods, $through),
         );
     }
 
@@ -137,12 +134,12 @@ final readonly class DeferredBacklog
      * @param  list<string>  $periods
      * @return list<DeferredBacklogMonth>
      */
-    private static function trend(iterable $history, array $periods, ?CarbonImmutable $from, CarbonImmutable $through): array
+    private static function trend(iterable $history, array $periods, CarbonImmutable $through): array
     {
         /** @var array<string, array{0:int,1:int,2:int}> $months */
         $months = array_fill_keys($periods, [0, 0, 0]);
         foreach ($history as $entry) {
-            if (! self::inSegment($entry, $from, $through)) {
+            if ($entry->worked_on->gt($through)) {
                 continue;
             }
             $added = $entry->worked_on->format('Y-m');
@@ -221,11 +218,6 @@ final readonly class DeferredBacklog
     {
         // A withheld backlog states no count, and is listed so it gets corrected.
         return $this->entryCount === null || $this->entryCount > 0 || $this->carriedMinutes > 0;
-    }
-
-    private static function inSegment(ClientTimeEntry $entry, ?CarbonImmutable $from, CarbonImmutable $through): bool
-    {
-        return ! $entry->worked_on->gt($through) && ! ($from instanceof CarbonImmutable && $entry->worked_on->lt($from));
     }
 
     private static function hoursOf(int $minutes): float

@@ -181,7 +181,7 @@ final class DeferredBacklogParityTest extends TestCase
         app(DeferredBillingAllocator::class)->collectForTermination($this->company, Carbon::parse(self::THROUGH), $agreement);
     }
 
-    public function test_a_successor_owns_the_work_from_the_day_it_starts(): void
+    public function test_a_successor_ends_the_outgoing_backlog_at_its_handover(): void
     {
         $outgoing = $this->agreement('Outgoing', null, 15000);
         $outgoing->forceFill(['status' => 'terminated', 'ends_on' => '2026-03-31'])->save();
@@ -204,9 +204,16 @@ final class DeferredBacklogParityTest extends TestCase
         $this->assertSame('2026-03-31', $backlogs[$outgoing->id]->through);
         $this->assertSame(15000, $backlogs[$outgoing->id]->amount);
         $this->assertSame([60, 0], array_column(array_map(static fn ($m): array => [$m->minutesAdded], $backlogs[$outgoing->id]->trend), 0));
-        $this->assertSame(30, $backlogs[$successor->id]->minutes);
+        // The successor quotes whatever its own invoices could still collect,
+        // as the allocator and termination apply no start bound: until the
+        // outgoing final invoice links the March hour, either may take it.
+        $this->assertSame(90, $backlogs[$successor->id]->minutes);
+        $this->assertSame(
+            app(DeferredBillingAllocator::class)->collectForTermination($this->company, Carbon::parse(self::THROUGH), $successor)->modelKeys(),
+            $backlogs[$successor->id]->entryIds,
+        );
         $this->assertSame(self::THROUGH, $backlogs[$successor->id]->through);
-        $this->assertSame(9000, $backlogs[$successor->id]->amount);
+        $this->assertSame(27000, $backlogs[$successor->id]->amount);
         // A re-carried balance is read to the same day: the successor's months
         // never land on the agreement it replaced.
         $reader = app(DeferredBacklogReader::class);

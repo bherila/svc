@@ -106,24 +106,6 @@ final class DeferredBacklogTest extends TestCase
         ));
     }
 
-    public function test_work_before_the_segment_is_its_predecessors(): void
-    {
-        $backlog = DeferredBacklog::calculate(
-            $this->agreement(15000),
-            CarbonImmutable::parse('2026-03-31'),
-            true,
-            [$this->entry(1, 60, '2026-02-28'), $this->entry(2, 30, '2026-03-01')],
-            [$this->entry(1, 60, '2026-02-28', lines: []), $this->entry(2, 30, '2026-03-01', lines: [])],
-            ['2026-02', '2026-03'],
-            0,
-            CarbonImmutable::parse('2026-03-01'),
-        );
-
-        $this->assertSame([2], $backlog->entryIds);
-        $this->assertSame('2026-03-01', $backlog->oldestWorkedOn);
-        $this->assertSame([0, 30], array_map(static fn (DeferredBacklogMonth $month): int => $month->minutesAdded, $backlog->trend));
-    }
-
     public function test_hours_are_stated_to_four_places(): void
     {
         $backlog = $this->calculate(outstanding: [

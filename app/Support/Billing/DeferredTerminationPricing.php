@@ -51,23 +51,29 @@ final readonly class DeferredTerminationPricing
             $rawMode = $entry->getRawOriginal('subcontractor_billing_mode');
             $mode = is_string($rawMode) ? SubcontractorBillingMode::tryFrom($rawMode) : null;
 
-            if ($rawMode !== null && ! $mode instanceof SubcontractorBillingMode) {
-                throw new RuntimeException('Deferred time has an unsupported subcontractor billing mode.');
-            }
-            if ($mode === SubcontractorBillingMode::Direct) {
-                continue;
-            }
-            if ($mode === SubcontractorBillingMode::FlatHourly) {
-                $flatHourly[] = $entry;
+            if ($mode === null) {
+                if ($rawMode !== null) {
+                    throw new RuntimeException('Deferred time has an unsupported subcontractor billing mode.');
+                }
+                if ($entry->subcontractor_cost_amount !== null) {
+                    throw new RuntimeException('Deferred time has a subcontractor cost without a billing mode.');
+                }
+                $agreementRate[] = $entry;
+                $agreementRateMinutes += $entry->minutes_worked;
 
                 continue;
             }
-            if ($mode === null && $entry->subcontractor_cost_amount !== null) {
-                throw new RuntimeException('Deferred time has a subcontractor cost without a billing mode.');
-            }
 
-            $agreementRate[] = $entry;
-            $agreementRateMinutes += $entry->minutes_worked;
+            // Exhaustive and without a default: a new billing mode fails static
+            // analysis here instead of inheriting the agreement's rate.
+            match ($mode) {
+                SubcontractorBillingMode::Direct => null,
+                SubcontractorBillingMode::FlatHourly => $flatHourly[] = $entry,
+                SubcontractorBillingMode::Retainer => $agreementRate[] = $entry,
+            };
+            if ($mode === SubcontractorBillingMode::Retainer) {
+                $agreementRateMinutes += $entry->minutes_worked;
+            }
         }
 
         $unitAmount = null;

@@ -96,7 +96,6 @@ final class DeferredBacklogReader
                 $moved->filter(static fn (ClientTimeEntry $entry): bool => $entry->isWithinAgreementScope($agreement))->values(),
                 $periods,
                 $carriedMinutes[(int) $agreement->id] ?? null,
-                $this->segmentFrom($agreement, $clientSegments),
             );
         }
 
@@ -140,21 +139,6 @@ final class DeferredBacklogReader
         }
 
         return min($bounds);
-    }
-
-    /**
-     * The first day an agreement's backlog runs from: its own start, where a
-     * predecessor for the same scope owns the work before it; otherwise no
-     * bound, as termination applies none.
-     *
-     * @param  Collection<int, ClientAgreement>  $segments  the client's agreements, in generation order
-     */
-    private function segmentFrom(ClientAgreement $agreement, Collection $segments): ?CarbonImmutable
-    {
-        $hasPredecessor = $segments->contains(fn (ClientAgreement $segment): bool => $segment->id !== $agreement->id
-            && $this->agreements->successorAgreementForGeneration($segments, $segment)?->id === $agreement->id);
-
-        return $hasPredecessor ? $agreement->starts_on->startOfDay() : null;
     }
 
     /**

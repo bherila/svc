@@ -52,7 +52,10 @@ describe('deferred backlog', () => {
         const line = screen.getByTestId('deferred-backlog-line');
         expect(line.textContent).toContain('42.00 h');
         expect(line.textContent).toContain('$6,100.00');
-        expect(line.textContent).toContain('at hourly rate');
+        expect(line.textContent).toContain('if billed on termination');
+        expect(
+            screen.getByText(/flat-hourly work at its subcontractor rate/),
+        ).toBeTruthy();
         expect(line.textContent).toContain(
             'growing 6.50 h/month over the last 3 months',
         );
@@ -125,7 +128,7 @@ describe('deferred backlog', () => {
 
         const line = screen.getByTestId('deferred-backlog-line');
         expect(line.textContent).toContain('42.00 h');
-        expect(line.textContent).not.toContain('at hourly rate');
+        expect(line.textContent).not.toContain('if billed on termination');
         expect(screen.getByText(/states no hourly rate/)).toBeTruthy();
     });
 
