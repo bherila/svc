@@ -71,7 +71,10 @@ final class SquareSnapshotMapper
         }
         /** @var list<array<string, mixed>> $requests */
         $requests = $presented['payment_requests'];
-        $money = self::money($requests, $presented['next_payment_amount_money']);
+        // A request the presenter dropped - malformed, or past its cap -
+        // leaves the totals unknown rather than a partial sum.
+        $raw = $invoice['payment_requests'] ?? [];
+        $money = self::money($requests, $presented['next_payment_amount_money'], is_array($raw) && count($raw) !== count($requests));
         $recipient = is_array($presented['primary_recipient']) ? $presented['primary_recipient'] : [];
 
         return [
@@ -351,13 +354,13 @@ final class SquareSnapshotMapper
      * @param  array{amount: int, currency: string}|null  $next
      * @return array{currency: string|null, total_amount: int|null, paid_amount: int|null, next_payment_amount: int|null}
      */
-    private static function money(array $requests, ?array $next): array
+    private static function money(array $requests, ?array $next, bool $requestsDropped): array
     {
         $currencies = [];
         $total = null;
         $paid = null;
-        $totalUnreadable = false;
-        $paidUnreadable = false;
+        $totalUnreadable = $requestsDropped;
+        $paidUnreadable = $requestsDropped;
         foreach ($requests as $request) {
             $computed = self::amount($request['computed_amount_money'] ?? null);
             if ($computed !== null) {

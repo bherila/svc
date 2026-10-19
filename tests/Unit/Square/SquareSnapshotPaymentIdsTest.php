@@ -55,6 +55,12 @@ final class SquareSnapshotPaymentIdsTest extends TestCase
         $this->assertNotNull($row);
         $this->assertNull($row['paid_amount'], 'A request whose payments cannot be read leaves the paid amount unknown.');
         $this->assertSame(0, $mapper->invoice(self::squareInvoice('inv_fixture_1'))['paid_amount'] ?? null);
+
+        $dropped = self::squareInvoice('inv_fixture_1');
+        $dropped['payment_requests'][] = 'not a request';
+        $row = $mapper->invoice($dropped);
+        $this->assertNotNull($row);
+        $this->assertSame([null, null], [$row['total_amount'], $row['paid_amount']], 'A dropped request leaves both unknown.');
     }
 
     public function test_a_tender_names_its_payment_by_payment_id_else_by_its_own_id_and_only_captured_card_tenders_count(): void

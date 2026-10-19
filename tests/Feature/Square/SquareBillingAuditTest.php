@@ -407,6 +407,11 @@ final class SquareBillingAuditTest extends TestCase
         $this->assertSame(['inv_unknown'], array_column($repository->invoicesNeedingPaymentIds($workspace, 10), 'square_invoice_id'));
         $this->assertTrue(app(SquareBillingAudit::class)->report($workspace)['complete'], 'The read is current meanwhile.');
         $this->assertFalse($repository->markPaymentIdsUnresolvable($workspace, 'inv_unknown', 'PARTIALLY_PAID||t3', retryAfter: CarbonImmutable::parse('2030-03-20 12:00:00')), 'A slower reader never undoes a reread.');
+        // A reader that saw the reread stamp may replace it.
+        $current = array_values(array_filter($repository->invoicesNeedingPaymentIds($workspace, 10), static fn (array $lookup): bool => $lookup['square_invoice_id'] === 'inv_unknown'))[0];
+        $this->assertTrue($repository->markPaymentIdsUnresolvable($workspace, 'inv_unknown', 'PARTIALLY_PAID||t3', read: $current['read']));
+        $this->assertSame('PARTIALLY_PAID||t3|x', SquareInvoiceSnapshot::query()->where('workspace_id', $workspace->id)->where('square_invoice_id', 'inv_unknown')->value('payment_ids_basis'));
+        SquareInvoiceSnapshot::query()->where('workspace_id', $workspace->id)->where('square_invoice_id', 'inv_unknown')->update(['payment_ids_basis' => 'PARTIALLY_PAID||t3|r']);
         $this->assertSame('PARTIALLY_PAID||t3|r', SquareInvoiceSnapshot::query()->where('workspace_id', $workspace->id)->where('square_invoice_id', 'inv_unknown')->value('payment_ids_basis'));
         // Once the amount is known, the old reread stamp no longer protects the row.
         SquareInvoiceSnapshot::query()->where('workspace_id', $workspace->id)->where('square_invoice_id', 'inv_unknown')->update(['paid_amount' => 500]);
