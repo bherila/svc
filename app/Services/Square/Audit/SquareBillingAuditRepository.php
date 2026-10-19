@@ -55,7 +55,7 @@ final class SquareBillingAuditRepository
         $seriesKeys = array_map(static fn (SquareAuditAgreement $agreement): string => $agreement->seriesKey, $agreements);
 
         $columns = ['id', 'square_invoice_id', 'invoice_number', 'series_key', 'series_occurrence', 'square_customer_id', 'recipient_name', 'square_location_id',
-            'status', 'currency', 'total_amount', 'paid_amount', 'due_on', 'scheduled_at', 'autopay', 'square_order_id', 'payment_ids_basis'];
+            'status', 'currency', 'total_amount', 'paid_amount', 'due_on', 'scheduled_at', 'autopay', 'square_order_id', 'square_version', 'payment_ids_basis'];
         // Series members first, under their own bound and newest first, so a
         // large mirror never hides a billed-in-Square series: drift reads the
         // latest members, and absence is only claimed of a complete load.
@@ -121,7 +121,7 @@ final class SquareBillingAuditRepository
         $wanted = [];
         foreach ($snapshots as $snapshot) {
             if (SquareSnapshotMapper::mayHoldPayment($snapshot->status, $snapshot->paid_amount)
-                && SquareSnapshotMapper::paymentIdsCurrent($snapshot->status, $snapshot->paid_amount, $snapshot->square_order_id, $snapshot->payment_ids_basis)
+                && SquareSnapshotMapper::paymentIdsCurrent($snapshot->status, $snapshot->paid_amount, $snapshot->square_version, $snapshot->square_order_id, $snapshot->payment_ids_basis)
                 && SquareBillingAuditPolicy::inPaymentReach(isset($links[$snapshot->square_invoice_id]), $snapshot->series_key, $snapshot->square_customer_id,
                     $snapshot->due_on?->toDateString() ?? $snapshot->scheduled_at?->toDateString(), $billedSeries, $mappedCustomers)) {
                 $wanted[] = $snapshot->square_invoice_id;
@@ -167,7 +167,7 @@ final class SquareBillingAuditRepository
                 $idsByInvoice[$snapshot->square_invoice_id] ?? [],
                 $links[$snapshot->square_invoice_id] ?? null,
                 ! isset($deferred[$snapshot->square_invoice_id])
-                    && SquareSnapshotMapper::paymentIdsCurrent($snapshot->status, $snapshot->paid_amount, $snapshot->square_order_id, $snapshot->payment_ids_basis),
+                    && SquareSnapshotMapper::paymentIdsCurrent($snapshot->status, $snapshot->paid_amount, $snapshot->square_version, $snapshot->square_order_id, $snapshot->payment_ids_basis),
             );
         }
 

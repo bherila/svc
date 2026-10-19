@@ -156,15 +156,19 @@ final class SquareSnapshotMapper
     }
 
     /**
-     * The payment ids resolved for an invoice are good while its status and
-     * paid amount are what they were then; either changing means a payment or
-     * refund happened since and the order is read again. The basis also names
-     * the rules tenders were read by, so a change to those rules re-reads
-     * every order once.
+     * The payment ids resolved for an invoice are good while its status, paid
+     * amount and Square version are what they were then; any of them changing
+     * means a payment or refund may have happened since and the order is read
+     * again. The version is what catches a refund and an equal recapture
+     * between two syncs (#489): status and amount end where they began, but
+     * Square advances the invoice's version for each, and the tender set has
+     * changed. An invoice Square sent without a version is read by status and
+     * amount alone. The basis also names the rules tenders were read by, so a
+     * change to those rules re-reads every order once.
      */
-    public static function paymentIdsBasis(string $status, ?int $paidAmount): string
+    public static function paymentIdsBasis(string $status, ?int $paidAmount, ?int $version): string
     {
-        return $status.'|'.($paidAmount ?? '').'|'.self::TENDER_RULES;
+        return $status.'|'.($paidAmount ?? '').'|'.($version ?? '').'|'.self::TENDER_RULES;
     }
 
     /**
@@ -174,9 +178,9 @@ final class SquareSnapshotMapper
      * lookup queue skips it until the invoice changes, so one such order
      * cannot take every lookup slot of every run.
      */
-    public static function unresolvableBasis(string $status, ?int $paidAmount): string
+    public static function unresolvableBasis(string $status, ?int $paidAmount, ?int $version): string
     {
-        return self::paymentIdsBasis($status, $paidAmount).'|x';
+        return self::paymentIdsBasis($status, $paidAmount, $version).'|x';
     }
 
     /**
@@ -186,13 +190,13 @@ final class SquareSnapshotMapper
      * read like any other; and one that may hold a payment but has no order
      * cannot be resolved at all.
      */
-    public static function paymentIdsCurrent(string $status, ?int $paidAmount, ?string $orderId, ?string $basis): bool
+    public static function paymentIdsCurrent(string $status, ?int $paidAmount, ?int $version, ?string $orderId, ?string $basis): bool
     {
         // Without an order there is nothing to read the payments from, so one
         // that may hold a payment stays unresolved rather than counted empty.
         // With no known amount nothing shows a later payment, so a read is
         // current but stamped to be read again (see rereadBasis()).
-        return ! self::mayHoldPayment($status, $paidAmount) || ($orderId !== null && $basis === ($paidAmount === null ? self::rereadBasis($status) : self::paymentIdsBasis($status, $paidAmount)));
+        return ! self::mayHoldPayment($status, $paidAmount) || ($orderId !== null && $basis === ($paidAmount === null ? self::rereadBasis($status, $version) : self::paymentIdsBasis($status, $paidAmount, $version)));
     }
 
     /**
@@ -208,11 +212,12 @@ final class SquareSnapshotMapper
     /**
      * The basis a read of an invoice with no known paid amount is stamped
      * with: current, but read again in turn after invoices never read, since
-     * a further payment would change neither its status nor its amount.
+     * a further payment would change neither its status nor its amount, and
+     * a version Square did not send would not show it either.
      */
-    public static function rereadBasis(string $status): string
+    public static function rereadBasis(string $status, ?int $version): string
     {
-        return self::paymentIdsBasis($status, null).'|r';
+        return self::paymentIdsBasis($status, null, $version).'|r';
     }
 
     /**
@@ -221,9 +226,9 @@ final class SquareSnapshotMapper
      * after invoices never read, since the authorization may yet settle
      * without the invoice changing.
      */
-    public static function pendingBasis(string $status, ?int $paidAmount): string
+    public static function pendingBasis(string $status, ?int $paidAmount, ?int $version): string
     {
-        return self::paymentIdsBasis($status, $paidAmount).'|p';
+        return self::paymentIdsBasis($status, $paidAmount, $version).'|p';
     }
 
     /**

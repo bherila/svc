@@ -129,7 +129,9 @@ Square dashboard URLs, and `truncated`:
   - and counts a tender once it is settled (a captured card, Square account or buy
   now pay later tender, a completed bank transfer, or cash): an authorization may
   still be voided, and a capture changes the invoice's paid amount, so the order is read
-  again then. An order with more tenders than the reconciler accepts (100) stays
+  again then. Any change Square makes to a paid invoice advances its version, which
+  also sends the order to be read again: a refund and an equal recapture between two
+  syncs leave the status and paid amount where they were, but not the tenders. An order with more tenders than the reconciler accepts (100) stays
   unresolved, as does a paid invoice until the sync has read its order or an order
   whose tender list is malformed; ids awaiting a re-read are not reported.
 - `unlinked_customer_balances`: Square customers with no client company mapped
@@ -163,7 +165,8 @@ a floor: without a complete sync nothing is derived from a series and no balance
 is stated; a series is reported absent only after a complete sync, no series drift
 is reported when series members were bounded, and no customer balance is stated
 when the other invoices were, since any of them could then be partial. Payment ids record
-the tender rules they were read by, so a change to those rules re-reads each
+the invoice's status, paid amount and Square version they were read for and the
+tender rules they were read by, so a change to those rules re-reads each
 paid invoice's order once. Every flag
 is resolved in svc or in the Square dashboard by a person: nothing here links,
 records, imports or writes to Square.
