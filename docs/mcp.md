@@ -267,7 +267,8 @@ With all read scopes, discovery exposes these read-only tools, in this order:
 `billing.audit_unlinked_proposal_agreements`. While Square is configured, managers also
 see the read-only `square.*` pass-through tools described under
 [Square read-only pass-through](#square-read-only-pass-through-438). Managers holding
-`finance:read` also see `finance.invoice_payments.list`, described under
+`finance:read` also see `finance.invoice_payments.list` and
+`finance.payouts.list`, described under
 [Finance reconciliation](#finance-reconciliation-457).
 
 Agreement tools require `billing:read` and an SVC workspace-manager role. Each
@@ -767,17 +768,18 @@ Operators use the same rules without the agent gates through
 
 ### Finance reconciliation (#457)
 
-`finance.invoice_payments.list`, `finance.reconciliations.upsert` and
-`finance.reconciliations.deactivate` are the finance reconciliation routes
-(`/api/v1/workspaces/{workspace}/invoice-payments…`, see
+`finance.invoice_payments.list`, `finance.payouts.list`,
+`finance.reconciliations.upsert` and `finance.reconciliations.deactivate` are
+the finance reconciliation routes (`/api/v1/workspaces/{workspace}/invoice-payments…`
+and `…/payouts`, see
 [the finance reconciliation API](finance-api.md)) as operations: in the OpenAPI
 document, gated by `finance:read` and `finance:reconcile`, and served as MCP tools
 through `AgentMcpFinanceTools`, which dispatches each tool to its own REST
 binding with `AgentMcpRestCall` like every other routed tool, so a tool and its
 route run one
 `FinanceReconciliationOperations`. The `svc:finance:payments`,
-`svc:finance:reconcile` and `svc:finance:unreconcile` commands call the same
-operation.
+`svc:finance:payouts`, `svc:finance:reconcile` and `svc:finance:unreconcile`
+commands call the same operation.
 
 - Over OAuth and MCP every finance operation needs a workspace owner/admin; the
   tools are manager-only in discovery. The finance integration's Sanctum token

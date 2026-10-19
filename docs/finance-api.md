@@ -6,7 +6,7 @@ SVC. Amounts are integer minor units, identifiers are public UUIDs, and every
 request is restricted by both the credential's scope and the caller's workspace
 role.
 
-The three operations are declared once on the operation registry
+The operations are declared once on the operation registry
 (`AgentOperationCatalog`, #457), like every other `/api/v1` operation. Each is in
 the OpenAPI document (`public/openapi/svc-agent-v1.json`, served at
 `/api/openapi.json`) with its request and response schemas, scopes and refusals,
@@ -16,6 +16,7 @@ and each is an MCP tool and a console command of the same name, all running one
 | Operation                            | REST                                                      | Scope               | Console                    |
 | ------------------------------------ | --------------------------------------------------------- | ------------------- | -------------------------- |
 | `finance.invoice_payments.list`      | `GET /api/v1/workspaces/{workspace}/invoice-payments`     | `finance:read`      | `svc:finance:payments`     |
+| `finance.payouts.list`               | `GET /api/v1/workspaces/{workspace}/payouts`              | `finance:read`      | `svc:finance:payouts`      |
 | `finance.reconciliations.upsert`     | `PUT …/invoice-payments/{payment}/reconciliations/{external-system}/{transaction-uuid}` | `finance:reconcile` | `svc:finance:reconcile`    |
 | `finance.reconciliations.deactivate` | `DELETE` the same path                                    | `finance:reconcile` | `svc:finance:unreconcile`  |
 
@@ -102,8 +103,9 @@ self-description and is never logged.
   `updated_since`, `watermark` and `cursor` (below).
 - Returns invoice/client public identifiers, payment/net/reconciled amounts, and
   active plus historical reconciliation allocations, with Laravel's `links` and
-  `meta` pagination blocks. Internal database IDs, payment notes, and provider
-  payment identifiers are not returned.
+  `meta` pagination blocks. Internal database IDs and payment notes are not
+  returned. A processor payment also carries what the processor reports about
+  settling it (see [Processor settlement and payouts](#processor-settlement-and-payouts)).
 
 ### Incremental sync
 
@@ -151,6 +153,68 @@ dates, a client's `status` - is refused (`422`, naming it): a record that
 changes out of the filter would never be delivered again, and `overdue` changes
 as the date passes without the invoice changing at all. Sync without them and
 filter the synced records.
+
+## Processor settlement and payouts
+
+A Stripe or Square payment settles into the bank as part of a processor payout:
+one deposit for many payments, net of the processor's fees. Each payment in
+`finance.invoice_payments.list` carries what the processor reports about that:
+
+| Field                          | Meaning                                                                                                                   |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| `provider_payment_identifier`  | The processor's own id for the payment (a Stripe payment intent, a Square payment); null for one recorded by hand.       |
+| `provider_charged_at`          | When the processor charged it (ISO 8601). Not `received_on`, which for Stripe is the day svc heard of the payment.       |
+| `provider_fee_amount`          | The processor's fee in minor units of the payment's currency, positive for a fee charged.                                 |
+| `provider_payout_identifier`   | The payout the payment settled in.                                                                                         |
+| `provider_payout_arrival_date` | The day that payout arrives at the bank.                                                                                   |
+
+Each is null until the processor reports it. A fee is kept only in the
+payment's own currency: a payment settled in another currency has no
+`provider_fee_amount`. When the processor reports any of them the payment's
+`version` and `updated_at` move, so the change feed delivers it.
+
+`GET /api/v1/workspaces/{workspace}/payouts` (`finance.payouts.list`) lists the
+payouts themselves, for the same callers as the payment listing:
+
+- `id` (public UUID), `version`, `provider` (`stripe` or `square`),
+  `provider_payout_identifier`, `amount`, `currency`, `arrival_date`, `type`
+  (`automatic`, `manual` or `instant`) and `status` (`pending`, `in_transit`,
+  `paid`, `failed` or `canceled`).
+- `amount` is signed minor units: negative when the payout took money from the
+  bank account (refunds or disputes larger than the period's charges).
+- A payout's member payments are the payments whose
+  `provider_payout_identifier` names it.
+- Numbered pages (`page`, `per_page` up to 100, newest arrival first) filtered
+  by `provider`, `status`, `arrival_from` and `arrival_to`; or the change feed
+  (`updated_since`, `watermark`, `cursor`) with the same semantics as the
+  payment feed. A payout's status and arrival date can change, so the feed takes
+  only `provider` and refuses the others (`422`). Payouts are never deleted.
+- A report never overwrites a newer one: a payout reported `failed` after it
+  was reported `paid` stays `failed`, however the reports arrive.
+
+**Matching is net-only.** A payout's `amount` is what reached the bank. Refunds,
+disputes and fee adjustments that land in a different payout than their
+payment, and Stripe manual or instant payouts, are not explained here; the
+finance system treats what does not add up as unexplained.
+
+Where the facts come from:
+
+- **Stripe.** When a payment succeeds, svc reads its charge and balance
+  transaction for the charge time and fee (best effort: a failure leaves them to
+  the payout or the backfill). `payout.paid`, `payout.failed` and
+  `payout.canceled` store the payout and, for an automatic payout, read its
+  balance transactions to record on each charged payment its payout, arrival
+  date and fee. One Stripe account serves the installation, so a payout is
+  stored for every workspace whose payments (charges, refunds or disputes) it
+  names. Stripe does not list a manual or instant payout's transactions; such a
+  payout is updated only where a row for it already exists.
+- **Square.** `payout.sent`, `payout.paid` and `payout.failed` are hints: svc
+  reads the payout and its entries from Square's read-only Payouts API, stores
+  it for the connected workspace, and records on each charged payment its
+  payout, arrival date and fee. Reconciling a payment records its capture time
+  and Square's processing fee so far; a fee from the payout is not overwritten.
+- **History.** `svc:finance:backfill-payouts` fills both for payments and
+  payouts recorded before svc stored them (below).
 
 `PUT /api/v1/workspaces/{workspace}/invoice-payments/{payment}/reconciliations/{external-system}/{transaction-uuid}` (`finance.reconciliations.upsert`)
 
@@ -278,4 +342,26 @@ php artisan svc:finance:reconcile PAYMENT SYSTEM TRANSACTION --workspace=WORKSPA
     [--inactive] [--format=json]
 php artisan svc:finance:unreconcile PAYMENT SYSTEM TRANSACTION --workspace=WORKSPACE \
     --user=USER [--format=json]
+php artisan svc:finance:payouts --workspace=WORKSPACE --user=USER \
+    [--provider=stripe] [--status=paid] [--arrival-from=YYYY-MM-DD] \
+    [--arrival-to=YYYY-MM-DD] [--per-page=50] [--page=1] [--format=json]
 ```
+
+### Backfilling settlement
+
+```bash
+php artisan svc:finance:backfill-payouts [--provider=all|stripe|square] \
+    [--since=YYYY-MM-DD] [--workspace=WORKSPACE] [--apply] [--format=json]
+```
+
+Reads Stripe's and Square's payouts (created on or after `--since`; Square's
+own default without it is the last year) and their member payments, then each
+processor payment still missing a charge time or fee, and records them through
+the same code as the webhooks. It reads the processors only, and writes
+nothing without `--apply`: the default is a dry run reporting what would
+change. Every write is keyed by the processors' own identifiers and writes only
+what differs, so running it again changes nothing. A run stopped by a processor
+failure reports what it did and exits non-zero; running it again resumes, since
+stored payouts are unchanged and the charge pass revisits only payments still
+missing facts. `--workspace` keeps every write to one workspace. Output is
+counts only.

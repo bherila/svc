@@ -736,8 +736,25 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Received payments with what each is worth net of refunds, how much of that its active finance reconciliation allocations cover, and every allocation, active first; newest received first. Succeeded payments unless status is given; status=any returns every status the enum names, so a full refund (refunded) and a partial one (still succeeded) are both seen; a row with an unrecognised status is never returned. 50 a page unless per_page is (at most 100), numbered by page. For incremental sync, name updated_since, watermark or cursor instead of page, with status=any (any other status, received_from and received_to are refused there: a payment can change out of them): payments then come newest change first (updated_at, then id) inside a snapshot watermark that the first page of a pass fixes (now, or an earlier time given) and every page returns in meta; follow meta.next_cursor until it is null, then start the next pass with updated_since set to that watermark (inclusive; starting a few seconds earlier is harmless). Timestamps only find candidates, and consecutive passes overlap: deduplicate by (id, version), where version also moves when one of the payment's allocations changes. The embedded invoice and client are read-time snapshots, not change-tracked: a change to the invoice or client does not move the payment, so follow invoices.list and clients.list for them. Payments are never deleted. Workspace owners/admins; with the finance token, any workspace member. Internal ids, payment notes and processor payment identifiers are never returned. The Sanctum finance token issued by svc:auth:issue-token is accepted too, its finance.read and finance.reconcile abilities standing for these scopes. */
+        /** @description Received payments with what each is worth net of refunds, how much of that its active finance reconciliation allocations cover, and every allocation, active first; newest received first. Succeeded payments unless status is given; status=any returns every status the enum names, so a full refund (refunded) and a partial one (still succeeded) are both seen; a row with an unrecognised status is never returned. 50 a page unless per_page is (at most 100), numbered by page. For incremental sync, name updated_since, watermark or cursor instead of page, with status=any (any other status, received_from and received_to are refused there: a payment can change out of them): payments then come newest change first (updated_at, then id) inside a snapshot watermark that the first page of a pass fixes (now, or an earlier time given) and every page returns in meta; follow meta.next_cursor until it is null, then start the next pass with updated_since set to that watermark (inclusive; starting a few seconds earlier is harmless). Timestamps only find candidates, and consecutive passes overlap: deduplicate by (id, version), where version also moves when one of the payment's allocations changes. The embedded invoice and client are read-time snapshots, not change-tracked: a change to the invoice or client does not move the payment, so follow invoices.list and clients.list for them. Payments are never deleted. A processor payment also carries what the processor reports about settling it: its own payment identifier, its charge time (not received_on, which for Stripe is the day svc heard of it), its fee, and the payout it settled in with that payout's arrival date; finance.payouts.list lists the payouts. These move the payment's version when the processor reports them. Workspace owners/admins; with the finance token, any workspace member. Internal ids and payment notes are never returned. The Sanctum finance token issued by svc:auth:issue-token is accepted too, its finance.read and finance.reconcile abilities standing for these scopes. */
         get: operations['finance.invoice_payments.list'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/payouts': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The payment-processor payouts (Stripe, Square) that settled this workspace's payments: each payout's signed amount in minor units (negative when the payout took money from the bank account), currency, arrival date, type (automatic, manual or instant) and status (pending, in_transit, paid, failed or canceled); newest arrival first. Its member payments are the payments whose provider_payout_identifier names it, in finance.invoice_payments.list. Matching is net-only: a payout's amount is what reached the bank, and refunds, disputes or fees that land in a different payout, and manual or instant Stripe payouts (whose members Stripe does not list), are left for the finance system to treat as unexplained. A payout reported failed or canceled after it was reported paid stays so. 50 a page unless per_page is (at most 100), numbered by page. For incremental sync, name updated_since, watermark or cursor instead of page: the change feed works as on finance.invoice_payments.list (newest change first inside a snapshot watermark; deduplicate by (id, version)) and takes only the provider filter, since a payout's status and arrival date can change (status, arrival_from and arrival_to are refused there). Payouts are never deleted. Workspace owners/admins; with the finance token, any workspace member. The Sanctum finance token issued by svc:auth:issue-token is accepted too, its finance.read and finance.reconcile abilities standing for these scopes. */
+        get: operations['finance.payouts.list'];
         put?: never;
         post?: never;
         delete?: never;
@@ -2328,6 +2345,22 @@ export interface components {
             reference: string | null;
             /** @description The processor that recorded the payment, or null for one recorded by hand. */
             provider: string | null;
+            /** @description The processor's own identifier for the payment (a Stripe payment intent, a Square payment); null for a payment recorded by hand. */
+            provider_payment_identifier: string | null;
+            /**
+             * Format: date-time
+             * @description When the processor charged the payment, as the processor reports it; null until it does, and for a payment recorded by hand. Not received_on, which for Stripe is the day svc heard of the payment.
+             */
+            provider_charged_at: string | null;
+            /** @description The processor's fee for the payment in minor units of its currency, positive for a fee charged; null until the processor reports it, or when the payment settled in another currency. */
+            provider_fee_amount: number | null;
+            /** @description The processor payout the payment settled in (finance.payouts.list lists it); null until the processor reports one. */
+            provider_payout_identifier: string | null;
+            /**
+             * Format: date
+             * @description The day that payout arrives at the bank, as the processor reports it; null without a payout.
+             */
+            provider_payout_arrival_date: string | null;
             /** @description The payment's invoice as it is when read: a snapshot, not change-tracked. A change to the invoice (its status, total, number) does not advance the payment's version or updated_at; follow invoices.list's change feed to keep it current. */
             invoice: {
                 /** Format: uuid */
@@ -2384,6 +2417,52 @@ export interface components {
             per_page: number;
             to: number | null;
             total: number;
+        };
+        FinancePayout: {
+            /** Format: uuid */
+            id: string;
+            version: components['schemas']['Version'];
+            /** @enum {string} */
+            provider: 'stripe' | 'square';
+            /** @description The processor's own payout identifier; a payment's provider_payout_identifier names it. */
+            provider_payout_identifier: string;
+            /** @description Signed minor units: positive for a deposit to the bank account, negative for a withdrawal from it. */
+            amount: number;
+            currency: string;
+            /**
+             * Format: date
+             * @description The day the processor says the payout arrives at the bank.
+             */
+            arrival_date: string | null;
+            /** @enum {string} */
+            type: 'automatic' | 'manual' | 'instant';
+            /**
+             * @description A failed or canceled payout did not reach the bank account, or came back from it.
+             * @enum {string}
+             */
+            status: 'pending' | 'in_transit' | 'paid' | 'failed' | 'canceled';
+            /** Format: date-time */
+            created_at: string | null;
+            /** Format: date-time */
+            updated_at: string | null;
+        };
+        FinancePayoutListResponse: {
+            data: components['schemas']['FinancePayout'][];
+            /** @description Numbered pages only. */
+            links?: {
+                /** Format: uri */
+                first: string | null;
+                /** Format: uri */
+                last: string | null;
+                /** Format: uri */
+                prev: string | null;
+                /** Format: uri */
+                next: string | null;
+            };
+            /** @description ChangeFeedMeta when the request named updated_since, watermark or cursor; FinancePageMeta otherwise. */
+            meta:
+                | components['schemas']['FinancePageMeta']
+                | components['schemas']['ChangeFeedMeta'];
         };
         FinanceReconciliation: {
             /** Format: uuid */
@@ -4492,7 +4571,7 @@ export interface components {
         TaskId: string;
         TimeEntryId: string;
         InvoiceId: string;
-        /** @description Only records changed at or after this time (inclusive): the previous pass's watermark. Naming updated_since or watermark switches a listing that otherwise pages to change order - newest change first inside a snapshot watermark returned in meta - and a cursor from one order is refused in the other. Consecutive passes overlap by design (see watermark), so deduplicate by (id, version). A change feed takes only filters on what a record never changes - invoices.list: company_id and invoice_kind; clients.list: none; finance.invoice_payments.list: invoice, with status=any - and refuses any other with a 422 naming it, since a record that changes out of a filter would never be delivered again. */
+        /** @description Only records changed at or after this time (inclusive): the previous pass's watermark. Naming updated_since or watermark switches a listing that otherwise pages to change order - newest change first inside a snapshot watermark returned in meta - and a cursor from one order is refused in the other. Consecutive passes overlap by design (see watermark), so deduplicate by (id, version). A change feed takes only filters on what a record never changes - invoices.list: company_id and invoice_kind; clients.list: none; finance.invoice_payments.list: invoice, with status=any; finance.payouts.list: provider - and refuses any other with a 422 naming it, since a record that changes out of a filter would never be delivered again. */
         UpdatedSince: string;
         /** @description The pass's snapshot upper bound. Fixed by its first page - 120 seconds before the request when omitted, and never later than that - and returned by every page; with a cursor, omit it or send the same one. The lag outlasts any write's transaction, so a record stamped before a pass started but committed after it read is in the next pass; records in that overlap arrive twice. */
         Watermark: string;
@@ -5141,7 +5220,7 @@ export interface operations {
                 status?: 'active' | 'archived';
                 limit?: components['parameters']['Limit'];
                 cursor?: components['parameters']['Cursor'];
-                /** @description Only records changed at or after this time (inclusive): the previous pass's watermark. Naming updated_since or watermark switches a listing that otherwise pages to change order - newest change first inside a snapshot watermark returned in meta - and a cursor from one order is refused in the other. Consecutive passes overlap by design (see watermark), so deduplicate by (id, version). A change feed takes only filters on what a record never changes - invoices.list: company_id and invoice_kind; clients.list: none; finance.invoice_payments.list: invoice, with status=any - and refuses any other with a 422 naming it, since a record that changes out of a filter would never be delivered again. */
+                /** @description Only records changed at or after this time (inclusive): the previous pass's watermark. Naming updated_since or watermark switches a listing that otherwise pages to change order - newest change first inside a snapshot watermark returned in meta - and a cursor from one order is refused in the other. Consecutive passes overlap by design (see watermark), so deduplicate by (id, version). A change feed takes only filters on what a record never changes - invoices.list: company_id and invoice_kind; clients.list: none; finance.invoice_payments.list: invoice, with status=any; finance.payouts.list: provider - and refuses any other with a 422 naming it, since a record that changes out of a filter would never be delivered again. */
                 updated_since?: components['parameters']['UpdatedSince'];
                 /** @description The pass's snapshot upper bound. Fixed by its first page - 120 seconds before the request when omitted, and never later than that - and returned by every page; with a cursor, omit it or send the same one. The lag outlasts any write's transaction, so a record stamped before a pass started but committed after it read is in the next pass; records in that overlap arrive twice. */
                 watermark?: components['parameters']['Watermark'];
@@ -6778,7 +6857,7 @@ export interface operations {
                 received_to?: string;
                 per_page?: number;
                 page?: number;
-                /** @description Only records changed at or after this time (inclusive): the previous pass's watermark. Naming updated_since or watermark switches a listing that otherwise pages to change order - newest change first inside a snapshot watermark returned in meta - and a cursor from one order is refused in the other. Consecutive passes overlap by design (see watermark), so deduplicate by (id, version). A change feed takes only filters on what a record never changes - invoices.list: company_id and invoice_kind; clients.list: none; finance.invoice_payments.list: invoice, with status=any - and refuses any other with a 422 naming it, since a record that changes out of a filter would never be delivered again. */
+                /** @description Only records changed at or after this time (inclusive): the previous pass's watermark. Naming updated_since or watermark switches a listing that otherwise pages to change order - newest change first inside a snapshot watermark returned in meta - and a cursor from one order is refused in the other. Consecutive passes overlap by design (see watermark), so deduplicate by (id, version). A change feed takes only filters on what a record never changes - invoices.list: company_id and invoice_kind; clients.list: none; finance.invoice_payments.list: invoice, with status=any; finance.payouts.list: provider - and refuses any other with a 422 naming it, since a record that changes out of a filter would never be delivered again. */
                 updated_since?: components['parameters']['UpdatedSince'];
                 /** @description The pass's snapshot upper bound. Fixed by its first page - 120 seconds before the request when omitted, and never later than that - and returned by every page; with a cursor, omit it or send the same one. The lag outlasts any write's transaction, so a record stamped before a pass started but committed after it read is in the next pass; records in that overlap arrive twice. */
                 watermark?: components['parameters']['Watermark'];
@@ -6829,6 +6908,87 @@ export interface operations {
                 };
             };
             /** @description A filter is invalid (`errors` names it): an unknown status, a malformed invoice id or date, received_to before received_from, per_page out of range, a watermark in the future, or page on a change-feed request. Also a cursor from another workspace, query or watermark. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'finance.payouts.list': {
+        parameters: {
+            query?: {
+                provider?: 'stripe' | 'square';
+                status?:
+                    'pending' | 'in_transit' | 'paid' | 'failed' | 'canceled';
+                arrival_from?: string;
+                arrival_to?: string;
+                per_page?: number;
+                page?: number;
+                /** @description Only records changed at or after this time (inclusive): the previous pass's watermark. Naming updated_since or watermark switches a listing that otherwise pages to change order - newest change first inside a snapshot watermark returned in meta - and a cursor from one order is refused in the other. Consecutive passes overlap by design (see watermark), so deduplicate by (id, version). A change feed takes only filters on what a record never changes - invoices.list: company_id and invoice_kind; clients.list: none; finance.invoice_payments.list: invoice, with status=any; finance.payouts.list: provider - and refuses any other with a 422 naming it, since a record that changes out of a filter would never be delivered again. */
+                updated_since?: components['parameters']['UpdatedSince'];
+                /** @description The pass's snapshot upper bound. Fixed by its first page - 120 seconds before the request when omitted, and never later than that - and returned by every page; with a cursor, omit it or send the same one. The lag outlasts any write's transaction, so a record stamped before a pass started but committed after it read is in the next pass; records in that overlap arrive twice. */
+                watermark?: components['parameters']['Watermark'];
+                cursor?: components['parameters']['Cursor'];
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of processor payouts */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['FinancePayoutListResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The caller may not read this workspace's payouts, or the token lacks finance:read (the finance token, finance.read). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace does not exist or the caller is not in it. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A filter is invalid (`errors` names it): an unknown provider or status, a malformed date, arrival_to before arrival_from, per_page out of range, a watermark in the future, page or a filter other than provider on a change-feed request. Also a cursor from another workspace, query or watermark. */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -7114,7 +7274,7 @@ export interface operations {
                 collectible?: boolean;
                 /** @description Refused (422) together with updated_since or watermark, like every filter but company_id and invoice_kind: an invoice becomes overdue as the date passes, without changing, so a change feed cannot filter on it. */
                 overdue?: boolean;
-                /** @description Only records changed at or after this time (inclusive): the previous pass's watermark. Naming updated_since or watermark switches a listing that otherwise pages to change order - newest change first inside a snapshot watermark returned in meta - and a cursor from one order is refused in the other. Consecutive passes overlap by design (see watermark), so deduplicate by (id, version). A change feed takes only filters on what a record never changes - invoices.list: company_id and invoice_kind; clients.list: none; finance.invoice_payments.list: invoice, with status=any - and refuses any other with a 422 naming it, since a record that changes out of a filter would never be delivered again. */
+                /** @description Only records changed at or after this time (inclusive): the previous pass's watermark. Naming updated_since or watermark switches a listing that otherwise pages to change order - newest change first inside a snapshot watermark returned in meta - and a cursor from one order is refused in the other. Consecutive passes overlap by design (see watermark), so deduplicate by (id, version). A change feed takes only filters on what a record never changes - invoices.list: company_id and invoice_kind; clients.list: none; finance.invoice_payments.list: invoice, with status=any; finance.payouts.list: provider - and refuses any other with a 422 naming it, since a record that changes out of a filter would never be delivered again. */
                 updated_since?: components['parameters']['UpdatedSince'];
                 /** @description The pass's snapshot upper bound. Fixed by its first page - 120 seconds before the request when omitted, and never later than that - and returned by every page; with a cursor, omit it or send the same one. The lag outlasts any write's transaction, so a record stamped before a pass started but committed after it read is in the next pass; records in that overlap arrive twice. */
                 watermark?: components['parameters']['Watermark'];

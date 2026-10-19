@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\Api\V1\FinancePayoutResource;
 use App\Http\Resources\Api\V1\InvoicePaymentResource;
 use App\Http\Resources\Api\V1\PaymentReconciliationResource;
 use App\Models\AgentPrincipal;
@@ -12,6 +13,7 @@ use App\Services\Finance\FinanceReconciliationOperations;
 use App\Support\Finance\FinanceCaller;
 use App\Support\Finance\FinanceDoor;
 use App\Support\Finance\FinancePaymentQuery;
+use App\Support\Finance\FinancePayoutQuery;
 use App\Support\Finance\ReconciliationAllocation;
 use App\Support\Finance\ReconciliationTarget;
 use Illuminate\Http\JsonResponse;
@@ -41,6 +43,17 @@ final class FinanceReconciliationController extends Controller
         }
 
         return InvoicePaymentResource::collection($operations->list($caller, $workspace, $query));
+    }
+
+    public function payouts(Request $request, Workspace $workspace, FinanceReconciliationOperations $operations): AnonymousResourceCollection|JsonResponse
+    {
+        $caller = $this->caller($request);
+        $query = FinancePayoutQuery::fromInput($request->query());
+        if ($query->changes()) {
+            return response()->json($operations->payoutChanges($caller, $workspace, $query));
+        }
+
+        return FinancePayoutResource::collection($operations->payouts($caller, $workspace, $query));
     }
 
     public function upsert(Request $request, Workspace $workspace, string $payment, string $external_system, string $transaction, FinanceReconciliationOperations $operations): PaymentReconciliationResource

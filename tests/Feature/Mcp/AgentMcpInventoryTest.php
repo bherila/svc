@@ -80,6 +80,7 @@ final class AgentMcpInventoryTest extends TestCase
         'expenses.unapprove',
         'expenses.update',
         'finance.invoice_payments.list',
+        'finance.payouts.list',
         'finance.reconciliations.deactivate',
         'finance.reconciliations.upsert',
         'invoices.add_time',

@@ -704,6 +704,16 @@
             "mcp.switch:finance.invoice_payments.list"
         ]
     },
+    "finance.payouts.list": {
+        "scopes": [
+            "finance:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:finance.payouts.list"
+        ]
+    },
     "finance.reconciliations.deactivate": {
         "scopes": [
             "finance:reconcile"

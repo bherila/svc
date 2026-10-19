@@ -2,15 +2,18 @@
 
 namespace App\Services\Finance;
 
+use App\Http\Resources\Api\V1\FinancePayoutResource;
 use App\Http\Resources\Api\V1\InvoicePaymentResource;
 use App\Models\ClientInvoicePayment;
 use App\Models\PaymentReconciliation;
+use App\Models\ProcessorPayout;
 use App\Models\Workspace;
 use App\Services\AgentApi\AgentMutationExecutor;
 use App\Support\AgentApi\ChangeFeedPage;
 use App\Support\Billing\InvoicePaymentStatus;
 use App\Support\Finance\FinanceCaller;
 use App\Support\Finance\FinancePaymentQuery;
+use App\Support\Finance\FinancePayoutQuery;
 use App\Support\Finance\ReconciliationAllocation;
 use App\Support\Finance\ReconciliationTarget;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -21,7 +24,8 @@ use Illuminate\Support\Facades\Gate;
 /**
  * The finance reconciliation operations (#457), one implementation behind
  * every door: the REST routes (`finance.invoice_payments.list`,
- * `finance.reconciliations.upsert`, `finance.reconciliations.deactivate`),
+ * `finance.payouts.list`, `finance.reconciliations.upsert`,
+ * `finance.reconciliations.deactivate`),
  * the MCP tools of the same names, which reach those routes through the
  * internal transport, and the `svc:finance:*` console commands.
  *
@@ -42,6 +46,8 @@ final class FinanceReconciliationOperations
     public const string UPSERT = 'finance.reconciliations.upsert';
 
     public const string DEACTIVATE = 'finance.reconciliations.deactivate';
+
+    public const string PAYOUTS = 'finance.payouts.list';
 
     public function __construct(
         private readonly PaymentReconciliationService $reconciliations,
@@ -126,6 +132,69 @@ final class FinanceReconciliationOperations
             ->withSum([
                 'reconciliations as active_reconciled_amount' => static fn (Builder $allocations) => $allocations->where('workspace_id', $workspaceId)->where('is_active', true),
             ], 'allocated_amount');
+    }
+
+    /**
+     * The workspace's processor payouts (S7), newest arrival first, for the
+     * same readers as the payment listing.
+     *
+     * @return LengthAwarePaginator<int, ProcessorPayout>
+     *
+     * @throws AuthorizationException
+     */
+    public function payouts(FinanceCaller $caller, Workspace $workspace, FinancePayoutQuery $query): LengthAwarePaginator
+    {
+        return $this->payoutQuery($caller, $workspace, $query)
+            ->orderByDesc('arrival_date')
+            ->orderByDesc('id')
+            ->paginate($query->perPage, ['*'], 'page', $query->page)
+            ->withPath(self::payoutsUrl($workspace))
+            ->withQueryString();
+    }
+
+    /**
+     * The same payouts as an incremental change feed ({@see ChangeFeedPage}).
+     * A payout's version moves whenever the processor reports a change to it.
+     *
+     * @return array{data: list<array<string, mixed>>, meta: array{next_cursor: ?string, watermark: string}}
+     *
+     * @throws AuthorizationException
+     */
+    public function payoutChanges(FinanceCaller $caller, Workspace $workspace, FinancePayoutQuery $query): array
+    {
+        return ChangeFeedPage::run(
+            $workspace,
+            self::PAYOUTS.'|'.$query->key(),
+            $this->payoutQuery($caller, $workspace, $query),
+            $query->perPage,
+            $query->cursor,
+            $query->window,
+            static function (): void {},
+            static fn (ProcessorPayout $payout): array => (new FinancePayoutResource($payout))->resolve(),
+        );
+    }
+
+    /**
+     * @return Builder<ProcessorPayout>
+     *
+     * @throws AuthorizationException
+     */
+    private function payoutQuery(FinanceCaller $caller, Workspace $workspace, FinancePayoutQuery $query): Builder
+    {
+        Gate::forUser($caller->user)->authorize($caller->door->membersMayRead() ? 'view' : 'manage', $workspace);
+
+        return ProcessorPayout::query()
+            ->where('workspace_id', $workspace->id)
+            ->when($query->provider !== null, static fn (Builder $payouts) => $payouts->where('provider', $query->provider))
+            ->when($query->status !== null, static fn (Builder $payouts) => $payouts->where('status', $query->status?->value))
+            ->when($query->arrivalFrom !== null, static fn (Builder $payouts) => $payouts->where('arrival_date', '>=', (string) $query->arrivalFrom))
+            ->when($query->arrivalTo !== null, static fn (Builder $payouts) => $payouts->where('arrival_date', '<=', (string) $query->arrivalTo));
+    }
+
+    /** The payouts route's address on this installation, as {@see listUrl()}. */
+    public static function payoutsUrl(Workspace $workspace): string
+    {
+        return rtrim((string) config('app.url'), '/').'/api/v1/workspaces/'.$workspace->public_id.'/payouts';
     }
 
     /**
