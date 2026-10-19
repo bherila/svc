@@ -55,7 +55,14 @@ final class AgentMcpRestCall
         if ($this->context !== null) {
             $headers['X-Request-Id'] = $this->context->requestId;
         }
-        $response = $this->api->send($rest->method, ltrim($uri, '/'), query: $query, json: $body, headers: $headers);
+        $uri = ltrim($uri, '/');
+        // The transport hands its query to Request::create, which files it as
+        // the form body of anything but a GET; a write's query travels in its URI.
+        $read = in_array(strtoupper($rest->method), ['GET', 'HEAD'], true);
+        if (! $read && $query !== []) {
+            $uri .= '?'.http_build_query($query);
+        }
+        $response = $this->api->send($rest->method, $uri, query: $read ? $query : [], json: $body, headers: $headers);
         if ($response->status >= 200 && $response->status < 300 && $response->json !== null) {
             return $response->json;
         }

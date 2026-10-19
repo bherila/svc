@@ -4,22 +4,18 @@ namespace App\Services\Mcp;
 
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoicePayment;
-use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\AgentApi\AgentPaymentReadService;
 use App\Services\AgentApi\AgentReadService;
 use App\Services\AgentApi\ChangeManualPaymentAction;
 use App\Services\AgentApi\CorrectPaymentAction;
-use App\Services\AgentApi\DeleteTimeEntryAction;
 use App\Services\AgentApi\IssueInvoiceAction;
-use App\Services\AgentApi\LogTimeEntriesAction;
 use App\Services\AgentApi\RecordPaymentAction;
-use App\Services\AgentApi\UpdateTimeEntryAction;
 use App\Services\Mcp\Context\McpAccountContextResolver;
 use App\Services\Mcp\Context\McpRequestContext;
 use App\Support\AgentApi\Presenters\AgentInvoicePresenter;
-use App\Support\AgentApi\Presenters\AgentTimeEntryPresenter;
+use App\Support\AgentApi\ReadView;
 use App\Support\Billing\InvoiceEmailDraft;
 use App\Support\Billing\ReceivedPaymentData;
 use Bherila\McpLaravelBridge\Mcp\RequestArguments;
@@ -32,10 +28,6 @@ final class AgentMcpWriteTools
     public function __construct(
         private readonly AgentMcpRestCall $rest,
         private readonly RequestArguments $requestArguments,
-        private readonly LogTimeEntriesAction $logTime,
-        private readonly UpdateTimeEntryAction $updateTime,
-        private readonly DeleteTimeEntryAction $deleteTime,
-        private readonly AgentTimeEntryPresenter $timeEntries,
         private readonly McpAccountContextResolver $accounts,
         private readonly ?McpRequestContext $requestContext = null,
     ) {}
@@ -233,10 +225,6 @@ final class AgentMcpWriteTools
         return new self(
             $this->rest->forContext($context),
             $this->requestArguments,
-            $this->logTime,
-            $this->updateTime,
-            $this->deleteTime,
-            $this->timeEntries,
             $this->accounts,
             $context,
         );
@@ -361,53 +349,24 @@ final class AgentMcpWriteTools
      * @return array<string, mixed> */
     public function timeEntriesLog(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(minItems: 1, maxItems: 20)] array $entries, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key, bool $approve = false): array
     {
-        $context = $this->context('time:write');
-        $context = $this->accounts->resolve($context, $workspace_id);
-        $workspace = $context->workspace;
-        if (! $workspace instanceof Workspace) {
-            throw new \LogicException('MCP time logging requires a workspace context.');
-        }
+        $flags = app(McpFeatureFlags::class);
         // Approval arriving through log answers to the same kill switch as the
-        // approve tool; the action separately enforces the write cutover.
-        if ($approve && ! app(McpFeatureFlags::class)->enabledFor('time_entries.approve', McpFeatureFlags::WRITE)) {
+        // approve tool; the route separately enforces the cutover, scope and role.
+        if ($approve && ! $flags->enabledFor('time_entries.approve', McpFeatureFlags::WRITE)) {
             throw new ToolCallException('Approving time is not enabled for agents.');
         }
-        $actor = User::query()->findOrFail($context->principal->subject->id);
-        // `approve` joins the payload only when set, so the digest of a plain
+
+        // `approve` joins the body only when set, so the digest of a plain
         // log - and every receipt written before the flag existed - is unchanged.
-        $payload = ['entries' => $entries] + ($approve ? ['approve' => true] : []);
-        $ids = $this->logTime->run(
-            $actor,
-            $workspace,
-            $context->principal->clientId,
+        // The read view is time_entries.list's, so it answers to that
+        // tool's kill switch here and to its scope in the route.
+        return $this->rest->call(
+            'time_entries.log',
+            ['workspace' => $workspace_id],
+            ['entries' => $entries] + ($approve ? ['approve' => true] : []),
             $idempotency_key,
-            $payload,
-            $context->principal->hasScope('time:approve'),
+            $flags->enabledFor('time_entries.list', McpFeatureFlags::READ) ? [ReadView::PARAMETER => ReadView::READ] : [],
         );
-        // A token that may read time gets the rows exactly as time_entries.list
-        // returns them, rate and status included, so no follow-up read is needed.
-        // It is the list read, so it answers to the list's scope and kill switch.
-        if ($context->principal->hasScope('time:read')
-            && app(McpFeatureFlags::class)->enabledFor('time_entries.list', McpFeatureFlags::READ)) {
-            return ['data' => app(AgentReadService::class)->timeEntriesByIds($context->principal->subject, $workspace, $ids)];
-        }
-        $entriesById = ClientTimeEntry::query()
-            ->where('workspace_id', $workspace->id)
-            ->whereIn('public_id', $ids)
-            ->withCapacityPlacement($workspace->id)
-            ->with('project')
-            ->with(AgentTimeEntryPresenter::authorRelations($workspace))
-            ->get()
-            ->keyBy('public_id');
-
-        return ['data' => collect($ids)->map(function (string $id) use ($entriesById, $workspace): array {
-            $entry = $entriesById->get($id);
-            if (! $entry instanceof ClientTimeEntry) {
-                throw new ToolCallException('The SVC API request could not be completed.');
-            }
-
-            return $this->timeEntries->present($workspace, $entry);
-        })->values()->all()];
     }
 
     /** @return array<string, mixed> */
@@ -426,30 +385,13 @@ final class AgentMcpWriteTools
         #[Schema(maxLength: 10000)] ?string $client_visible_description = null,
         #[Schema(format: 'uuid')] ?string $task_id = null,
     ): array {
-        $body = compact('expected_version');
-        foreach (compact('worked_on', 'minutes', 'description', 'is_billable', 'is_deferred', 'is_visible_to_client', 'client_visible_description', 'task_id') as $name => $value) {
-            if ($this->requestArguments->has($context, $name)) {
-                $body[$name] = $value;
-            }
-        }
-
-        $context = $this->workspaceContext($workspace_id, 'time:write');
-        $workspace = $this->workspace($context);
-        $actor = User::query()->findOrFail($context->principal->subject->id);
-        $entry = $this->updateTime->run($actor, $workspace, $context->principal->clientId, $idempotency_key, $entry_id, $body);
-
-        return ['data' => $this->timeEntries->present($workspace, $entry)];
+        return $this->rest->call('time_entries.update', ['workspace' => $workspace_id, 'entry' => $entry_id], compact('expected_version') + $this->provided($context, compact('worked_on', 'minutes', 'description', 'is_billable', 'is_deferred', 'is_visible_to_client', 'client_visible_description', 'task_id')), $idempotency_key);
     }
 
     /** @return array<string, mixed> */
     public function timeEntriesDelete(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $entry_id, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
     {
-        $context = $this->workspaceContext($workspace_id, 'time:write');
-        $workspace = $this->workspace($context);
-        $actor = User::query()->findOrFail($context->principal->subject->id);
-        $id = $this->deleteTime->run($actor, $workspace, $context->principal->clientId, $idempotency_key, $entry_id, ['expected_version' => $expected_version]);
-
-        return ['data' => ['deleted_id' => $id]];
+        return $this->rest->call('time_entries.delete', ['workspace' => $workspace_id, 'entry' => $entry_id], compact('expected_version'), $idempotency_key);
     }
 
     /** @return array<string, mixed> */

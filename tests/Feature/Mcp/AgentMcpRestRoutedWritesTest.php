@@ -7,6 +7,7 @@ use App\Models\ClientCompany;
 use App\Models\ClientProject;
 use App\Models\ClientProjectMembership;
 use App\Models\ClientTask;
+use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Mcp\AgentMcpApiFailure;
@@ -109,6 +110,72 @@ final class AgentMcpRestRoutedWritesTest extends TestCase
         $deleted = $this->data($this->callTool($session, 'expenses.delete', ['workspace_id' => $workspace->public_id, 'expense_id' => $expense['id'], 'expected_version' => $updated['version'], 'idempotency_key' => 'routed-expense-delete']));
         $this->assertSame(['deleted_id' => $expense['id']], $deleted);
         $this->assertSame($deleted, $this->withHeader('Idempotency-Key', 'routed-expense-delete')->deleteJson("{$base}/{$expense['id']}", ['expected_version' => $updated['version']])->assertOk()->json('data'));
+    }
+
+    public function test_time_writes_answer_as_the_rest_route_and_share_its_receipts(): void
+    {
+        config(['agent_api.time_entry_writes_enabled' => true]);
+        [$workspace, $project] = $this->fixture();
+        $owner = $this->member($workspace, 'owner');
+        $this->actingAsMcp($owner, [AgentApiScopes::MCP_USE, AgentApiScopes::TIME_READ, AgentApiScopes::TIME_WRITE, AgentApiScopes::TIME_APPROVE]);
+        $session = $this->initialize();
+        $base = "/api/v1/workspaces/{$workspace->public_id}/time-entries";
+        $entry = ['project_id' => $project->public_id, 'worked_on' => '2026-10-07', 'minutes' => 45, 'description' => 'Synthetic routed time', 'billing_rate_amount' => 15000, 'currency' => 'USD'];
+
+        // With time:read the rows are time_entries.list's: the same as REST's read view of the receipt.
+        $logged = $this->data($this->callTool($session, 'time_entries.log', ['workspace_id' => $workspace->public_id, 'entries' => [$entry], 'idempotency_key' => 'routed-time-log']));
+        $this->assertSame(15000, $logged[0]['billing_rate_amount']);
+        $this->assertSame($this->withHeader('Idempotency-Key', 'routed-time-log')->postJson("{$base}?view=read", ['entries' => [$entry]])->assertCreated()->json('data'), $logged);
+        $plain = $this->withHeader('Idempotency-Key', 'routed-time-log')->postJson($base, ['entries' => [$entry]])->assertCreated()->json('data');
+        $this->assertArrayNotHasKey('billing_rate_amount', $plain[0], 'without the view REST answers with the write shape');
+        $this->assertSame(1, ClientTimeEntry::query()->where('workspace_id', $workspace->id)->count());
+
+        // Any other view is refused before anything is written.
+        $this->withHeader('Idempotency-Key', 'routed-time-other-view')->postJson("{$base}?view=list", ['entries' => [$entry]])->assertUnprocessable()->assertJsonValidationErrors('view');
+        $this->assertSame(1, ClientTimeEntry::query()->where('workspace_id', $workspace->id)->count());
+
+        $time = $logged[0];
+        $updated = $this->data($this->callTool($session, 'time_entries.update', ['workspace_id' => $workspace->public_id, 'entry_id' => $time['id'], 'expected_version' => $time['version'], 'minutes' => 50, 'idempotency_key' => 'routed-time-update']));
+        $this->assertSame([50, 'Synthetic routed time'], [$updated['minutes'], $updated['description']]);
+        $stale = $this->withHeader('Idempotency-Key', 'routed-time-stale-rest')->deleteJson("{$base}/{$time['id']}", ['expected_version' => $time['version']])->assertConflict();
+        $this->assertRefusal(AgentMcpApiFailure::message(409, $stale->json()), $this->callTool($session, 'time_entries.delete', ['workspace_id' => $workspace->public_id, 'entry_id' => $time['id'], 'expected_version' => $time['version'], 'idempotency_key' => 'routed-time-stale']));
+        $deleted = $this->data($this->callTool($session, 'time_entries.delete', ['workspace_id' => $workspace->public_id, 'entry_id' => $time['id'], 'expected_version' => $updated['version'], 'idempotency_key' => 'routed-time-delete']));
+        $this->assertSame(['deleted_id' => $time['id']], $deleted);
+    }
+
+    public function test_the_read_view_follows_the_list_tools_switch_and_scope(): void
+    {
+        config(['agent_api.time_entry_writes_enabled' => true]);
+        [$workspace, $project] = $this->fixture();
+        $owner = $this->member($workspace, 'owner');
+        $entry = ['project_id' => $project->public_id, 'worked_on' => '2026-10-07', 'minutes' => 30, 'description' => 'Synthetic plain time'];
+
+        // Without time:read, the route answers with the write shape even when MCP asks for the view.
+        $this->actingAsMcp($owner, [AgentApiScopes::MCP_USE, AgentApiScopes::TIME_WRITE]);
+        $withoutScope = $this->data($this->callTool($this->initialize(), 'time_entries.log', ['workspace_id' => $workspace->public_id, 'entries' => [$entry], 'idempotency_key' => 'plain-time-scope']));
+        $this->assertArrayNotHasKey('currency', $withoutScope[0]);
+
+        // With time_entries.list switched off, MCP does not ask for it.
+        config(['agent_api.mcp_feature_flags' => ['time_entries.list' => false]]);
+        $this->actingAsMcp($owner, [AgentApiScopes::MCP_USE, AgentApiScopes::TIME_READ, AgentApiScopes::TIME_WRITE]);
+        $switchedOff = $this->data($this->callTool($this->initialize(), 'time_entries.log', ['workspace_id' => $workspace->public_id, 'entries' => [$entry], 'idempotency_key' => 'plain-time-switch']));
+        $this->assertArrayNotHasKey('currency', $switchedOff[0]);
+
+        config(['agent_api.mcp_feature_flags' => []]);
+        $listed = $this->data($this->callTool($this->initialize(), 'time_entries.log', ['workspace_id' => $workspace->public_id, 'entries' => [$entry], 'idempotency_key' => 'listed-time']));
+        $this->assertArrayHasKey('currency', $listed[0]);
+    }
+
+    public function test_approval_folded_into_a_log_answers_to_the_approve_tools_switch(): void
+    {
+        config(['agent_api.time_entry_writes_enabled' => true, 'agent_api.mcp_feature_flags' => ['time_entries.approve' => false]]);
+        [$workspace, $project, $manager] = $this->fixture();
+        $this->actingAsMcp($manager, [AgentApiScopes::MCP_USE, AgentApiScopes::TIME_WRITE, AgentApiScopes::TIME_APPROVE]);
+        $arguments = ['workspace_id' => $workspace->public_id, 'idempotency_key' => 'switched-approval', 'approve' => true, 'entries' => [['project_id' => $project->public_id, 'worked_on' => '2026-10-07', 'minutes' => 30, 'description' => 'Synthetic approval']]];
+
+        $this->assertRefusal('Approving time is not enabled for agents.', $this->callTool($this->initialize(), 'time_entries.log', $arguments));
+        $this->assertSame(0, ClientTimeEntry::query()->count());
+        $this->assertDatabaseCount('agent_mutation_receipts', 0);
     }
 
     /** @param array<string, mixed> $body

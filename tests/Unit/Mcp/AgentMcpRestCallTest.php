@@ -24,19 +24,27 @@ final class AgentMcpRestCallTest extends TestCase
         $this->assertSame(['data' => ['id' => 'synthetic']], $result);
         $this->assertSame([[
             'method' => 'PATCH',
-            'path' => 'workspaces/a/tasks/b%2Fc',
-            'query' => ['view' => 'read'],
+            'path' => 'workspaces/a/tasks/b%2Fc?view=read',
+            'query' => [],
             'json' => ['title' => 'Synthetic'],
             'headers' => ['Idempotency-Key' => 'synthetic-key'],
         ]], $transport->requests);
     }
 
-    public function test_a_read_sends_no_body_and_no_idempotency_key(): void
+    public function test_a_read_sends_its_query_as_the_query_and_no_body_or_idempotency_key(): void
     {
         $transport = new RecordingAgentApiTransport;
-        (new AgentMcpRestCall($transport, app(OperationRegistry::class)))->call('context.get', []);
+        (new AgentMcpRestCall($transport, app(OperationRegistry::class)))->call('tasks.list', ['workspace' => 'a'], query: ['limit' => 5]);
 
-        $this->assertSame([['method' => 'GET', 'path' => 'context', 'query' => [], 'json' => null, 'headers' => []]], $transport->requests);
+        $this->assertSame([['method' => 'GET', 'path' => 'workspaces/a/tasks', 'query' => ['limit' => 5], 'json' => null, 'headers' => []]], $transport->requests);
+    }
+
+    public function test_a_write_without_a_query_has_a_bare_path(): void
+    {
+        $transport = new RecordingAgentApiTransport;
+        (new AgentMcpRestCall($transport, app(OperationRegistry::class)))->call('tasks.create', ['workspace' => 'a', 'project' => 'b'], ['title' => 'Synthetic']);
+
+        $this->assertSame('workspaces/a/projects/b/tasks', $transport->requests[0]['path']);
     }
 
     public function test_the_mcp_request_id_travels_with_the_call(): void
