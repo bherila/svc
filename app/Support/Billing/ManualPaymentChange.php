@@ -59,6 +59,12 @@ final readonly class ManualPaymentChange
 {
     public const int REASON_MAX_LENGTH = PaymentCorrection::REASON_MAX_LENGTH;
 
+    /**
+     * The most refund and reversal entries one payment may hold (#472), so
+     * the history presented with every payment is bounded by construction.
+     */
+    public const int MAX_REFUND_ENTRIES = 50;
+
     /** The statuses a hand-recorded payment may be moved to. */
     public const array SETTABLE = [InvoicePaymentStatus::Succeeded, InvoicePaymentStatus::Failed, InvoicePaymentStatus::Canceled];
 
@@ -133,6 +139,23 @@ final readonly class ManualPaymentChange
     public function isReversal(): bool
     {
         return $this->reverses !== null;
+    }
+
+    /**
+     * Refuse a refund or a reversal for a payment whose history is full, so the
+     * history every reader is handed with the payment stays bounded: refunding
+     * and reversing in turn could otherwise grow it forever. A status change
+     * writes no entry and is never refused here.
+     *
+     * @param  int  $entries  how many refund and reversal entries the payment already holds
+     *
+     * @throws DomainException when the history has no room left
+     */
+    public function assertHistoryHasRoom(int $entries): void
+    {
+        if (($this->refund !== null || $this->reverses !== null) && $entries >= self::MAX_REFUND_ENTRIES) {
+            throw new DomainException('This payment already holds '.self::MAX_REFUND_ENTRIES.' refunds and reversals, the most one payment can. Nothing has been changed.');
+        }
     }
 
     /**

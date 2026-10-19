@@ -3289,7 +3289,7 @@ export interface components {
             external_finance_transaction_uuid: string | null;
             /** @description Recorded by hand rather than by a payment processor. Only a manual payment can be moved by payments.set_status, payments.refund or payments.reverse_refund. */
             manual: boolean;
-            /** @description The refunds recorded by hand against this payment and their reversals, oldest first; refunded_amount is the refunds less their reversals. Empty for a processor (Stripe, Square) payment, whose refunds are reported by the processor as a total. */
+            /** @description The refunds recorded by hand against this payment and their reversals, oldest first, at most 50; refunded_amount is the refunds less their reversals. Empty for a processor (Stripe, Square) payment, whose refunds are reported by the processor as a total. */
             refunds: components['schemas']['ReceivedPaymentRefund'][];
         };
         ReceivedPaymentBatchResponse: {

@@ -1263,7 +1263,7 @@ final class InvoiceLifecycleService
             // carry the entry it is the history of.
             $entryId = $kind === null ? null : (string) Str::uuid();
             $refunds = $this->refunds;
-            $guard = static function (ClientInvoicePayment $locked) use ($change, $expectedVersion, $refunds, &$decision, &$observed): bool {
+            $guard = static function (ClientInvoicePayment $locked) use ($change, $expectedVersion, $refunds, $kind, &$decision, &$observed): bool {
                 if ($expectedVersion !== null && ! AgentApiVersion::matches($locked, $expectedVersion)) {
                     throw new PaymentVersionChanged;
                 }
@@ -1272,6 +1272,9 @@ final class InvoiceLifecycleService
                 // refund history holds, so a refund cannot be reversed twice.
                 $target = $change->reverses === null ? null : $refunds->find($locked, $change->reverses);
                 $decision = $change->decide((string) $locked->status, (int) $locked->amount, (int) $locked->refunded_amount, $locked->provider, $target);
+                if ($kind !== null) {
+                    $change->assertHistoryHasRoom($refunds->count($locked));
+                }
 
                 return $decision !== null;
             };

@@ -7,6 +7,7 @@ use App\Models\ClientInvoicePayment;
 use App\Models\ClientInvoicePaymentRefund;
 use App\Models\Workspace;
 use App\Support\AgentApi\AgentApiVersion;
+use App\Support\Billing\ManualPaymentChange;
 use Illuminate\Database\Eloquent\Collection;
 use LogicException;
 
@@ -40,7 +41,10 @@ final class AgentPaymentPresenter
     {
         return ['refunds' => static fn ($refunds) => $refunds->where('workspace_id', $workspace->id)
             ->select(['id', 'public_id', 'workspace_id', 'client_invoice_payment_id', 'kind', 'amount', 'reason', 'reverses_refund_id', 'created_at'])
-            ->orderBy('id')];
+            ->orderBy('id')
+            // Writes stop at this many, so the limit never truncates; it keeps
+            // the read bounded however a row arrived.
+            ->limit(ManualPaymentChange::MAX_REFUND_ENTRIES)];
     }
 
     /**

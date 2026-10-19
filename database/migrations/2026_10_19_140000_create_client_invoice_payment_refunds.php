@@ -47,8 +47,11 @@ return new class extends Migration
             $table->index(['workspace_id', 'client_invoice_payment_id', 'id'], 'cipr_ws_payment_idx');
             $table->foreign(['workspace_id', 'client_invoice_payment_id'], 'cipr_ws_payment_fk')
                 ->references(['workspace_id', 'id'])->on('client_invoice_payments')->cascadeOnDelete();
+            // CASCADE, not RESTRICT: a refund and its reversal leave together
+            // when their payment, invoice or workspace is deleted. Nothing
+            // deletes one row on its own - the model refuses it.
             $table->foreign(['workspace_id', 'reverses_refund_id'], 'cipr_ws_reverses_fk')
-                ->references(['workspace_id', 'id'])->on('client_invoice_payment_refunds')->restrictOnDelete();
+                ->references(['workspace_id', 'id'])->on('client_invoice_payment_refunds')->cascadeOnDelete();
         });
 
         DB::table('client_invoice_payments')

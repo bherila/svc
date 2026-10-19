@@ -93,6 +93,27 @@ final class ManualPaymentReversalTest extends TestCase
         }
     }
 
+    /** A payment's refund history is bounded: the last entry it may hold is allowed, the next refused. */
+    public function test_a_payment_holds_a_bounded_history(): void
+    {
+        $this->assertSame(50, ManualPaymentChange::MAX_REFUND_ENTRIES);
+        $changes = [ManualPaymentChange::refund(100, 'Synthetic'), ManualPaymentChange::reversal(self::REFUND, null, 'Synthetic')];
+        foreach ($changes as $change) {
+            $change->assertHistoryHasRoom(ManualPaymentChange::MAX_REFUND_ENTRIES - 1);
+        }
+        // A status change writes no entry, so the bound does not apply to it.
+        ManualPaymentChange::status('failed', 'Synthetic')->assertHistoryHasRoom(ManualPaymentChange::MAX_REFUND_ENTRIES);
+
+        foreach ($changes as $change) {
+            try {
+                $change->assertHistoryHasRoom(ManualPaymentChange::MAX_REFUND_ENTRIES);
+                $this->fail('A full history must refuse another entry.');
+            } catch (DomainException $exception) {
+                $this->assertSame('This payment already holds 50 refunds and reversals, the most one payment can. Nothing has been changed.', $exception->getMessage());
+            }
+        }
+    }
+
     /** A status change or a refund ignores whatever entry it is handed. */
     public function test_only_a_reversal_reads_the_entry(): void
     {

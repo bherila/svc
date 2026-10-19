@@ -337,6 +337,36 @@ final class AgentRefundReversalTest extends TestCase
         DB::table('client_invoice_payment_refunds')->insert([...$row, 'public_id' => (string) Str::uuid()]);
     }
 
+    /** A refund and its reversal leave together when their payment does; the self-reference does not block it. */
+    public function test_a_reversed_refund_cascades_with_its_payment(): void
+    {
+        [$user, $workspace, , $payment] = $this->fixture();
+        $refundId = $this->refund($user, $workspace, $payment, 100);
+        $this->operate('rest', 'payments.reverse_refund', $user, $workspace, $payment->public_id, $refundId, $this->reversalBody($payment->fresh() ?? $payment), 'synthetic-cascade');
+        $this->assertSame(2, ClientInvoicePaymentRefund::query()->where('workspace_id', $workspace->id)->count());
+
+        DB::table('client_invoice_payments')->where('workspace_id', $workspace->id)->where('id', $payment->id)->delete();
+        $this->assertSame(0, ClientInvoicePaymentRefund::query()->where('workspace_id', $workspace->id)->count());
+    }
+
+    /** The bound is counted on the locked payment's own history, so a full one refuses both entry kinds. */
+    public function test_a_full_history_refuses_another_refund_or_reversal(): void
+    {
+        [$user, $workspace, , $payment] = $this->fixture();
+        $refundId = $this->refund($user, $workspace, $payment, 100);
+        $rows = [];
+        for ($i = 1; $i < ManualPaymentChange::MAX_REFUND_ENTRIES; $i++) {
+            $rows[] = ['public_id' => (string) Str::uuid(), 'workspace_id' => $workspace->id, 'client_invoice_payment_id' => $payment->id,
+                'kind' => 'refund', 'amount' => 1, 'reason' => 'Synthetic filler', 'created_at' => now()];
+        }
+        DB::table('client_invoice_payment_refunds')->insert($rows);
+
+        $this->operate('rest', 'payments.refund', $user, $workspace, $payment->public_id, null, $this->refundBody($payment->fresh() ?? $payment, 1), 'synthetic-full-refund', 422);
+        $this->operate('rest', 'payments.reverse_refund', $user, $workspace, $payment->public_id, $refundId, $this->reversalBody($payment->fresh() ?? $payment), 'synthetic-full-reversal', 422);
+        $this->assertSame(ManualPaymentChange::MAX_REFUND_ENTRIES, ClientInvoicePaymentRefund::query()->where('workspace_id', $workspace->id)->count());
+        $this->assertSame(100, $payment->fresh()?->refunded_amount);
+    }
+
     /** A refund's reason is a manager's to read, as the note is. */
     public function test_a_portal_reader_sees_the_entries_without_their_reasons(): void
     {

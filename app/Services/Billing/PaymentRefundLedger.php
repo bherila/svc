@@ -48,6 +48,16 @@ final class PaymentRefundLedger
         return new RecordedRefund((string) $row->public_id, $row->kind, (int) $row->amount, is_string($reversedBy) ? $reversedBy : null);
     }
 
+    /** How many refund and reversal entries this payment holds, read as {@see self::find()} reads. */
+    public function count(ClientInvoicePayment $payment): int
+    {
+        return ClientInvoicePaymentRefund::query()
+            ->where('workspace_id', $payment->workspace_id)
+            ->where('client_invoice_payment_id', $payment->id)
+            ->tap(Locks::forShare())
+            ->count();
+    }
+
     /**
      * The refunds of this payment nothing has reversed yet, oldest first.
      *

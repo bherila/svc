@@ -350,7 +350,11 @@ against the entry read under the payment lock):
   refund is recorded again;
 - `amount` reverses part of the refund and defaults to all of it; it may not
   exceed the refund, nor the payment's refunded amount;
-- a reason (at most 500 characters).
+- a reason (at most 500 characters);
+- room in the history: a payment holds at most
+  `ManualPaymentChange::MAX_REFUND_ENTRIES` (50) refunds and reversals, so the
+  history every reader is handed with the payment stays bounded. A refund
+  past that is refused as well.
 
 **What it does.** The refunded amount falls by the reversed amount through the
 same write a refund takes - the payment and invoice locks, the credit-pool
