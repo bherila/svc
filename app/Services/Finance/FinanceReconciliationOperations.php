@@ -2,10 +2,13 @@
 
 namespace App\Services\Finance;
 
+use App\Http\Resources\Api\V1\InvoicePaymentResource;
 use App\Models\ClientInvoicePayment;
 use App\Models\PaymentReconciliation;
 use App\Models\Workspace;
 use App\Services\AgentApi\AgentMutationExecutor;
+use App\Support\AgentApi\ChangeFeedPage;
+use App\Support\Billing\InvoicePaymentStatus;
 use App\Support\Finance\FinanceCaller;
 use App\Support\Finance\FinancePaymentQuery;
 use App\Support\Finance\ReconciliationAllocation;
@@ -55,12 +58,60 @@ final class FinanceReconciliationOperations
      */
     public function list(FinanceCaller $caller, Workspace $workspace, FinancePaymentQuery $query): LengthAwarePaginator
     {
+        return $this->payments($caller, $workspace, $query)
+            ->orderByDesc('received_on')
+            ->orderByDesc('id')
+            ->paginate($query->perPage, ['*'], 'page', $query->page)
+            ->withPath(self::listUrl($workspace))
+            ->withQueryString();
+    }
+
+    /**
+     * The same payments as an incremental change feed: newest change first
+     * inside a snapshot watermark, followed by cursor ({@see ChangeFeedPage}).
+     * A payment's version moves whenever it or one of its allocations does.
+     *
+     * @return array{data: list<array<string, mixed>>, meta: array{next_cursor: ?string, watermark: string}}
+     *
+     * @throws AuthorizationException
+     */
+    public function changes(FinanceCaller $caller, Workspace $workspace, FinancePaymentQuery $query): array
+    {
+        return ChangeFeedPage::run(
+            $workspace,
+            self::LIST.'|'.$query->key(),
+            $this->payments($caller, $workspace, $query),
+            $query->perPage,
+            $query->cursor,
+            $query->window,
+            static function (): void {},
+            static fn (ClientInvoicePayment $payment): array => (new InvoicePaymentResource($payment))->resolve(),
+        );
+    }
+
+    /**
+     * The caller's view of the workspace's payments, filtered and loaded but
+     * not yet ordered.
+     *
+     * @return Builder<ClientInvoicePayment>
+     *
+     * @throws AuthorizationException
+     */
+    private function payments(FinanceCaller $caller, Workspace $workspace, FinancePaymentQuery $query): Builder
+    {
         Gate::forUser($caller->user)->authorize($caller->door->membersMayRead() ? 'view' : 'manage', $workspace);
         $workspaceId = $workspace->id;
 
         return ClientInvoicePayment::query()
             ->where('workspace_id', $workspaceId)
-            ->where('status', $query->status->value)
+            // `any` is every status the contract names, never an unreadable
+            // one: a row outside the vocabulary is not a payment anyone can
+            // reconcile, and returning it would break the published enum.
+            ->when(
+                $query->status !== null,
+                static fn (Builder $payments) => $payments->where('status', $query->status?->value),
+                static fn (Builder $payments) => $payments->whereIn('status', InvoicePaymentStatus::all()),
+            )
             ->when($query->invoicePublicId !== null, static fn (Builder $payments) => $payments->whereHas(
                 'invoice',
                 static fn (Builder $invoices) => $invoices->where('workspace_id', $workspaceId)->where('public_id', $query->invoicePublicId),
@@ -74,12 +125,7 @@ final class FinanceReconciliationOperations
             ])
             ->withSum([
                 'reconciliations as active_reconciled_amount' => static fn (Builder $allocations) => $allocations->where('workspace_id', $workspaceId)->where('is_active', true),
-            ], 'allocated_amount')
-            ->orderByDesc('received_on')
-            ->orderByDesc('id')
-            ->paginate($query->perPage, ['*'], 'page', $query->page)
-            ->withPath(self::listUrl($workspace))
-            ->withQueryString();
+            ], 'allocated_amount');
     }
 
     /**

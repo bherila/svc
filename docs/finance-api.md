@@ -76,22 +76,94 @@ this door **every** finance operation requires a workspace owner or admin, the
 listing included, and the tools are offered only to someone who manages a
 workspace. The finance token's member listing is not extended to OAuth.
 
+A first-party finance system is registered once with
+`svc:auth:register-first-party-client` and, to connect without a consent
+screen, allow-listed in `AGENT_API_FIRST_PARTY_OAUTH_CLIENTS` (see
+[first-party applications](mcp.md#first-party-applications)).
+
+When the person turns the connection off, the finance system calls
+`connections.disconnect` (`DELETE /api/v1/connection`) with its own access
+token: every credential the person holds for that client is revoked.
+
+Before trusting a connection, the finance system reads `context.get`
+(`identity:read`): its `provider_subject` is the person's subject at the trusted
+identity provider (null for an account not bound to it), to compare with the
+subject of the person who connected. It is a stable cross-application
+identifier, not a secret, but it appears only in that authorized
+self-description and is never logged.
+
 ## Endpoints
 
 `GET /api/v1/workspaces/{workspace}/invoice-payments` (`finance.invoice_payments.list`)
 
 - Defaults to successful payments and 50 records per page, numbered by `page`.
-- Optional query parameters: `status`, `invoice`, `received_from`, `received_to`,
-  `per_page` (maximum 100) and `page`.
+- Optional query parameters: `status` (or `any`), `invoice`, `received_from`,
+  `received_to`, `per_page` (maximum 100) and `page`; for incremental sync,
+  `updated_since`, `watermark` and `cursor` (below).
 - Returns invoice/client public identifiers, payment/net/reconciled amounts, and
   active plus historical reconciliation allocations, with Laravel's `links` and
   `meta` pagination blocks. Internal database IDs, payment notes, and provider
   payment identifiers are not returned.
 
+### Incremental sync
+
+The listing is also a change feed, with the same semantics as the sibling
+applications' change feeds. Naming `updated_since`, `watermark` or `cursor`
+switches it from numbered pages to change order:
+
+- Payments come newest change first (`updated_at desc, id desc`), `per_page` at a
+  time, with an opaque `meta.next_cursor` bound to its workspace, query and pass;
+  `page` is refused there.
+- The first page of a pass fixes a snapshot `watermark` - 120 seconds before the
+  request (`ChangeWindow::LAG_SECONDS`), or an earlier time passed as
+  `watermark`, never a later one - and every page returns it in
+  `meta.watermark`. Rows changed while the pass is paged wait for the next pass.
+  With a cursor, omit `watermark` or send the same one.
+- The next pass sends that watermark as `updated_since`, which is inclusive.
+  `updated_at` is stamped when a row is written, not when its transaction
+  commits; the lag outlasts any request's transaction, so a row stamped before a
+  pass started but committed after it read is in the next pass.
+- **Passes overlap, so rows are re-delivered.** Deduplicate by `(id, version)`:
+  timestamps locate candidates, `version` detects a change.
+- A change feed reads every status: send `status=any`. It returns every
+  recognised status, never a row whose status is outside the published enum. A
+  full refund moves a payment to `refunded` while a partial refund leaves it
+  `succeeded`, and a payment can change out of any other filter, so another
+  `status`, `received_from` and `received_to` are refused (`422`) there; `invoice`
+  is allowed, since a payment never changes invoice. Payments are never deleted.
+- A row never stamped with `updated_at` comes last in a full pass and never
+  matches `updated_since`.
+- Each payment's opaque `version` also moves when one of its allocations does.
+  Two changes in the same second still give two versions.
+- The embedded `invoice` and its `client` are **read-time snapshots, not
+  change-tracked**: a change to the invoice or client does not move the
+  payment's `version` or `updated_at`. Follow the `invoices.list` and
+  `clients.list` change feeds to keep them current.
+
+The finance system's other reads take the same window: `invoices.list`
+(`billing:read`) and `clients.list` (`clients:read`) page by id as before, and
+switch to this change order - with `meta.watermark` - when a request names
+`updated_since` or `watermark`. A cursor from one order is refused in the other.
+A change feed takes only filters on what a record never changes: on
+`invoices.list`, `company_id` and `invoice_kind`; on `clients.list`, none. Any
+other - `status`, `collectible`, `overdue`, the issue, due and service-period
+dates, a client's `status` - is refused (`422`, naming it): a record that
+changes out of the filter would never be delivered again, and `overdue` changes
+as the date passes without the invoice changing at all. Sync without them and
+filter the synced records.
+
 `PUT /api/v1/workspaces/{workspace}/invoice-payments/{payment}/reconciliations/{external-system}/{transaction-uuid}` (`finance.reconciliations.upsert`)
 
-- Accepts `allocated_amount`, `currency`, optional `reconciled_on`, and optional
-  `is_active`. Other fields are ignored.
+- Accepts `allocated_amount`, `currency`, optional `reconciled_on`, and
+  `is_active`. Other fields are ignored. Through OAuth and MCP `is_active` is
+  required: the finance system sends the state it wants now, so a retry that
+  arrives late never brings back an allocation withdrawn in between. The finance
+  token may still omit it, which keeps an existing allocation's state (a new one
+  is active); only an explicit `true` reactivates. The request schema
+  therefore lists `is_active` as optional; the OAuth door answers `422` without it.
+- Any change - recording, changing or withdrawing an allocation, or clearing its
+  review flag - advances the payment's `version` and `updated_at`, since the
+  listing embeds its allocations; a request that changes nothing leaves them.
 - Is idempotent for the payment/system/transaction tuple, so it takes no
   `Idempotency-Key`: `201` when it created the allocation, `200` when it updated it.
 - Allows one external transaction to cover multiple SVC payments and one payment
@@ -102,8 +174,8 @@ workspace. The finance token's member listing is not extended to OAuth.
 `DELETE /api/v1/workspaces/{workspace}/invoice-payments/{payment}/reconciliations/{external-system}/{transaction-uuid}` (`finance.reconciliations.deactivate`)
 
 - Deactivates the allocation for auditability; it does not delete its history.
-  It also clears a processor review flag (below). Upserting it again
-  reactivates it. Idempotent for the same tuple.
+  It also clears a processor review flag (below). Upserting it again with
+  `is_active: true` reactivates it. Idempotent for the same tuple.
 
 ## Processor refunds and disputes
 

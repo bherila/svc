@@ -8,10 +8,12 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\AgentApi\AgentReadService;
 use App\Services\Authorization\AgentTokenScopes;
+use App\Support\AgentApi\ChangeWindow;
 use App\Support\AgentApi\InvoiceListFilters;
 use Closure;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Validator;
 
 /** HTTP adapter for the shared, tenant-scoped Agent read workflows. */
 final class AgentReadController extends Controller
@@ -109,6 +111,7 @@ final class AgentReadController extends Controller
             $this->limit($request),
             $request->query('cursor'),
             InvoiceListFilters::from($request->only(array_keys(InvoiceListFilters::rules()))),
+            $this->window($request),
         ));
     }
 
@@ -129,6 +132,12 @@ final class AgentReadController extends Controller
     private function scope(Request $request): Closure
     {
         return fn (string $scope): bool => $this->scopes->allows($request, $scope);
+    }
+
+    /** The change-feed window the request names, if any (updated_since, watermark). */
+    private function window(Request $request): ChangeWindow
+    {
+        return ChangeWindow::from(Validator::make($request->query(), ChangeWindow::rules())->validate());
     }
 
     private function limit(Request $request): int

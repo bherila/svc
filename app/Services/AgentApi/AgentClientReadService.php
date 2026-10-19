@@ -9,6 +9,8 @@ use App\Models\Workspace;
 use App\Services\Authorization\AgentAccess;
 use App\Services\Square\SquareLinkRepository;
 use App\Support\AgentApi\AgentApiVersion;
+use App\Support\AgentApi\ChangeFeedPage;
+use App\Support\AgentApi\ChangeWindow;
 use App\Support\AgentApi\CursorPage;
 use App\Support\AgentApi\Presenters\SquareLinkPresenter;
 use Illuminate\Database\Eloquent\Collection;
@@ -30,16 +32,33 @@ final class AgentClientReadService
         private readonly SquareLinkPresenter $square,
     ) {}
 
-    /** @return array{data:list<array<string, mixed>>,meta:array{next_cursor:?string}} */
-    public function list(User|AgentPrincipal $user, Workspace $workspace, ?string $status, int $limit, ?string $cursor): array
+    /**
+     * Client companies by id, or - when the window names `updated_since` or a
+     * watermark - newest change first inside a snapshot watermark
+     * ({@see ChangeFeedPage}).
+     *
+     * @return array{data:list<array<string, mixed>>,meta:array{next_cursor:?string, watermark?: string}}
+     */
+    public function list(User|AgentPrincipal $user, Workspace $workspace, ?string $status, int $limit, ?string $cursor, ?ChangeWindow $window = null): array
     {
         $this->requireManager($user, $workspace);
         $query = ClientCompany::query()
-            ->where('workspace_id', $workspace->id)
-            ->orderBy('id');
+            ->where('workspace_id', $workspace->id);
         if ($status !== null && $status !== '') {
             $query->where('is_active', $status === 'active');
         }
+        if ($window !== null && $window->requested()) {
+            // Archiving or restoring a client changes is_active: a feed filtered
+            // on it would never deliver that change.
+            ChangeWindow::refuseMutableFilters(['status' => $status !== null && $status !== ''], []);
+
+            return ChangeFeedPage::run($workspace, 'clients|status='.($status ?? ''), $query, $limit, $cursor, $window,
+                function (Collection $companies) use ($workspace): void {
+                    $this->withSquareCustomers($workspace, $companies);
+                },
+                $this->present(...));
+        }
+        $query->orderBy('id');
 
         return CursorPage::run(
             $workspace,

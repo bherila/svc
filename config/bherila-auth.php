@@ -96,6 +96,11 @@ return [
             'scopes_column' => 'scopes',
             'enforce_registered_scopes' => true,
         ],
+        // RFC 9207: every authorization response (code or error, from the
+        // consent screen or a first-party client that skips it) names this
+        // issuer, so a client of several authorization servers can tell which
+        // one answered before it exchanges a code.
+        'authorization_response_issuer' => ['enabled' => true],
         'authorization_state' => [
             'cache_prefix' => 'svc-oauth-resource:',
             'ttl_seconds' => null,

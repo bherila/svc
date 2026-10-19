@@ -21,6 +21,7 @@ use App\Support\AgentApi\AgentApiScopes;
 use App\Support\AgentApi\InternalApiDispatch;
 use App\Support\AgentApi\MarkedInternalAgentApiTransport;
 use App\Support\AgentApi\ProviderIdentityWrites;
+use App\Support\Auth\OAuthClient;
 use App\Support\Auth\PersonalAccessTokenIdentity;
 use Bherila\McpLaravelBridge\Capabilities\Availability;
 use Bherila\McpLaravelBridge\Capabilities\OperationRegistry;
@@ -62,6 +63,10 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         Passport::$deviceCodeGrantEnabled = false;
+        // Before the auth package boots, which installs its resource client
+        // only while Passport still has its own: SVC's subclass keeps that
+        // enforcement and adds the allow-listed first-party consent exception.
+        Passport::useClientModel(OAuthClient::class);
         $this->app->singleton(ReplayHistoryBasis::class);
         // Holds which credential an MCP write tool call already verified, for that call only.
         $this->app->singleton(ProviderIdentityWrites::class);

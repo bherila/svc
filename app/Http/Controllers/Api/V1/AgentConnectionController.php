@@ -9,6 +9,7 @@ use App\Services\Credentials\CredentialRevoker;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Laravel\Passport\AccessToken;
+use Laravel\Passport\Passport;
 
 /**
  * `connections.revoke`: a connection disconnects itself. The path names the
@@ -32,6 +33,29 @@ final class AgentConnectionController extends Controller
         $revocation = $revoker->revoke(AgentCredentialSelection::token($user, $token), 'agent');
         // The token itself, or what a refresh completed meanwhile rotated it into.
         abort_unless($revocation->accessTokens() >= 1, 404);
+
+        return response()->json(status: 204);
+    }
+
+    /**
+     * `connections.disconnect`: the calling REST credential's application is
+     * disconnected from the calling person - every credential the person holds
+     * for that OAuth client, through the same revoker and fence. A personal
+     * API token shares one client with the person's other personal tokens, so
+     * it ends only itself. The website's own session holds no token and has
+     * nothing to disconnect.
+     */
+    public function disconnect(Request $request, CredentialRevoker $revoker): JsonResponse
+    {
+        $user = $request->user();
+        abort_unless($user instanceof AgentPrincipal, 401);
+        $current = $user->currentAccessToken();
+        abort_unless($current instanceof AccessToken && $current->oauth_access_token_id !== '' && $current->oauth_client_id !== '', 404);
+
+        $client = Passport::client()->newQuery()->find($current->oauth_client_id);
+        $revoker->revoke($client === null || $client->hasGrantType('personal_access')
+            ? AgentCredentialSelection::token($user, $current->oauth_access_token_id)
+            : AgentCredentialSelection::connections($user, $current->oauth_client_id), 'agent');
 
         return response()->json(status: 204);
     }

@@ -219,6 +219,7 @@ final class AgentMcpContractTest extends TestCase
             'companies.square_customer.clear' => ['billing:write', 'billing:read'],
             'companies.square_customer.get' => ['billing:read'],
             'companies.square_customer.set' => ['billing:write', 'billing:read'],
+            'connections.disconnect' => [],
             'connections.revoke' => ['mcp:use'],
             'context.get' => ['identity:read'],
             'expense_schedules.create' => ['clients:read', 'expenses:write'],

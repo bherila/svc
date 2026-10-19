@@ -1498,6 +1498,12 @@
                     },
                     {
                         "$ref": "#/components/parameters/Cursor"
+                    },
+                    {
+                        "$ref": "#/components/parameters/UpdatedSince"
+                    },
+                    {
+                        "$ref": "#/components/parameters/Watermark"
                     }
                 ],
                 "responses": {
@@ -3081,6 +3087,53 @@
                 ]
             }
         },
+        "/connection": {
+            "delete": {
+                "operationId": "connections.disconnect",
+                "description": "Disconnects the calling application from the calling person's account, as a finance system does when the person turns its connection off. Every credential the person holds for the calling OAuth client is revoked in one transaction - pending authorization codes and refresh tokens before access tokens - so nothing issued to that client can act or mint a replacement, including a refresh already in flight. Other applications' connections, and other people's connections to the same application, are unaffected. A personal API token disconnects only itself. Any REST credential may call it; an MCP connection uses connections.revoke.",
+                "security": [
+                    {
+                        "oauth2": []
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Disconnected"
+                    },
+                    "401": {
+                        "description": "The token is missing, expired or revoked, or is not a REST credential.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "destructive",
+                "x-agent-idempotent": true,
+                "x-agent-write-safety": {
+                    "note": "Revokes only the calling application's credentials for the calling person; repeating it is harmless."
+                }
+            }
+        },
         "/connections/{token}": {
             "delete": {
                 "operationId": "connections.revoke",
@@ -4209,7 +4262,7 @@
         "/workspaces/{workspace}/invoice-payments": {
             "get": {
                 "operationId": "finance.invoice_payments.list",
-                "description": "Received payments with what each is worth net of refunds, how much of that its active finance reconciliation allocations cover, and every allocation, active first; newest received first. Succeeded payments unless status is given; 50 a page unless per_page is (at most 100), numbered by page. Workspace owners/admins; with the finance token, any workspace member. Internal ids, payment notes and processor payment identifiers are never returned. The Sanctum finance token issued by svc:auth:issue-token is accepted too, its finance.read and finance.reconcile abilities standing for these scopes.",
+                "description": "Received payments with what each is worth net of refunds, how much of that its active finance reconciliation allocations cover, and every allocation, active first; newest received first. Succeeded payments unless status is given; status=any returns every status the enum names, so a full refund (refunded) and a partial one (still succeeded) are both seen; a row with an unrecognised status is never returned. 50 a page unless per_page is (at most 100), numbered by page. For incremental sync, name updated_since, watermark or cursor instead of page, with status=any (any other status, received_from and received_to are refused there: a payment can change out of them): payments then come newest change first (updated_at, then id) inside a snapshot watermark that the first page of a pass fixes (now, or an earlier time given) and every page returns in meta; follow meta.next_cursor until it is null, then start the next pass with updated_since set to that watermark (inclusive; starting a few seconds earlier is harmless). Timestamps only find candidates, and consecutive passes overlap: deduplicate by (id, version), where version also moves when one of the payment's allocations changes. The embedded invoice and client are read-time snapshots, not change-tracked: a change to the invoice or client does not move the payment, so follow invoices.list and clients.list for them. Payments are never deleted. Workspace owners/admins; with the finance token, any workspace member. Internal ids, payment notes and processor payment identifiers are never returned. The Sanctum finance token issued by svc:auth:issue-token is accepted too, its finance.read and finance.reconcile abilities standing for these scopes.",
                 "security": [
                     {
                         "oauth2": [
@@ -4235,7 +4288,8 @@
                                 "failed",
                                 "refunded",
                                 "disputed",
-                                "canceled"
+                                "canceled",
+                                "any"
                             ],
                             "default": "succeeded"
                         }
@@ -4282,6 +4336,15 @@
                             "minimum": 1,
                             "default": 1
                         }
+                    },
+                    {
+                        "$ref": "#/components/parameters/UpdatedSince"
+                    },
+                    {
+                        "$ref": "#/components/parameters/Watermark"
+                    },
+                    {
+                        "$ref": "#/components/parameters/Cursor"
                     }
                 ],
                 "responses": {
@@ -4326,7 +4389,7 @@
                         }
                     },
                     "422": {
-                        "description": "A filter is invalid (`errors` names it): an unknown status, a malformed invoice id or date, received_to before received_from, or per_page out of range.",
+                        "description": "A filter is invalid (`errors` names it): an unknown status, a malformed invoice id or date, received_to before received_from, per_page out of range, a watermark in the future, or page on a change-feed request. Also a cursor from another workspace, query or watermark.",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -4358,7 +4421,7 @@
         "/workspaces/{workspace}/invoice-payments/{payment}/reconciliations/{external_system}/{transaction}": {
             "delete": {
                 "operationId": "finance.reconciliations.deactivate",
-                "description": "Stop the allocation the path names counting toward its payment. It is kept, with its history, rather than deleted, and setting it again with finance.reconciliations.upsert reactivates it. Idempotent by its path, so it takes no Idempotency-Key. Workspace owners/admins only. The Sanctum finance token issued by svc:auth:issue-token is accepted too, its finance.read and finance.reconcile abilities standing for these scopes.",
+                "description": "Stop the allocation the path names counting toward its payment. It is kept, with its history, rather than deleted, the payment's version advances, and setting it again with finance.reconciliations.upsert and is_active true reactivates it. Idempotent by its path, so it takes no Idempotency-Key. Workspace owners/admins only. The Sanctum finance token issued by svc:auth:issue-token is accepted too, its finance.read and finance.reconcile abilities standing for these scopes.",
                 "security": [
                     {
                         "oauth2": [
@@ -4473,7 +4536,7 @@
             },
             "put": {
                 "operationId": "finance.reconciliations.upsert",
-                "description": "Create or update the finance reconciliation allocation the path names: the share of a received payment, in integer minor units of its currency, that one transaction in an external finance system covers. One transaction may cover several payments and one payment several transactions, but a payment's active allocations never exceed what it is worth net of refunds, and only a succeeded payment can be reconciled. Answers 201 when it created the allocation and 200 when it updated it. Idempotent by its path, so it takes no Idempotency-Key. Nothing moves money. Workspace owners/admins only. The Sanctum finance token issued by svc:auth:issue-token is accepted too, its finance.read and finance.reconcile abilities standing for these scopes.",
+                "description": "Create or update the finance reconciliation allocation the path names: the share of a received payment, in integer minor units of its currency, that one transaction in an external finance system covers. One transaction may cover several payments and one payment several transactions, but a payment's active allocations never exceed what it is worth net of refunds, and only a succeeded payment can be reconciled. Answers 201 when it created the allocation and 200 when it updated it. is_active is required through OAuth and MCP (the finance token may omit it, keeping the allocation's state), so a delayed retry never reactivates an allocation withdrawn since: send the state wanted now. Any change advances the payment's version. Idempotent by its path, so it takes no Idempotency-Key. Nothing moves money. Workspace owners/admins only. The Sanctum finance token issued by svc:auth:issue-token is accepted too, its finance.read and finance.reconcile abilities standing for these scopes.",
                 "security": [
                     {
                         "oauth2": [
@@ -4952,9 +5015,16 @@
                     {
                         "name": "overdue",
                         "in": "query",
+                        "description": "Refused (422) together with updated_since or watermark, like every filter but company_id and invoice_kind: an invoice becomes overdue as the date passes, without changing, so a change feed cannot filter on it.",
                         "schema": {
                             "type": "boolean"
                         }
+                    },
+                    {
+                        "$ref": "#/components/parameters/UpdatedSince"
+                    },
+                    {
+                        "$ref": "#/components/parameters/Watermark"
                     }
                 ],
                 "responses": {
@@ -9329,6 +9399,24 @@
                     "format": "uuid"
                 }
             },
+            "UpdatedSince": {
+                "name": "updated_since",
+                "in": "query",
+                "description": "Only records changed at or after this time (inclusive): the previous pass's watermark. Naming updated_since or watermark switches a listing that otherwise pages to change order - newest change first inside a snapshot watermark returned in meta - and a cursor from one order is refused in the other. Consecutive passes overlap by design (see watermark), so deduplicate by (id, version). A change feed takes only filters on what a record never changes - invoices.list: company_id and invoice_kind; clients.list: none; finance.invoice_payments.list: invoice, with status=any - and refuses any other with a 422 naming it, since a record that changes out of a filter would never be delivered again.",
+                "schema": {
+                    "type": "string",
+                    "format": "date-time"
+                }
+            },
+            "Watermark": {
+                "name": "watermark",
+                "in": "query",
+                "description": "The pass's snapshot upper bound. Fixed by its first page - 120 seconds before the request when omitted, and never later than that - and returned by every page; with a cursor, omit it or send the same one. The lag outlasts any write's transaction, so a record stamped before a pass started but committed after it read is in the next pass; records in that overlap arrive twice.",
+                "schema": {
+                    "type": "string",
+                    "format": "date-time"
+                }
+            },
             "TokenId": {
                 "name": "token",
                 "in": "path",
@@ -10290,6 +10378,28 @@
                     }
                 }
             },
+            "ChangeFeedMeta": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "next_cursor",
+                    "watermark"
+                ],
+                "properties": {
+                    "next_cursor": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Null on the last page of the pass."
+                    },
+                    "watermark": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "The pass's snapshot upper bound; the next pass's updated_since."
+                    }
+                }
+            },
             "ClientCompany": {
                 "type": "object",
                 "additionalProperties": false,
@@ -10366,7 +10476,15 @@
                         }
                     },
                     "meta": {
-                        "$ref": "#/components/schemas/PaginationMeta"
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/PaginationMeta"
+                            },
+                            {
+                                "$ref": "#/components/schemas/ChangeFeedMeta"
+                            }
+                        ],
+                        "description": "ChangeFeedMeta when the request named updated_since or watermark; PaginationMeta otherwise."
                     }
                 }
             },
@@ -10581,6 +10699,7 @@
                 "required": [
                     "id",
                     "name",
+                    "provider_subject",
                     "workspaces",
                     "capabilities",
                     "withheld_tools"
@@ -10591,6 +10710,13 @@
                     },
                     "name": {
                         "type": "string"
+                    },
+                    "provider_subject": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Your subject at the trusted identity provider, the same in every application it signs you in to; null when this account is not bound to it. Compare it with the subject the connecting application knows before trusting the connection."
                     },
                     "workspaces": {
                         "type": "array",
@@ -11472,6 +11598,7 @@
                 "additionalProperties": false,
                 "required": [
                     "id",
+                    "version",
                     "status",
                     "amount",
                     "refunded_amount",
@@ -11493,6 +11620,9 @@
                     "id": {
                         "type": "string",
                         "format": "uuid"
+                    },
+                    "version": {
+                        "$ref": "#/components/schemas/Version"
                     },
                     "status": {
                         "type": "string",
@@ -11610,9 +11740,11 @@
                                     "name": {
                                         "type": "string"
                                     }
-                                }
+                                },
+                                "description": "The invoice's client as it is when read: a snapshot, not change-tracked. A renamed client does not advance the payment's version or updated_at; follow clients.list's change feed to keep it current."
                             }
-                        }
+                        },
+                        "description": "The payment's invoice as it is when read: a snapshot, not change-tracked. A change to the invoice (its status, total, number) does not advance the payment's version or updated_at; follow invoices.list's change feed to keep it current."
                     },
                     "reconciliations": {
                         "type": "array",
@@ -11642,7 +11774,6 @@
                 "additionalProperties": false,
                 "required": [
                     "data",
-                    "links",
                     "meta"
                 ],
                 "properties": {
@@ -11690,93 +11821,105 @@
                                 ],
                                 "format": "uri"
                             }
-                        }
+                        },
+                        "description": "Numbered pages only."
                     },
                     "meta": {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "required": [
-                            "current_page",
-                            "from",
-                            "last_page",
-                            "links",
-                            "path",
-                            "per_page",
-                            "to",
-                            "total"
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/FinancePageMeta"
+                            },
+                            {
+                                "$ref": "#/components/schemas/ChangeFeedMeta"
+                            }
                         ],
-                        "properties": {
-                            "current_page": {
-                                "type": "integer",
-                                "minimum": 1
-                            },
-                            "from": {
-                                "type": [
-                                    "integer",
-                                    "null"
-                                ]
-                            },
-                            "last_page": {
-                                "type": "integer",
-                                "minimum": 1
-                            },
-                            "links": {
-                                "type": "array",
-                                "items": {
-                                    "type": "object",
-                                    "additionalProperties": false,
-                                    "required": [
-                                        "url",
-                                        "label",
-                                        "page",
-                                        "active"
+                        "description": "ChangeFeedMeta when the request named updated_since, watermark or cursor; FinancePageMeta otherwise."
+                    }
+                }
+            },
+            "FinancePageMeta": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "current_page",
+                    "from",
+                    "last_page",
+                    "links",
+                    "path",
+                    "per_page",
+                    "to",
+                    "total"
+                ],
+                "properties": {
+                    "current_page": {
+                        "type": "integer",
+                        "minimum": 1
+                    },
+                    "from": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "last_page": {
+                        "type": "integer",
+                        "minimum": 1
+                    },
+                    "links": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                                "url",
+                                "label",
+                                "page",
+                                "active"
+                            ],
+                            "properties": {
+                                "url": {
+                                    "type": [
+                                        "string",
+                                        "null"
                                     ],
-                                    "properties": {
-                                        "url": {
-                                            "type": [
-                                                "string",
-                                                "null"
-                                            ],
-                                            "format": "uri"
-                                        },
-                                        "label": {
-                                            "type": "string"
-                                        },
-                                        "page": {
-                                            "type": [
-                                                "integer",
-                                                "null"
-                                            ]
-                                        },
-                                        "active": {
-                                            "type": "boolean"
-                                        }
-                                    }
+                                    "format": "uri"
+                                },
+                                "label": {
+                                    "type": "string"
+                                },
+                                "page": {
+                                    "type": [
+                                        "integer",
+                                        "null"
+                                    ]
+                                },
+                                "active": {
+                                    "type": "boolean"
                                 }
-                            },
-                            "path": {
-                                "type": [
-                                    "string",
-                                    "null"
-                                ],
-                                "format": "uri"
-                            },
-                            "per_page": {
-                                "type": "integer",
-                                "minimum": 1,
-                                "maximum": 100
-                            },
-                            "to": {
-                                "type": [
-                                    "integer",
-                                    "null"
-                                ]
-                            },
-                            "total": {
-                                "type": "integer",
-                                "minimum": 0
                             }
                         }
+                    },
+                    "path": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "uri"
+                    },
+                    "per_page": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100
+                    },
+                    "to": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "total": {
+                        "type": "integer",
+                        "minimum": 0
                     }
                 }
             },
@@ -11899,8 +12042,7 @@
                     },
                     "is_active": {
                         "type": "boolean",
-                        "default": true,
-                        "description": "false keeps the allocation without it counting."
+                        "description": "The state wanted now: true counts the allocation (and reactivates a withdrawn one), false keeps it without counting. Required through OAuth and MCP (a 422 without it), so a late retry never brings back an allocation withdrawn since. The finance token may omit it, which keeps an existing allocation's state and makes a new one active."
                     }
                 }
             },
@@ -12853,7 +12995,15 @@
                         }
                     },
                     "meta": {
-                        "$ref": "#/components/schemas/PaginationMeta"
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/PaginationMeta"
+                            },
+                            {
+                                "$ref": "#/components/schemas/ChangeFeedMeta"
+                            }
+                        ],
+                        "description": "ChangeFeedMeta when the request named updated_since or watermark; PaginationMeta otherwise."
                     }
                 }
             },

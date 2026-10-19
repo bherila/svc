@@ -3,6 +3,7 @@
 namespace App\Http\Resources\Api\V1;
 
 use App\Models\ClientInvoicePayment;
+use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Billing\InvoicePaymentStatus;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -18,6 +19,9 @@ class InvoicePaymentResource extends JsonResource
 
         return [
             'id' => $this->public_id,
+            // The payment's revision, which a change to any of its allocations
+            // also advances: compare it, not updated_at, to tell a change.
+            'version' => AgentApiVersion::for($this->resource),
             'status' => $this->status,
             'amount' => $this->amount,
             'refunded_amount' => $this->refunded_amount,

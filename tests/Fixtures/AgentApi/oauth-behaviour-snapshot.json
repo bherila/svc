@@ -49,7 +49,8 @@
                 "client_secret_basic",
                 "client_secret_post"
             ],
-            "registration_endpoint": "http://localhost:8000/oauth/register"
+            "registration_endpoint": "http://localhost:8000/oauth/register",
+            "authorization_response_iss_parameter_supported": true
         }
     },
     "protected_resource": {
@@ -261,6 +262,7 @@
         "status": 302,
         "keys": [
             "code",
+            "iss",
             "state"
         ]
     },

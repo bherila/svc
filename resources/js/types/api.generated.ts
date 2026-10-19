@@ -488,6 +488,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    '/connection': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** @description Disconnects the calling application from the calling person's account, as a finance system does when the person turns its connection off. Every credential the person holds for the calling OAuth client is revoked in one transaction - pending authorization codes and refresh tokens before access tokens - so nothing issued to that client can act or mint a replacement, including a refresh already in flight. Other applications' connections, and other people's connections to the same application, are unaffected. A personal API token disconnects only itself. Any REST credential may call it; an MCP connection uses connections.revoke. */
+        delete: operations['connections.disconnect'];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     '/connections/{token}': {
         parameters: {
             query?: never;
@@ -719,7 +736,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Received payments with what each is worth net of refunds, how much of that its active finance reconciliation allocations cover, and every allocation, active first; newest received first. Succeeded payments unless status is given; 50 a page unless per_page is (at most 100), numbered by page. Workspace owners/admins; with the finance token, any workspace member. Internal ids, payment notes and processor payment identifiers are never returned. The Sanctum finance token issued by svc:auth:issue-token is accepted too, its finance.read and finance.reconcile abilities standing for these scopes. */
+        /** @description Received payments with what each is worth net of refunds, how much of that its active finance reconciliation allocations cover, and every allocation, active first; newest received first. Succeeded payments unless status is given; status=any returns every status the enum names, so a full refund (refunded) and a partial one (still succeeded) are both seen; a row with an unrecognised status is never returned. 50 a page unless per_page is (at most 100), numbered by page. For incremental sync, name updated_since, watermark or cursor instead of page, with status=any (any other status, received_from and received_to are refused there: a payment can change out of them): payments then come newest change first (updated_at, then id) inside a snapshot watermark that the first page of a pass fixes (now, or an earlier time given) and every page returns in meta; follow meta.next_cursor until it is null, then start the next pass with updated_since set to that watermark (inclusive; starting a few seconds earlier is harmless). Timestamps only find candidates, and consecutive passes overlap: deduplicate by (id, version), where version also moves when one of the payment's allocations changes. The embedded invoice and client are read-time snapshots, not change-tracked: a change to the invoice or client does not move the payment, so follow invoices.list and clients.list for them. Payments are never deleted. Workspace owners/admins; with the finance token, any workspace member. Internal ids, payment notes and processor payment identifiers are never returned. The Sanctum finance token issued by svc:auth:issue-token is accepted too, its finance.read and finance.reconcile abilities standing for these scopes. */
         get: operations['finance.invoice_payments.list'];
         put?: never;
         post?: never;
@@ -737,10 +754,10 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** @description Create or update the finance reconciliation allocation the path names: the share of a received payment, in integer minor units of its currency, that one transaction in an external finance system covers. One transaction may cover several payments and one payment several transactions, but a payment's active allocations never exceed what it is worth net of refunds, and only a succeeded payment can be reconciled. Answers 201 when it created the allocation and 200 when it updated it. Idempotent by its path, so it takes no Idempotency-Key. Nothing moves money. Workspace owners/admins only. The Sanctum finance token issued by svc:auth:issue-token is accepted too, its finance.read and finance.reconcile abilities standing for these scopes. */
+        /** @description Create or update the finance reconciliation allocation the path names: the share of a received payment, in integer minor units of its currency, that one transaction in an external finance system covers. One transaction may cover several payments and one payment several transactions, but a payment's active allocations never exceed what it is worth net of refunds, and only a succeeded payment can be reconciled. Answers 201 when it created the allocation and 200 when it updated it. is_active is required through OAuth and MCP (the finance token may omit it, keeping the allocation's state), so a delayed retry never reactivates an allocation withdrawn since: send the state wanted now. Any change advances the payment's version. Idempotent by its path, so it takes no Idempotency-Key. Nothing moves money. Workspace owners/admins only. The Sanctum finance token issued by svc:auth:issue-token is accepted too, its finance.read and finance.reconcile abilities standing for these scopes. */
         put: operations['finance.reconciliations.upsert'];
         post?: never;
-        /** @description Stop the allocation the path names counting toward its payment. It is kept, with its history, rather than deleted, and setting it again with finance.reconciliations.upsert reactivates it. Idempotent by its path, so it takes no Idempotency-Key. Workspace owners/admins only. The Sanctum finance token issued by svc:auth:issue-token is accepted too, its finance.read and finance.reconcile abilities standing for these scopes. */
+        /** @description Stop the allocation the path names counting toward its payment. It is kept, with its history, rather than deleted, the payment's version advances, and setting it again with finance.reconciliations.upsert and is_active true reactivates it. Idempotent by its path, so it takes no Idempotency-Key. Workspace owners/admins only. The Sanctum finance token issued by svc:auth:issue-token is accepted too, its finance.read and finance.reconcile abilities standing for these scopes. */
         delete: operations['finance.reconciliations.deactivate'];
         options?: never;
         head?: never;
@@ -1935,6 +1952,15 @@ export interface components {
         CapacityLedgerResponse: {
             data: components['schemas']['CapacityLedger'];
         };
+        ChangeFeedMeta: {
+            /** @description Null on the last page of the pass. */
+            next_cursor: string | null;
+            /**
+             * Format: date-time
+             * @description The pass's snapshot upper bound; the next pass's updated_since.
+             */
+            watermark: string;
+        };
         ClientCompany: {
             version: string;
             /** Format: uuid */
@@ -1950,7 +1976,10 @@ export interface components {
         };
         ClientCompanyListResponse: {
             data: components['schemas']['ClientCompany'][];
-            meta: components['schemas']['PaginationMeta'];
+            /** @description ChangeFeedMeta when the request named updated_since or watermark; PaginationMeta otherwise. */
+            meta:
+                | components['schemas']['PaginationMeta']
+                | components['schemas']['ChangeFeedMeta'];
         };
         ClientCompanyResponse: {
             data: components['schemas']['ClientCompany'];
@@ -2010,6 +2039,8 @@ export interface components {
         Context: {
             id: components['schemas']['Uuid'];
             name: string;
+            /** @description Your subject at the trusted identity provider, the same in every application it signs you in to; null when this account is not bound to it. Compare it with the subject the connecting application knows before trusting the connection. */
+            provider_subject: string | null;
             workspaces: components['schemas']['WorkspaceContext'][];
             capabilities: 'workspaces:create'[];
             withheld_tools: components['schemas']['WithheldTool'][];
@@ -2237,6 +2268,7 @@ export interface components {
         FinanceInvoicePayment: {
             /** Format: uuid */
             id: string;
+            version: components['schemas']['Version'];
             /** @enum {string} */
             status:
                 | 'pending'
@@ -2262,6 +2294,7 @@ export interface components {
             reference: string | null;
             /** @description The processor that recorded the payment, or null for one recorded by hand. */
             provider: string | null;
+            /** @description The payment's invoice as it is when read: a snapshot, not change-tracked. A change to the invoice (its status, total, number) does not advance the payment's version or updated_at; follow invoices.list's change feed to keep it current. */
             invoice: {
                 /** Format: uuid */
                 id: string;
@@ -2269,6 +2302,7 @@ export interface components {
                 status: components['schemas']['InvoiceStatus'];
                 total_amount: number;
                 currency: string;
+                /** @description The invoice's client as it is when read: a snapshot, not change-tracked. A renamed client does not advance the payment's version or updated_at; follow clients.list's change feed to keep it current. */
                 client: {
                     /** Format: uuid */
                     id: string;
@@ -2284,7 +2318,8 @@ export interface components {
         };
         FinanceInvoicePaymentListResponse: {
             data: components['schemas']['FinanceInvoicePayment'][];
-            links: {
+            /** @description Numbered pages only. */
+            links?: {
                 /** Format: uri */
                 first: string | null;
                 /** Format: uri */
@@ -2294,23 +2329,27 @@ export interface components {
                 /** Format: uri */
                 next: string | null;
             };
-            meta: {
-                current_page: number;
-                from: number | null;
-                last_page: number;
-                links: {
-                    /** Format: uri */
-                    url: string | null;
-                    label: string;
-                    page: number | null;
-                    active: boolean;
-                }[];
+            /** @description ChangeFeedMeta when the request named updated_since, watermark or cursor; FinancePageMeta otherwise. */
+            meta:
+                | components['schemas']['FinancePageMeta']
+                | components['schemas']['ChangeFeedMeta'];
+        };
+        FinancePageMeta: {
+            current_page: number;
+            from: number | null;
+            last_page: number;
+            links: {
                 /** Format: uri */
-                path: string | null;
-                per_page: number;
-                to: number | null;
-                total: number;
-            };
+                url: string | null;
+                label: string;
+                page: number | null;
+                active: boolean;
+            }[];
+            /** Format: uri */
+            path: string | null;
+            per_page: number;
+            to: number | null;
+            total: number;
         };
         FinanceReconciliation: {
             /** Format: uuid */
@@ -2350,11 +2389,8 @@ export interface components {
             currency: string;
             /** Format: date */
             reconciled_on?: string | null;
-            /**
-             * @description false keeps the allocation without it counting.
-             * @default true
-             */
-            is_active: boolean;
+            /** @description The state wanted now: true counts the allocation (and reactivates a withdrawn one), false keeps it without counting. Required through OAuth and MCP (a 422 without it), so a late retry never brings back an allocation withdrawn since. The finance token may omit it, which keeps an existing allocation's state and makes a new one active. */
+            is_active?: boolean;
         };
         FinanceReconciliationResponse: {
             data: components['schemas']['FinanceReconciliation'];
@@ -2611,7 +2647,10 @@ export interface components {
         };
         InvoiceListResponse: {
             data: components['schemas']['Invoice'][];
-            meta: components['schemas']['PaginationMeta'];
+            /** @description ChangeFeedMeta when the request named updated_since or watermark; PaginationMeta otherwise. */
+            meta:
+                | components['schemas']['PaginationMeta']
+                | components['schemas']['ChangeFeedMeta'];
         };
         InvoiceManualLine: {
             /** Format: uuid */
@@ -4261,6 +4300,10 @@ export interface components {
         TaskId: string;
         TimeEntryId: string;
         InvoiceId: string;
+        /** @description Only records changed at or after this time (inclusive): the previous pass's watermark. Naming updated_since or watermark switches a listing that otherwise pages to change order - newest change first inside a snapshot watermark returned in meta - and a cursor from one order is refused in the other. Consecutive passes overlap by design (see watermark), so deduplicate by (id, version). A change feed takes only filters on what a record never changes - invoices.list: company_id and invoice_kind; clients.list: none; finance.invoice_payments.list: invoice, with status=any - and refuses any other with a 422 naming it, since a record that changes out of a filter would never be delivered again. */
+        UpdatedSince: string;
+        /** @description The pass's snapshot upper bound. Fixed by its first page - 120 seconds before the request when omitted, and never later than that - and returned by every page; with a cursor, omit it or send the same one. The lag outlasts any write's transaction, so a record stamped before a pass started but committed after it read is in the next pass; records in that overlap arrive twice. */
+        Watermark: string;
         TokenId: string;
         Limit: number;
         Cursor: string;
@@ -4906,6 +4949,10 @@ export interface operations {
                 status?: 'active' | 'archived';
                 limit?: components['parameters']['Limit'];
                 cursor?: components['parameters']['Cursor'];
+                /** @description Only records changed at or after this time (inclusive): the previous pass's watermark. Naming updated_since or watermark switches a listing that otherwise pages to change order - newest change first inside a snapshot watermark returned in meta - and a cursor from one order is refused in the other. Consecutive passes overlap by design (see watermark), so deduplicate by (id, version). A change feed takes only filters on what a record never changes - invoices.list: company_id and invoice_kind; clients.list: none; finance.invoice_payments.list: invoice, with status=any - and refuses any other with a 422 naming it, since a record that changes out of a filter would never be delivered again. */
+                updated_since?: components['parameters']['UpdatedSince'];
+                /** @description The pass's snapshot upper bound. Fixed by its first page - 120 seconds before the request when omitted, and never later than that - and returned by every page; with a cursor, omit it or send the same one. The lag outlasts any write's transaction, so a record stamped before a pass started but committed after it read is in the next pass; records in that overlap arrive twice. */
+                watermark?: components['parameters']['Watermark'];
             };
             header?: never;
             path: {
@@ -5857,6 +5904,43 @@ export interface operations {
             default: components['responses']['Error'];
         };
     };
+    'connections.disconnect': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Disconnected */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The token is missing, expired or revoked, or is not a REST credential. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
     'connections.revoke': {
         parameters: {
             query?: never;
@@ -6495,12 +6579,18 @@ export interface operations {
                     | 'failed'
                     | 'refunded'
                     | 'disputed'
-                    | 'canceled';
+                    | 'canceled'
+                    | 'any';
                 invoice?: string;
                 received_from?: string;
                 received_to?: string;
                 per_page?: number;
                 page?: number;
+                /** @description Only records changed at or after this time (inclusive): the previous pass's watermark. Naming updated_since or watermark switches a listing that otherwise pages to change order - newest change first inside a snapshot watermark returned in meta - and a cursor from one order is refused in the other. Consecutive passes overlap by design (see watermark), so deduplicate by (id, version). A change feed takes only filters on what a record never changes - invoices.list: company_id and invoice_kind; clients.list: none; finance.invoice_payments.list: invoice, with status=any - and refuses any other with a 422 naming it, since a record that changes out of a filter would never be delivered again. */
+                updated_since?: components['parameters']['UpdatedSince'];
+                /** @description The pass's snapshot upper bound. Fixed by its first page - 120 seconds before the request when omitted, and never later than that - and returned by every page; with a cursor, omit it or send the same one. The lag outlasts any write's transaction, so a record stamped before a pass started but committed after it read is in the next pass; records in that overlap arrive twice. */
+                watermark?: components['parameters']['Watermark'];
+                cursor?: components['parameters']['Cursor'];
             };
             header?: never;
             path: {
@@ -6546,7 +6636,7 @@ export interface operations {
                     'application/json': components['schemas']['Error'];
                 };
             };
-            /** @description A filter is invalid (`errors` names it): an unknown status, a malformed invoice id or date, received_to before received_from, or per_page out of range. */
+            /** @description A filter is invalid (`errors` names it): an unknown status, a malformed invoice id or date, received_to before received_from, per_page out of range, a watermark in the future, or page on a change-feed request. Also a cursor from another workspace, query or watermark. */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -6830,7 +6920,12 @@ export interface operations {
                     to: string;
                 };
                 collectible?: boolean;
+                /** @description Refused (422) together with updated_since or watermark, like every filter but company_id and invoice_kind: an invoice becomes overdue as the date passes, without changing, so a change feed cannot filter on it. */
                 overdue?: boolean;
+                /** @description Only records changed at or after this time (inclusive): the previous pass's watermark. Naming updated_since or watermark switches a listing that otherwise pages to change order - newest change first inside a snapshot watermark returned in meta - and a cursor from one order is refused in the other. Consecutive passes overlap by design (see watermark), so deduplicate by (id, version). A change feed takes only filters on what a record never changes - invoices.list: company_id and invoice_kind; clients.list: none; finance.invoice_payments.list: invoice, with status=any - and refuses any other with a 422 naming it, since a record that changes out of a filter would never be delivered again. */
+                updated_since?: components['parameters']['UpdatedSince'];
+                /** @description The pass's snapshot upper bound. Fixed by its first page - 120 seconds before the request when omitted, and never later than that - and returned by every page; with a cursor, omit it or send the same one. The lag outlasts any write's transaction, so a record stamped before a pass started but committed after it read is in the next pass; records in that overlap arrive twice. */
+                watermark?: components['parameters']['Watermark'];
             };
             header?: never;
             path: {

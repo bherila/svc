@@ -11,6 +11,7 @@ use App\Services\Credentials\CredentialRevoker;
 use App\Services\Credentials\RevocationRefused;
 use App\Services\Credentials\RevokeCredentialsIssuedDuringRevocation;
 use App\Support\AgentApi\AgentApiScopes;
+use App\Support\Auth\OAuthClient;
 use App\Support\WorkspaceClock;
 use BWH\Auth\Http\Middleware\EnforceOAuthPkce;
 use BWH\Auth\Http\Middleware\EnforceOAuthResourceIndicator;
@@ -139,7 +140,9 @@ final class AgentOAuthLifecycleTest extends TestCase
         $this->assertInstanceOf(ResourceAccessTokenRepository::class, app(PassportAccessTokenRepository::class));
         $this->assertInstanceOf(ResourceAuthCodeRepository::class, app(PassportAuthCodeRepository::class));
         $this->assertInstanceOf(ResourceRefreshTokenRepository::class, app(PassportRefreshTokenRepository::class));
-        $this->assertSame(ResourceClient::class, Passport::clientModel());
+        // SVC's subclass of the package's ResourceClient, which keeps its resource enforcement.
+        $this->assertSame(OAuthClient::class, Passport::clientModel());
+        $this->assertInstanceOf(ResourceClient::class, Passport::client());
         $this->assertTrue(Schema::hasColumns('oauth_clients', [
             'dynamically_registered_at',
             'last_used_at',

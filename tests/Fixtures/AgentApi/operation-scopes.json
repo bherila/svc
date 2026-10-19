@@ -490,6 +490,9 @@
             "mcp.switch:companies.square_customer.set"
         ]
     },
+    "connections.disconnect": {
+        "authenticated": true
+    },
     "connections.revoke": {
         "scopes": [
             "mcp:use"

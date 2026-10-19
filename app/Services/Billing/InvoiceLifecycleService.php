@@ -2147,16 +2147,24 @@ final class InvoiceLifecycleService
      * Mark every active finance reconciliation allocation of a payment the
      * processor has just refunded or disputed. The allocations themselves are
      * left exactly as the finance system wrote them.
+     *
+     * The finance listing embeds the allocations and their flags, so flagging
+     * any is a change to the payment: its revision (and `updated_at`) advances
+     * here, whatever the caller writes to the payment afterwards, or a
+     * synchronizer keyed on either would never see the flag.
      */
     private function flagActiveReconciliations(ClientInvoicePayment $payment, ReconciliationReviewReason $reason): void
     {
-        $payment->reconciliations()
+        $flagged = $payment->reconciliations()
             ->where('workspace_id', $payment->workspace_id)
             ->where('is_active', true)
             ->update([
                 'review_reason' => $reason->value,
                 'review_flagged_at' => $this->clock->now()->utc(),
             ]);
+        if ($flagged > 0) {
+            $payment->advanceAgentRevision();
+        }
     }
 
     private function assertReconciliationCapacity(ClientInvoicePayment $payment, int $refundedAmount): void

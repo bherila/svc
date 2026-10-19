@@ -22,16 +22,19 @@ final class AgentMcpFinanceTools
     /** @return array<string, mixed> */
     public function list(
         #[Schema(format: 'uuid')] string $workspace_id,
-        #[Schema(enum: ['pending', 'succeeded', 'failed', 'refunded', 'disputed', 'canceled'])] ?string $status = null,
+        #[Schema(enum: ['pending', 'succeeded', 'failed', 'refunded', 'disputed', 'canceled', FinancePaymentQuery::ANY_STATUS])] ?string $status = null,
         #[Schema(format: 'uuid')] ?string $invoice_id = null,
         #[Schema(format: 'date')] ?string $received_from = null,
         #[Schema(format: 'date')] ?string $received_to = null,
         #[Schema(minimum: 1, maximum: FinancePaymentQuery::MAX_PER_PAGE)] int $per_page = FinancePaymentQuery::DEFAULT_PER_PAGE,
-        #[Schema(minimum: 1)] int $page = 1,
+        #[Schema(minimum: 1)] ?int $page = null,
+        #[Schema(format: 'date-time')] ?string $updated_since = null,
+        #[Schema(format: 'date-time')] ?string $watermark = null,
+        #[Schema(maxLength: 2048)] ?string $cursor = null,
     ): array {
         // A query string carries text; the REST route reads it as given.
         $query = array_map(strval(...), array_filter(
-            ['invoice' => $invoice_id, ...compact('status', 'received_from', 'received_to', 'per_page', 'page')],
+            ['invoice' => $invoice_id, ...compact('status', 'received_from', 'received_to', 'per_page', 'page', 'updated_since', 'watermark', 'cursor')],
             static fn (mixed $value): bool => $value !== null,
         ));
 
@@ -46,8 +49,8 @@ final class AgentMcpFinanceTools
         #[Schema(format: 'uuid')] string $transaction_id,
         #[Schema(minimum: 1)] int $allocated_amount,
         #[Schema(pattern: '^[A-Z]{3}$')] string $currency,
+        bool $is_active,
         #[Schema(format: 'date')] ?string $reconciled_on = null,
-        bool $is_active = true,
     ): array {
         return $this->rest->call(
             'finance.reconciliations.upsert',

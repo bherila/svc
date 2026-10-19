@@ -21,6 +21,8 @@ use App\Services\Mcp\AgentWithheldTools;
 use App\Support\AgentApi\AgentApiCursor;
 use App\Support\AgentApi\AgentApiScopes;
 use App\Support\AgentApi\AgentWriteCutover;
+use App\Support\AgentApi\ChangeFeedPage;
+use App\Support\AgentApi\ChangeWindow;
 use App\Support\AgentApi\InvoiceListFilters;
 use App\Support\AgentApi\Presenters\AgentInvoicePresenter;
 use App\Support\AgentApi\Presenters\AgentProjectPresenter;
@@ -29,6 +31,8 @@ use App\Support\AgentApi\Presenters\AgentTimeEntryPresenter;
 use App\Support\AgentApi\Presenters\SquareLinkPresenter;
 use App\Support\Billing\InvoiceKind;
 use App\Support\WorkspaceClock;
+use BWH\Auth\OAuth\Session\ProviderBindingResolver;
+use BWH\Auth\OAuth\Session\ProviderSessionExpired;
 use Closure;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -44,6 +48,15 @@ use Illuminate\Database\Eloquent\ModelNotFoundException;
  */
 final class AgentReadService
 {
+    /**
+     * The invoices.list filters a change feed takes: those on what an invoice
+     * never changes. Every other one can stop (or start) matching an invoice
+     * when it changes - its status, its balance, its dates - or, for overdue,
+     * as the date passes without any change at all; the feed would then never
+     * deliver the change that took it out of the filter.
+     */
+    private const array INVOICE_FEED_FILTERS = ['company_id', 'invoice_kind'];
+
     public function __construct(
         private readonly AgentAccess $access,
         private readonly ProjectAccess $projects,
@@ -81,6 +94,7 @@ final class AgentReadService
         return [
             'id' => $user->public_id,
             'name' => $user->name,
+            'provider_subject' => $this->providerSubject($user),
             'capabilities' => AgentWriteCutover::workspaces() && $allowsScope('workspaces:create') ? ['workspaces:create'] : [],
             'withheld_tools' => app(AgentWithheldTools::class)->for($allowsScope,
                 $workspaces->contains(fn (Workspace $workspace): bool => $this->access->isWorkspaceManager($user, $workspace))),
@@ -96,6 +110,23 @@ final class AgentReadService
                 ];
             })->values()->all(),
         ];
+    }
+
+    /**
+     * The caller's subject at the trusted identity provider, so a connecting
+     * application can check it reached the account of the person who
+     * connected. A stable cross-application identifier rather than a secret,
+     * but kept to this authorized self-description: never in a public
+     * response or a log. Null for an account with no provider binding, or a
+     * binding the trusted provider does not vouch for.
+     */
+    private function providerSubject(User|AgentPrincipal $user): ?string
+    {
+        try {
+            return app(ProviderBindingResolver::class)->binding($user)?->subject;
+        } catch (ProviderSessionExpired) {
+            return null;
+        }
     }
 
     /**
@@ -294,11 +325,23 @@ final class AgentReadService
         }, $ids);
     }
 
-    /** @return array{data:list<array<string, mixed>>,meta:array{next_cursor:?string}} */
-    public function invoices(User|AgentPrincipal $user, Workspace $workspace, ?string $status, int $limit, ?string $cursor, ?InvoiceListFilters $filters = null): array
+    /**
+     * Visible invoices by id, or - when the window names `updated_since` or a
+     * watermark - newest change first inside a snapshot watermark
+     * ({@see ChangeFeedPage}), with the same filters and visibility.
+     *
+     * @return array{data:list<array<string, mixed>>,meta:array{next_cursor:?string, watermark?: string}}
+     */
+    public function invoices(User|AgentPrincipal $user, Workspace $workspace, ?string $status, int $limit, ?string $cursor, ?InvoiceListFilters $filters = null, ?ChangeWindow $window = null): array
     {
         $this->requireWorkspace($user, $workspace);
-        $query = $this->invoiceQuery($user, $workspace)->with(['clientCompany' => fn ($companies) => $companies->where('workspace_id', $workspace->id)])->orderBy('id');
+        if ($window !== null && $window->requested()) {
+            ChangeWindow::refuseMutableFilters([
+                'status' => $status !== null && $status !== '',
+                ...array_fill_keys(array_keys($filters === null ? [] : $filters->values), true),
+            ], self::INVOICE_FEED_FILTERS);
+        }
+        $query = $this->invoiceQuery($user, $workspace)->with(['clientCompany' => fn ($companies) => $companies->where('workspace_id', $workspace->id)]);
         if ($status !== null && $status !== '') {
             $query->where('status', $status);
         }
@@ -347,7 +390,13 @@ final class AgentReadService
             $queryKey .= '|filters='.json_encode($values, JSON_THROW_ON_ERROR);
         }
 
-        $page = $this->page($query, $workspace, $queryKey, $limit, $cursor);
+        if ($window !== null && $window->requested()) {
+            return ChangeFeedPage::run($workspace, $queryKey, $query, $limit, $cursor, $window,
+                static function (): void {},
+                fn (ClientInvoice $invoice): array => $this->invoicePresenter->present($workspace, $invoice, $includeNotes));
+        }
+
+        $page = $this->page($query->orderBy('id'), $workspace, $queryKey, $limit, $cursor);
         $data = [];
         foreach ($page['records'] as $invoice) {
             if (! $invoice instanceof ClientInvoice) {
