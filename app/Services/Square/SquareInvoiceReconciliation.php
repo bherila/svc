@@ -116,9 +116,12 @@ final class SquareInvoiceReconciliation
             // Then, under the invoice's lock - the boundary every link change
             // takes - the link must still be the one asked about, recorded
             // payments or not. Taken last, after whatever recording locked,
-            // so the billing lock order holds; a change rolls it all back.
+            // so the billing lock order holds; a change rolls it all back. The
+            // link is re-read as a current (locking) read: recording may have
+            // read earlier and fixed this transaction's snapshot before a
+            // re-link committed.
             ClientInvoice::query()->where('workspace_id', $workspace->id)->whereKey($link->client_invoice_id)->tap(Locks::forUpdate())->firstOrFail();
-            if ($this->links->activeLinkForSquareInvoice($workspace->id, $link->square_invoice_id)?->id !== $link->id) {
+            if ($this->links->currentActiveLinkForSquareInvoice($workspace->id, $link->square_invoice_id)?->id !== $link->id) {
                 throw self::linkChanged();
             }
         });

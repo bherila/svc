@@ -14,6 +14,10 @@ use App\Services\Square\SquareInvoiceReconciliation;
 use App\Services\Square\SquareLinkService;
 use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
 use App\Support\AgentApi\AgentApiVersion;
+use App\Support\Concurrency\LockAcquisition;
+use App\Support\Concurrency\LockMode;
+use App\Support\Concurrency\LockOrderRecorder;
+use App\Support\Concurrency\LockResource;
 use App\Support\Square\SquareInvoiceReference;
 use App\Support\Square\SquareMatchMethod;
 use Illuminate\Cache\RateLimiter;
@@ -233,6 +237,24 @@ final class SquareOperabilityTest extends TestCase
         config(['services.square.access_token' => null]);
         $this->artisan('svc:square:reconcile-payments', ['--invoice' => $invoice->public_id])->expectsOutputToContain('Square is not configured, so the invoice was not reconciled.')->assertFailed();
         $this->artisan('svc:square:reconcile-payments')->assertSuccessful();
+    }
+
+    public function test_the_final_link_check_is_a_current_read_taken_after_the_invoice_lock(): void
+    {
+        [$workspace, , , $invoice] = $this->paymentFixture();
+        LockOrderRecorder::start();
+        try {
+            app(SquareInvoiceReconciliation::class)->reconcile($workspace, $invoice->public_id);
+            $locks = array_merge(...LockOrderRecorder::acquisitions());
+        } finally {
+            LockOrderRecorder::stop();
+        }
+
+        // A plain read would answer from the snapshot recording fixed; the
+        // share lock reads the link as committed, after the invoice lock.
+        $last = array_slice($locks, -2);
+        $this->assertSame([LockResource::ClientInvoice, LockResource::InvoiceSquareLink], array_map(fn (LockAcquisition $lock): LockResource => $lock->resource, $last));
+        $this->assertSame([LockMode::Exclusive, LockMode::Share], array_map(fn (LockAcquisition $lock): LockMode => $lock->mode, $last));
     }
 
     public function test_status_reports_configuration_and_the_last_sync_without_a_credential(): void
