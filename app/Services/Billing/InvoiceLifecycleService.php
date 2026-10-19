@@ -30,6 +30,7 @@ use App\Support\Billing\PaymentVersionChanged;
 use App\Support\Billing\ServicePeriodRequirement;
 use App\Support\Concurrency\LockResource;
 use App\Support\Concurrency\Locks;
+use App\Support\Finance\ReconciliationReviewReason;
 use App\Support\WorkspaceClock;
 use Carbon\CarbonImmutable;
 use DomainException;
@@ -1192,9 +1193,30 @@ final class InvoiceLifecycleService
         return $raw === null ? $bounds->latest() : $bounds->parse($raw);
     }
 
+    /**
+     * Record the status a payment processor reports for one of its payments.
+     *
+     * A processor's refund or dispute is a fact about money that has already
+     * moved, so it is recorded whatever the payment's finance reconciliation
+     * allocations say: they are kept as they are and each active one is
+     * flagged for review ({@see ReconciliationReviewReason}). Only the finance
+     * write path refuses an allocation that does not fit.
+     */
     public function setPaymentStatus(ClientInvoicePayment $payment, string $status, ?Workspace $workspace = null): ClientInvoicePayment
     {
         return $this->writePaymentStatus($payment, $this->paymentStatus($status), $workspace);
+    }
+
+    /**
+     * Record a processor's dispute of part of a payment: the payment is
+     * `disputed`, and only `$disputedAmount` of it stops counting toward the
+     * invoice - the processor withholds what it contests and nothing more.
+     * Called again with another amount, it records the new one. Reconciliation
+     * allocations are flagged as {@see self::setPaymentStatus()} flags them.
+     */
+    public function setPaymentDisputed(ClientInvoicePayment $payment, int $disputedAmount, ?Workspace $workspace = null): ClientInvoicePayment
+    {
+        return $this->writePaymentStatus($payment, InvoicePaymentStatus::Disputed, $workspace, disputedAmount: $disputedAmount);
     }
 
     /**
@@ -1244,7 +1266,7 @@ final class InvoiceLifecycleService
             };
 
             $written = $change->isRefund()
-                ? $this->writeRefundedAmount($payment, $total, $workspace, $guard, $extra)
+                ? $this->writeRefundedAmount($payment, $total, $workspace, $guard, $extra, manual: true)
                 : $this->writePaymentStatus($payment, $change->status ?? throw new LogicException('A status change names its status.'), $workspace, $guard, $extra, manual: true);
 
             if ($observed === null) {
@@ -1268,6 +1290,7 @@ final class InvoiceLifecycleService
      * @param  (callable(ClientInvoicePayment): bool)|null  $guard  asked of the locked payment before anything else; false means leave it as it is
      * @param  (callable(): array<string, string|null>)|null  $extra  more for the activity, read after the guard
      * @param  bool  $manual  a hand-recorded change: leaving `succeeded` must fit the reconciliations, and the invoice must be read current
+     * @param  int|null  $disputedAmount  for `disputed`, the part of the payment a processor withholds; null is all of it
      */
     private function writePaymentStatus(
         ClientInvoicePayment $payment,
@@ -1276,8 +1299,9 @@ final class InvoiceLifecycleService
         ?callable $guard = null,
         ?callable $extra = null,
         bool $manual = false,
+        ?int $disputedAmount = null,
     ): ClientInvoicePayment {
-        return DB::transaction(function () use ($payment, $next, $workspace, $guard, $extra, $manual): ClientInvoicePayment {
+        return DB::transaction(function () use ($payment, $next, $workspace, $guard, $extra, $manual, $disputedAmount): ClientInvoicePayment {
             BillingMaintenance::share($workspace->id ?? $payment->workspace_id);
             $query = ClientInvoicePayment::query()->where('workspace_id', $payment->workspace_id)->whereKey($payment->id)->tap(Locks::forUpdate());
             if ($workspace !== null) {
@@ -1287,15 +1311,39 @@ final class InvoiceLifecycleService
             if ($guard !== null && ! $guard($lockedPayment)) {
                 return $lockedPayment;
             }
-            if ($lockedPayment->status !== $next->value && ($next === InvoicePaymentStatus::Refunded
-                || ($manual && $lockedPayment->status === InvoicePaymentStatus::Succeeded->value && $next !== InvoicePaymentStatus::Succeeded))) {
-                // Money that stops counting cannot stay allocated to a
-                // finance transaction. Refunded always asked this; a
-                // hand-recorded failure or withdrawal asks it too. Asked after
-                // the payment lock and before the invoice's, in the order
-                // LockResource declares, with a current read of the
-                // allocations.
-                $this->assertReconciliationCapacity($lockedPayment, $lockedPayment->amount);
+            if ($disputedAmount !== null && ($disputedAmount < 1 || $disputedAmount > $lockedPayment->amount)) {
+                throw new DomainException('A disputed amount must be part of the payment: more than zero and no more than its amount.');
+            }
+            // Leaving `disputed` releases what the dispute held; entering or
+            // staying in it records what is now held.
+            $nextDisputedAmount = $next === InvoicePaymentStatus::Disputed ? $disputedAmount : null;
+            $disputeMoved = $lockedPayment->status === $next->value && $next === InvoicePaymentStatus::Disputed
+                && $lockedPayment->disputed_amount !== $nextDisputedAmount;
+            // Asked after the payment lock and before the invoice's, in the
+            // order LockResource declares, with a current read of the
+            // allocations.
+            if ($lockedPayment->status !== $next->value) {
+                if ($manual) {
+                    // A hand-recorded change is a decision, not a report: money
+                    // that stops counting cannot stay allocated to a finance
+                    // transaction, so it is deallocated there first.
+                    if ($next === InvoicePaymentStatus::Refunded
+                        || ($lockedPayment->status === InvoicePaymentStatus::Succeeded->value && $next !== InvoicePaymentStatus::Succeeded)) {
+                        $this->assertReconciliationCapacity($lockedPayment, $lockedPayment->amount);
+                    }
+                } else {
+                    // A processor's report is recorded regardless; what it
+                    // does to an allocation is for the finance system to judge.
+                    $reason = match ($next) {
+                        InvoicePaymentStatus::Refunded => ReconciliationReviewReason::ProcessorRefund,
+                        InvoicePaymentStatus::Disputed => ReconciliationReviewReason::ProcessorDispute,
+                        InvoicePaymentStatus::Pending, InvoicePaymentStatus::Succeeded,
+                        InvoicePaymentStatus::Failed, InvoicePaymentStatus::Canceled => null,
+                    };
+                    if ($reason !== null) {
+                        $this->flagActiveReconciliations($lockedPayment, $reason);
+                    }
+                }
             }
             $invoice = ClientInvoice::query()
                 ->where('workspace_id', $lockedPayment->workspace_id)
@@ -1305,25 +1353,55 @@ final class InvoiceLifecycleService
             if ($manual) {
                 $this->assertCurrentInvoiceSnapshot($invoice);
             }
+            if ($disputeMoved) {
+                // The same dispute now holds a different amount.
+                $this->flagActiveReconciliations($lockedPayment, ReconciliationReviewReason::ProcessorDispute);
+                $this->overpaymentCreditService->recordPoolChange((int) $invoice->workspace_id, (int) $invoice->client_company_id);
+                $lockedPayment->forceFill(['disputed_amount' => $nextDisputedAmount])->save();
+                $this->refreshStatus($invoice);
+
+                return ClientInvoicePayment::query()->where('workspace_id', $lockedPayment->workspace_id)->whereKey($lockedPayment->id)->firstOrFail();
+            }
             if ($lockedPayment->status === $next->value) {
                 return $lockedPayment;
             }
+            $restoredOverpayment = null;
+            // A processor returning a disputed payment's money reports money
+            // the business holds; refusing it would leave the payment disputed
+            // and the processor's notification failing for good.
+            $processorRestoration = ! $manual && $next === InvoicePaymentStatus::Succeeded
+                && $lockedPayment->status === InvoicePaymentStatus::Disputed->value;
+            $review = null;
             if ($next === InvoicePaymentStatus::Succeeded && $invoice->status === 'void') {
-                throw new DomainException('A payment succeeded against a void invoice; refund it or un-void the invoice before recording it.');
+                if (! $processorRestoration) {
+                    throw new DomainException('A payment succeeded against a void invoice; refund it or un-void the invoice before recording it.');
+                }
+                // Recorded, and the invoice stays void: the money belongs to
+                // no live invoice, so it is named for review instead.
+                $review = 'restored_on_void_invoice';
             }
             if ($next === InvoicePaymentStatus::Succeeded) {
                 // A positive filter, so another row of an unreadable status is
                 // not counted here and this check can pass on an understated
                 // total. `refreshStatus()` below is the backstop: it refuses to
                 // total a set containing one and rolls this transaction back.
+                // What every other payment already pays, a partly disputed one
+                // included ({@see ClientInvoicePayment::paidContribution()}).
                 $otherPaid = (int) $invoice->payments()
                     ->where('workspace_id', $invoice->workspace_id)
                     ->where('id', '!=', $lockedPayment->id)
-                    ->where('status', InvoicePaymentStatus::Succeeded->value)
-                    ->get(['amount', 'refunded_amount'])
-                    ->sum(fn (ClientInvoicePayment $other): int => max(0, $other->amount - $other->refunded_amount));
-                if (($lockedPayment->amount - $lockedPayment->refunded_amount) > ($invoice->total_amount - $otherPaid)) {
-                    throw new DomainException('Successful payments cannot exceed the invoice total.');
+                    ->get(['status', 'amount', 'refunded_amount', 'disputed_amount'])
+                    ->sum(fn (ClientInvoicePayment $other): int => $other->paidContribution());
+                $overpaid = ($lockedPayment->amount - $lockedPayment->refunded_amount) - ($invoice->total_amount - $otherPaid);
+                if ($overpaid > 0 && $review === null) {
+                    // A restoration possibly arrives after the invoice was paid
+                    // again in the meantime: it is recorded and the excess is
+                    // left to the derived overpayment credit, named in the
+                    // activity for review. Everything else is still refused.
+                    if (! $processorRestoration) {
+                        throw new DomainException('Successful payments cannot exceed the invoice total.');
+                    }
+                    $restoredOverpayment = min($overpaid, $lockedPayment->amount - $lockedPayment->refunded_amount);
                 }
             }
             // Leaving or entering `succeeded` changes the settled money the
@@ -1339,6 +1417,7 @@ final class InvoiceLifecycleService
                 'refunded_amount' => $next === InvoicePaymentStatus::Refunded
                     ? $lockedPayment->amount
                     : $lockedPayment->refunded_amount,
+                'disputed_amount' => $nextDisputedAmount,
             ])->save();
 
             // After the write, deliberately. This is the one operation that can
@@ -1359,7 +1438,12 @@ final class InvoiceLifecycleService
                 InvoicePaymentStatus::Pending => null,
             };
             if ($action !== null) {
-                $this->recordPaymentActivity($invoice, $lockedPayment, $action, (string) Str::uuid(), $extra === null ? [] : $extra());
+                $this->recordPaymentActivity($invoice, $lockedPayment, $action, (string) Str::uuid(), [
+                    ...($extra === null ? [] : $extra()),
+                    ...($restoredOverpayment === null ? [] : ['overpaid_amount' => $restoredOverpayment]),
+                    ...($review === null ? [] : ['review' => $review]),
+                    ...($nextDisputedAmount === null ? [] : ['disputed_amount' => $nextDisputedAmount]),
+                ]);
             }
             if ($next === InvoicePaymentStatus::Succeeded) {
                 $this->recordMarkedPaid($invoice, $previousInvoiceStatus, (string) Str::uuid());
@@ -1574,6 +1658,15 @@ final class InvoiceLifecycleService
         });
     }
 
+    /**
+     * Record the cumulative refunded total a payment processor reports.
+     *
+     * Recorded whatever the payment's finance reconciliation allocations say,
+     * as {@see self::setPaymentStatus()} records a refund or a dispute: each
+     * active allocation is kept and flagged for review. The total may also
+     * fall - a refund that failed or was canceled - and may change on a
+     * disputed payment, which stays disputed.
+     */
     public function setRefundedAmount(ClientInvoicePayment $payment, int $amount, ?Workspace $workspace = null): ClientInvoicePayment
     {
         return $this->writeRefundedAmount($payment, static fn (): int => $amount, $workspace);
@@ -1585,10 +1678,11 @@ final class InvoiceLifecycleService
      * @param  callable(): int  $total  the new refunded total, read after the guard
      * @param  (callable(ClientInvoicePayment): bool)|null  $guard  asked of the locked payment first; false means leave it as it is
      * @param  (callable(): array<string, string|null>)|null  $extra  more for the activity
+     * @param  bool  $manual  a hand-recorded refund: it must fit the reconciliations; otherwise a processor's report, which flags them
      */
-    private function writeRefundedAmount(ClientInvoicePayment $payment, callable $total, ?Workspace $workspace, ?callable $guard = null, ?callable $extra = null): ClientInvoicePayment
+    private function writeRefundedAmount(ClientInvoicePayment $payment, callable $total, ?Workspace $workspace, ?callable $guard = null, ?callable $extra = null, bool $manual = false): ClientInvoicePayment
     {
-        return DB::transaction(function () use ($payment, $total, $workspace, $guard, $extra): ClientInvoicePayment {
+        return DB::transaction(function () use ($payment, $total, $workspace, $guard, $extra, $manual): ClientInvoicePayment {
             BillingMaintenance::share($workspace->id ?? $payment->workspace_id);
             $query = ClientInvoicePayment::query()->where('workspace_id', $payment->workspace_id)->whereKey($payment->id)->tap(Locks::forUpdate());
             if ($workspace !== null) {
@@ -1602,11 +1696,16 @@ final class InvoiceLifecycleService
             $amount = $total();
             // Fail-closed already: an unreadable status matches neither case
             // and is refused, which is the right answer - a row nobody can read
-            // cannot be shown to hold money there is anything to refund.
-            $refundable = match (InvoicePaymentStatus::tryFrom((string) $lockedPayment->status)) {
+            // cannot be shown to hold money there is anything to refund. A
+            // disputed payment's refunds are the processor's to report - a
+            // refund still pending when the charge was disputed fails - and
+            // never a hand-recorded change.
+            $currentStatus = InvoicePaymentStatus::tryFrom((string) $lockedPayment->status);
+            $refundable = match ($currentStatus) {
                 InvoicePaymentStatus::Succeeded, InvoicePaymentStatus::Refunded => true,
+                InvoicePaymentStatus::Disputed => ! $manual,
                 InvoicePaymentStatus::Pending, InvoicePaymentStatus::Failed,
-                InvoicePaymentStatus::Disputed, InvoicePaymentStatus::Canceled, null => false,
+                InvoicePaymentStatus::Canceled, null => false,
             };
             if (! $refundable) {
                 throw new DomainException('Only a successful payment can be refunded.');
@@ -1617,7 +1716,11 @@ final class InvoiceLifecycleService
             if ($amount === $lockedPayment->refunded_amount) {
                 return $lockedPayment;
             }
-            $this->assertReconciliationCapacity($lockedPayment, $amount);
+            if ($manual) {
+                $this->assertReconciliationCapacity($lockedPayment, $amount);
+            } else {
+                $this->flagActiveReconciliations($lockedPayment, ReconciliationReviewReason::ProcessorRefund);
+            }
 
             $invoice = ClientInvoice::query()
                 ->where('workspace_id', $lockedPayment->workspace_id)
@@ -1635,15 +1738,20 @@ final class InvoiceLifecycleService
             $previousAmount = $lockedPayment->refunded_amount;
             $lockedPayment->forceFill([
                 'refunded_amount' => $amount,
-                'status' => $amount === $lockedPayment->amount
-                    ? InvoicePaymentStatus::Refunded->value
-                    : InvoicePaymentStatus::Succeeded->value,
+                'status' => $currentStatus === InvoicePaymentStatus::Disputed
+                    ? InvoicePaymentStatus::Disputed->value
+                    : ($amount === $lockedPayment->amount
+                        ? InvoicePaymentStatus::Refunded->value
+                        : InvoicePaymentStatus::Succeeded->value),
             ])->save();
             $this->refreshStatus($invoice);
+            // A processor's lower total gives money back - a refund that
+            // failed or was canceled - and is recorded as that, not as a
+            // second refund.
             $this->recordPaymentActivity(
                 $invoice,
                 $lockedPayment,
-                'invoice.payment_refunded',
+                $amount < $previousAmount ? 'invoice.payment_refund_reversed' : 'invoice.payment_refunded',
                 (string) Str::uuid(),
                 ['previous_refunded_amount' => $previousAmount, ...($extra === null ? [] : $extra())],
             );
@@ -1725,7 +1833,7 @@ final class InvoiceLifecycleService
         // through applyPayment().
         $paid = 0;
 
-        foreach ($invoice->payments()->where('workspace_id', $invoice->workspace_id)->get(['public_id', 'status', 'amount', 'refunded_amount']) as $payment) {
+        foreach ($invoice->payments()->where('workspace_id', $invoice->workspace_id)->get(['public_id', 'status', 'amount', 'refunded_amount', 'disputed_amount']) as $payment) {
             $paymentStatus = InvoicePaymentStatus::tryFrom((string) $payment->status);
 
             if ($paymentStatus === null) {
@@ -1739,9 +1847,9 @@ final class InvoiceLifecycleService
                 );
             }
 
-            if ($paymentStatus->contributesToPaidAmount()) {
-                $paid += max(0, (int) $payment->amount - (int) $payment->refunded_amount);
-            }
+            // A succeeded payment net of refunds, and the undisputed part of a
+            // partly disputed one.
+            $paid += $payment->paidContribution();
         }
 
         $paid = min($paid, (int) $invoice->total_amount);
@@ -2033,6 +2141,22 @@ final class InvoiceLifecycleService
         if (! AgentApiVersion::matches($seen, AgentApiVersion::for($locked))) {
             throw new InvoiceChangedDuringPaymentChange;
         }
+    }
+
+    /**
+     * Mark every active finance reconciliation allocation of a payment the
+     * processor has just refunded or disputed. The allocations themselves are
+     * left exactly as the finance system wrote them.
+     */
+    private function flagActiveReconciliations(ClientInvoicePayment $payment, ReconciliationReviewReason $reason): void
+    {
+        $payment->reconciliations()
+            ->where('workspace_id', $payment->workspace_id)
+            ->where('is_active', true)
+            ->update([
+                'review_reason' => $reason->value,
+                'review_flagged_at' => $this->clock->now()->utc(),
+            ]);
     }
 
     private function assertReconciliationCapacity(ClientInvoicePayment $payment, int $refundedAmount): void

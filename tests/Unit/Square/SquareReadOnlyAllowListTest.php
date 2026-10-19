@@ -27,6 +27,7 @@ final class SquareReadOnlyAllowListTest extends TestCase
         'orders.get' => ['GET', '/v2/orders/{id}'],
         'payments.list' => ['GET', '/v2/payments'],
         'payments.get' => ['GET', '/v2/payments/{id}'],
+        'disputes.get' => ['GET', '/v2/disputes/{id}'],
     ];
 
     /** Path words of Square's write endpoints; none may appear in an allowed path. */
@@ -73,7 +74,7 @@ final class SquareReadOnlyAllowListTest extends TestCase
         sort($public);
 
         $this->assertSame([
-            'getInvoice', 'getPayment', 'listCustomers', 'listInvoices', 'listLocations', 'listPayments',
+            'getDispute', 'getInvoice', 'getPayment', 'listCustomers', 'listInvoices', 'listLocations', 'listPayments',
             'retrieveCustomer', 'retrieveOrder', 'searchCustomers', 'searchInvoices',
         ], $public);
         $this->assertCount(count(SquareEndpoint::cases()), $public);

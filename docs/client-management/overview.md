@@ -350,7 +350,8 @@ two lines has to become two rows.
   `invoice.marked_paid`, `invoice.voided` (which a discarded draft also
   records), `invoice.payment_received`, `invoice.payment_failed`,
   `invoice.payment_canceled`, `invoice.payment_disputed`,
-  `invoice.payment_refunded`, `payment_method.added`,
+  `invoice.payment_refunded`, `invoice.payment_refund_reversed`,
+  `payment_method.added`,
   `payment_method.removed`, `payment_method.default_changed`.
   `payment_method.attached` and `payment_method.detached` are **Stripe event
   types**, not activity keys — `StripeWebhookService` handles those two and the

@@ -18,6 +18,12 @@ use Throwable;
 /** A signed hint, processed in this request; the event's financial fields are ignored. */
 final class SquareWebhookController
 {
+    /**
+     * A dispute's hint is its own id. `dispute.state.changed` is the older
+     * name of `dispute.state.updated`; either may be subscribed.
+     */
+    private const array DISPUTE_EVENTS = ['dispute.created', 'dispute.state.updated', 'dispute.state.changed'];
+
     public function __invoke(Request $request, SquarePaymentReconciler $reconciler, SquareWebhookReceipts $receipts): JsonResponse
     {
         $key = config('services.square.webhook_signature_key');
@@ -38,7 +44,7 @@ final class SquareWebhookController
             return response()->json(['message' => 'Invalid webhook envelope.'], 400);
         }
         $type = $event['type'] ?? null;
-        if (! in_array($type, ['invoice.updated', 'invoice.payment_made', 'payment.updated', 'refund.updated'], true)) {
+        if (! in_array($type, ['invoice.updated', 'invoice.payment_made', 'payment.updated', 'refund.updated', ...self::DISPUTE_EVENTS], true)) {
             return response()->json(['received' => true]);
         }
         $id = $event['event_id'] ?? null;
@@ -62,6 +68,8 @@ final class SquareWebhookController
         try {
             if (str_starts_with($type, 'invoice.')) {
                 $reconciler->invoice($workspace, $hint);
+            } elseif (in_array($type, self::DISPUTE_EVENTS, true)) {
+                $reconciler->dispute($workspace, $hint);
             } else {
                 $reconciler->payment($workspace, $hint);
             }

@@ -136,6 +136,12 @@ final class SquareClient
         return $this->send(SquareEndpoint::GetPayment, $paymentId);
     }
 
+    /** @return array<string, mixed> */
+    public function getDispute(string $disputeId): array
+    {
+        return $this->send(SquareEndpoint::RetrieveDispute, $disputeId);
+    }
+
     /**
      * @param  array<string, scalar|null>  $query
      * @param  array<string, mixed>|null  $body

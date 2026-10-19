@@ -9,9 +9,11 @@ use App\Models\Workspace;
 use App\Services\Billing\BillingMaintenance;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Services\Billing\RecordReceivedPayment;
+use App\Support\Billing\InvoicePaymentStatus;
 use App\Support\Billing\ReceivedPaymentData;
 use App\Support\Billing\ReceivedPaymentProvider;
 use App\Support\Concurrency\Locks;
+use App\Support\Square\SquareDisputeFacts;
 use App\Support\Square\SquarePaymentFacts;
 use DomainException;
 use Illuminate\Support\Facades\DB;
@@ -63,6 +65,62 @@ final class SquarePaymentRecorder
             if ($facts->refundedAmount > $payment->refunded_amount) {
                 $this->invoices->setRefundedAmount($payment, $facts->refundedAmount, $workspace);
             }
+
+            return true;
+        });
+    }
+
+    /**
+     * Move a recorded payment into or out of dispute, as Square now reports
+     * the dispute. A dispute on a payment svc never recorded changes nothing.
+     *
+     * An open, lost or accepted dispute holds back only the amount it contests
+     * ({@see InvoiceLifecycleService::setPaymentDisputed()}); a won dispute or
+     * a closed inquiry restores the payment, as a whole win does. A refunded
+     * payment stays refunded. Reconciliation allocations are kept and flagged
+     * by the status change.
+     *
+     * Two notifications for one dispute are read from Square independently and
+     * can reach the payment in either order, so Square's own update time of
+     * the dispute last applied is kept on the payment: an older read changes
+     * nothing, and the same one again is applied again, which is harmless.
+     */
+    public function recordDispute(Workspace $workspace, SquareDisputeFacts $dispute): bool
+    {
+        return DB::transaction(function () use ($workspace, $dispute): bool {
+            BillingMaintenance::share($workspace->id);
+            $payment = ClientInvoicePayment::query()->where('workspace_id', $workspace->id)
+                ->where('provider', 'square')->where('provider_payment_identifier', $dispute->paymentId)->tap(Locks::forUpdate())->first();
+            if ($payment === null) {
+                return false;
+            }
+            if ($dispute->currency !== $payment->currency || $dispute->amount > $payment->amount) {
+                throw new DomainException('Square dispute facts do not match the recorded payment.');
+            }
+            $applied = $payment->provider_dispute_updated_at_ms;
+            if ($applied !== null && $dispute->updatedAtMs < $applied) {
+                return true;
+            }
+            $current = InvoicePaymentStatus::tryFrom((string) $payment->status);
+            if ($dispute->resolvedForMerchant) {
+                if ($current === InvoicePaymentStatus::Disputed) {
+                    $this->invoices->setPaymentStatus($payment, InvoicePaymentStatus::Succeeded->value, $workspace);
+                }
+            } else {
+                $holds = match ($current) {
+                    InvoicePaymentStatus::Succeeded, InvoicePaymentStatus::Disputed => true,
+                    InvoicePaymentStatus::Pending, InvoicePaymentStatus::Failed, InvoicePaymentStatus::Canceled,
+                    InvoicePaymentStatus::Refunded, null => false,
+                };
+                if ($holds) {
+                    $this->invoices->setPaymentDisputed($payment, $dispute->amount, $workspace);
+                }
+            }
+            ClientInvoicePayment::query()->where('workspace_id', $workspace->id)->whereKey($payment->id)->update([
+                'provider_dispute_updated_at_ms' => $dispute->updatedAtMs,
+                // A builder update never reaches IncrementsAgentRevision.
+                'lock_version' => DB::raw('lock_version + 1'),
+            ]);
 
             return true;
         });

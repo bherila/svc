@@ -108,6 +108,11 @@ final class PaymentReconciliationService
                     'currency' => $currency,
                     'reconciled_on' => $reconciledOn,
                     'is_active' => $isActive,
+                    // The finance system has written this allocation again,
+                    // against the payment as it now stands - after any refund
+                    // or dispute that flagged it - and it fits.
+                    'review_reason' => null,
+                    'review_flagged_at' => null,
                 ])->save();
 
                 return $existing->fresh();
@@ -157,7 +162,10 @@ final class PaymentReconciliationService
                 ->tap(Locks::forUpdate())
                 ->firstOrFail();
 
-            $reconciliation->forceFill(['is_active' => false])->save();
+            // Deactivating is how the finance system resolves a flagged
+            // allocation it no longer stands behind - and the only way left on
+            // a payment that is no longer succeeded, where a PUT is refused.
+            $reconciliation->forceFill(['is_active' => false, 'review_reason' => null, 'review_flagged_at' => null])->save();
 
             return $reconciliation->fresh();
         });

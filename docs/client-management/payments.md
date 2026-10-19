@@ -274,7 +274,9 @@ date) stay correctable in every status, through `payments.correct`. Money that
 stops counting cannot stay allocated to a finance transaction: failing,
 withdrawing or refunding a payment beyond what its active reconciliation
 allocations leave is refused, and the allocation is deactivated in the finance
-system first.
+system first. A processor's refund or dispute is not refused: it reports money
+that has already moved, so it is recorded and the allocations are flagged for
+review instead (see [the finance reconciliation API](../finance-api.md)).
 
 **Reason and audit.** A reason (at most 500 characters) is required and kept in
 the activity the transition records - `invoice.payment_received`,

@@ -3,6 +3,7 @@
 namespace App\Http\Resources\Api\V1;
 
 use App\Models\ClientInvoicePayment;
+use App\Support\Billing\InvoicePaymentStatus;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -20,6 +21,11 @@ class InvoicePaymentResource extends JsonResource
             'status' => $this->status,
             'amount' => $this->amount,
             'refunded_amount' => $this->refunded_amount,
+            // While `disputed`: what the processor's dispute holds back, the
+            // whole amount when it did not say. Null otherwise.
+            'disputed_amount' => $this->status === InvoicePaymentStatus::Disputed->value
+                ? ($this->disputed_amount ?? $this->amount)
+                : null,
             'net_amount' => $netAmount,
             'reconciled_amount' => $reconciledAmount,
             'unreconciled_amount' => max(0, $netAmount - $reconciledAmount),

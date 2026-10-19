@@ -20,6 +20,13 @@ class PaymentReconciliationResource extends JsonResource
             'currency' => $this->currency,
             'reconciled_on' => $this->reconciled_on?->toDateString(),
             'is_active' => $this->is_active,
+            // Set when the payment processor refunded or disputed the payment
+            // after this allocation was written; the allocation is kept as it
+            // was. Cleared by the next finance write that fits the payment,
+            // or by deactivating it; an inactive allocation needs no review.
+            'needs_review' => $this->is_active && $this->review_reason !== null,
+            'review_reason' => $this->review_reason?->value,
+            'review_flagged_at' => $this->review_flagged_at?->toIso8601String(),
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
         ];

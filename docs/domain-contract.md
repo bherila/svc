@@ -149,8 +149,10 @@ workflow. It is intentionally provider-neutral and contains no production data.
   path — form request, API, console or MCP — can store another value
 - amount/currency, received date, method, reference, notes, optional provider and
   provider payment identifier, and optional external finance transaction UUID
-- successful non-refunded payments determine invoice paid and balance amounts;
-  transitions are idempotent. That sum is a *positive* filter, so a stored
+- successful non-refunded payments determine invoice paid and balance amounts,
+  together with the undisputed part of a partly disputed one: `disputed_amount`
+  is what a processor's dispute holds back (null: the whole payment, as for
+  every dispute recorded before amounts were); transitions are idempotent. That sum is a *positive* filter, so a stored
   status outside the vocabulary is **not** silently counted as zero:
   recomputation refuses, rather than leaving money already received outstanding
   and collectible a second time. Reclassifying the row through
@@ -164,8 +166,13 @@ workflow. It is intentionally provider-neutral and contains no production data.
   record without creating a cross-database foreign key
 - allocated amount and currency allow one finance transaction to cover multiple
   payments and one payment to use multiple finance transactions
-- active allocations cannot exceed a successful payment amount net of refunds;
-  later refunds enforce the same invariant
+- active allocations written by the finance system cannot exceed a successful
+  payment amount net of refunds; a hand-recorded refund, failure or withdrawal
+  enforces the same invariant
+- a payment processor's refund or dispute is recorded regardless: active
+  allocations are kept as written and flagged with `review_reason`
+  (`processor_refund` or `processor_dispute`) and `review_flagged_at`, which the
+  next finance write that fits the payment, or deactivation, clears
 - deactivation preserves reconciliation history instead of deleting it
 
 `client_billing_schedules`

@@ -3,7 +3,8 @@
 The signed receiver is `POST /api/webhooks/square`. Register the notification URL
 under the application's configured `APP_URL`, for example
 `https://svc.example.test/api/webhooks/square`, for `invoice.updated`,
-`invoice.payment_made`, `payment.updated` and `refund.updated`.
+`invoice.payment_made`, `payment.updated`, `refund.updated`, `dispute.created`
+and `dispute.state.updated` (or its older name, `dispute.state.changed`).
 The local operator installs `SQUARE_WEBHOOK_SIGNATURE_KEY`; an absent key refuses
 requests with 403 before decoding, database work or Square reads. Oversized bodies
 are refused with 413 before hashing.
@@ -12,7 +13,8 @@ The receiver checks the base64 HMAC-SHA256 signature over that configured URL
 followed by the exact raw request body. It has no session, authentication or CSRF
 middleware. Any external application edge must also permit the machine path.
 Only event and object identifiers are used from a signed notification. Invoice,
-order and payment facts are re-fetched through the existing read-only client.
+order, payment and dispute facts are re-fetched through the existing read-only
+client.
 No raw webhook body or signature key is stored in a receipt.
 
 `svc:square:reconcile-payments` runs every fifteen minutes without overlapping.
@@ -31,8 +33,36 @@ provider `square` and the payment identifier as the existing unique provider key
 Refunds apply the existing received-payment correction and are cumulative, so a
 slower response cannot restore refunded money. A draft, void invoice, currency
 mismatch, over-balance payment, invalid data or ambiguous tip allocation is
-refused instead of changing the ledger. Failed events release their durable
-claim and answer 503 for retry; successfully completed event IDs do no more work.
+refused instead of changing the ledger. A refund or dispute is recorded
+whatever the payment's finance reconciliation allocations; they are kept and
+flagged for review (see [the finance reconciliation API](finance-api.md)).
+Failed events release their durable claim and answer 503 for retry;
+successfully completed event IDs do no more work.
+
+A dispute notification names the dispute, which is re-fetched. On a payment svc
+recorded:
+
+- An open inquiry or chargeback, and a lost or accepted dispute, make the
+  payment `disputed` and hold back only the amount Square contests
+  (`disputed_amount`): a 5,000 dispute against a 12,345 payment reopens the
+  invoice by 5,000, not 12,345. A changed amount is recorded again.
+- A won dispute (in part or in full) or a closed inquiry restores it to
+  `succeeded`. If the invoice was paid again while the dispute was open, the
+  restoration is still recorded: the excess is the invoice's overpayment, feeds
+  the derived overpayment credit, and is named as `overpaid_amount` in the
+  `invoice.payment_received` activity for review. If the invoice was voided
+  meanwhile, the payment is restored, the invoice stays void, and the activity
+  carries `review: restored_on_void_invoice`.
+- A refunded payment stays refunded.
+- Square's own update time of the dispute last applied is kept on the payment,
+  so a read of the dispute older than one already applied changes nothing; two
+  notifications fetched around a state change cannot undo it in the wrong
+  order.
+
+A dispute on a payment svc never recorded changes nothing. An unknown state,
+another currency, an amount above the payment or an unreadable update time is
+refused and released for retry. The sweep does not read disputes, so a missed
+dispute notification is not recovered.
 The received date comes from the card capture timeline in the workspace's time
 zone. Payments without a trustworthy completion timestamp fail closed; creation
 and last-update times are not substituted for the day money was received.

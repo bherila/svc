@@ -13,6 +13,7 @@ use App\Models\ClientInvoiceLine;
 use App\Models\ClientInvoicePayment;
 use App\Models\ClientProposal;
 use App\Models\PaymentReconciliation;
+use App\Support\Finance\ReconciliationReviewReason;
 use Illuminate\Database\Eloquent\Model;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
@@ -107,6 +108,8 @@ final class CalendarDateCastTablesTest extends TestCase
                 'allocated_amount' => 'integer',
                 'reconciled_on' => DateOnly::class,
                 'is_active' => 'boolean',
+                'review_reason' => ReconciliationReviewReason::class,
+                'review_flagged_at' => 'immutable_datetime',
             ],
             ClientInvoiceLine::class => [
                 'id' => 'int',
@@ -141,8 +144,10 @@ final class CalendarDateCastTablesTest extends TestCase
                 'id' => 'int',
                 'amount' => 'integer',
                 'refunded_amount' => 'integer',
+                'disputed_amount' => 'integer',
                 'received_on' => DateOnly::class,
                 'provider_event_created_at' => 'integer',
+                'provider_dispute_updated_at_ms' => 'integer',
             ],
             ClientBillingSchedule::class => [
                 'id' => 'int',

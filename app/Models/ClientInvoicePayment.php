@@ -18,6 +18,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * @property CarbonImmutable|null $received_on
+ * @property int|null $disputed_amount
+ * @property int|null $provider_dispute_updated_at_ms
  * @property int $lock_version
  *
  * `lock_version` is maintained by {@see IncrementsAgentRevision} on every
@@ -25,11 +27,11 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * correction - moves the opaque version an agent read.
  */
 #[Fillable([
-    'workspace_id', 'client_invoice_id', 'status', 'amount', 'refunded_amount', 'currency', 'received_on',
+    'workspace_id', 'client_invoice_id', 'status', 'amount', 'refunded_amount', 'disputed_amount', 'currency', 'received_on',
     'method', 'reference', 'notes', 'provider', 'provider_payment_identifier',
-    'provider_event_created_at', 'provider_event_id', 'external_finance_transaction_uuid', 'idempotency_key',
+    'provider_event_created_at', 'provider_event_id', 'provider_dispute_updated_at_ms', 'external_finance_transaction_uuid', 'idempotency_key',
 ])]
-#[Hidden(['id', 'workspace_id', 'client_invoice_id', 'notes', 'provider_payment_identifier', 'provider_event_created_at', 'provider_event_id', 'external_finance_transaction_uuid', 'idempotency_key', 'lock_version'])]
+#[Hidden(['id', 'workspace_id', 'client_invoice_id', 'notes', 'provider_payment_identifier', 'provider_event_created_at', 'provider_event_id', 'provider_dispute_updated_at_ms', 'external_finance_transaction_uuid', 'idempotency_key', 'lock_version'])]
 class ClientInvoicePayment extends Model implements WorkspaceOwned
 {
     /**
@@ -46,9 +48,32 @@ class ClientInvoicePayment extends Model implements WorkspaceOwned
         return [
             'amount' => 'integer',
             'refunded_amount' => 'integer',
+            'disputed_amount' => 'integer',
             'received_on' => DateOnly::class,
             'provider_event_created_at' => 'integer',
+            'provider_dispute_updated_at_ms' => 'integer',
         ];
+    }
+
+    /**
+     * What this payment adds to its invoice's paid amount.
+     *
+     * A succeeded payment adds what was not refunded. A disputed one adds what
+     * its dispute does not hold back: a processor withholds only the amount it
+     * contests, and the rest is still the business's. `disputed_amount` null
+     * is the whole payment - every dispute recorded before the amount was. An
+     * unreadable status adds nothing here; the recomputation refuses it first.
+     */
+    public function paidContribution(): int
+    {
+        $net = max(0, (int) $this->amount - (int) $this->refunded_amount);
+
+        return match (InvoicePaymentStatus::tryFrom((string) $this->getAttribute('status'))) {
+            InvoicePaymentStatus::Succeeded => $net,
+            InvoicePaymentStatus::Disputed => $this->disputed_amount === null ? 0 : max(0, $net - (int) $this->disputed_amount),
+            InvoicePaymentStatus::Pending, InvoicePaymentStatus::Failed, InvoicePaymentStatus::Refunded,
+            InvoicePaymentStatus::Canceled, null => 0,
+        };
     }
 
     /**

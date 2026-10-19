@@ -52,6 +52,34 @@ describe('activity timeline', () => {
         ).toHaveAttribute('href', href);
     });
 
+    it('names a reversed refund as a reversal, not another refund', () => {
+        render(
+            <ActivityTimeline
+                activities={[
+                    {
+                        id: 'synthetic-refund',
+                        action: 'invoice.payment_refunded',
+                        actor_name: null,
+                        payload: { refunded_amount: 400 },
+                        created_at: '2026-08-29T19:00:00.000Z',
+                    },
+                    {
+                        id: 'synthetic-reversal',
+                        action: 'invoice.payment_refund_reversed',
+                        actor_name: null,
+                        payload: {
+                            refunded_amount: 0,
+                            previous_refunded_amount: 400,
+                        },
+                        created_at: '2026-08-29T20:00:00.000Z',
+                    },
+                ]}
+            />,
+        );
+        expect(screen.getByText('Payment refunded')).toBeVisible();
+        expect(screen.getByText('Refund reversed')).toBeVisible();
+    });
+
     it('surfaces notable events and keeps system noise available on demand', async () => {
         const user = userEvent.setup();
         render(<ActivityTimeline activities={activities} />);

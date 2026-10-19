@@ -102,6 +102,62 @@ class FinanceReconciliationApiTest extends TestCase
         $this->assertNotSame($workspace->id, $otherWorkspace->id);
     }
 
+    public function test_a_processor_refund_is_exposed_as_an_allocation_needing_review(): void
+    {
+        [$owner, $workspace, $payment] = $this->payment('Review API', 6000);
+        $token = $owner->createToken('finance integration', ['finance.read', 'finance.reconcile'], now()->addHour())->plainTextToken;
+        $transactionUuid = (string) Str::uuid();
+        $path = $this->reconciliationPath($workspace, $payment, 'finance', $transactionUuid);
+
+        $this->withToken($token)->putJson($path, ['allocated_amount' => 6000, 'currency' => 'USD'])
+            ->assertCreated()
+            ->assertJsonPath('data.needs_review', false)
+            ->assertJsonPath('data.review_reason', null)
+            ->assertJsonPath('data.review_flagged_at', null);
+
+        app(InvoiceLifecycleService::class)->setRefundedAmount($payment, 6000, $workspace);
+
+        $this->withToken($token)->getJson("/api/v1/workspaces/{$workspace->public_id}/invoice-payments?status=refunded")
+            ->assertOk()
+            ->assertJsonPath('data.0.status', 'refunded')
+            ->assertJsonPath('data.0.refunded_amount', 6000)
+            ->assertJsonPath('data.0.reconciliations.0.external_transaction_id', $transactionUuid)
+            ->assertJsonPath('data.0.reconciliations.0.allocated_amount', 6000)
+            ->assertJsonPath('data.0.reconciliations.0.is_active', true)
+            ->assertJsonPath('data.0.reconciliations.0.needs_review', true)
+            ->assertJsonPath('data.0.reconciliations.0.review_reason', 'processor_refund')
+            ->assertJsonPath('data.0.reconciliations.0.review_flagged_at', fn (mixed $at): bool => is_string($at) && $at !== '');
+
+        // The finance write path keeps its capacity rule; on a refunded
+        // payment a PUT is refused outright, so DELETE is how the review ends.
+        $this->withToken($token)->putJson($path, ['allocated_amount' => 6000, 'currency' => 'USD'])->assertUnprocessable();
+        $this->withToken($token)->deleteJson($path)
+            ->assertOk()
+            ->assertJsonPath('data.is_active', false)
+            ->assertJsonPath('data.needs_review', false)
+            ->assertJsonPath('data.review_reason', null)
+            ->assertJsonPath('data.review_flagged_at', null);
+        $this->withToken($token)->getJson("/api/v1/workspaces/{$workspace->public_id}/invoice-payments?status=refunded")
+            ->assertJsonPath('data.0.reconciliations.0.needs_review', false);
+    }
+
+    public function test_a_disputed_payment_reports_what_its_dispute_holds_back(): void
+    {
+        [$owner, $workspace, $payment] = $this->payment('Disputed API', 6000);
+        $token = $owner->createToken('read disputed', ['finance.read'], now()->addHour())->plainTextToken;
+        $path = "/api/v1/workspaces/{$workspace->public_id}/invoice-payments";
+        $this->withToken($token)->getJson($path)->assertJsonPath('data.0.disputed_amount', null);
+
+        app(InvoiceLifecycleService::class)->setPaymentDisputed($payment, 2000, $workspace);
+        $this->withToken($token)->getJson($path.'?status=disputed')
+            ->assertOk()
+            ->assertJsonPath('data.0.status', 'disputed')
+            ->assertJsonPath('data.0.disputed_amount', 2000);
+
+        app(InvoiceLifecycleService::class)->setPaymentStatus($payment, 'disputed', $workspace);
+        $this->withToken($token)->getJson($path.'?status=disputed')->assertJsonPath('data.0.disputed_amount', 6000);
+    }
+
     public function test_workspace_viewer_can_read_but_cannot_reconcile(): void
     {
         [, $workspace, $payment] = $this->payment('Viewer API');
