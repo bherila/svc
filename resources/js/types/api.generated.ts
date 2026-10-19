@@ -736,7 +736,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Received payments with what each is worth net of refunds, how much of that its active finance reconciliation allocations cover, and every allocation, active first; newest received first. Succeeded payments unless status is given; status=any returns every status the enum names, so a full refund (refunded) and a partial one (still succeeded) are both seen; a row with an unrecognised status is never returned. 50 a page unless per_page is (at most 100), numbered by page. For incremental sync, name updated_since, watermark or cursor instead of page: payments then come newest change first (updated_at, then id) inside a snapshot watermark that the first page of a pass fixes (now, or an earlier time given) and every page returns in meta; follow meta.next_cursor until it is null, then start the next pass with updated_since set to that watermark (inclusive; starting a few seconds earlier is harmless). Timestamps only find candidates: compare version, which also moves when one of the payment's allocations changes. Payments are never deleted. Workspace owners/admins; with the finance token, any workspace member. Internal ids, payment notes and processor payment identifiers are never returned. The Sanctum finance token issued by svc:auth:issue-token is accepted too, its finance.read and finance.reconcile abilities standing for these scopes. */
+        /** @description Received payments with what each is worth net of refunds, how much of that its active finance reconciliation allocations cover, and every allocation, active first; newest received first. Succeeded payments unless status is given; status=any returns every status the enum names, so a full refund (refunded) and a partial one (still succeeded) are both seen; a row with an unrecognised status is never returned. 50 a page unless per_page is (at most 100), numbered by page. For incremental sync, name updated_since, watermark or cursor instead of page: payments then come newest change first (updated_at, then id) inside a snapshot watermark that the first page of a pass fixes (now, or an earlier time given) and every page returns in meta; follow meta.next_cursor until it is null, then start the next pass with updated_since set to that watermark (inclusive; starting a few seconds earlier is harmless). Timestamps only find candidates: compare version, which also moves when one of the payment's allocations changes. The embedded invoice and client are read-time snapshots, not change-tracked: a change to the invoice or client does not move the payment, so follow invoices.list and clients.list for them. Payments are never deleted. Workspace owners/admins; with the finance token, any workspace member. Internal ids, payment notes and processor payment identifiers are never returned. The Sanctum finance token issued by svc:auth:issue-token is accepted too, its finance.read and finance.reconcile abilities standing for these scopes. */
         get: operations['finance.invoice_payments.list'];
         put?: never;
         post?: never;
@@ -754,7 +754,7 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** @description Create or update the finance reconciliation allocation the path names: the share of a received payment, in integer minor units of its currency, that one transaction in an external finance system covers. One transaction may cover several payments and one payment several transactions, but a payment's active allocations never exceed what it is worth net of refunds, and only a succeeded payment can be reconciled. Answers 201 when it created the allocation and 200 when it updated it. is_active is required (the finance token may omit it, keeping the allocation's state), so a delayed retry never reactivates an allocation withdrawn since: send the state wanted now. Any change advances the payment's version. Idempotent by its path, so it takes no Idempotency-Key. Nothing moves money. Workspace owners/admins only. The Sanctum finance token issued by svc:auth:issue-token is accepted too, its finance.read and finance.reconcile abilities standing for these scopes. */
+        /** @description Create or update the finance reconciliation allocation the path names: the share of a received payment, in integer minor units of its currency, that one transaction in an external finance system covers. One transaction may cover several payments and one payment several transactions, but a payment's active allocations never exceed what it is worth net of refunds, and only a succeeded payment can be reconciled. Answers 201 when it created the allocation and 200 when it updated it. is_active is required through OAuth and MCP (the finance token may omit it, keeping the allocation's state), so a delayed retry never reactivates an allocation withdrawn since: send the state wanted now. Any change advances the payment's version. Idempotent by its path, so it takes no Idempotency-Key. Nothing moves money. Workspace owners/admins only. The Sanctum finance token issued by svc:auth:issue-token is accepted too, its finance.read and finance.reconcile abilities standing for these scopes. */
         put: operations['finance.reconciliations.upsert'];
         post?: never;
         /** @description Stop the allocation the path names counting toward its payment. It is kept, with its history, rather than deleted, the payment's version advances, and setting it again with finance.reconciliations.upsert and is_active true reactivates it. Idempotent by its path, so it takes no Idempotency-Key. Workspace owners/admins only. The Sanctum finance token issued by svc:auth:issue-token is accepted too, its finance.read and finance.reconcile abilities standing for these scopes. */
@@ -2294,6 +2294,7 @@ export interface components {
             reference: string | null;
             /** @description The processor that recorded the payment, or null for one recorded by hand. */
             provider: string | null;
+            /** @description The payment's invoice as it is when read: a snapshot, not change-tracked. A change to the invoice (its status, total, number) does not advance the payment's version or updated_at; follow invoices.list's change feed to keep it current. */
             invoice: {
                 /** Format: uuid */
                 id: string;
@@ -2301,6 +2302,7 @@ export interface components {
                 status: components['schemas']['InvoiceStatus'];
                 total_amount: number;
                 currency: string;
+                /** @description The invoice's client as it is when read: a snapshot, not change-tracked. A renamed client does not advance the payment's version or updated_at; follow clients.list's change feed to keep it current. */
                 client: {
                     /** Format: uuid */
                     id: string;
@@ -2387,8 +2389,8 @@ export interface components {
             currency: string;
             /** Format: date */
             reconciled_on?: string | null;
-            /** @description The state wanted now: true counts the allocation (and reactivates a withdrawn one), false keeps it without counting. Required through OAuth and MCP, so a late retry never brings back an allocation withdrawn since; the finance token may omit it, which keeps an existing allocation's state and makes a new one active. */
-            is_active: boolean;
+            /** @description The state wanted now: true counts the allocation (and reactivates a withdrawn one), false keeps it without counting. Required through OAuth and MCP (a 422 without it), so a late retry never brings back an allocation withdrawn since. The finance token may omit it, which keeps an existing allocation's state and makes a new one active. */
+            is_active?: boolean;
         };
         FinanceReconciliationResponse: {
             data: components['schemas']['FinanceReconciliation'];

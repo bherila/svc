@@ -130,6 +130,10 @@ switches it from numbered pages to change order:
 - Timestamps locate candidates; `version` detects a change. Each payment carries
   its opaque revision, which also moves when one of its allocations does. Two
   changes in the same second still give two versions.
+- The embedded `invoice` and its `client` are **read-time snapshots, not
+  change-tracked**: a change to the invoice or client does not move the
+  payment's `version` or `updated_at`. Follow the `invoices.list` and
+  `clients.list` change feeds to keep them current.
 
 The finance system's other reads take the same window: `invoices.list`
 (`billing:read`) and `clients.list` (`clients:read`) page by id as before, and
@@ -147,7 +151,8 @@ without it and judge due dates locally.
   required: the finance system sends the state it wants now, so a retry that
   arrives late never brings back an allocation withdrawn in between. The finance
   token may still omit it, which keeps an existing allocation's state (a new one
-  is active); only an explicit `true` reactivates.
+  is active); only an explicit `true` reactivates. The request schema
+  therefore lists `is_active` as optional; the OAuth door answers `422` without it.
 - Any change - recording, changing or withdrawing an allocation, or clearing its
   review flag - advances the payment's `version` and `updated_at`, since the
   listing embeds its allocations; a request that changes nothing leaves them.

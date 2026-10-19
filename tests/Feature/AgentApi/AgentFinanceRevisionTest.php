@@ -7,11 +7,13 @@ use App\Models\ClientInvoicePayment;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Billing\InvoiceLifecycleService;
+use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
 use App\Support\AgentApi\AgentApiScopes;
 use App\Support\Finance\ReconciliationReviewReason;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
+use Mcp\Capability\Discovery\SchemaValidator;
 use Tests\Concerns\IssuesAgentOAuthTokens;
 use Tests\TestCase;
 
@@ -154,6 +156,25 @@ final class AgentFinanceRevisionTest extends TestCase
         $this->withToken($token)->getJson($this->listPath($workspace))
             ->assertOk()
             ->assertJsonPath('data.0.version', fn (mixed $version): bool => is_string($version) && strlen($version) === 64);
+    }
+
+    /**
+     * The published contract says what each credential may send and what the
+     * listing tracks: a body without is_active is valid (the finance token's)
+     * while the OAuth door still refuses it, and the embedded invoice and
+     * client are named read-time snapshots.
+     */
+    public function test_the_contract_states_the_activity_rule_per_credential_and_the_untracked_snapshots(): void
+    {
+        $validator = new SchemaValidator;
+        $request = AgentApiResponseSchemaCatalog::requestForOperation('finance.reconciliations.upsert');
+        $this->assertSame([], $validator->validateAgainstJsonSchema(['allocated_amount' => 100, 'currency' => 'USD'], $request));
+        $this->assertNotContains('is_active', $request['required']);
+        $this->assertStringContainsString('Required through OAuth and MCP', (string) $request['properties']['is_active']['description']);
+
+        $payment = AgentApiResponseSchemaCatalog::schema('FinanceInvoicePayment');
+        $this->assertStringContainsString('not change-tracked', (string) $payment['properties']['invoice']['description']);
+        $this->assertStringContainsString('not change-tracked', (string) $payment['properties']['invoice']['properties']['client']['description']);
     }
 
     /** The listed version of the workspace's one payment, read afresh. */
