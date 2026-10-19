@@ -2695,7 +2695,7 @@ export interface components {
             }[];
             /** @description Workspace managers only; null for other viewers. Who collects this invoice and its Square link. */
             square: components['schemas']['InvoiceSquare'] | null;
-            /** @description Workspace managers only; null for other viewers. Payments on this invoice that may still be in flight: pending, or a status SVC cannot read. payments.record refuses while this is above zero. */
+            /** @description Workspace managers only; null for other viewers. Payments on this invoice that may still be in flight: pending, a Stripe payment stored as failed (its intent can still be confirmed), or a status SVC cannot read. payments.record refuses while this is above zero. */
             pending_payments: number | null;
             /**
              * @description Workspace managers only; null for other viewers. square when Square collects this invoice (see square.square_collects), so its payments arrive through Square and payments.record refuses; svc otherwise.
@@ -8086,7 +8086,7 @@ export interface operations {
                     'application/json': components['schemas']['Error'];
                 };
             };
-            /** @description The Idempotency-Key header is missing, the body has an unknown field (finance_reconciliation is a closed object too), confirm is not true, or a field is invalid (`errors` names it). Also, checked under the invoice lock: the invoice is a draft or void, a succeeded payment exceeds the balance, another payment on the invoice is pending (pending_payments on invoices.get), or Square collects the invoice (collection_owner square); and with finance_reconciliation, a pending payment or an allocated_amount over the payment amount. */
+            /** @description The Idempotency-Key header is missing, the body has an unknown field (finance_reconciliation is a closed object too), confirm is not true, or a field is invalid (`errors` names it). Also, checked under the invoice lock: the invoice is a draft or void, a succeeded payment exceeds the balance, another payment on the invoice may still be in flight - pending, or a failed Stripe payment that can be retried (pending_payments on invoices.get), or Square collects the invoice (collection_owner square); and with finance_reconciliation, a pending payment or an allocated_amount over the payment amount. */
             422: {
                 headers: {
                     [name: string]: unknown;

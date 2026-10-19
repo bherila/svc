@@ -224,7 +224,7 @@ final class AgentPaymentRecordReconciliationTest extends TestCase
         [$owner, $workspace, $invoice] = $this->fixture();
         app(InvoiceLifecycleService::class)->applyPayment($invoice, ['amount' => 1000, 'currency' => 'USD', 'method' => 'cheque', 'status' => 'pending'], $workspace);
         $message = $this->record('rest', $owner, $workspace, $this->payload($invoice->refresh(), 4000, $this->allocation(4000)), 'synthetic-guarded', 422);
-        $this->assertStringContainsString('still in flight (pending)', (string) $message);
+        $this->assertStringContainsString('still in flight', (string) $message);
         $this->assertSame(1, ClientInvoicePayment::query()->where('workspace_id', $workspace->id)->count());
         $this->assertDatabaseCount('payment_reconciliations', 0);
     }

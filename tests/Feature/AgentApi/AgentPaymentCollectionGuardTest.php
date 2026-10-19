@@ -48,7 +48,7 @@ final class AgentPaymentCollectionGuardTest extends TestCase
 
         $refused = $this->record($transport, $owner, $workspace, $this->payload($invoice->refresh(), 6000), 'synthetic-transfer', 422);
         if ($transport === 'rest') {
-            $this->assertStringContainsString('has 1 payment still in flight (pending)', $refused);
+            $this->assertStringContainsString('has 1 payment still in flight', $refused);
         }
         $this->assertSame(1, ClientInvoicePayment::query()->where('workspace_id', $workspace->id)->count());
         $audit = AgentMutationAudit::query()->where('workspace_id', $workspace->id)->where('operation', 'payments.record')->latest('id')->firstOrFail();
@@ -74,6 +74,46 @@ final class AgentPaymentCollectionGuardTest extends TestCase
 
         $this->assertSame(1, app(PaymentCollectionGuard::class)->summary($invoice->refresh())['pending_payments']);
         $this->record('rest', $owner, $workspace, $this->payload($invoice, 1000), 'synthetic-unreadable', 422);
+    }
+
+    /**
+     * A declined Stripe intent returns to requires_payment_method and its
+     * client secret can be confirmed again, so a Stripe payment stored as
+     * failed is still in flight; a failed payment recorded by hand is final.
+     */
+    public function test_a_failed_stripe_payment_is_still_in_flight_but_a_failed_manual_one_is_not(): void
+    {
+        [$owner, $workspace, $invoice] = $this->fixture();
+        $lifecycle = app(InvoiceLifecycleService::class);
+        $lifecycle->applyPayment($invoice, ['amount' => 10000, 'currency' => 'USD', 'method' => 'stripe', 'status' => 'pending',
+            'provider' => 'stripe', 'provider_payment_identifier' => 'pi_synthetic_declined'], $workspace);
+        DB::table('client_invoice_payments')->where('workspace_id', $workspace->id)->update(['status' => 'failed']);
+
+        $this->assertSame(1, app(PaymentCollectionGuard::class)->summary($invoice->refresh())['pending_payments']);
+        $refused = $this->record('rest', $owner, $workspace, $this->payload($invoice, 10000), 'synthetic-after-decline', 422);
+        $this->assertStringContainsString('has 1 payment still in flight', $refused);
+
+        // Once canceled in Stripe it is final, and so is a failed manual payment.
+        DB::table('client_invoice_payments')->where('workspace_id', $workspace->id)->update(['status' => 'canceled']);
+        $lifecycle->applyPayment($invoice->refresh(), ['amount' => 1000, 'currency' => 'USD', 'method' => 'cheque', 'status' => 'pending'], $workspace);
+        DB::table('client_invoice_payments')->where('workspace_id', $workspace->id)->where('method', 'cheque')->update(['status' => 'failed']);
+        $this->assertSame(0, app(PaymentCollectionGuard::class)->summary($invoice->refresh())['pending_payments']);
+        $this->record('rest', $owner, $workspace, $this->payload($invoice, 10000), 'synthetic-after-cancel');
+    }
+
+    /**
+     * Classified in PHP, not by SQL: MariaDB's case-insensitive collation
+     * would read `SUCCEEDED` as `succeeded`. Runs on the MariaDB lane too.
+     */
+    public function test_a_status_in_another_case_counts_as_in_flight(): void
+    {
+        [$owner, $workspace, $invoice] = $this->fixture();
+        app(InvoiceLifecycleService::class)->applyPayment($invoice, ['amount' => 1000, 'currency' => 'USD', 'method' => 'cash'], $workspace);
+        DB::table('client_invoice_payments')->where('workspace_id', $workspace->id)->update(['status' => 'SUCCEEDED']);
+
+        $this->assertSame(1, app(PaymentCollectionGuard::class)->summary($invoice->refresh())['pending_payments']);
+        $this->record('rest', $owner, $workspace, $this->payload($invoice, 1000), 'synthetic-uppercase', 422);
+        $this->assertSame(1, ClientInvoicePayment::query()->where('workspace_id', $workspace->id)->count());
     }
 
     /** @return iterable<string, array{string, string}> */
@@ -165,7 +205,7 @@ final class AgentPaymentCollectionGuardTest extends TestCase
         $first = $this->record($transport, $owner, $workspace, $pending, 'synthetic-pending-retry');
         $this->assertSame($first, $this->record($transport, $owner, $workspace, $pending, 'synthetic-pending-retry'));
 
-        $settled = $this->payload($invoice, 6000);
+        $settled = $this->payload($invoice->refresh(), 6000);
         ClientInvoicePayment::query()->where('workspace_id', $workspace->id)->update(['status' => 'canceled']);
         $second = $this->record($transport, $owner, $workspace, $settled, 'synthetic-settled-retry');
         $this->makeSquareCollected('linked', $owner, $workspace, $invoice->refresh());

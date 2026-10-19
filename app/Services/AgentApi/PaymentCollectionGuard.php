@@ -5,9 +5,9 @@ namespace App\Services\AgentApi;
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoicePayment;
 use App\Services\Square\SquareCollectionGuard;
+use App\Services\Square\SquareLinkRepository;
 use App\Support\Billing\InvoicePaymentStatus;
 use DomainException;
-use Illuminate\Database\Eloquent\Builder;
 
 /**
  * Whether `payments.record` may record money against an invoice (G6).
@@ -17,19 +17,28 @@ use Illuminate\Database\Eloquent\Builder;
  * already be, or be about to be, on the invoice by another route, and a
  * second record of it would double the receipt:
  *
- * - a payment still in flight: `pending` (an uncleared cheque recorded by
- *   hand, a Stripe bank debit still processing), or a status SVC cannot read,
- *   which cannot be shown not to be in flight;
+ * - a payment still in flight ({@see self::inFlight()}): `pending` (an
+ *   uncleared cheque recorded by hand, a Stripe bank debit still processing),
+ *   a Stripe payment stored as `failed`, whose intent returns to
+ *   `requires_payment_method` and can still be confirmed
+ *   ({@see SquareLinkRepository::STRIPE_IN_FLIGHT}), or a status SVC cannot
+ *   read, which cannot be shown not to be in flight;
  * - an invoice Square collects ({@see SquareCollectionGuard}), whose payments
  *   Square's own sync records.
+ *
+ * Statuses are classified here, in PHP, with the enum's exact parser rather
+ * than in SQL: under MariaDB's case-insensitive collation `NOT IN` would read
+ * an unreadable `SUCCEEDED` as `succeeded` and let it through.
  *
  * The refusal is asked while `payments.record` holds the invoice row locked,
  * so a payment or a Square link committed after the caller's read is seen:
  * every payment and every invoice-to-Square link is written under that same
  * lock. An agreement's billed-in-Square marker is written under the
  * agreement's lock instead, and is read as it stands once the invoice is
- * held. A completed receipt replays before the question is asked, so a retry
- * of a payment recorded earlier still answers with that payment.
+ * held.
+ *
+ * A completed receipt replays before any of this is asked, so a retry of a
+ * payment recorded earlier still answers with that payment.
  *
  * `invoices.get` reports the same two facts ({@see self::summary()}) so a
  * caller can tell, before it tries, why a payment would be refused.
@@ -50,10 +59,10 @@ final class PaymentCollectionGuard
     /** @throws DomainException when a payment may not be recorded by hand */
     public function assertMayRecord(ClientInvoice $locked): void
     {
-        $pending = $this->pendingPayments($locked);
+        $pending = $this->inFlightPayments($locked);
         if ($pending > 0) {
             throw new DomainException(sprintf(
-                'Invoice %s has %d payment%s still in flight (pending), so recording another could count the same money twice. Settle %s with payments.set_status, or let the processor finish, then record.',
+                'Invoice %s has %d payment%s still in flight (pending, or a Stripe payment that can still be retried), so recording another could count the same money twice. Settle %s with payments.set_status, or let the processor finish, then record.',
                 (string) $locked->invoice_number,
                 $pending,
                 $pending === 1 ? '' : 's',
@@ -76,21 +85,45 @@ final class PaymentCollectionGuard
     public function summary(ClientInvoice $invoice): array
     {
         return [
-            'pending_payments' => $this->pendingPayments($invoice),
+            'pending_payments' => $this->inFlightPayments($invoice),
             'collection_owner' => $this->square->isSquareCollected($invoice) ? self::OWNER_SQUARE : self::OWNER_SVC,
         ];
     }
 
-    /** Payments on the invoice that may still be in flight: pending, or a status SVC cannot read. */
-    private function pendingPayments(ClientInvoice $invoice): int
+    /**
+     * Whether a payment with this stored status and provider may still bring
+     * money onto the invoice by a route SVC does not control.
+     *
+     * The status is parsed exactly: anything the enum does not read - another
+     * spelling, another case, null - counts as in flight.
+     */
+    public static function inFlight(mixed $status, mixed $provider): bool
+    {
+        $parsed = is_string($status) ? InvoicePaymentStatus::tryFrom($status) : null;
+        if ($parsed === null) {
+            return true;
+        }
+        if ($provider === self::STRIPE && in_array($parsed->value, SquareLinkRepository::STRIPE_IN_FLIGHT, true)) {
+            return true;
+        }
+
+        return match ($parsed) {
+            InvoicePaymentStatus::Pending => true,
+            InvoicePaymentStatus::Succeeded, InvoicePaymentStatus::Failed, InvoicePaymentStatus::Refunded,
+            InvoicePaymentStatus::Disputed, InvoicePaymentStatus::Canceled => false,
+        };
+    }
+
+    /** The provider name Stripe payments are stored under, as {@see SquareLinkRepository} reads it. */
+    private const string STRIPE = 'stripe';
+
+    private function inFlightPayments(ClientInvoice $invoice): int
     {
         return ClientInvoicePayment::query()
             ->where('workspace_id', $invoice->workspace_id)
             ->where('client_invoice_id', $invoice->id)
-            ->where(static fn (Builder $status) => $status
-                ->where('status', InvoicePaymentStatus::Pending->value)
-                ->orWhereNotIn('status', InvoicePaymentStatus::all())
-                ->orWhereNull('status'))
+            ->get(['status', 'provider'])
+            ->filter(static fn (ClientInvoicePayment $payment): bool => self::inFlight($payment->getAttribute('status'), $payment->getAttribute('provider')))
             ->count();
     }
 }
