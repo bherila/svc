@@ -4,6 +4,7 @@ namespace App\Console\Commands\Square;
 
 use App\Models\SquareSyncRun;
 use App\Models\Workspace;
+use App\Services\Square\Mirror\SquareMirrorPresenter;
 use App\Services\Square\Mirror\SquareMirrorReadService;
 use App\Services\Square\Mirror\SquareMirrorSync;
 use App\Services\Square\SquareConfiguration;
@@ -18,7 +19,8 @@ use Illuminate\Console\Command;
  * Exits 0 when Square is configured, its workspace exists, a sync completed
  * within the hour and the latest run neither failed, was truncated nor was
  * abandoned; 1 otherwise, which the probe reports without failing a deploy. The last run is read from svc's
- * own records, through the same freshness the mirror reads report.
+ * own records: the latest run as the mirror reads report it, and freshness
+ * from the authoritative (highest) completed generation.
  */
 final class SquareStatusCommand extends Command
 {
@@ -43,6 +45,13 @@ final class SquareStatusCommand extends Command
         $workspace = $configured ? Workspace::query()->where('public_id', (string) $configuration->workspacePublicId)->first() : null;
         $freshness = $workspace === null ? ['last_synced_at' => null, 'last_run' => null] : $mirror->freshness($workspace);
         $lastRun = $freshness['last_run'];
+        // The authoritative completed generation, as the mirror fences its
+        // writes: the highest completed run id, not the last to finish, since
+        // overlapping runs can finish out of order. Freshness and truncation
+        // both come from it.
+        $lastCompleted = $workspace === null ? null : SquareSyncRun::query()->where('workspace_id', $workspace->id)->where('status', SquareSyncRun::COMPLETED)
+            ->orderByDesc('id')->first(['finished_at', 'truncated']);
+        $lastSyncedAt = SquareMirrorPresenter::instant($lastCompleted?->finished_at);
         $status = [
             'provider' => 'square',
             'configured' => $configured,
@@ -50,7 +59,7 @@ final class SquareStatusCommand extends Command
             'square_version' => $configured ? $configuration->version : null,
             'workspace_present' => $workspace !== null,
             'webhook_signature_key_present' => is_string($key = config('services.square.webhook_signature_key')) && trim($key) !== '',
-            'last_synced_at' => $freshness['last_synced_at'],
+            'last_synced_at' => $lastSyncedAt,
             'last_run' => $lastRun === null ? null : array_intersect_key($lastRun, array_flip(['id', 'trigger', 'status', 'requested_at', 'finished_at', 'invoices_seen', 'invoices_changed', 'truncated', 'error_code'])),
         ];
         // A run left requested or running past the sync's own abandonment
@@ -59,16 +68,12 @@ final class SquareStatusCommand extends Command
         $now = CarbonImmutable::now();
         $abandoned = $lastRun !== null && in_array($lastRun['status'], [SquareSyncRun::REQUESTED, SquareSyncRun::RUNNING], true)
             && is_string($lastRun['requested_at']) && CarbonImmutable::parse($lastRun['requested_at'])->lt($now->subMinutes(SquareMirrorSync::ABANDONED_AFTER_MINUTES));
-        $overdue = $workspace !== null && ($freshness['last_synced_at'] === null || CarbonImmutable::parse((string) $freshness['last_synced_at'])->lt($now->subMinutes(self::OVERDUE_AFTER_MINUTES)));
+        $overdue = $workspace !== null && ($lastCompleted?->finished_at === null || $lastCompleted->finished_at->lt($now->subMinutes(self::OVERDUE_AFTER_MINUTES)));
         $status['last_run_abandoned'] = $abandoned;
         $status['sync_overdue'] = $overdue;
         // A truncated run completed but left the mirror short of Square -
         // whether it is the latest run, or the completed one a newer run is
         // still retrying.
-        $lastCompleted = $workspace === null ? null : SquareSyncRun::query()->where('workspace_id', $workspace->id)->where('status', SquareSyncRun::COMPLETED)
-            // Generation order, as the mirror fences it: overlapping runs can
-            // finish out of order.
-            ->orderByDesc('id')->first(['truncated']);
         $status['last_completed_truncated'] = $lastCompleted?->truncated === true;
         $healthy = $workspace !== null && ! $abandoned && ! $overdue && ! $status['last_completed_truncated']
             && ($lastRun === null || ($lastRun['status'] !== SquareSyncRun::FAILED && $lastRun['truncated'] !== true));

@@ -272,7 +272,9 @@ final class SquareOperabilityTest extends TestCase
         // An older run finishing after the truncated one does not replace it as the newer generation.
         SquareSyncRun::query()->where('workspace_id', $workspace->id)->where('id', '<', $stuck->id)->where('status', SquareSyncRun::COMPLETED)->update(['finished_at' => now()->addMinute()]);
         $this->assertSame(1, Artisan::call('svc:square:status', ['--format' => 'json']));
-        $this->assertTrue(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['last_completed_truncated']);
+        $reported = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+        $this->assertTrue($reported['last_completed_truncated']);
+        $this->assertSame($stuck->refresh()->finished_at?->toIso8601ZuluString(), $reported['last_synced_at'], 'Freshness comes from the same, highest completed run.');
         SquareSyncRun::query()->where('workspace_id', $workspace->id)->where('id', '<', $stuck->id)->where('status', SquareSyncRun::COMPLETED)->update(['finished_at' => '2030-02-02 11:51:00']);
         $stuck->delete();
         $this->travel(30)->minutes();
