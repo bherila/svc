@@ -10,6 +10,7 @@ use App\Services\Mcp\AgentMcpCapacityLedgerTools;
 use App\Services\Mcp\AgentMcpClientTools;
 use App\Services\Mcp\AgentMcpClientWriteTools;
 use App\Services\Mcp\AgentMcpContextResource;
+use App\Services\Mcp\AgentMcpFinanceTools;
 use App\Services\Mcp\AgentMcpPaymentReminderTools;
 use App\Services\Mcp\AgentMcpPortalAccessTools;
 use App\Services\Mcp\AgentMcpPortalInvitationTools;
@@ -116,6 +117,9 @@ final class AgentOperationCatalog
         'expenses.receipts.upload_url' => ['expense-receipts.upload-url', '/workspaces/{workspace}/expenses/{expense}/receipts/upload-url', [200]],
         'expenses.unapprove' => ['expenses.unapprove', '/workspaces/{workspace}/expenses/{expense}/unapprove', [200]],
         'expenses.update' => ['expenses.update', '/workspaces/{workspace}/expenses/{expense}', [200]],
+        'finance.invoice_payments.list' => ['invoice-payments.index', '/workspaces/{workspace}/invoice-payments', [200]],
+        'finance.reconciliations.deactivate' => ['payment-reconciliations.destroy', '/workspaces/{workspace}/invoice-payments/{payment}/reconciliations/{external_system}/{transaction}', [200]],
+        'finance.reconciliations.upsert' => ['payment-reconciliations.upsert', '/workspaces/{workspace}/invoice-payments/{payment}/reconciliations/{external_system}/{transaction}', [200, 201]],
         'invoices.add_time' => ['invoices.add_time', '/workspaces/{workspace}/invoices/{invoice}/time', [200]],
         'invoices.correct' => ['invoices.correct', '/workspaces/{workspace}/invoices/{invoice}/correct', [200]],
         'invoices.create_draft' => ['invoices.store', '/workspaces/{workspace}/invoices', [201]],
@@ -219,7 +223,7 @@ final class AgentOperationCatalog
     private function build(): OperationRegistry
     {
         $registry = new OperationRegistry;
-        $registry->register(...$this->tools(), ...$this->restOnly(), ...$this->resourcesAndPrompts(), ...$this->square(), ...$this->squareMirror());
+        $registry->register(...$this->tools(), ...$this->restOnly(), ...$this->resourcesAndPrompts(), ...$this->square(), ...$this->squareMirror(), ...$this->finance());
         $documented = array_keys(AgentRestDocumentation::operations());
         $bound = array_keys(self::ROUTES);
         sort($documented);
@@ -1484,6 +1488,50 @@ final class AgentOperationCatalog
                 manager: true,
             ),
         ];
+    }
+
+    /**
+     * Finance reconciliation (#457): the payments a finance system reconciles
+     * against and the allocations it records, for workspace managers. The
+     * same REST routes serve the Sanctum finance token, whose abilities the
+     * route gate reads as these scopes ({@see AgentPrincipalResolver}), so
+     * no write cutover gates them: they were never behind one, and the
+     * integration must not stop when agent writes are switched off. The MCP
+     * switches still withhold the tools.
+     *
+     * A write is named by its path - payment, external system, transaction -
+     * and PUT or DELETE on it is the same write however often it is sent, so
+     * it takes no idempotency key or version.
+     *
+     * @return list<Operation>
+     */
+    private function finance(): array
+    {
+        $operations = [];
+        foreach ([
+            'finance.invoice_payments.list' => ['List payments for finance reconciliation', 'list', Effect::Read, 'mcp.read'],
+            'finance.reconciliations.upsert' => ['Set a finance reconciliation allocation', 'upsert', Effect::LocalWrite, 'mcp.write'],
+            'finance.reconciliations.deactivate' => ['Deactivate a finance reconciliation allocation', 'deactivate', Effect::LocalWrite, 'mcp.write'],
+        ] as $id => [$title, $method, $effect, $group]) {
+            $this->managerOnly[$id] = true;
+            $documented = AgentRestDocumentation::operations()[$id];
+            $operations[] = new Operation(
+                id: $id,
+                title: $title,
+                description: self::documented($id),
+                effect: $effect,
+                requirement: new Requirement(scopes: $documented['scopes'], flags: self::mcpSwitches($group, $id)),
+                idempotent: true,
+                safety: new WriteSafety(note: $effect->readOnly() ? null : 'Idempotent by its path (payment, external system, transaction): repeating it is the same write, so it takes no idempotency key.'),
+                rest: $this->rest($id),
+                mcp: new McpBinding(handler: [AgentMcpFinanceTools::class, $method]),
+                input: isset($documented['request']) ? SchemaRef::requestOf($id) : null,
+                output: SchemaRef::responseOf($id),
+                extensions: $documented['extensions'] ?? [],
+            );
+        }
+
+        return $operations;
     }
 
     private static function documented(string $id): string

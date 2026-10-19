@@ -8817,6 +8817,726 @@
                     }
                 },
                 {
+                    "name": "finance.invoice_payments.list",
+                    "title": "List payments for finance reconciliation",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "workspace_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "status": {
+                                "type": [
+                                    "null",
+                                    "string"
+                                ],
+                                "default": null,
+                                "enum": [
+                                    "pending",
+                                    "succeeded",
+                                    "failed",
+                                    "refunded",
+                                    "disputed",
+                                    "canceled"
+                                ]
+                            },
+                            "invoice_id": {
+                                "type": [
+                                    "null",
+                                    "string"
+                                ],
+                                "default": null,
+                                "format": "uuid"
+                            },
+                            "received_from": {
+                                "type": [
+                                    "null",
+                                    "string"
+                                ],
+                                "default": null,
+                                "format": "date"
+                            },
+                            "received_to": {
+                                "type": [
+                                    "null",
+                                    "string"
+                                ],
+                                "default": null,
+                                "format": "date"
+                            },
+                            "per_page": {
+                                "type": "integer",
+                                "default": 50,
+                                "minimum": 1,
+                                "maximum": 100
+                            },
+                            "page": {
+                                "type": "integer",
+                                "default": 1,
+                                "minimum": 1
+                            }
+                        },
+                        "required": [
+                            "workspace_id"
+                        ],
+                        "additionalProperties": false
+                    },
+                    "description": "Received payments with what each is worth net of refunds, how much of that its active finance reconciliation allocations cover, and every allocation, active first; newest received first. Succeeded payments unless status is given; 50 a page unless per_page is (at most 100), numbered by page. Workspace owners/admins; with the finance token, any workspace member. Internal ids, payment notes and processor payment identifiers are never returned. The Sanctum finance token issued by svc:auth:issue-token is accepted too, its finance.read and finance.reconcile abilities standing for these scopes.",
+                    "annotations": {
+                        "readOnlyHint": true,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": false
+                    },
+                    "outputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "data",
+                            "links",
+                            "meta"
+                        ],
+                        "properties": {
+                            "data": {
+                                "type": "array",
+                                "items": {
+                                    "$ref": "#/$defs/FinanceInvoicePayment"
+                                }
+                            },
+                            "links": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "first",
+                                    "last",
+                                    "prev",
+                                    "next"
+                                ],
+                                "properties": {
+                                    "first": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "uri"
+                                    },
+                                    "last": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "uri"
+                                    },
+                                    "prev": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "uri"
+                                    },
+                                    "next": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "uri"
+                                    }
+                                }
+                            },
+                            "meta": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "current_page",
+                                    "from",
+                                    "last_page",
+                                    "links",
+                                    "path",
+                                    "per_page",
+                                    "to",
+                                    "total"
+                                ],
+                                "properties": {
+                                    "current_page": {
+                                        "type": "integer",
+                                        "minimum": 1
+                                    },
+                                    "from": {
+                                        "type": [
+                                            "integer",
+                                            "null"
+                                        ]
+                                    },
+                                    "last_page": {
+                                        "type": "integer",
+                                        "minimum": 1
+                                    },
+                                    "links": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "additionalProperties": false,
+                                            "required": [
+                                                "url",
+                                                "label",
+                                                "page",
+                                                "active"
+                                            ],
+                                            "properties": {
+                                                "url": {
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ],
+                                                    "format": "uri"
+                                                },
+                                                "label": {
+                                                    "type": "string"
+                                                },
+                                                "page": {
+                                                    "type": [
+                                                        "integer",
+                                                        "null"
+                                                    ]
+                                                },
+                                                "active": {
+                                                    "type": "boolean"
+                                                }
+                                            }
+                                        }
+                                    },
+                                    "path": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "uri"
+                                    },
+                                    "per_page": {
+                                        "type": "integer",
+                                        "minimum": 1,
+                                        "maximum": 100
+                                    },
+                                    "to": {
+                                        "type": [
+                                            "integer",
+                                            "null"
+                                        ]
+                                    },
+                                    "total": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                    }
+                                }
+                            }
+                        },
+                        "$defs": {
+                            "FinanceInvoicePayment": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "id",
+                                    "status",
+                                    "amount",
+                                    "refunded_amount",
+                                    "net_amount",
+                                    "reconciled_amount",
+                                    "unreconciled_amount",
+                                    "currency",
+                                    "received_on",
+                                    "method",
+                                    "reference",
+                                    "provider",
+                                    "invoice",
+                                    "reconciliations",
+                                    "created_at",
+                                    "updated_at"
+                                ],
+                                "properties": {
+                                    "id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "status": {
+                                        "type": "string",
+                                        "enum": [
+                                            "pending",
+                                            "succeeded",
+                                            "failed",
+                                            "refunded",
+                                            "disputed",
+                                            "canceled"
+                                        ]
+                                    },
+                                    "amount": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                    },
+                                    "refunded_amount": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                    },
+                                    "net_amount": {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "description": "amount less refunded_amount, never below zero."
+                                    },
+                                    "reconciled_amount": {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "description": "What the active allocations cover."
+                                    },
+                                    "unreconciled_amount": {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "description": "net_amount less reconciled_amount, never below zero."
+                                    },
+                                    "currency": {
+                                        "type": "string",
+                                        "pattern": "^[A-Z]{3}$"
+                                    },
+                                    "received_on": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date"
+                                    },
+                                    "method": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ]
+                                    },
+                                    "reference": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ]
+                                    },
+                                    "provider": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "description": "The processor that recorded the payment, or null for one recorded by hand."
+                                    },
+                                    "invoice": {
+                                        "type": "object",
+                                        "additionalProperties": false,
+                                        "required": [
+                                            "id",
+                                            "number",
+                                            "status",
+                                            "total_amount",
+                                            "currency",
+                                            "client"
+                                        ],
+                                        "properties": {
+                                            "id": {
+                                                "type": "string",
+                                                "format": "uuid"
+                                            },
+                                            "number": {
+                                                "type": "string"
+                                            },
+                                            "status": {
+                                                "$ref": "#/$defs/InvoiceStatus"
+                                            },
+                                            "total_amount": {
+                                                "type": "integer"
+                                            },
+                                            "currency": {
+                                                "type": "string",
+                                                "pattern": "^[A-Z]{3}$"
+                                            },
+                                            "client": {
+                                                "type": "object",
+                                                "additionalProperties": false,
+                                                "required": [
+                                                    "id",
+                                                    "name"
+                                                ],
+                                                "properties": {
+                                                    "id": {
+                                                        "type": "string",
+                                                        "format": "uuid"
+                                                    },
+                                                    "name": {
+                                                        "type": "string"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    },
+                                    "reconciliations": {
+                                        "type": "array",
+                                        "description": "Every allocation, active first, newest first.",
+                                        "items": {
+                                            "$ref": "#/$defs/FinanceReconciliation"
+                                        }
+                                    },
+                                    "created_at": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date-time"
+                                    },
+                                    "updated_at": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date-time"
+                                    }
+                                }
+                            },
+                            "FinanceReconciliation": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "id",
+                                    "external_system",
+                                    "external_transaction_id",
+                                    "allocated_amount",
+                                    "currency",
+                                    "reconciled_on",
+                                    "is_active",
+                                    "created_at",
+                                    "updated_at"
+                                ],
+                                "properties": {
+                                    "id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "external_system": {
+                                        "type": "string",
+                                        "maxLength": 80,
+                                        "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                                        "description": "The external finance system, as a lowercase slug."
+                                    },
+                                    "external_transaction_id": {
+                                        "type": "string",
+                                        "format": "uuid",
+                                        "description": "The external finance system's transaction UUID."
+                                    },
+                                    "allocated_amount": {
+                                        "type": "integer",
+                                        "minimum": 1,
+                                        "description": "Minor units of the payment this transaction covers."
+                                    },
+                                    "currency": {
+                                        "type": "string",
+                                        "pattern": "^[A-Z]{3}$"
+                                    },
+                                    "reconciled_on": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date"
+                                    },
+                                    "is_active": {
+                                        "type": "boolean",
+                                        "description": "Whether it counts toward the payment's reconciled amount. An inactive allocation is kept with its history."
+                                    },
+                                    "created_at": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date-time"
+                                    },
+                                    "updated_at": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date-time"
+                                    }
+                                }
+                            },
+                            "InvoiceStatus": {
+                                "type": "string",
+                                "enum": [
+                                    "draft",
+                                    "issued",
+                                    "partially_paid",
+                                    "paid",
+                                    "void"
+                                ]
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "finance.reconciliations.deactivate",
+                    "title": "Deactivate a finance reconciliation allocation",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "workspace_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "payment_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "external_system": {
+                                "type": "string",
+                                "maxLength": 80,
+                                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+                            },
+                            "transaction_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            }
+                        },
+                        "required": [
+                            "workspace_id",
+                            "payment_id",
+                            "external_system",
+                            "transaction_id"
+                        ],
+                        "additionalProperties": false
+                    },
+                    "description": "Stop the allocation the path names counting toward its payment. It is kept, with its history, rather than deleted, and setting it again with finance.reconciliations.upsert reactivates it. Idempotent by its path, so it takes no Idempotency-Key. Workspace owners/admins only. The Sanctum finance token issued by svc:auth:issue-token is accepted too, its finance.read and finance.reconcile abilities standing for these scopes.",
+                    "annotations": {
+                        "readOnlyHint": false,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": false
+                    },
+                    "outputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "data"
+                        ],
+                        "properties": {
+                            "data": {
+                                "$ref": "#/$defs/FinanceReconciliation"
+                            }
+                        },
+                        "$defs": {
+                            "FinanceReconciliation": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "id",
+                                    "external_system",
+                                    "external_transaction_id",
+                                    "allocated_amount",
+                                    "currency",
+                                    "reconciled_on",
+                                    "is_active",
+                                    "created_at",
+                                    "updated_at"
+                                ],
+                                "properties": {
+                                    "id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "external_system": {
+                                        "type": "string",
+                                        "maxLength": 80,
+                                        "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                                        "description": "The external finance system, as a lowercase slug."
+                                    },
+                                    "external_transaction_id": {
+                                        "type": "string",
+                                        "format": "uuid",
+                                        "description": "The external finance system's transaction UUID."
+                                    },
+                                    "allocated_amount": {
+                                        "type": "integer",
+                                        "minimum": 1,
+                                        "description": "Minor units of the payment this transaction covers."
+                                    },
+                                    "currency": {
+                                        "type": "string",
+                                        "pattern": "^[A-Z]{3}$"
+                                    },
+                                    "reconciled_on": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date"
+                                    },
+                                    "is_active": {
+                                        "type": "boolean",
+                                        "description": "Whether it counts toward the payment's reconciled amount. An inactive allocation is kept with its history."
+                                    },
+                                    "created_at": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date-time"
+                                    },
+                                    "updated_at": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date-time"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "finance.reconciliations.upsert",
+                    "title": "Set a finance reconciliation allocation",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "workspace_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "payment_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "external_system": {
+                                "type": "string",
+                                "maxLength": 80,
+                                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+                            },
+                            "transaction_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "allocated_amount": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "description": "Minor units of the payment the transaction covers."
+                            },
+                            "currency": {
+                                "type": "string",
+                                "pattern": "^[A-Z]{3}$",
+                                "description": "The payment's currency."
+                            },
+                            "reconciled_on": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "format": "date"
+                            },
+                            "is_active": {
+                                "type": "boolean",
+                                "default": true,
+                                "description": "false keeps the allocation without it counting."
+                            }
+                        },
+                        "required": [
+                            "workspace_id",
+                            "payment_id",
+                            "external_system",
+                            "transaction_id",
+                            "allocated_amount",
+                            "currency"
+                        ],
+                        "additionalProperties": false
+                    },
+                    "description": "Create or update the finance reconciliation allocation the path names: the share of a received payment, in integer minor units of its currency, that one transaction in an external finance system covers. One transaction may cover several payments and one payment several transactions, but a payment's active allocations never exceed what it is worth net of refunds, and only a succeeded payment can be reconciled. Answers 201 when it created the allocation and 200 when it updated it. Idempotent by its path, so it takes no Idempotency-Key. Nothing moves money. Workspace owners/admins only. The Sanctum finance token issued by svc:auth:issue-token is accepted too, its finance.read and finance.reconcile abilities standing for these scopes.",
+                    "annotations": {
+                        "readOnlyHint": false,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": false
+                    },
+                    "outputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "data"
+                        ],
+                        "properties": {
+                            "data": {
+                                "$ref": "#/$defs/FinanceReconciliation"
+                            }
+                        },
+                        "$defs": {
+                            "FinanceReconciliation": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "id",
+                                    "external_system",
+                                    "external_transaction_id",
+                                    "allocated_amount",
+                                    "currency",
+                                    "reconciled_on",
+                                    "is_active",
+                                    "created_at",
+                                    "updated_at"
+                                ],
+                                "properties": {
+                                    "id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "external_system": {
+                                        "type": "string",
+                                        "maxLength": 80,
+                                        "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                                        "description": "The external finance system, as a lowercase slug."
+                                    },
+                                    "external_transaction_id": {
+                                        "type": "string",
+                                        "format": "uuid",
+                                        "description": "The external finance system's transaction UUID."
+                                    },
+                                    "allocated_amount": {
+                                        "type": "integer",
+                                        "minimum": 1,
+                                        "description": "Minor units of the payment this transaction covers."
+                                    },
+                                    "currency": {
+                                        "type": "string",
+                                        "pattern": "^[A-Z]{3}$"
+                                    },
+                                    "reconciled_on": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date"
+                                    },
+                                    "is_active": {
+                                        "type": "boolean",
+                                        "description": "Whether it counts toward the payment's reconciled amount. An inactive allocation is kept with its history."
+                                    },
+                                    "created_at": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date-time"
+                                    },
+                                    "updated_at": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date-time"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                {
                     "name": "invoices.add_time",
                     "title": "Add time to draft",
                     "inputSchema": {
@@ -25534,6 +26254,9 @@
                 "expenses.receipts.upload_url": "c53d1f0b0ac10262",
                 "expenses.unapprove": "ae21aae8d227dc06",
                 "expenses.update": "1e517d25f792bde9",
+                "finance.invoice_payments.list": "65b80aee692019c6",
+                "finance.reconciliations.deactivate": "f6eb291b6388912d",
+                "finance.reconciliations.upsert": "db945c1721c4c983",
                 "invoices.add_time": "ee27431f3eebdb38",
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.corrections.get": "aa93da895756b80b",
@@ -25671,6 +26394,9 @@
                     "expenses.receipts.upload_url role",
                     "expenses.unapprove role",
                     "expenses.update role",
+                    "finance.invoice_payments.list role",
+                    "finance.reconciliations.deactivate role",
+                    "finance.reconciliations.upsert role",
                     "invoices.add_time role",
                     "invoices.corrections.get role",
                     "invoices.generate_period role",
@@ -25824,6 +26550,9 @@
                     "expenses.receipts.upload_url role",
                     "expenses.unapprove role",
                     "expenses.update role",
+                    "finance.invoice_payments.list role",
+                    "finance.reconciliations.deactivate role",
+                    "finance.reconciliations.upsert role",
                     "invoices.add_time role",
                     "invoices.corrections.get role",
                     "invoices.generate_period role",
@@ -25977,6 +26706,9 @@
                     "expenses.receipts.upload_url role",
                     "expenses.unapprove role",
                     "expenses.update role",
+                    "finance.invoice_payments.list role",
+                    "finance.reconciliations.deactivate role",
+                    "finance.reconciliations.upsert role",
                     "invoices.add_time role",
                     "invoices.corrections.get role",
                     "invoices.generate_period role",
@@ -26130,6 +26862,9 @@
                     "expenses.receipts.upload_url role",
                     "expenses.unapprove role",
                     "expenses.update role",
+                    "finance.invoice_payments.list role",
+                    "finance.reconciliations.deactivate role",
+                    "finance.reconciliations.upsert role",
                     "invoices.add_time role",
                     "invoices.corrections.get role",
                     "invoices.generate_period role",
@@ -26261,6 +26996,8 @@
                     "expenses.receipts.upload_url scope_not_granted expenses:write",
                     "expenses.unapprove scope_not_granted expenses:write",
                     "expenses.update scope_not_granted expenses:write",
+                    "finance.reconciliations.deactivate scope_not_granted finance:reconcile",
+                    "finance.reconciliations.upsert scope_not_granted finance:reconcile",
                     "invoices.add_time scope_not_granted billing:write",
                     "invoices.correct scope_not_granted billing:deliver",
                     "invoices.create_draft scope_not_granted billing:write",
@@ -26337,6 +27074,7 @@
                 "expenses.list": "444aff51ddc70e0d",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
+                "finance.invoice_payments.list": "65b80aee692019c6",
                 "invoices.corrections.get": "aa93da895756b80b",
                 "invoices.get": "790ff02f4ec45336",
                 "invoices.list": "07979ef323922adf",
@@ -26533,6 +27271,9 @@
                     "expenses.receipts.upload_url scope_not_granted expenses:write",
                     "expenses.unapprove scope_not_granted expenses:write",
                     "expenses.update scope_not_granted expenses:write",
+                    "finance.invoice_payments.list role",
+                    "finance.reconciliations.deactivate scope_not_granted finance:reconcile",
+                    "finance.reconciliations.upsert scope_not_granted finance:reconcile",
                     "invoices.add_time scope_not_granted billing:write",
                     "invoices.correct scope_not_granted billing:deliver",
                     "invoices.corrections.get role",
@@ -26735,6 +27476,9 @@
                     "expenses.receipts.upload_url scope_not_granted expenses:write",
                     "expenses.unapprove scope_not_granted expenses:write",
                     "expenses.update scope_not_granted expenses:write",
+                    "finance.invoice_payments.list role",
+                    "finance.reconciliations.deactivate scope_not_granted finance:reconcile",
+                    "finance.reconciliations.upsert scope_not_granted finance:reconcile",
                     "invoices.add_time scope_not_granted billing:write",
                     "invoices.correct scope_not_granted billing:deliver",
                     "invoices.corrections.get role",
@@ -27005,6 +27749,9 @@
                 "expenses.list": "444aff51ddc70e0d",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
+                "finance.invoice_payments.list": "65b80aee692019c6",
+                "finance.reconciliations.deactivate": "f6eb291b6388912d",
+                "finance.reconciliations.upsert": "db945c1721c4c983",
                 "invoices.corrections.get": "aa93da895756b80b",
                 "invoices.get": "790ff02f4ec45336",
                 "invoices.list": "07979ef323922adf",
@@ -27159,6 +27906,9 @@
                 "expenses.list": "444aff51ddc70e0d",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
+                "finance.invoice_payments.list": "65b80aee692019c6",
+                "finance.reconciliations.deactivate": "f6eb291b6388912d",
+                "finance.reconciliations.upsert": "db945c1721c4c983",
                 "invoices.corrections.get": "aa93da895756b80b",
                 "invoices.get": "790ff02f4ec45336",
                 "invoices.list": "07979ef323922adf",
@@ -27247,6 +27997,9 @@
                     "expenses.receipts.upload_url deployment_disabled",
                     "expenses.unapprove deployment_disabled",
                     "expenses.update deployment_disabled",
+                    "finance.invoice_payments.list role",
+                    "finance.reconciliations.deactivate role",
+                    "finance.reconciliations.upsert role",
                     "invoices.add_time deployment_disabled",
                     "invoices.correct deployment_disabled",
                     "invoices.corrections.get role",
@@ -27399,6 +28152,9 @@
                     "expenses.receipts.upload_url deployment_disabled",
                     "expenses.unapprove deployment_disabled",
                     "expenses.update deployment_disabled",
+                    "finance.invoice_payments.list role",
+                    "finance.reconciliations.deactivate role",
+                    "finance.reconciliations.upsert role",
                     "invoices.add_time deployment_disabled",
                     "invoices.correct deployment_disabled",
                     "invoices.corrections.get role",
@@ -27551,6 +28307,9 @@
                     "expenses.receipts.upload_url deployment_disabled",
                     "expenses.unapprove deployment_disabled",
                     "expenses.update deployment_disabled",
+                    "finance.invoice_payments.list role",
+                    "finance.reconciliations.deactivate role",
+                    "finance.reconciliations.upsert role",
                     "invoices.add_time deployment_disabled",
                     "invoices.correct deployment_disabled",
                     "invoices.corrections.get role",
@@ -27703,6 +28462,9 @@
                     "expenses.receipts.upload_url deployment_disabled",
                     "expenses.unapprove deployment_disabled",
                     "expenses.update deployment_disabled",
+                    "finance.invoice_payments.list role",
+                    "finance.reconciliations.deactivate role",
+                    "finance.reconciliations.upsert role",
                     "invoices.add_time deployment_disabled",
                     "invoices.correct deployment_disabled",
                     "invoices.corrections.get role",
@@ -27882,10 +28644,10 @@
             "server_info": {
                 "name": "SVC Agent API",
                 "version": "v1",
-                "description": "Read authorized SVC projects, tasks, time, and invoices through the versioned REST API.",
+                "description": "Read authorized SVC data and safely use the write operations authorized for this connection.",
                 "websiteUrl": "https://svc.example.test"
             },
-            "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. This connection is read-only; use the SVC website for changes. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
+            "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
                 "agreements.get": "d22c4c969be65b1e",
                 "agreements.list": "4e2c19179c039b2f",
@@ -27911,6 +28673,9 @@
                 "expenses.list": "444aff51ddc70e0d",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
+                "finance.invoice_payments.list": "65b80aee692019c6",
+                "finance.reconciliations.deactivate": "f6eb291b6388912d",
+                "finance.reconciliations.upsert": "db945c1721c4c983",
                 "invoices.corrections.get": "aa93da895756b80b",
                 "invoices.get": "790ff02f4ec45336",
                 "invoices.list": "07979ef323922adf",
@@ -28034,10 +28799,10 @@
             "server_info": {
                 "name": "SVC Agent API",
                 "version": "v1",
-                "description": "Read authorized SVC projects, tasks, time, and invoices through the versioned REST API.",
+                "description": "Read authorized SVC data and safely use the write operations authorized for this connection.",
                 "websiteUrl": "https://svc.example.test"
             },
-            "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. This connection is read-only; use the SVC website for changes. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
+            "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
                 "agreements.get": "d22c4c969be65b1e",
                 "agreements.list": "4e2c19179c039b2f",
@@ -28063,6 +28828,9 @@
                 "expenses.list": "444aff51ddc70e0d",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
+                "finance.invoice_payments.list": "65b80aee692019c6",
+                "finance.reconciliations.deactivate": "f6eb291b6388912d",
+                "finance.reconciliations.upsert": "db945c1721c4c983",
                 "invoices.corrections.get": "aa93da895756b80b",
                 "invoices.get": "790ff02f4ec45336",
                 "invoices.list": "07979ef323922adf",
@@ -28161,6 +28929,9 @@
                     "expenses.receipts.upload_url deployment_disabled",
                     "expenses.unapprove deployment_disabled",
                     "expenses.update deployment_disabled",
+                    "finance.invoice_payments.list role",
+                    "finance.reconciliations.deactivate role",
+                    "finance.reconciliations.upsert role",
                     "invoices.add_time deployment_disabled",
                     "invoices.correct deployment_disabled",
                     "invoices.corrections.get role",
@@ -28311,6 +29082,9 @@
                     "expenses.receipts.upload_url deployment_disabled",
                     "expenses.unapprove deployment_disabled",
                     "expenses.update deployment_disabled",
+                    "finance.invoice_payments.list role",
+                    "finance.reconciliations.deactivate role",
+                    "finance.reconciliations.upsert role",
                     "invoices.add_time deployment_disabled",
                     "invoices.correct deployment_disabled",
                     "invoices.corrections.get role",
@@ -28461,6 +29235,9 @@
                     "expenses.receipts.upload_url deployment_disabled",
                     "expenses.unapprove deployment_disabled",
                     "expenses.update deployment_disabled",
+                    "finance.invoice_payments.list role",
+                    "finance.reconciliations.deactivate role",
+                    "finance.reconciliations.upsert role",
                     "invoices.add_time deployment_disabled",
                     "invoices.correct deployment_disabled",
                     "invoices.corrections.get role",
@@ -28611,6 +29388,9 @@
                     "expenses.receipts.upload_url deployment_disabled",
                     "expenses.unapprove deployment_disabled",
                     "expenses.update deployment_disabled",
+                    "finance.invoice_payments.list role",
+                    "finance.reconciliations.deactivate role",
+                    "finance.reconciliations.upsert role",
                     "invoices.add_time deployment_disabled",
                     "invoices.correct deployment_disabled",
                     "invoices.corrections.get role",
@@ -28814,6 +29594,9 @@
                 "expenses.list": "444aff51ddc70e0d",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
+                "finance.invoice_payments.list": "65b80aee692019c6",
+                "finance.reconciliations.deactivate": "f6eb291b6388912d",
+                "finance.reconciliations.upsert": "db945c1721c4c983",
                 "invoices.corrections.get": "aa93da895756b80b",
                 "invoices.get": "790ff02f4ec45336",
                 "invoices.list": "07979ef323922adf",
@@ -28968,6 +29751,9 @@
                 "expenses.list": "444aff51ddc70e0d",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
+                "finance.invoice_payments.list": "65b80aee692019c6",
+                "finance.reconciliations.deactivate": "f6eb291b6388912d",
+                "finance.reconciliations.upsert": "db945c1721c4c983",
                 "invoices.corrections.get": "aa93da895756b80b",
                 "invoices.get": "790ff02f4ec45336",
                 "invoices.list": "07979ef323922adf",
@@ -29071,6 +29857,9 @@
                     "expenses.receipts.upload_url deployment_disabled",
                     "expenses.unapprove deployment_disabled",
                     "expenses.update deployment_disabled",
+                    "finance.invoice_payments.list role",
+                    "finance.reconciliations.deactivate role",
+                    "finance.reconciliations.upsert role",
                     "invoices.add_time deployment_disabled",
                     "invoices.correct deployment_disabled",
                     "invoices.corrections.get role",
@@ -29223,6 +30012,9 @@
                     "expenses.receipts.upload_url deployment_disabled",
                     "expenses.unapprove deployment_disabled",
                     "expenses.update deployment_disabled",
+                    "finance.invoice_payments.list role",
+                    "finance.reconciliations.deactivate role",
+                    "finance.reconciliations.upsert role",
                     "invoices.add_time deployment_disabled",
                     "invoices.correct deployment_disabled",
                     "invoices.corrections.get role",
@@ -29375,6 +30167,9 @@
                     "expenses.receipts.upload_url deployment_disabled",
                     "expenses.unapprove deployment_disabled",
                     "expenses.update deployment_disabled",
+                    "finance.invoice_payments.list role",
+                    "finance.reconciliations.deactivate role",
+                    "finance.reconciliations.upsert role",
                     "invoices.add_time deployment_disabled",
                     "invoices.correct deployment_disabled",
                     "invoices.corrections.get role",
@@ -29527,6 +30322,9 @@
                     "expenses.receipts.upload_url deployment_disabled",
                     "expenses.unapprove deployment_disabled",
                     "expenses.update deployment_disabled",
+                    "finance.invoice_payments.list role",
+                    "finance.reconciliations.deactivate role",
+                    "finance.reconciliations.upsert role",
                     "invoices.add_time deployment_disabled",
                     "invoices.correct deployment_disabled",
                     "invoices.corrections.get role",
@@ -29714,6 +30512,9 @@
                 "expenses.receipts.upload_url": "c53d1f0b0ac10262",
                 "expenses.unapprove": "ae21aae8d227dc06",
                 "expenses.update": "1e517d25f792bde9",
+                "finance.invoice_payments.list": "65b80aee692019c6",
+                "finance.reconciliations.deactivate": "f6eb291b6388912d",
+                "finance.reconciliations.upsert": "db945c1721c4c983",
                 "invoices.corrections.get": "aa93da895756b80b",
                 "invoices.get": "790ff02f4ec45336",
                 "invoices.list": "07979ef323922adf",
@@ -29868,6 +30669,9 @@
                 "expenses.receipts.upload_url": "c53d1f0b0ac10262",
                 "expenses.unapprove": "ae21aae8d227dc06",
                 "expenses.update": "1e517d25f792bde9",
+                "finance.invoice_payments.list": "65b80aee692019c6",
+                "finance.reconciliations.deactivate": "f6eb291b6388912d",
+                "finance.reconciliations.upsert": "db945c1721c4c983",
                 "invoices.corrections.get": "aa93da895756b80b",
                 "invoices.get": "790ff02f4ec45336",
                 "invoices.list": "07979ef323922adf",
@@ -29989,6 +30793,9 @@
                     "expenses.receipts.upload_url role",
                     "expenses.unapprove role",
                     "expenses.update role",
+                    "finance.invoice_payments.list role",
+                    "finance.reconciliations.deactivate role",
+                    "finance.reconciliations.upsert role",
                     "invoices.add_time deployment_disabled",
                     "invoices.correct deployment_disabled",
                     "invoices.corrections.get role",
@@ -30141,6 +30948,9 @@
                     "expenses.receipts.upload_url role",
                     "expenses.unapprove role",
                     "expenses.update role",
+                    "finance.invoice_payments.list role",
+                    "finance.reconciliations.deactivate role",
+                    "finance.reconciliations.upsert role",
                     "invoices.add_time deployment_disabled",
                     "invoices.correct deployment_disabled",
                     "invoices.corrections.get role",
@@ -30293,6 +31103,9 @@
                     "expenses.receipts.upload_url role",
                     "expenses.unapprove role",
                     "expenses.update role",
+                    "finance.invoice_payments.list role",
+                    "finance.reconciliations.deactivate role",
+                    "finance.reconciliations.upsert role",
                     "invoices.add_time deployment_disabled",
                     "invoices.correct deployment_disabled",
                     "invoices.corrections.get role",
@@ -30445,6 +31258,9 @@
                     "expenses.receipts.upload_url role",
                     "expenses.unapprove role",
                     "expenses.update role",
+                    "finance.invoice_payments.list role",
+                    "finance.reconciliations.deactivate role",
+                    "finance.reconciliations.upsert role",
                     "invoices.add_time deployment_disabled",
                     "invoices.correct deployment_disabled",
                     "invoices.corrections.get role",
@@ -30558,6 +31374,8 @@
                     "expenses.receipts.upload_url deployment_disabled",
                     "expenses.unapprove deployment_disabled",
                     "expenses.update deployment_disabled",
+                    "finance.reconciliations.deactivate deployment_disabled",
+                    "finance.reconciliations.upsert deployment_disabled",
                     "invoices.add_time deployment_disabled",
                     "invoices.correct deployment_disabled",
                     "invoices.create_draft deployment_disabled",
@@ -30653,6 +31471,7 @@
                 "expenses.list": "444aff51ddc70e0d",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
+                "finance.invoice_payments.list": "65b80aee692019c6",
                 "invoices.corrections.get": "aa93da895756b80b",
                 "invoices.get": "790ff02f4ec45336",
                 "invoices.list": "07979ef323922adf",
@@ -30710,6 +31529,8 @@
                     "expenses.receipts.upload_url deployment_disabled",
                     "expenses.unapprove deployment_disabled",
                     "expenses.update deployment_disabled",
+                    "finance.reconciliations.deactivate deployment_disabled",
+                    "finance.reconciliations.upsert deployment_disabled",
                     "invoices.add_time deployment_disabled",
                     "invoices.correct deployment_disabled",
                     "invoices.create_draft deployment_disabled",
@@ -30805,6 +31626,7 @@
                 "expenses.list": "444aff51ddc70e0d",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
+                "finance.invoice_payments.list": "65b80aee692019c6",
                 "invoices.corrections.get": "aa93da895756b80b",
                 "invoices.get": "790ff02f4ec45336",
                 "invoices.list": "07979ef323922adf",
@@ -30903,6 +31725,9 @@
                     "expenses.receipts.upload_url deployment_disabled",
                     "expenses.unapprove deployment_disabled",
                     "expenses.update deployment_disabled",
+                    "finance.invoice_payments.list role",
+                    "finance.reconciliations.deactivate deployment_disabled",
+                    "finance.reconciliations.upsert deployment_disabled",
                     "invoices.add_time deployment_disabled",
                     "invoices.correct deployment_disabled",
                     "invoices.corrections.get role",
@@ -31053,6 +31878,9 @@
                     "expenses.receipts.upload_url deployment_disabled",
                     "expenses.unapprove deployment_disabled",
                     "expenses.update deployment_disabled",
+                    "finance.invoice_payments.list role",
+                    "finance.reconciliations.deactivate deployment_disabled",
+                    "finance.reconciliations.upsert deployment_disabled",
                     "invoices.add_time deployment_disabled",
                     "invoices.correct deployment_disabled",
                     "invoices.corrections.get role",
@@ -31203,6 +32031,9 @@
                     "expenses.receipts.upload_url deployment_disabled",
                     "expenses.unapprove deployment_disabled",
                     "expenses.update deployment_disabled",
+                    "finance.invoice_payments.list role",
+                    "finance.reconciliations.deactivate deployment_disabled",
+                    "finance.reconciliations.upsert deployment_disabled",
                     "invoices.add_time deployment_disabled",
                     "invoices.correct deployment_disabled",
                     "invoices.corrections.get role",
@@ -31353,6 +32184,9 @@
                     "expenses.receipts.upload_url deployment_disabled",
                     "expenses.unapprove deployment_disabled",
                     "expenses.update deployment_disabled",
+                    "finance.invoice_payments.list role",
+                    "finance.reconciliations.deactivate deployment_disabled",
+                    "finance.reconciliations.upsert deployment_disabled",
                     "invoices.add_time deployment_disabled",
                     "invoices.correct deployment_disabled",
                     "invoices.corrections.get role",
@@ -31523,6 +32357,9 @@
                 "expenses.receipts.upload_url": "c53d1f0b0ac10262",
                 "expenses.unapprove": "ae21aae8d227dc06",
                 "expenses.update": "1e517d25f792bde9",
+                "finance.invoice_payments.list": "65b80aee692019c6",
+                "finance.reconciliations.deactivate": "f6eb291b6388912d",
+                "finance.reconciliations.upsert": "db945c1721c4c983",
                 "invoices.add_time": "ee27431f3eebdb38",
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.corrections.get": "aa93da895756b80b",
@@ -31676,6 +32513,9 @@
                 "expenses.receipts.upload_url": "c53d1f0b0ac10262",
                 "expenses.unapprove": "ae21aae8d227dc06",
                 "expenses.update": "1e517d25f792bde9",
+                "finance.invoice_payments.list": "65b80aee692019c6",
+                "finance.reconciliations.deactivate": "f6eb291b6388912d",
+                "finance.reconciliations.upsert": "db945c1721c4c983",
                 "invoices.add_time": "ee27431f3eebdb38",
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.corrections.get": "aa93da895756b80b",
@@ -31811,6 +32651,9 @@
                     "expenses.receipts.upload_url role",
                     "expenses.unapprove role",
                     "expenses.update role",
+                    "finance.invoice_payments.list role",
+                    "finance.reconciliations.deactivate role",
+                    "finance.reconciliations.upsert role",
                     "invoices.add_time role",
                     "invoices.corrections.get role",
                     "invoices.generate_period role",
@@ -31964,6 +32807,9 @@
                     "expenses.receipts.upload_url role",
                     "expenses.unapprove role",
                     "expenses.update role",
+                    "finance.invoice_payments.list role",
+                    "finance.reconciliations.deactivate role",
+                    "finance.reconciliations.upsert role",
                     "invoices.add_time role",
                     "invoices.corrections.get role",
                     "invoices.generate_period role",
@@ -32117,6 +32963,9 @@
                     "expenses.receipts.upload_url role",
                     "expenses.unapprove role",
                     "expenses.update role",
+                    "finance.invoice_payments.list role",
+                    "finance.reconciliations.deactivate role",
+                    "finance.reconciliations.upsert role",
                     "invoices.add_time role",
                     "invoices.corrections.get role",
                     "invoices.generate_period role",
@@ -32270,6 +33119,9 @@
                     "expenses.receipts.upload_url role",
                     "expenses.unapprove role",
                     "expenses.update role",
+                    "finance.invoice_payments.list role",
+                    "finance.reconciliations.deactivate role",
+                    "finance.reconciliations.upsert role",
                     "invoices.add_time role",
                     "invoices.corrections.get role",
                     "invoices.generate_period role",
@@ -32445,6 +33297,9 @@
                 "expenses.receipts.upload_url": "c53d1f0b0ac10262",
                 "expenses.unapprove": "ae21aae8d227dc06",
                 "expenses.update": "1e517d25f792bde9",
+                "finance.invoice_payments.list": "65b80aee692019c6",
+                "finance.reconciliations.deactivate": "f6eb291b6388912d",
+                "finance.reconciliations.upsert": "db945c1721c4c983",
                 "invoices.add_time": "ee27431f3eebdb38",
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.corrections.get": "aa93da895756b80b",
@@ -32597,6 +33452,9 @@
                 "expenses.receipts.upload_url": "c53d1f0b0ac10262",
                 "expenses.unapprove": "ae21aae8d227dc06",
                 "expenses.update": "1e517d25f792bde9",
+                "finance.invoice_payments.list": "65b80aee692019c6",
+                "finance.reconciliations.deactivate": "f6eb291b6388912d",
+                "finance.reconciliations.upsert": "db945c1721c4c983",
                 "invoices.add_time": "ee27431f3eebdb38",
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.corrections.get": "aa93da895756b80b",
@@ -32730,6 +33588,9 @@
                     "expenses.receipts.upload_url role",
                     "expenses.unapprove role",
                     "expenses.update role",
+                    "finance.invoice_payments.list role",
+                    "finance.reconciliations.deactivate role",
+                    "finance.reconciliations.upsert role",
                     "invoices.add_time role",
                     "invoices.corrections.get role",
                     "invoices.generate_period role",
@@ -32880,6 +33741,9 @@
                     "expenses.receipts.upload_url role",
                     "expenses.unapprove role",
                     "expenses.update role",
+                    "finance.invoice_payments.list role",
+                    "finance.reconciliations.deactivate role",
+                    "finance.reconciliations.upsert role",
                     "invoices.add_time role",
                     "invoices.corrections.get role",
                     "invoices.generate_period role",
@@ -33030,6 +33894,9 @@
                     "expenses.receipts.upload_url role",
                     "expenses.unapprove role",
                     "expenses.update role",
+                    "finance.invoice_payments.list role",
+                    "finance.reconciliations.deactivate role",
+                    "finance.reconciliations.upsert role",
                     "invoices.add_time role",
                     "invoices.corrections.get role",
                     "invoices.generate_period role",
@@ -33180,6 +34047,9 @@
                     "expenses.receipts.upload_url role",
                     "expenses.unapprove role",
                     "expenses.update role",
+                    "finance.invoice_payments.list role",
+                    "finance.reconciliations.deactivate role",
+                    "finance.reconciliations.upsert role",
                     "invoices.add_time role",
                     "invoices.corrections.get role",
                     "invoices.generate_period role",
@@ -33333,6 +34203,9 @@
                     "expenses.receipts.upload_url deployment_disabled",
                     "expenses.unapprove deployment_disabled",
                     "expenses.update deployment_disabled",
+                    "finance.invoice_payments.list deployment_disabled",
+                    "finance.reconciliations.deactivate deployment_disabled",
+                    "finance.reconciliations.upsert deployment_disabled",
                     "invoices.add_time deployment_disabled",
                     "invoices.correct deployment_disabled",
                     "invoices.corrections.get deployment_disabled",
@@ -33464,6 +34337,9 @@
                     "expenses.receipts.upload_url deployment_disabled",
                     "expenses.unapprove deployment_disabled",
                     "expenses.update deployment_disabled",
+                    "finance.invoice_payments.list deployment_disabled",
+                    "finance.reconciliations.deactivate deployment_disabled",
+                    "finance.reconciliations.upsert deployment_disabled",
                     "invoices.add_time deployment_disabled",
                     "invoices.correct deployment_disabled",
                     "invoices.corrections.get deployment_disabled",
@@ -33595,6 +34471,9 @@
                     "expenses.receipts.upload_url deployment_disabled",
                     "expenses.unapprove deployment_disabled",
                     "expenses.update deployment_disabled",
+                    "finance.invoice_payments.list deployment_disabled",
+                    "finance.reconciliations.deactivate deployment_disabled",
+                    "finance.reconciliations.upsert deployment_disabled",
                     "invoices.add_time deployment_disabled",
                     "invoices.correct deployment_disabled",
                     "invoices.corrections.get deployment_disabled",
@@ -33726,6 +34605,9 @@
                     "expenses.receipts.upload_url deployment_disabled",
                     "expenses.unapprove deployment_disabled",
                     "expenses.update deployment_disabled",
+                    "finance.invoice_payments.list deployment_disabled",
+                    "finance.reconciliations.deactivate deployment_disabled",
+                    "finance.reconciliations.upsert deployment_disabled",
                     "invoices.add_time deployment_disabled",
                     "invoices.correct deployment_disabled",
                     "invoices.corrections.get deployment_disabled",
@@ -33857,6 +34739,9 @@
                     "expenses.receipts.upload_url deployment_disabled",
                     "expenses.unapprove deployment_disabled",
                     "expenses.update deployment_disabled",
+                    "finance.invoice_payments.list deployment_disabled",
+                    "finance.reconciliations.deactivate deployment_disabled",
+                    "finance.reconciliations.upsert deployment_disabled",
                     "invoices.add_time deployment_disabled",
                     "invoices.correct deployment_disabled",
                     "invoices.corrections.get deployment_disabled",
@@ -33988,6 +34873,9 @@
                     "expenses.receipts.upload_url deployment_disabled",
                     "expenses.unapprove deployment_disabled",
                     "expenses.update deployment_disabled",
+                    "finance.invoice_payments.list deployment_disabled",
+                    "finance.reconciliations.deactivate deployment_disabled",
+                    "finance.reconciliations.upsert deployment_disabled",
                     "invoices.add_time deployment_disabled",
                     "invoices.correct deployment_disabled",
                     "invoices.corrections.get deployment_disabled",
@@ -34137,6 +35025,9 @@
                 "expenses.receipts.upload_url": "c53d1f0b0ac10262",
                 "expenses.unapprove": "ae21aae8d227dc06",
                 "expenses.update": "1e517d25f792bde9",
+                "finance.invoice_payments.list": "65b80aee692019c6",
+                "finance.reconciliations.deactivate": "f6eb291b6388912d",
+                "finance.reconciliations.upsert": "db945c1721c4c983",
                 "invoices.add_time": "ee27431f3eebdb38",
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.corrections.get": "aa93da895756b80b",
@@ -34292,6 +35183,9 @@
                 "expenses.receipts.upload_url": "c53d1f0b0ac10262",
                 "expenses.unapprove": "ae21aae8d227dc06",
                 "expenses.update": "1e517d25f792bde9",
+                "finance.invoice_payments.list": "65b80aee692019c6",
+                "finance.reconciliations.deactivate": "f6eb291b6388912d",
+                "finance.reconciliations.upsert": "db945c1721c4c983",
                 "invoices.add_time": "ee27431f3eebdb38",
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.corrections.get": "aa93da895756b80b",
@@ -34429,6 +35323,9 @@
                     "expenses.receipts.upload_url role",
                     "expenses.unapprove role",
                     "expenses.update role",
+                    "finance.invoice_payments.list role",
+                    "finance.reconciliations.deactivate role",
+                    "finance.reconciliations.upsert role",
                     "invoices.add_time role",
                     "invoices.corrections.get role",
                     "invoices.generate_period role",
@@ -34582,6 +35479,9 @@
                     "expenses.receipts.upload_url role",
                     "expenses.unapprove role",
                     "expenses.update role",
+                    "finance.invoice_payments.list role",
+                    "finance.reconciliations.deactivate role",
+                    "finance.reconciliations.upsert role",
                     "invoices.add_time role",
                     "invoices.corrections.get role",
                     "invoices.generate_period role",
@@ -34735,6 +35635,9 @@
                     "expenses.receipts.upload_url role",
                     "expenses.unapprove role",
                     "expenses.update role",
+                    "finance.invoice_payments.list role",
+                    "finance.reconciliations.deactivate role",
+                    "finance.reconciliations.upsert role",
                     "invoices.add_time role",
                     "invoices.corrections.get role",
                     "invoices.generate_period role",
@@ -34888,6 +35791,9 @@
                     "expenses.receipts.upload_url role",
                     "expenses.unapprove role",
                     "expenses.update role",
+                    "finance.invoice_payments.list role",
+                    "finance.reconciliations.deactivate role",
+                    "finance.reconciliations.upsert role",
                     "invoices.add_time role",
                     "invoices.corrections.get role",
                     "invoices.generate_period role",

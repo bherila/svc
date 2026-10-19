@@ -24,9 +24,6 @@ final class VersionedApiRouteInventoryTest extends TestCase
     private const array NOT_OPERATIONS = [
         'agent-api.v1.mcp' => 'The MCP transport endpoint itself; each tool it serves is an operation.',
         'agent-api.v1.mcp.options' => 'CORS preflight for the MCP transport endpoint.',
-        'api.v1.invoice-payments.index' => 'Finance reconciliation list on Sanctum finance.* abilities; moving onto the registry (#457).',
-        'api.v1.payment-reconciliations.upsert' => 'Finance reconciliation write on Sanctum finance.* abilities; moving onto the registry (#457).',
-        'api.v1.payment-reconciliations.destroy' => 'Finance reconciliation write on Sanctum finance.* abilities; moving onto the registry (#457).',
     ];
 
     public function test_every_versioned_api_route_is_an_operation_or_explains_why_not(): void

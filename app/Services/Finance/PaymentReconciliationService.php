@@ -115,7 +115,7 @@ final class PaymentReconciliationService
                     'review_flagged_at' => null,
                 ])->save();
 
-                return $existing->fresh();
+                return $this->reloaded($workspace, $existing);
             }
 
             return PaymentReconciliation::query()->create([
@@ -167,8 +167,17 @@ final class PaymentReconciliationService
             // a payment that is no longer succeeded, where a PUT is refused.
             $reconciliation->forceFill(['is_active' => false, 'review_reason' => null, 'review_flagged_at' => null])->save();
 
-            return $reconciliation->fresh();
+            return $this->reloaded($workspace, $reconciliation);
         });
+    }
+
+    /** The row as stored, read back through its workspace like every other tenant read. */
+    private function reloaded(Workspace $workspace, PaymentReconciliation $reconciliation): PaymentReconciliation
+    {
+        return PaymentReconciliation::query()
+            ->where('workspace_id', $workspace->id)
+            ->whereKey($reconciliation->id)
+            ->firstOrFail();
     }
 
     private function assertCreatorBelongsToWorkspace(Workspace $workspace, User $creator): void

@@ -3,9 +3,27 @@
 The versioned API lets a finance application reconcile its transaction records
 to SVC invoice payments without sharing databases or importing banking data into
 SVC. Amounts are integer minor units, identifiers are public UUIDs, and every
-request is restricted by both token ability and workspace membership.
+request is restricted by both the credential's scope and the caller's workspace
+role.
+
+The three operations are declared once on the operation registry
+(`AgentOperationCatalog`, #457), like every other `/api/v1` operation. Each is in
+the OpenAPI document (`public/openapi/svc-agent-v1.json`, served at
+`/api/openapi.json`) with its request and response schemas, scopes and refusals,
+and each is an MCP tool and a console command of the same name, all running one
+`FinanceReconciliationOperations`:
+
+| Operation                            | REST                                                      | Scope               | Console                    |
+| ------------------------------------ | --------------------------------------------------------- | ------------------- | -------------------------- |
+| `finance.invoice_payments.list`      | `GET /api/v1/workspaces/{workspace}/invoice-payments`     | `finance:read`      | `svc:finance:payments`     |
+| `finance.reconciliations.upsert`     | `PUT …/invoice-payments/{payment}/reconciliations/{external-system}/{transaction-uuid}` | `finance:reconcile` | `svc:finance:reconcile`    |
+| `finance.reconciliations.deactivate` | `DELETE` the same path                                    | `finance:reconcile` | `svc:finance:unreconcile`  |
 
 ## Authentication
+
+Two credentials open these routes, and only these routes accept the first.
+
+### Finance integration token (Sanctum)
 
 Issue an expiring token for an exact SVC user public UUID. The plaintext token is
 shown once; only its SHA-256 digest is stored.
@@ -19,9 +37,13 @@ php artisan svc:auth:issue-token \
 ```
 
 Send it as `Authorization: Bearer TOKEN`. Read-only integrations should receive
-only `finance.read`. A token never broadens the user's workspace role: listing
-requires workspace view access, and reconciliation writes require owner or admin
-access. Revoke a named token with:
+only `finance.read`. On these routes the `finance.read` ability stands for the
+`finance:read` scope and `finance.reconcile` for `finance:reconcile`; the token
+holds no other scope, so it opens these three operations and nothing else in
+`/api/v1` (a token issued with Sanctum's `*` ability is no exception). A token
+never broadens the user's workspace role: listing requires workspace membership,
+and reconciliation writes require owner or admin access. This is the contract the
+integration has always had. Revoke a named token with:
 
 ```bash
 php artisan svc:auth:revoke-token USER_PUBLIC_UUID "Finance integration"
@@ -44,34 +66,44 @@ Writes check the provider freshly. A bound user's token issued before this stamp
 existed is refused once enforcement is on, so reissue it first. Tokens of users with
 no provider binding are unaffected.
 
+### OAuth and personal API tokens
+
+A REST-audience OAuth token, an operator-issued agent token
+(`svc:auth:issue-agent-token … finance:read finance:reconcile`) or a personal API
+token from the setup page that holds `finance:read` or `finance:reconcile` also
+calls these routes, and an MCP connection holding them calls the tools. Through
+this door **every** finance operation requires a workspace owner or admin, the
+listing included, and the tools are offered only to someone who manages a
+workspace. The finance token's member listing is not extended to OAuth.
+
 ## Endpoints
 
-`GET /api/v1/workspaces/{workspace}/invoice-payments`
+`GET /api/v1/workspaces/{workspace}/invoice-payments` (`finance.invoice_payments.list`)
 
-- Requires `finance.read`.
-- Defaults to successful payments and 50 records per page.
+- Defaults to successful payments and 50 records per page, numbered by `page`.
 - Optional query parameters: `status`, `invoice`, `received_from`, `received_to`,
-  and `per_page` (maximum 100).
+  `per_page` (maximum 100) and `page`.
 - Returns invoice/client public identifiers, payment/net/reconciled amounts, and
-  active plus historical reconciliation allocations. Internal database IDs,
-  payment notes, and provider payment identifiers are not returned.
+  active plus historical reconciliation allocations, with Laravel's `links` and
+  `meta` pagination blocks. Internal database IDs, payment notes, and provider
+  payment identifiers are not returned.
 
-`PUT /api/v1/workspaces/{workspace}/invoice-payments/{payment}/reconciliations/{external-system}/{transaction-uuid}`
+`PUT /api/v1/workspaces/{workspace}/invoice-payments/{payment}/reconciliations/{external-system}/{transaction-uuid}` (`finance.reconciliations.upsert`)
 
-- Requires `finance.reconcile` and workspace owner/admin access.
 - Accepts `allocated_amount`, `currency`, optional `reconciled_on`, and optional
-  `is_active`.
-- Is idempotent for the payment/system/transaction tuple.
+  `is_active`. Other fields are ignored.
+- Is idempotent for the payment/system/transaction tuple, so it takes no
+  `Idempotency-Key`: `201` when it created the allocation, `200` when it updated it.
 - Allows one external transaction to cover multiple SVC payments and one payment
   to have multiple external transactions, while active allocations may not
   exceed the successful payment amount net of refunds.
 - A write that succeeds clears the allocation's review flag (below).
 
-`DELETE /api/v1/workspaces/{workspace}/invoice-payments/{payment}/reconciliations/{external-system}/{transaction-uuid}`
+`DELETE /api/v1/workspaces/{workspace}/invoice-payments/{payment}/reconciliations/{external-system}/{transaction-uuid}` (`finance.reconciliations.deactivate`)
 
-- Requires `finance.reconcile` and workspace owner/admin access.
 - Deactivates the allocation for auditability; it does not delete its history.
-  It also clears a processor review flag (below).
+  It also clears a processor review flag (below). Upserting it again
+  reactivates it. Idempotent for the same tuple.
 
 ## Processor refunds and disputes
 
@@ -100,5 +132,35 @@ longer `succeeded` (fully refunded or disputed), so there `DELETE` is the way to
 resolve the review. An inactive allocation never reports `needs_review`.
 
 Cross-workspace resource combinations return `404`. Missing or expired tokens
-return `401`; missing abilities or insufficient workspace roles return `403`;
-invalid input and domain preconditions return `422`.
+return `401`; missing scopes or abilities and insufficient workspace roles return
+`403` (a missing scope is answered by the route gate with the operation, reason
+and an `insufficient_scope` challenge); invalid input and domain preconditions
+return `422`. Responses are `Cache-Control: no-store`.
+
+Every write - from any door - is recorded in `agent_mutation_audits` under its
+operation id, with the caller's OAuth client id, `finance-token:<token row>` for
+the Sanctum token, or `console`, and a refused write is recorded as failed with
+its category. Writes take no `expected_version`: the path names the allocation
+and the body is the whole of it, so the last write is the allocation.
+
+Neither the agent write cutovers (`AGENT_API_WRITES_ENABLED`,
+`AGENT_API_PAYMENT_WRITES_ENABLED`) nor the MCP switches withhold these REST
+routes; the MCP switches (`mcp.read`, `mcp.write`, or the tool's own name) withhold
+the tools.
+
+## Console
+
+The commands act as the owner or admin `--user` names, through the same
+operation, rules and audit, and print the API's representation with
+`--format=json`:
+
+```bash
+php artisan svc:finance:payments --workspace=WORKSPACE --user=USER \
+    [--status=succeeded] [--invoice=INVOICE] [--received-from=YYYY-MM-DD] \
+    [--received-to=YYYY-MM-DD] [--per-page=50] [--page=1] [--format=json]
+php artisan svc:finance:reconcile PAYMENT SYSTEM TRANSACTION --workspace=WORKSPACE \
+    --user=USER --amount=MINOR_UNITS --currency=USD [--reconciled-on=YYYY-MM-DD] \
+    [--inactive] [--format=json]
+php artisan svc:finance:unreconcile PAYMENT SYSTEM TRANSACTION --workspace=WORKSPACE \
+    --user=USER [--format=json]
+```

@@ -867,6 +867,7 @@ final class AgentRestDocumentation
                     'x-mcp-tool' => 'expenses.update',
                 ],
             ],
+            ...self::finance(),
             'invoices.add_time' => [
                 'method' => 'POST',
                 'scopes' => ['billing:write', 'billing:read'],
@@ -1623,6 +1624,85 @@ final class AgentRestDocumentation
                 'request' => 'SquareSyncRequest',
                 'response' => 'SquareSyncRunResponse',
                 'response_description' => 'The sync run, completed or failed',
+            ],
+        ];
+    }
+
+    /**
+     * The finance reconciliation operations (#457), which the Sanctum finance
+     * token (`svc:auth:issue-token` with `finance.read` / `finance.reconcile`)
+     * also calls, with the contract it has always had; see docs/finance-api.md.
+     *
+     * @return array<string, array{method: string, scopes: list<string>, description: string, parameters: list<string|array<string, mixed>>, request?: string, response: string, response_description: string, errors: array<int, string>, extensions: array<string, mixed>}>
+     */
+    private static function finance(): array
+    {
+        $token = ' The Sanctum finance token issued by svc:auth:issue-token is accepted too, its finance.read and finance.reconcile abilities standing for these scopes.';
+        $allocation = [
+            'WorkspaceId',
+            'PaymentId',
+            ['name' => 'external_system', 'in' => 'path', 'required' => true, 'description' => 'The external finance system, as a lowercase slug.', 'schema' => ['type' => 'string', 'maxLength' => 80, 'pattern' => '^[a-z0-9]+(?:-[a-z0-9]+)*$']],
+            ['name' => 'transaction', 'in' => 'path', 'required' => true, 'description' => 'The external finance system\'s transaction UUID.', 'schema' => ['type' => 'string', 'format' => 'uuid']],
+        ];
+        $writeErrors = static fn (string $notFound, string $invalid): array => [
+            401 => 'Not signed in, or the token is missing, expired or revoked.',
+            403 => 'The caller is not a workspace owner or admin, or the token lacks finance:reconcile (the finance token, finance.reconcile).',
+            404 => $notFound,
+            422 => $invalid,
+            429 => 'Too many requests (retry after Retry-After).',
+        ];
+
+        return [
+            'finance.invoice_payments.list' => [
+                'method' => 'GET',
+                'scopes' => ['finance:read'],
+                'description' => 'Received payments with what each is worth net of refunds, how much of that its active finance reconciliation allocations cover, and every allocation, active first; newest received first. Succeeded payments unless status is given; 50 a page unless per_page is (at most 100), numbered by page. Workspace owners/admins; with the finance token, any workspace member. Internal ids, payment notes and processor payment identifiers are never returned.'.$token,
+                'parameters' => [
+                    'WorkspaceId',
+                    self::query('status', ['type' => 'string', 'enum' => ['pending', 'succeeded', 'failed', 'refunded', 'disputed', 'canceled'], 'default' => 'succeeded']),
+                    self::query('invoice', ['type' => 'string', 'format' => 'uuid']),
+                    self::query('received_from', ['type' => 'string', 'format' => 'date']),
+                    self::query('received_to', ['type' => 'string', 'format' => 'date']),
+                    self::query('per_page', ['type' => 'integer', 'minimum' => 1, 'maximum' => 100, 'default' => 50]),
+                    self::query('page', ['type' => 'integer', 'minimum' => 1, 'default' => 1]),
+                ],
+                'response' => 'FinanceInvoicePaymentListResponse',
+                'response_description' => 'A page of received payments with their allocations',
+                'errors' => [
+                    401 => 'Not signed in, or the token is missing, expired or revoked.',
+                    403 => 'The caller may not read this workspace\'s payments, or the token lacks finance:read (the finance token, finance.read).',
+                    404 => 'The workspace does not exist.',
+                    422 => 'A filter is invalid (`errors` names it): an unknown status, a malformed invoice id or date, received_to before received_from, or per_page out of range.',
+                    429 => 'Too many requests (retry after Retry-After).',
+                ],
+                'extensions' => ['x-mcp-tool' => 'finance.invoice_payments.list'],
+            ],
+            'finance.reconciliations.deactivate' => [
+                'method' => 'DELETE',
+                'scopes' => ['finance:reconcile'],
+                'description' => 'Stop the allocation the path names counting toward its payment. It is kept, with its history, rather than deleted, and setting it again with finance.reconciliations.upsert reactivates it. Idempotent by its path, so it takes no Idempotency-Key. Workspace owners/admins only.'.$token,
+                'parameters' => $allocation,
+                'response' => 'FinanceReconciliationResponse',
+                'response_description' => 'The allocation, no longer active',
+                'errors' => $writeErrors(
+                    'The workspace, payment or allocation does not exist in this workspace, or the system or transaction is not a slug and a UUID.',
+                    'external_system is longer than 80 characters (`errors` names external_system_slug).',
+                ),
+                'extensions' => ['x-mcp-tool' => 'finance.reconciliations.deactivate'],
+            ],
+            'finance.reconciliations.upsert' => [
+                'method' => 'PUT',
+                'scopes' => ['finance:reconcile'],
+                'description' => 'Create or update the finance reconciliation allocation the path names: the share of a received payment, in integer minor units of its currency, that one transaction in an external finance system covers. One transaction may cover several payments and one payment several transactions, but a payment\'s active allocations never exceed what it is worth net of refunds, and only a succeeded payment can be reconciled. Answers 201 when it created the allocation and 200 when it updated it. Idempotent by its path, so it takes no Idempotency-Key. Nothing moves money. Workspace owners/admins only.'.$token,
+                'parameters' => $allocation,
+                'request' => 'FinanceReconciliationRequest',
+                'response' => 'FinanceReconciliationResponse',
+                'response_description' => 'The allocation, updated (201 when this created it)',
+                'errors' => $writeErrors(
+                    'The workspace or payment does not exist in this workspace, or the system or transaction is not a slug and a UUID.',
+                    'A field is invalid (`errors` names it, or external_system_slug for the path), or the payment is not succeeded, its currency differs, or the active allocations would exceed its amount net of refunds.',
+                ),
+                'extensions' => ['x-mcp-tool' => 'finance.reconciliations.upsert'],
             ],
         ];
     }

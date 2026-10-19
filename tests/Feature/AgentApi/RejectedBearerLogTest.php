@@ -302,7 +302,7 @@ final class RejectedBearerLogTest extends TestCase
         }
 
         $this->assertGreaterThan(100, count($checked));
-        foreach (['agent-api.v1.mcp', 'agent-api.v1.context', 'agent-api.v1.connections.destroy', 'agent-api.v1.workspaces.store', 'api.v1.invoice-payments.index'] as $name) {
+        foreach (['agent-api.v1.mcp', 'agent-api.v1.context', 'agent-api.v1.connections.destroy', 'agent-api.v1.workspaces.store', 'agent-api.v1.invoice-payments.index'] as $name) {
             $this->assertContains($name, $checked);
         }
     }

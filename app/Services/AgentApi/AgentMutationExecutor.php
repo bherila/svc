@@ -100,6 +100,32 @@ final class AgentMutationExecutor
         }
     }
 
+    /**
+     * An audited write with no receipt, for an operation whose path is its
+     * identity - a PUT or DELETE on a natural key (#457) - so repeating it is
+     * the same write and there is nothing to replay. The write and its
+     * success audit commit together; a refusal is audited as failed, with the
+     * same categories {@see self::run()} records.
+     *
+     * @param  callable(): list<string>  $callback  the write, returning the public ids it touched
+     * @return list<string>
+     */
+    public function runIdempotentByPath(User $user, Workspace $workspace, string $clientId, string $operation, callable $callback): array
+    {
+        try {
+            return DB::transaction(function () use ($user, $workspace, $clientId, $operation, $callback): array {
+                $ids = $callback();
+                $this->audit($user, $workspace, $clientId, $operation, $ids, 'success');
+
+                return $ids;
+            });
+        } catch (Throwable $exception) {
+            $this->auditFailure($user, $workspace, $clientId, $operation, $exception);
+
+            throw $exception;
+        }
+    }
+
     private function canonicalize(mixed $value): mixed
     {
         if (! is_array($value)) {

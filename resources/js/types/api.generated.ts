@@ -712,6 +712,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    '/workspaces/{workspace}/invoice-payments': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Received payments with what each is worth net of refunds, how much of that its active finance reconciliation allocations cover, and every allocation, active first; newest received first. Succeeded payments unless status is given; 50 a page unless per_page is (at most 100), numbered by page. Workspace owners/admins; with the finance token, any workspace member. Internal ids, payment notes and processor payment identifiers are never returned. The Sanctum finance token issued by svc:auth:issue-token is accepted too, its finance.read and finance.reconcile abilities standing for these scopes. */
+        get: operations['finance.invoice_payments.list'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/invoice-payments/{payment}/reconciliations/{external_system}/{transaction}': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** @description Create or update the finance reconciliation allocation the path names: the share of a received payment, in integer minor units of its currency, that one transaction in an external finance system covers. One transaction may cover several payments and one payment several transactions, but a payment's active allocations never exceed what it is worth net of refunds, and only a succeeded payment can be reconciled. Answers 201 when it created the allocation and 200 when it updated it. Idempotent by its path, so it takes no Idempotency-Key. Nothing moves money. Workspace owners/admins only. The Sanctum finance token issued by svc:auth:issue-token is accepted too, its finance.read and finance.reconcile abilities standing for these scopes. */
+        put: operations['finance.reconciliations.upsert'];
+        post?: never;
+        /** @description Stop the allocation the path names counting toward its payment. It is kept, with its history, rather than deleted, and setting it again with finance.reconciliations.upsert reactivates it. Idempotent by its path, so it takes no Idempotency-Key. Workspace owners/admins only. The Sanctum finance token issued by svc:auth:issue-token is accepted too, its finance.read and finance.reconcile abilities standing for these scopes. */
+        delete: operations['finance.reconciliations.deactivate'];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     '/workspaces/{workspace}/invoices/{invoice}/time': {
         parameters: {
             query?: never;
@@ -2198,6 +2233,120 @@ export interface components {
             description: string;
             /** Format: uuid */
             project_id?: string | null;
+        };
+        FinanceInvoicePayment: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            status:
+                | 'pending'
+                | 'succeeded'
+                | 'failed'
+                | 'refunded'
+                | 'disputed'
+                | 'canceled';
+            amount: number;
+            refunded_amount: number;
+            /** @description amount less refunded_amount, never below zero. */
+            net_amount: number;
+            /** @description What the active allocations cover. */
+            reconciled_amount: number;
+            /** @description net_amount less reconciled_amount, never below zero. */
+            unreconciled_amount: number;
+            currency: string;
+            /** Format: date */
+            received_on: string | null;
+            method: string | null;
+            reference: string | null;
+            /** @description The processor that recorded the payment, or null for one recorded by hand. */
+            provider: string | null;
+            invoice: {
+                /** Format: uuid */
+                id: string;
+                number: string;
+                status: components['schemas']['InvoiceStatus'];
+                total_amount: number;
+                currency: string;
+                client: {
+                    /** Format: uuid */
+                    id: string;
+                    name: string;
+                };
+            };
+            /** @description Every allocation, active first, newest first. */
+            reconciliations: components['schemas']['FinanceReconciliation'][];
+            /** Format: date-time */
+            created_at: string | null;
+            /** Format: date-time */
+            updated_at: string | null;
+        };
+        FinanceInvoicePaymentListResponse: {
+            data: components['schemas']['FinanceInvoicePayment'][];
+            links: {
+                /** Format: uri */
+                first: string | null;
+                /** Format: uri */
+                last: string | null;
+                /** Format: uri */
+                prev: string | null;
+                /** Format: uri */
+                next: string | null;
+            };
+            meta: {
+                current_page: number;
+                from: number | null;
+                last_page: number;
+                links: {
+                    /** Format: uri */
+                    url: string | null;
+                    label: string;
+                    page: number | null;
+                    active: boolean;
+                }[];
+                /** Format: uri */
+                path: string | null;
+                per_page: number;
+                to: number | null;
+                total: number;
+            };
+        };
+        FinanceReconciliation: {
+            /** Format: uuid */
+            id: string;
+            /** @description The external finance system, as a lowercase slug. */
+            external_system: string;
+            /**
+             * Format: uuid
+             * @description The external finance system's transaction UUID.
+             */
+            external_transaction_id: string;
+            /** @description Minor units of the payment this transaction covers. */
+            allocated_amount: number;
+            currency: string;
+            /** Format: date */
+            reconciled_on: string | null;
+            /** @description Whether it counts toward the payment's reconciled amount. An inactive allocation is kept with its history. */
+            is_active: boolean;
+            /** Format: date-time */
+            created_at: string | null;
+            /** Format: date-time */
+            updated_at: string | null;
+        };
+        FinanceReconciliationRequest: {
+            /** @description Minor units of the payment the transaction covers. */
+            allocated_amount: number;
+            /** @description The payment's currency. */
+            currency: string;
+            /** Format: date */
+            reconciled_on?: string | null;
+            /**
+             * @description false keeps the allocation without it counting.
+             * @default true
+             */
+            is_active: boolean;
+        };
+        FinanceReconciliationResponse: {
+            data: components['schemas']['FinanceReconciliation'];
         };
         Invoice: {
             id: components['schemas']['Uuid'];
@@ -6321,6 +6470,246 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['ExpenseResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'finance.invoice_payments.list': {
+        parameters: {
+            query?: {
+                status?:
+                    | 'pending'
+                    | 'succeeded'
+                    | 'failed'
+                    | 'refunded'
+                    | 'disputed'
+                    | 'canceled';
+                invoice?: string;
+                received_from?: string;
+                received_to?: string;
+                per_page?: number;
+                page?: number;
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of received payments with their allocations */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['FinanceInvoicePaymentListResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The caller may not read this workspace's payments, or the token lacks finance:read (the finance token, finance.read). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace does not exist. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A filter is invalid (`errors` names it): an unknown status, a malformed invoice id or date, received_to before received_from, or per_page out of range. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'finance.reconciliations.upsert': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                payment: components['parameters']['PaymentId'];
+                /** @description The external finance system, as a lowercase slug. */
+                external_system: string;
+                /** @description The external finance system's transaction UUID. */
+                transaction: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['FinanceReconciliationRequest'];
+            };
+        };
+        responses: {
+            /** @description The allocation, updated (201 when this created it) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['FinanceReconciliationResponse'];
+                };
+            };
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['FinanceReconciliationResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The caller is not a workspace owner or admin, or the token lacks finance:reconcile (the finance token, finance.reconcile). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace or payment does not exist in this workspace, or the system or transaction is not a slug and a UUID. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A field is invalid (`errors` names it, or external_system_slug for the path), or the payment is not succeeded, its currency differs, or the active allocations would exceed its amount net of refunds. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'finance.reconciliations.deactivate': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                payment: components['parameters']['PaymentId'];
+                /** @description The external finance system, as a lowercase slug. */
+                external_system: string;
+                /** @description The external finance system's transaction UUID. */
+                transaction: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The allocation, no longer active */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['FinanceReconciliationResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The caller is not a workspace owner or admin, or the token lacks finance:reconcile (the finance token, finance.reconcile). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace, payment or allocation does not exist in this workspace, or the system or transaction is not a slug and a UUID. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description external_system is longer than 80 characters (`errors` names external_system_slug). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
                 };
             };
             default: components['responses']['Error'];

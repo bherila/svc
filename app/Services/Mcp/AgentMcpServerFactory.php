@@ -111,6 +111,7 @@ final class AgentMcpServerFactory
             AgentMcpPortalAccessTools::class => new AgentMcpPortalAccessTools($rest, $this->requestArguments),
             AgentMcpSquareLinkTools::class => new AgentMcpSquareLinkTools(app(InternalAgentApiTransport::class), $this->requestArguments),
             AgentMcpPaymentReminderTools::class => new AgentMcpPaymentReminderTools($rest),
+            AgentMcpFinanceTools::class => new AgentMcpFinanceTools($rest),
             AgentMcpPortalInvitationTools::class => new AgentMcpPortalInvitationTools($rest, $this->requestArguments),
             AgentMcpWriteTools::class => $writes,
             AgentMcpPrompts::class => $this->prompts,

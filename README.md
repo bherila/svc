@@ -165,9 +165,11 @@ and manifests are private data and must never be added to this public repository
 ## Finance reconciliation API
 
 SVC exposes a narrow, versioned bearer-token API for listing invoice payments and
-linking them to transaction UUIDs owned by an external finance system. Tokens are
-expiring, stored only as hashes, and require explicit `finance.read` or
-`finance.reconcile` abilities. See [the API contract](docs/finance-api.md).
+linking them to transaction UUIDs owned by an external finance system. Its finance
+integration tokens are expiring, stored only as hashes, and require explicit
+`finance.read` or `finance.reconcile` abilities; OAuth clients use the
+`finance:read` / `finance:reconcile` scopes, and the same operations are MCP tools
+and `svc:finance:*` commands. See [the API contract](docs/finance-api.md).
 
 ## Connect an MCP client
 

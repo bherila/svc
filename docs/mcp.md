@@ -220,7 +220,9 @@ With all read scopes, discovery exposes these read-only tools, in this order:
 `billing.audit_missing_billed_overage`, and
 `billing.audit_opening_rollover`. While Square is configured, managers also
 see the read-only `square.*` pass-through tools described under
-[Square read-only pass-through](#square-read-only-pass-through-438).
+[Square read-only pass-through](#square-read-only-pass-through-438). Managers holding
+`finance:read` also see `finance.invoice_payments.list`, described under
+[Finance reconciliation](#finance-reconciliation-457).
 
 Agreement tools require `billing:read` and an SVC workspace-manager role. Each
 agreement names the client it is with (`client_id`, `client_name`) and, when it
@@ -693,6 +695,33 @@ key; every gate is rechecked before a receipt replays.
 Operators use the same rules without the agent gates through
 `svc:billing:payment-status` and `svc:billing:refund-payment`, each with
 `--expected-version` and `--dry-run`.
+
+### Finance reconciliation (#457)
+
+`finance.invoice_payments.list`, `finance.reconciliations.upsert` and
+`finance.reconciliations.deactivate` are the finance reconciliation routes
+(`/api/v1/workspaces/{workspace}/invoice-payments…`, see
+[the finance reconciliation API](finance-api.md)) as operations: in the OpenAPI
+document, gated by `finance:read` and `finance:reconcile`, and served as MCP tools
+through `AgentMcpFinanceTools`, which reaches the REST routes over
+`InternalAgentApiTransport`, so a tool and its route run one
+`FinanceReconciliationOperations`. The `svc:finance:payments`,
+`svc:finance:reconcile` and `svc:finance:unreconcile` commands call the same
+operation.
+
+- Over OAuth and MCP every finance operation needs a workspace owner/admin; the
+  tools are manager-only in discovery. The finance integration's Sanctum token
+  keeps its original contract on the same routes, where its `finance.read` /
+  `finance.reconcile` abilities stand for the two scopes.
+- The writes are named by their path - payment, external system, transaction -
+  and are the same write however often they are sent, so the tools take no
+  `idempotency_key` and the routes no `Idempotency-Key`. Each write is audited in
+  `agent_mutation_audits`.
+- They sit behind no write cutover, since the finance integration never did; the
+  MCP switches (`mcp.read`, `mcp.write`, or the tool name) withhold the tools.
+- The tool arguments are the REST ones, with the path parameters named
+  `payment_id`, `external_system` and `transaction_id`, and the list's invoice
+  filter `invoice_id`.
 
 ### Changing a due date or scheduled issue date
 

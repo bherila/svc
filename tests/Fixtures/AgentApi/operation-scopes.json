@@ -671,6 +671,36 @@
             "mcp.switch:expenses.update"
         ]
     },
+    "finance.invoice_payments.list": {
+        "scopes": [
+            "finance:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:finance.invoice_payments.list"
+        ]
+    },
+    "finance.reconciliations.deactivate": {
+        "scopes": [
+            "finance:reconcile"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:finance.reconciliations.deactivate"
+        ]
+    },
+    "finance.reconciliations.upsert": {
+        "scopes": [
+            "finance:reconcile"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:finance.reconciliations.upsert"
+        ]
+    },
     "invoices.add_time": {
         "scopes": [
             "billing:write",
