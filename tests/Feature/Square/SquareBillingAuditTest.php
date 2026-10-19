@@ -191,9 +191,10 @@ final class SquareBillingAuditTest extends TestCase
 
         $this->assertFalse(app(SquareBillingAudit::class)->report($workspace)['complete']);
         $due = $repository->invoicesNeedingPaymentIds($workspace, 10);
-        $this->assertSame([['square_invoice_id' => 'inv_audit_1', 'square_order_id' => 'order_audit_1', 'square_location_id' => 'LOCFIXTURE01', 'basis' => 'PAID|12345|t3']], $due);
+        $this->assertSame([['square_invoice_id' => 'inv_audit_1', 'square_order_id' => 'order_audit_1', 'square_location_id' => 'LOCFIXTURE01', 'basis' => 'PAID|12345|t3', 'read_at' => '2030-03-01 00:00:00']], $due);
 
-        $this->assertTrue($repository->storePaymentIds($workspace, 'inv_audit_1', $due[0]['basis'], ['pay_audit_tender']));
+        $this->assertFalse($repository->storePaymentIds($workspace, 'inv_audit_1', $due[0]['basis'], ['pay_audit_stale'], readAt: '2030-02-28 00:00:00'), 'An older lookup never overwrites a newer one.');
+        $this->assertTrue($repository->storePaymentIds($workspace, 'inv_audit_1', $due[0]['basis'], ['pay_audit_tender'], readAt: $due[0]['read_at']));
         $report = app(SquareBillingAudit::class)->report($workspace);
         $this->assertTrue($report['complete']);
         $this->assertSame(['pay_audit_tender'], array_column($report['unmatched_payments']['payments'], 'payment_id'));
@@ -204,7 +205,7 @@ final class SquareBillingAuditTest extends TestCase
         $this->snapshot($workspace, 'inv_audit_2', 2, '2030-02-15', 'PAID', ['paid_amount' => null, 'total_amount' => null, 'square_order_id' => 'order_audit_2']);
         $this->snapshot($workspace, 'inv_audit_3', 3, '2030-03-15', 'UNPAID', ['paid_amount' => null, 'square_order_id' => 'order_audit_3']);
         $this->assertFalse(app(SquareBillingAudit::class)->report($workspace)['complete']);
-        $this->assertSame([['square_invoice_id' => 'inv_audit_2', 'square_order_id' => 'order_audit_2', 'square_location_id' => 'LOCFIXTURE01', 'basis' => 'PAID||t3']], $repository->invoicesNeedingPaymentIds($workspace, 10));
+        $this->assertSame([['square_invoice_id' => 'inv_audit_2', 'square_order_id' => 'order_audit_2', 'square_location_id' => 'LOCFIXTURE01', 'basis' => 'PAID||t3', 'read_at' => '2030-03-01 00:00:00']], $repository->invoicesNeedingPaymentIds($workspace, 10));
         $this->assertTrue($repository->storePaymentIds($workspace, 'inv_audit_2', 'PAID||t3', []));
         $this->assertTrue(app(SquareBillingAudit::class)->report($workspace)['complete']);
     }

@@ -54,7 +54,11 @@ final class SquareMirrorRepository
      * Invoices whose payment ids have not been read for their current status
      * and paid amount, oldest change first.
      *
-     * @return list<array{square_invoice_id: string, square_order_id: string, square_location_id: string|null, basis: string}>
+     * `read_at` is the row's synced_at when it was queued: writes for that
+     * lookup apply only while it is unchanged, so a slower, older lookup
+     * never overwrites a newer one.
+     *
+     * @return list<array{square_invoice_id: string, square_order_id: string, square_location_id: string|null, basis: string, read_at: string}>
      */
     public function invoicesNeedingPaymentIds(Workspace $workspace, int $limit): array
     {
@@ -76,7 +80,7 @@ final class SquareMirrorRepository
             ->orderBy('synced_at')
             ->orderBy('id')
             ->limit(min($limit, 100))
-            ->get(['square_invoice_id', 'square_order_id', 'square_location_id', 'status', 'paid_amount', 'payment_ids_basis']);
+            ->get(['square_invoice_id', 'square_order_id', 'square_location_id', 'status', 'paid_amount', 'payment_ids_basis', 'synced_at']);
         $due = [];
         foreach ($rows as $row) {
             $paid = $row->paid_amount === null ? null : (int) $row->paid_amount;
@@ -87,7 +91,7 @@ final class SquareMirrorRepository
                 continue;
             }
             $basis = SquareSnapshotMapper::paymentIdsBasis((string) $row->status, $paid);
-            $due[] = ['square_invoice_id' => (string) $row->square_invoice_id, 'square_order_id' => (string) $row->square_order_id, 'square_location_id' => $row->square_location_id === null ? null : (string) $row->square_location_id, 'basis' => $basis];
+            $due[] = ['square_invoice_id' => (string) $row->square_invoice_id, 'square_order_id' => (string) $row->square_order_id, 'square_location_id' => $row->square_location_id === null ? null : (string) $row->square_location_id, 'basis' => $basis, 'read_at' => (string) $row->synced_at];
             if (count($due) >= $limit) {
                 break;
             }
@@ -103,7 +107,7 @@ final class SquareMirrorRepository
      *
      * @param  list<string>  $paymentIds
      */
-    public function storePaymentIds(Workspace $workspace, string $invoiceId, string $basis, array $paymentIds, ?CarbonImmutable $rereadAfter = null): bool
+    public function storePaymentIds(Workspace $workspace, string $invoiceId, string $basis, array $paymentIds, ?CarbonImmutable $rereadAfter = null, ?string $readAt = null): bool
     {
         [$status, $paid] = explode('|', $basis, 3);
 
@@ -113,6 +117,7 @@ final class SquareMirrorRepository
             ->whereNull('deleted_at')
             ->where('status', $status)
             ->when($paid === '', static fn (Builder $query) => $query->whereNull('paid_amount'), static fn (Builder $query) => $query->where('paid_amount', (int) $paid))
+            ->when($readAt !== null, static fn (Builder $query) => $query->where('synced_at', $readAt))
             ->update([
                 'payment_ids' => json_encode($paymentIds, JSON_THROW_ON_ERROR),
                 // An unknown amount is read again in turn (rereadBasis()).
@@ -142,7 +147,7 @@ final class SquareMirrorRepository
      * (an authorization that may yet settle) it is retried after the
      * invoices never read, behind the other pending ones.
      */
-    public function markPaymentIdsUnresolvable(Workspace $workspace, string $invoiceId, string $basis, ?CarbonImmutable $retryAfter = null): bool
+    public function markPaymentIdsUnresolvable(Workspace $workspace, string $invoiceId, string $basis, ?CarbonImmutable $retryAfter = null, ?string $readAt = null): bool
     {
         [$status, $paid] = explode('|', $basis, 3);
 
@@ -152,6 +157,7 @@ final class SquareMirrorRepository
             ->whereNull('deleted_at')
             ->where('status', $status)
             ->when($paid === '', static fn (Builder $query) => $query->whereNull('paid_amount'), static fn (Builder $query) => $query->where('paid_amount', (int) $paid))
+            ->when($readAt !== null, static fn (Builder $query) => $query->where('synced_at', $readAt))
             // Never over ids another sync has just resolved for this state.
             // A reread stamp is resolved too - for the unknown amount it was
             // read under, not once the amount is known.
