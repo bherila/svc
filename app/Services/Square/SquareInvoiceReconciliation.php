@@ -8,9 +8,11 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\AgentApi\AgentMutationExecutor;
 use App\Services\Authorization\AgentAccess;
+use App\Support\Concurrency\Locks;
 use DomainException;
 use Illuminate\Cache\RateLimiter;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Reconcile one linked svc invoice with Square now (#458), rather than
@@ -106,14 +108,25 @@ final class SquareInvoiceReconciliation
      */
     private function applyPinned(Workspace $workspace, InvoiceSquareLink $link, ?SquareInvoiceRefetch $refetched): void
     {
-        // Read again after Square was, so a re-link during the reads is seen
-        // even when there is nothing to record. Recording a payment checks the
-        // link once more, under the invoice's lock.
-        $current = $this->links->activeLinkForSquareInvoice($workspace->id, $link->square_invoice_id);
-        if ($refetched === null || $refetched->activeLink?->id !== $link->id || $current?->id !== $link->id) {
-            throw new DomainException('The invoice\'s Square link changed while it was being reconciled. Read the invoice and try again.');
+        if ($refetched === null || $refetched->activeLink?->id !== $link->id) {
+            throw self::linkChanged();
         }
-        $this->reconciler->apply($workspace, $refetched);
+        DB::transaction(function () use ($workspace, $link, $refetched): void {
+            $this->reconciler->apply($workspace, $refetched);
+            // Then, under the invoice's lock - the boundary every link change
+            // takes - the link must still be the one asked about, recorded
+            // payments or not. Taken last, after whatever recording locked,
+            // so the billing lock order holds; a change rolls it all back.
+            ClientInvoice::query()->where('workspace_id', $workspace->id)->whereKey($link->client_invoice_id)->tap(Locks::forUpdate())->firstOrFail();
+            if ($this->links->activeLinkForSquareInvoice($workspace->id, $link->square_invoice_id)?->id !== $link->id) {
+                throw self::linkChanged();
+            }
+        });
+    }
+
+    private static function linkChanged(): DomainException
+    {
+        return new DomainException('The invoice\'s Square link changed while it was being reconciled. Read the invoice and try again.');
     }
 
     /** @return array{ClientInvoice, InvoiceSquareLink} */
