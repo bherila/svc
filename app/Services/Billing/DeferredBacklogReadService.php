@@ -96,17 +96,20 @@ final class DeferredBacklogReadService
     {
         $through = $this->clock->today($workspace);
         $company = $agreement->clientCompany()->where('workspace_id', $workspace->id)->first();
+        $refusal = null;
         try {
             $carried = $company instanceof ClientCompany
                 ? $this->carriedMinutes($workspace, $agreement, $this->ledgers->buildAgreementLedgerThrough($company, $agreement, Carbon::instance($through)), $through)
                 : null;
-        } catch (DomainException|RuntimeException) {
-            // A ledger that refuses to build states no balance; the backlog
-            // says so (null) rather than guessing one.
+        } catch (DomainException|RuntimeException $refused) {
+            // A ledger that refuses to build states no balance. The backlog
+            // says so as an issue rather than quoting it as zero.
             $carried = null;
+            $refusal = $refused->getMessage();
         }
+        $backlog = $this->reader->forAgreement($workspace, $agreement, $through, self::trailingPeriods($through, $months), $carried);
 
-        return $this->forAgreement($workspace, $agreement, self::trailingPeriods($through, $months), $through, $carried);
+        return $this->presenter->present($refusal === null ? $backlog : $backlog->withLedgerRefusal($refusal));
     }
 
     /**

@@ -18,11 +18,18 @@ enum DeferredBacklogIssue: string
      */
     case Unpriced = 'unpriced';
 
+    /**
+     * The agreement's capacity ledger refuses to build, so any re-carried
+     * balance termination would also bill is unknown and not included.
+     */
+    case LedgerUnreadable = 'ledger_unreadable';
+
     public function message(): string
     {
         return match ($this) {
             self::ProjectChainMismatch => 'A deferred time entry points to a project outside this client, so the backlog cannot be stated. Correct the entry first.',
             self::Unpriced => 'The deferred hours cannot be priced at the hourly rate as they stand.',
+            self::LedgerUnreadable => 'The capacity ledger cannot be read, so any re-carried deferred balance is unknown and not included.',
         };
     }
 }

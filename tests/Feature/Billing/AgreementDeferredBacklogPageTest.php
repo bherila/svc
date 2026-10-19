@@ -4,6 +4,7 @@ namespace Tests\Feature\Billing;
 
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
+use App\Models\ClientInvoice;
 use App\Models\ClientProject;
 use App\Models\ClientProjectMembership;
 use App\Models\ClientTimeEntry;
@@ -42,6 +43,28 @@ final class AgreementDeferredBacklogPageTest extends TestCase
                 ->where('deferred_backlog.amount_at_hourly_rate', ['currency' => 'USD', 'amount' => 37500])
                 ->where('deferred_backlog.trend', fn ($trend): bool => $trend->pluck('hours_added')->all() == [1.5, 1, 0] && $trend->pluck('period')->all() === ['2026-03', '2026-04', '2026-05'])
                 ->missing('deferred_backlog.entry_ids'));
+    }
+
+    public function test_a_ledger_that_refuses_to_build_is_reported_rather_than_quoted_as_zero(): void
+    {
+        $this->travelTo(Carbon::parse('2026-05-20 12:00:00'));
+        [$admin, , $workspace, $company, $agreement] = $this->tenant();
+        // Charged, but states no billed-overage hours: the ledger refuses it.
+        ClientInvoice::query()->create([
+            'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_agreement_id' => $agreement->id,
+            'invoice_number' => 'SVC-SYN-LEDGER-REFUSAL', 'currency' => 'USD', 'status' => 'issued',
+            'service_period_start' => '2026-03-01', 'service_period_end' => '2026-03-31',
+            'subtotal_amount' => 1000, 'total_amount' => 1000, 'balance_amount' => 1000,
+        ]);
+
+        $this->actingAs($admin)
+            ->get("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/agreements/{$agreement->public_id}")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('deferred_backlog.issue', 'ledger_unreadable')
+                ->where('deferred_backlog.carried_hours', null)
+                ->where('deferred_backlog.hours', 2.5)
+                ->where('deferred_backlog.issue_detail', fn (string $detail): bool => str_contains($detail, 'SVC-SYN-LEDGER-REFUSAL')));
     }
 
     public function test_a_member_without_management_and_a_portal_client_receive_none(): void

@@ -179,6 +179,34 @@ final readonly class DeferredBacklog
         return $trend;
     }
 
+    /**
+     * This backlog, read where the agreement's ledger refused to build: the
+     * re-carried balance is unknown rather than zero. An issue already stated
+     * outranks it - a withheld or unpriced figure says less still.
+     */
+    public function withLedgerRefusal(string $detail): self
+    {
+        if ($this->issue !== null) {
+            return $this;
+        }
+
+        return new self(
+            through: $this->through,
+            currency: $this->currency,
+            issue: DeferredBacklogIssue::LedgerUnreadable,
+            issueDetail: $detail,
+            minutes: $this->minutes,
+            entryCount: $this->entryCount,
+            oldestWorkedOn: $this->oldestWorkedOn,
+            agreementRateMinutes: $this->agreementRateMinutes,
+            flatHourlyMinutes: $this->flatHourlyMinutes,
+            amount: $this->amount,
+            carriedMinutes: null,
+            entryIds: $this->entryIds,
+            trend: $this->trend,
+        );
+    }
+
     /** Every hour termination would bill: the shelf and the re-carried balance. */
     public function hours(): ?float
     {

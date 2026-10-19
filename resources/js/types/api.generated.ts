@@ -2005,17 +2005,18 @@ export interface components {
                 components['schemas']['CurrencyAmount'] | null;
             issue: components['schemas']['DeferredBacklogIssue'] | null;
             issue_message: string | null;
-            /** @description The pricing refusal termination would raise, when issue is unpriced. */
+            /** @description The refusal behind issue: the pricing refusal termination would raise when unpriced, or the ledger refusal when ledger_unreadable. */
             issue_detail: string | null;
             /** @description Average of added minus applied minus billed over the trend months; positive means the shelf is growing. Null without a trend. */
             net_hours_per_month: number | null;
             trend: components['schemas']['DeferredBacklogMonth'][];
         };
         /**
-         * @description project_chain_mismatch: a deferred entry points to a project outside the client, so termination would refuse and every figure is withheld. unpriced: the hours stand but termination would refuse to price them; the amount is null and issue_detail says why.
+         * @description project_chain_mismatch: a deferred entry points to a project outside the client, so termination would refuse and every figure is withheld. unpriced: the hours stand but termination would refuse to price them; the amount is null and issue_detail says why. ledger_unreadable: the agreement's capacity ledger refuses to build, so any re-carried balance termination would also bill is unknown; the figures exclude it and issue_detail says why.
          * @enum {string}
          */
-        DeferredBacklogIssue: 'project_chain_mismatch' | 'unpriced';
+        DeferredBacklogIssue:
+            'project_chain_mismatch' | 'unpriced' | 'ledger_unreadable';
         DeferredBacklogMonth: {
             /** @description Calendar month, as the capacity ledger names it. */
             period: string;

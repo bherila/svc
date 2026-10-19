@@ -83,6 +83,30 @@ final class DeferredBacklogTest extends TestCase
         $this->assertSame(0.5, $unpriced->hours());
     }
 
+    public function test_a_ledger_refusal_is_an_issue_not_a_zero_balance(): void
+    {
+        $backlog = DeferredBacklog::calculate($this->agreement(15000), CarbonImmutable::parse('2026-03-31'), true, [$this->entry(1, 60, '2026-03-01')], [], [], null)
+            ->withLedgerRefusal('Synthetic ledger refusal.');
+
+        $this->assertSame(DeferredBacklogIssue::LedgerUnreadable, $backlog->issue);
+        $this->assertSame('Synthetic ledger refusal.', $backlog->issueDetail);
+        $this->assertSame('The capacity ledger cannot be read, so any re-carried deferred balance is unknown and not included.', $backlog->issue->message());
+        $this->assertNull($backlog->carriedHours());
+        $this->assertSame(1.0, $backlog->hours());
+        $this->assertSame(15000, $backlog->amount);
+        $this->assertSame([1], $backlog->entryIds);
+        $this->assertSame('2026-03-31', $backlog->through);
+        $this->assertSame('USD', $backlog->currency);
+        $this->assertSame(1, $backlog->entryCount);
+        $this->assertSame('2026-03-01', $backlog->oldestWorkedOn);
+        $this->assertSame(60, $backlog->agreementRateMinutes);
+        $this->assertSame(0, $backlog->flatHourlyMinutes);
+
+        // A figure already withheld or unpriced says less still, and stays so.
+        $unpriced = $this->calculate(outstanding: [$this->entry(1, 60, '2026-03-01')], rate: null);
+        $this->assertSame($unpriced, $unpriced->withLedgerRefusal('Synthetic ledger refusal.'));
+    }
+
     public function test_nothing_dated_after_the_day_read_is_on_the_shelf_or_in_the_trend(): void
     {
         $backlog = $this->calculate(

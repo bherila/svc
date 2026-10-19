@@ -63,7 +63,7 @@ final class DeferredBacklogCommand extends Command
         $this->components->twoColumnDetail('Hours', $backlog['hours'] === null ? 'withheld' : (string) $backlog['hours']);
         $this->components->twoColumnDetail('Entries', $backlog['entry_count'] === null ? 'withheld' : (string) $backlog['entry_count']);
         $this->components->twoColumnDetail('Oldest worked on', (string) ($backlog['oldest_worked_on'] ?? '-'));
-        $this->components->twoColumnDetail('At hourly rate', is_array($amount) ? sprintf('%s %s', number_format($amount['amount'] / 100, 2), $amount['currency']) : 'unpriced');
+        $this->components->twoColumnDetail('Termination price', is_array($amount) ? sprintf('%s %s', number_format($amount['amount'] / 100, 2), $amount['currency']) : 'unpriced');
         $this->components->twoColumnDetail('Net hours per month', $backlog['net_hours_per_month'] === null ? '-' : (string) $backlog['net_hours_per_month']);
         foreach ($backlog['trend'] as $month) {
             $this->components->twoColumnDetail(

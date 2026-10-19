@@ -117,7 +117,10 @@ adds the ledger's closing balance as `carried_hours`, included in `hours` and
 priced by `DeferredTerminationPricing::carriedTotal()`, the function that line
 is priced by. Only an agreement's own ledger states it: `capacity_ledger.get`,
 the agreement page and the CLI read it, and `operations.summary` reports
-`carried_hours: null` rather than building a ledger per agreement.
+`carried_hours: null` rather than building a ledger per agreement. Where the
+agreement page or the CLI finds the ledger refusing to build, the backlog says
+so (`issue: ledger_unreadable`, the refusal as `issue_detail`, `carried_hours:
+null`) rather than quoting the balance as zero.
 
 **The same price as termination.** Consultant and `retainer`-mode minutes are
 pooled and priced once at `agreement.hourly_rate`; `flat_hourly` minutes keep
