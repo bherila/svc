@@ -15598,7 +15598,7 @@
                                 "type": "boolean"
                             }
                         },
-                        "description": "Billed members of a series an agreement is billed in, on or after the agreement starts, with no svc invoice linked. SCHEDULED, DRAFT, CANCELED and FAILED members are not flagged."
+                        "description": "Billed members of a series an agreement is billed in, within the agreement (from its start to its end, once it has one), with no svc invoice linked. SCHEDULED, DRAFT, CANCELED and FAILED members are not flagged."
                     },
                     "unmatched_payments": {
                         "type": "object",
@@ -18288,10 +18288,11 @@
                                 "currency",
                                 "amount",
                                 "series_not_mirrored",
-                                "multiple_locations"
+                                "multiple_locations",
+                                "billed_after_end"
                             ]
                         },
-                        "description": "multiple_locations: the series prefix is used in more than one Square location, which Square allows, so the series is not compared."
+                        "description": "multiple_locations: the series prefix is used in more than one Square location among the billed members, which Square allows, so the series is not compared. billed_after_end: Square billed a member after the agreement ended."
                     },
                     "agreement_cadence": {
                         "type": [

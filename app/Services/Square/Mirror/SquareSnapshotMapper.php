@@ -4,6 +4,7 @@ namespace App\Services\Square\Mirror;
 
 use App\Services\Square\SquareClient;
 use App\Services\Square\SquarePresenter;
+use App\Services\Square\SquareRequestFailed;
 use App\Support\Square\SquareIdentifiers;
 use Carbon\CarbonImmutable;
 use Throwable;
@@ -180,18 +181,24 @@ final class SquareSnapshotMapper
      * changing, and a voided or failed tender took no money. A capture moves
      * the invoice's paid amount, so the order is read again then.
      *
-     * Null when the order has more tenders than the reconciler accepts, or a
-     * tender list that is not a list: the ids stay unresolved rather than
-     * recorded short or empty.
+     * Null when the order has more tenders than the reconciler accepts: the
+     * ids stay unresolved rather than recorded short. A tender list that is
+     * not a list is unreadable, as the reconciler finds it, and the sync
+     * fails and retries rather than recording it empty.
      *
      * @param  array<mixed>  $order
      * @return list<string>|null
+     *
+     * @throws SquareRequestFailed when the tenders are not a list
      */
     public function paymentIds(array $order): ?array
     {
         $ids = [];
         $tenders = $order['tenders'] ?? [];
-        if (! is_array($tenders) || ! array_is_list($tenders) || count($tenders) > self::MAX_TENDERS) {
+        if (! is_array($tenders) || ! array_is_list($tenders)) {
+            throw SquareRequestFailed::unreadable();
+        }
+        if (count($tenders) > self::MAX_TENDERS) {
             return null;
         }
         foreach ($tenders as $tender) {

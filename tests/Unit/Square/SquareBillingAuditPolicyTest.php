@@ -349,6 +349,39 @@ final class SquareBillingAuditPolicyTest extends TestCase
         $this->assertSame([], self::classify($members)->seriesDrift, 'An unknown location is not a second one.');
     }
 
+    public function test_an_ended_agreement_governs_nothing_after_its_end_and_later_billing_is_reported(): void
+    {
+        $ended = new SquareAuditAgreement(self::AGREEMENT, self::COMPANY, '000123', '2030-01-01', BillingCadence::Monthly, 12_345, 'USD', '2030-06-30');
+        $members = self::monthly(12_345);
+        $members[] = self::invoice('inv_after', 9, '2030-07-15', 'UNPAID', total: 99, currency: 'EUR');
+
+        $findings = self::classify($members, agreement: $ended);
+
+        $this->assertSame([], $findings->unmirroredPeriods, 'The later member is not for svc to mirror.');
+        $this->assertSame([SquareBillingAuditPolicy::DRIFT_BILLED_AFTER_END], $findings->seriesDrift[0]['codes'], 'The later member is not compared.');
+        $this->assertSame([[SquareBillingAuditPolicy::DRIFT_BILLED_AFTER_END]], array_column(self::classify([self::invoice('inv_after', 9, '2030-07-15', 'PAID')], agreement: $ended)->seriesDrift, 'codes'));
+        $this->assertSame(['inv_end_day'], array_map(static fn (array $period): string => $period['invoice']->squareInvoiceId, self::classify([self::invoice('inv_end_day', 6, '2030-06-30', 'UNPAID')], agreement: $ended)->unmirroredPeriods), 'The end day is within it.');
+        $this->assertSame([], self::classify([self::invoice('inv_scheduled_after', 9, '2030-07-15', 'SCHEDULED')], agreement: $ended)->seriesDrift, 'Nothing billed after it yet.');
+        $this->assertTrue($ended->governs(null));
+        $this->assertFalse($ended->endedBefore(null));
+        $this->assertFalse(self::agreement()->endedBefore('2099-01-01'));
+        $this->assertFalse($ended->endedBefore('2030-06-30'));
+        $this->assertTrue($ended->endedBefore('2030-07-01'));
+        $later = new SquareAuditAgreement('00000000-0000-4000-8000-00000000a009', self::COMPANY, '000999', '2030-01-01', BillingCadence::Monthly, 1, 'USD');
+        $both = SquareBillingAuditPolicy::classify(new SquareBillingAuditFacts('2030-10-01', [$ended, $later], [self::invoice('inv_after', 9, '2030-07-15', 'PAID'), self::invoice('inv_later', 1, '2030-01-15', 'PAID', series: '000999')], [], [], [], true));
+        $this->assertSame([[SquareBillingAuditPolicy::DRIFT_BILLED_AFTER_END], [SquareBillingAuditPolicy::DRIFT_AMOUNT]], array_column($both->seriesDrift, 'codes'), 'The next agreement is still compared.');
+        $this->assertSame($ended, $both->seriesDrift[0]['agreement']);
+    }
+
+    public function test_only_billed_members_in_the_agreement_count_towards_locations(): void
+    {
+        $members = self::monthly(12_345);
+        $members[] = new SquareAuditInvoice('inv_scheduled_elsewhere', '000123-R-0009', '000123', 9, 'cust_other', null, 'LOCFIXTURE02', 'SCHEDULED', 'USD', 12_345, 0, '2030-09-15', null, false, [], null, true);
+        $members[] = new SquareAuditInvoice('inv_history_elsewhere', '000123-R-0000', '000123', 0, 'cust_other', null, 'LOCFIXTURE02', 'PAID', 'USD', 12_345, 0, '2029-09-15', null, false, [], null, true);
+
+        $this->assertSame([], self::classify($members)->seriesDrift);
+    }
+
     public function test_absence_is_not_claimed_when_the_series_load_was_bounded(): void
     {
         $facts = new SquareBillingAuditFacts('2030-10-01', [self::agreement()], [], [], [], [], false, false);

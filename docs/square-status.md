@@ -86,8 +86,8 @@ workspace. Each flag has a full `count`, at most 100 entries with finished svc a
 Square dashboard URLs, and `truncated`:
 
 - `unmirrored_series_periods`: a member of a series an agreement is billed in
-  (`square_series_key`), on or after the agreement's start, that no svc invoice is
-  linked to. `SCHEDULED` members are not billed yet, and `DRAFT`, `CANCELED` and
+  (`square_series_key`), within the agreement (from its start to its end, once it
+  has one), that no svc invoice is linked to. `SCHEDULED` members are not billed yet, and `DRAFT`, `CANCELED` and
   `FAILED` ones are no bill, so none of them is flagged.
 - `unmatched_payments`: a Square payment id on an invoice in svc's reach (actively
   linked, in a billed-in-Square series, or of a confirmed customer) that svc has
@@ -110,7 +110,8 @@ Square dashboard URLs, and `truncated`:
   `SCHEDULED` members are not billed yet, and members dated before the
   agreement's start are history; both are left out. Square numbers invoices
   uniquely per location only, so a prefix used in more than one location is
-  reported as `multiple_locations` and not compared. The agreement's amount
+  reported as `multiple_locations` and not compared, and Square still billing
+  after the agreement ended is reported as `billed_after_end`. The agreement's amount
   is its retainer fee for one whole cycle; an agreement that sells no retainer fee
   is not compared on amount, and a series with fewer than two dated billed members
   has no cadence to compare.

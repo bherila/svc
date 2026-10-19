@@ -3361,7 +3361,7 @@ export interface components {
         SquareBillingAudit: {
             /** @description False unless the newest sync run completed and listed every Square invoice (a run still going, failed or truncated leaves the mirror between generations), when the audit reached a bound (5,000 members of billed-in-Square series, 5,000 other mirrored invoices, or 500 agreements), or when the mirror has yet to read the payment ids of a paid invoice in reach. Every count is then a floor; series_not_mirrored needs a complete sync, series_drift is withheld when series members were bounded, and unlinked_customer_balances when other invoices were. */
             complete: boolean;
-            /** @description Billed members of a series an agreement is billed in, on or after the agreement starts, with no svc invoice linked. SCHEDULED, DRAFT, CANCELED and FAILED members are not flagged. */
+            /** @description Billed members of a series an agreement is billed in, within the agreement (from its start to its end, once it has one), with no svc invoice linked. SCHEDULED, DRAFT, CANCELED and FAILED members are not flagged. */
             unmirrored_series_periods: {
                 count: number;
                 periods: components['schemas']['SquareUnmirroredSeriesPeriod'][];
@@ -3874,13 +3874,14 @@ export interface components {
             /** Format: uri */
             agreement_url: string;
             series_key: components['schemas']['SquareSeriesKey'];
-            /** @description multiple_locations: the series prefix is used in more than one Square location, which Square allows, so the series is not compared. */
+            /** @description multiple_locations: the series prefix is used in more than one Square location among the billed members, which Square allows, so the series is not compared. billed_after_end: Square billed a member after the agreement ended. */
             codes: (
                 | 'cadence'
                 | 'currency'
                 | 'amount'
                 | 'series_not_mirrored'
                 | 'multiple_locations'
+                | 'billed_after_end'
             )[];
             /**
              * @description Null when the agreement does not bill on a repeating cycle.

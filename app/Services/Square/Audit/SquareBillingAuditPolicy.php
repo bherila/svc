@@ -10,7 +10,8 @@ use Carbon\CarbonImmutable;
  * loaded once. Database-free; nothing here reaches Square or writes.
  *
  * - **Unmirrored series period:** a billed member of a series an agreement is
- *   billed in, falling on or after the agreement's start, that no svc invoice
+ *   billed in, falling within the agreement (from its start to its end, once
+ *   it has one), that no svc invoice
  *   is linked to. A SCHEDULED member is not billed yet, and a canceled, draft
  *   or failed one is no bill, so neither is flagged.
  * - **Unmatched payment:** a Square payment on an invoice in svc's reach - an
@@ -27,7 +28,8 @@ use Carbon\CarbonImmutable;
  *   from its agreement in cadence, currency (another one, or more than one)
  *   or latest amount, or which the mirror does not hold although the last
  *   sync listed every Square invoice. Members dated before the agreement's
- *   start are history and left out. A prefix used in more than one Square
+ *   start are history and left out, and Square still billing after it ended
+ *   is reported as `billed_after_end` rather than compared. A prefix used in more than one Square
  *   location is reported as `multiple_locations` and not compared, since
  *   Square numbers invoices uniquely per location only - none of it
  *   when the member load was bounded, since any series may then be partial,
@@ -54,6 +56,8 @@ final class SquareBillingAuditPolicy
     public const string DRIFT_SERIES_NOT_MIRRORED = 'series_not_mirrored';
 
     public const string DRIFT_MULTIPLE_LOCATIONS = 'multiple_locations';
+
+    public const string DRIFT_BILLED_AFTER_END = 'billed_after_end';
 
     public static function classify(SquareBillingAuditFacts $facts): SquareBillingAuditFindings
     {
@@ -85,9 +89,9 @@ final class SquareBillingAuditPolicy
             if ($agreement === null || $invoice->linked !== null || in_array($invoice->status, self::UNBILLED_STATUSES, true)) {
                 continue;
             }
-            $date = $invoice->date();
-            // History before svc's agreement began is not svc's to mirror.
-            if ($date !== null && $date < $agreement->startsOn) {
+            // History before svc's agreement began, or after it ended, is not
+            // svc's to mirror; billing after the end is drift instead.
+            if (! $agreement->governs($invoice->date())) {
                 continue;
             }
             $periods[] = ['agreement' => $agreement, 'invoice' => $invoice];
@@ -207,20 +211,26 @@ final class SquareBillingAuditPolicy
 
                 continue;
             }
+            // Only what Square has billed (a SCHEDULED member is not a bill
+            // yet) while the agreement governed it - as for unmirrored
+            // periods. Square still billing after the agreement ended is its
+            // own finding.
+            $allBilled = array_filter($series, static fn (SquareAuditInvoice $invoice): bool => ! in_array($invoice->status, self::UNBILLED_STATUSES, true));
+            $afterEnd = array_filter($allBilled, static fn (SquareAuditInvoice $invoice): bool => $agreement->endedBefore($invoice->date())) !== [];
+            $billed = array_filter($allBilled, static fn (SquareAuditInvoice $invoice): bool => $agreement->governs($invoice->date()));
             // Square numbers invoices uniquely per location only, so one
             // prefix in two locations is two series svc cannot tell apart.
-            $locations = array_unique(array_filter(array_map(static fn (SquareAuditInvoice $invoice): ?string => $invoice->locationId, $series), 'is_string'));
+            $locations = array_unique(array_filter(array_map(static fn (SquareAuditInvoice $invoice): ?string => $invoice->locationId, $billed), 'is_string'));
             if (count($locations) > 1) {
                 $drift[] = ['agreement' => $agreement, 'codes' => [self::DRIFT_MULTIPLE_LOCATIONS], 'series_cadence' => null, 'series_currency' => null, 'series_amount' => null];
 
                 continue;
             }
-            // Only what Square has billed since the agreement began: a
-            // SCHEDULED member is not a bill yet, and earlier history is not
-            // the agreement's - as for unmirrored periods.
-            $billed = array_filter($series, static fn (SquareAuditInvoice $invoice): bool => ! in_array($invoice->status, self::UNBILLED_STATUSES, true)
-                && ($invoice->date() === null || $invoice->date() >= $agreement->startsOn));
             if ($billed === []) {
+                if ($afterEnd) {
+                    $drift[] = ['agreement' => $agreement, 'codes' => [self::DRIFT_BILLED_AFTER_END], 'series_cadence' => null, 'series_currency' => null, 'series_amount' => null];
+                }
+
                 continue;
             }
             usort($billed, static fn (SquareAuditInvoice $a, SquareAuditInvoice $b): int => [$a->seriesOccurrence ?? PHP_INT_MAX, $a->squareInvoiceId] <=> [$b->seriesOccurrence ?? PHP_INT_MAX, $b->squareInvoiceId]);
@@ -239,6 +249,9 @@ final class SquareBillingAuditPolicy
                 $codes[] = self::DRIFT_CURRENCY;
             } elseif ($agreement->periodAmount !== null && $amount !== null && $amount !== $agreement->periodAmount) {
                 $codes[] = self::DRIFT_AMOUNT;
+            }
+            if ($afterEnd) {
+                $codes[] = self::DRIFT_BILLED_AFTER_END;
             }
             if ($codes !== []) {
                 $drift[] = ['agreement' => $agreement, 'codes' => $codes, 'series_cadence' => $cadence, 'series_currency' => $currency, 'series_amount' => $amount];

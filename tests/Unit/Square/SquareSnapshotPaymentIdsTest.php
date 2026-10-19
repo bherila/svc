@@ -4,6 +4,7 @@ namespace Tests\Unit\Square;
 
 use App\Services\Square\Mirror\SquareSnapshotMapper;
 use App\Services\Square\SquarePresenter;
+use App\Services\Square\SquareRequestFailed;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -44,9 +45,15 @@ final class SquareSnapshotPaymentIdsTest extends TestCase
         $this->assertSame('pay_100', $ids[99]);
         $tenders[] = ['id' => 'tender_101', 'payment_id' => 'pay_101'];
         $this->assertNull($mapper->paymentIds(['tenders' => $tenders]));
-        $this->assertNull($mapper->paymentIds(['tenders' => 'none']), 'Malformed, not empty.');
-        $this->assertNull($mapper->paymentIds(['tenders' => ['first' => ['id' => 'pay_1']]]), 'Not a list.');
         $this->assertSame([], $mapper->paymentIds([]), 'An order with no tenders has no payments.');
+        foreach (['none', ['first' => ['id' => 'pay_1']]] as $malformed) {
+            try {
+                $mapper->paymentIds(['tenders' => $malformed]);
+                $this->fail('A malformed tender list must not resolve.');
+            } catch (SquareRequestFailed $failure) {
+                $this->assertSame(502, $failure->getStatusCode());
+            }
+        }
     }
 
     public function test_payment_ids_are_current_for_the_status_paid_amount_and_tender_rules_they_were_read_for(): void

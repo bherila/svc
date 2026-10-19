@@ -148,6 +148,7 @@ final class SquareBillingAuditRepository
                 $cadence,
                 $amount > 0 ? $amount : null,
                 strtoupper((string) $agreement->getAttribute('currency')),
+                $agreement->ends_on?->toDateString(),
             );
         }
 
