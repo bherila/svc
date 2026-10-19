@@ -313,6 +313,28 @@ final class SquareBillingAuditTest extends TestCase
         $this->assertFalse(app(SquareBillingAudit::class)->report($workspace)['complete']);
     }
 
+    public function test_series_members_do_not_spend_the_reach_bound(): void
+    {
+        [$workspace] = $this->fixture();
+        $rows = [];
+        // Thousands of a confirmed customer's series members, and a few
+        // thousand open invoices of customers svc does not know.
+        for ($index = 1; $index <= 4000; $index++) {
+            $rows[] = $this->row($workspace, 'inv_member_'.$index, ['invoice_number' => sprintf('000123-R-%04d', $index), 'series_key' => '000123', 'series_occurrence' => $index, 'square_customer_id' => 'cust_audit_series', 'status' => 'CANCELED']);
+        }
+        for ($index = 1; $index <= 1500; $index++) {
+            $rows[] = $this->row($workspace, 'inv_open_'.$index, ['invoice_number' => sprintf('%06d', $index), 'square_customer_id' => 'cust_open_'.$index, 'status' => 'UNPAID']);
+        }
+        foreach (array_chunk($rows, 500) as $chunk) {
+            DB::table('square_invoice_snapshots')->insert($chunk);
+        }
+
+        $report = app(SquareBillingAudit::class)->report($workspace);
+
+        $this->assertTrue($report['complete']);
+        $this->assertSame(1500, $report['unlinked_customer_balances']['count']);
+    }
+
     public function test_an_imported_annual_series_mirrors_its_amount_once_per_cycle(): void
     {
         [$workspace, $owner] = $this->fixture();
@@ -379,6 +401,20 @@ final class SquareBillingAuditTest extends TestCase
             'last_seen_at' => '2030-03-01 00:00:00',
             ...$overrides,
         ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $overrides
+     * @return array<string, mixed>
+     */
+    private function row(Workspace $workspace, string $id, array $overrides): array
+    {
+        return [
+            'workspace_id' => $workspace->id, 'square_invoice_id' => $id, 'invoice_number' => '000000', 'series_key' => null, 'series_occurrence' => null,
+            'square_customer_id' => null, 'status' => 'UNPAID', 'currency' => 'USD', 'total_amount' => 100, 'autopay' => false, 'payment_requests' => '[]',
+            'fingerprint' => str_repeat('a', 64), 'synced_at' => '2030-03-01 00:00:00', 'last_seen_at' => '2030-03-01 00:00:00',
+            ...$overrides,
+        ];
     }
 
     private function invoice(Workspace $workspace, ClientCompany $company, string $number): ClientInvoice

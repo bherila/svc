@@ -330,6 +330,8 @@ final class SquareBillingAuditPolicyTest extends TestCase
         $bounded = SquareBillingAuditPolicy::classify(new SquareBillingAuditFacts('2030-10-01', [self::agreement()], [$open], [], [], [], false, true, false, true));
 
         $this->assertSame([[], false, 1], [$truncated->seriesDrift, $truncated->complete, count($truncated->unlinkedCustomerBalances)]);
+        $membersBounded = SquareBillingAuditPolicy::classify(new SquareBillingAuditFacts('2030-10-01', [self::agreement()], [$open], [], [], [], false, false, true, true));
+        $this->assertSame([], $membersBounded->unlinkedCustomerBalances, 'A series member could hold part of a balance.');
         $this->assertSame([[SquareBillingAuditPolicy::DRIFT_SERIES_NOT_MIRRORED], [], false], [$bounded->seriesDrift[0]['codes'], $bounded->unlinkedCustomerBalances, $bounded->complete]);
     }
 

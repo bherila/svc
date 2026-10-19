@@ -23,7 +23,8 @@ use Carbon\CarbonImmutable;
  * - **Unlinked customer balance:** a Square customer no client company is
  *   mapped to, still listed by Square, with an open invoice - the same
  *   customers `square.customers.unlinked` lists with an open balance. None
- *   is stated when the reach was bounded, since a balance could be short.
+ *   is stated when the reach or the series members were bounded, since a
+ *   balance could be short.
  * - **Series drift:** a billed-in-Square series whose billed members differ
  *   from its agreement in cadence, currency (another one, or more than one)
  *   or latest amount, or which the mirror does not hold although the last
@@ -156,7 +157,7 @@ final class SquareBillingAuditPolicy
     private static function unlinkedCustomerBalances(SquareBillingAuditFacts $facts): array
     {
         // A customer's balance is only stated over all of its open invoices.
-        if (! $facts->reachComplete) {
+        if (! $facts->reachComplete || ! $facts->seriesComplete) {
             return [];
         }
         $customers = [];

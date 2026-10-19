@@ -40,6 +40,9 @@ final class SquareSnapshotMapper
     /** The one card tender state in which money has moved. */
     private const string CAPTURED = 'CAPTURED';
 
+    /** A card tender that may still be captured, or voided. */
+    private const string AUTHORIZED = 'AUTHORIZED';
+
     public function __construct(private readonly SquarePresenter $presenter) {}
 
     /**
@@ -184,8 +187,10 @@ final class SquareSnapshotMapper
      * changing, and a voided or failed tender took no money. A capture moves
      * the invoice's paid amount, so the order is read again then.
      *
-     * Null when the order has more tenders than the reconciler accepts: the
-     * ids stay unresolved rather than recorded short. A tender list that is
+     * Null when the order has more tenders than the reconciler accepts, or
+     * holds an open authorization while the invoice's paid amount is unknown
+     * (`$amountKnown` false): the ids stay unresolved rather than recorded
+     * short. A tender list that is
      * not a list, or a tender without a readable id, is unreadable, as the
      * reconciler finds it, and the sync fails and retries rather than
      * recording it short or empty.
@@ -195,7 +200,7 @@ final class SquareSnapshotMapper
      *
      * @throws SquareRequestFailed when the tenders are not a list of readable tenders
      */
-    public function paymentIds(array $order): ?array
+    public function paymentIds(array $order, bool $amountKnown = true): ?array
     {
         $ids = [];
         $tenders = $order['tenders'] ?? [];
@@ -214,6 +219,12 @@ final class SquareSnapshotMapper
             }
             $card = $tender['card_details'] ?? [];
             $state = is_array($card) ? ($card['status'] ?? self::CAPTURED) : self::CAPTURED;
+            // A later capture is seen by the paid amount changing; with no
+            // known amount nothing would ever show it, so an open
+            // authorization leaves the ids unresolved.
+            if ($state === self::AUTHORIZED && ! $amountKnown) {
+                return null;
+            }
             if ($state !== self::CAPTURED) {
                 continue;
             }

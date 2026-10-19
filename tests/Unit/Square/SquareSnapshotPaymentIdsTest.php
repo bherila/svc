@@ -29,6 +29,20 @@ final class SquareSnapshotPaymentIdsTest extends TestCase
         $this->assertSame(['pay_fixture_1', 'pay_fixture_2', 'pay_fixture_6', 'pay_fixture_7'], (new SquareSnapshotMapper(new SquarePresenter))->paymentIds($order));
     }
 
+    public function test_an_open_authorization_with_no_known_paid_amount_stays_unresolved(): void
+    {
+        $order = ['tenders' => [
+            ['id' => 'tender_1', 'payment_id' => 'pay_captured', 'card_details' => ['status' => 'CAPTURED']],
+            ['id' => 'tender_2', 'payment_id' => 'pay_authorized', 'card_details' => ['status' => 'AUTHORIZED']],
+        ]];
+        $mapper = new SquareSnapshotMapper(new SquarePresenter);
+
+        $this->assertSame(['pay_captured'], $mapper->paymentIds($order), 'A known amount shows the capture when it comes.');
+        $this->assertNull($mapper->paymentIds($order, amountKnown: false));
+        $order['tenders'][1]['card_details']['status'] = 'VOIDED';
+        $this->assertSame(['pay_captured'], $mapper->paymentIds($order, amountKnown: false), 'A voided authorization is final.');
+    }
+
     public function test_an_order_with_more_tenders_than_the_reconciler_accepts_stays_unresolved(): void
     {
         $tenders = [];

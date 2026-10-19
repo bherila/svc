@@ -217,7 +217,8 @@ final class SquareMirrorSync
             // An order with more tenders than the reconciler accepts stays
             // unresolved, and the billing audit says it is incomplete; it is
             // stamped so the next runs move on to other invoices.
-            $ids = $this->mapper->paymentIds($order);
+            // The basis is STATUS|PAID|rules; an empty PAID is an unknown amount.
+            $ids = $this->mapper->paymentIds($order, explode('|', $invoice['basis'], 3)[1] !== '');
             if ($ids === null) {
                 $this->mirror->markPaymentIdsUnresolvable($workspace, $invoice['square_invoice_id'], $invoice['basis']);
             } elseif ($this->mirror->storePaymentIds($workspace, $invoice['square_invoice_id'], $invoice['basis'], $ids)) {
