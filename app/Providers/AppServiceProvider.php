@@ -23,6 +23,7 @@ use App\Support\Auth\PersonalAccessTokenIdentity;
 use Bherila\McpLaravelBridge\Capabilities\Availability;
 use Bherila\McpLaravelBridge\Capabilities\OperationRegistry;
 use Bherila\McpLaravelBridge\Capabilities\PrincipalResolver;
+use Bherila\McpLaravelBridge\Http\AgentApiTransport;
 use Bherila\McpLaravelBridge\Http\InternalAgentApiTransport;
 use Bherila\McpLaravelBridge\Http\McpHttpPolicy;
 use Bherila\McpLaravelBridge\Http\OperationRoutes;
@@ -84,6 +85,8 @@ class AppServiceProvider extends ServiceProvider
             allowedHeaders: ['Idempotency-Key', 'X-Request-Id'],
             temporaryFilePrefix: 'svc-agent-',
         ));
+        // MCP tools reach their REST operation through this (#459).
+        $this->app->bind(AgentApiTransport::class, InternalAgentApiTransport::class);
         $this->app->singleton(McpHttpPolicy::class, static fn (): McpHttpPolicy => new McpHttpPolicy(
             allowedOrigins: static function (): array {
                 $origins = config('agent_api.mcp_allowed_origins', []);
