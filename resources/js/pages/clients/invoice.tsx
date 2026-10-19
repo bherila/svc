@@ -117,6 +117,12 @@ type InvoicePayment = {
      * capability on this page.
      */
     correct_date_href: string | null;
+    /**
+     * Null unless the external finance system holds an active allocation of
+     * this payment (and this viewer manages the workspace). Then the finished
+     * links to its transactions there - empty when none is configured.
+     */
+    finance_reconciliation?: { hrefs: string[] } | null;
     amount: number;
     refunded_amount: number;
     currency: string | null;
@@ -152,6 +158,42 @@ type AdministratorNotification = {
     error_summary: string | null;
     invoice_revision: number;
 };
+
+/**
+ * The external finance system has reconciled this payment. The badge links to
+ * its transaction there when the server sent one link; a payment split across
+ * several transactions gets one numbered link each, and none renders the badge
+ * alone. The URLs are the server's, finished: nothing is assembled here.
+ */
+function ReconciledInFinance({ hrefs }: { hrefs: string[] }) {
+    const badge = <Badge variant="secondary">Reconciled in finance</Badge>;
+
+    if (hrefs.length === 1) {
+        return (
+            <a href={hrefs[0]} target="_blank" rel="noopener noreferrer">
+                {badge}
+            </a>
+        );
+    }
+
+    return (
+        <>
+            {badge}
+            {hrefs.map((href, index) => (
+                <a
+                    key={href}
+                    href={href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={`Finance transaction ${index + 1} of ${hrefs.length}`}
+                    className="text-xs underline underline-offset-2"
+                >
+                    {index + 1}
+                </a>
+            ))}
+        </>
+    );
+}
 
 /**
  * One invoice, inside the client it belongs to.
@@ -1275,11 +1317,22 @@ export default function ClientInvoiceDetail({
                                                     )}
                                                 </TableCell>
                                                 <TableCell>
-                                                    <Badge variant="outline">
-                                                        {statusLabel(
-                                                            payment.status,
+                                                    <span className="flex flex-wrap items-center gap-1">
+                                                        <Badge variant="outline">
+                                                            {statusLabel(
+                                                                payment.status,
+                                                            )}
+                                                        </Badge>
+                                                        {payment.finance_reconciliation && (
+                                                            <ReconciledInFinance
+                                                                hrefs={
+                                                                    payment
+                                                                        .finance_reconciliation
+                                                                        .hrefs
+                                                                }
+                                                            />
                                                         )}
-                                                    </Badge>
+                                                    </span>
                                                 </TableCell>
                                                 <TableCell>
                                                     {statusLabel(

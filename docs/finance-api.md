@@ -247,6 +247,22 @@ working when SVC's screens move. It is a browser route, not an API operation.
   exists, and returns to the link afterwards.
 - It is throttled to 60 requests a minute per reader.
 
+The other direction is configuration, never code. A payment with an active
+allocation from the finance system shows **Reconciled in finance** on its
+invoice screen, to owners and admins, linking to each allocated transaction:
+
+| Setting                       | Config key                     | Default   |
+| ----------------------------- | ------------------------------ | --------- |
+| `SVC_FINANCE_EXTERNAL_SYSTEM` | `svc.finance.external_system`  | `finance` |
+| `SVC_FINANCE_TRANSACTION_URL` | `svc.finance.transaction_url`  | unset     |
+
+The URL is an absolute http(s) template in which `{transaction_uuid}` is
+replaced, for example
+`https://finance.example.test/transactions/{transaction_uuid}`. The UUID is the
+one the allocation was written with: SVC never re-points it, so a finance system
+that merges transactions keeps resolving the UUIDs it published. Unset, or not
+an absolute http(s) address, the badge has no link.
+
 ## Console
 
 The commands act as the owner or admin `--user` names, through the same

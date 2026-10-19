@@ -28,6 +28,7 @@ use App\Services\Billing\DeferredBacklogReadService;
 use App\Services\Billing\InvoiceCorrectionReadService;
 use App\Services\Billing\InvoiceCorrectionService;
 use App\Services\Billing\InvoiceEmailService;
+use App\Services\Finance\FinanceReconciliationBadges;
 use App\Services\Square\Mirror\SquareInvoicePage;
 use App\Services\Square\SquareLinkRepository;
 use App\Services\WorkspaceAuthorization;
@@ -300,6 +301,12 @@ class ClientDirectoryController extends Controller
         // Square (#438): its collection actions are not offered at all.
         $square = $manages ? app(SquareLinkPresenter::class)->invoice($clientInvoice) : null;
         $squareCollects = $square !== null && $square['square_collects'] === true;
+        // "Reconciled in finance", for a manager: reconciliation is an owner's
+        // or admin's act, and the finance pointer is withheld from everyone
+        // else (AgentPaymentPresenter), so the badge is too.
+        $financeBadges = $manages
+            ? app(FinanceReconciliationBadges::class)->forPayments($workspace, $clientInvoice->payments)
+            : [];
 
         return Inertia::render('clients/invoice', [
             'company' => [
@@ -411,6 +418,10 @@ class ClientDirectoryController extends Controller
                 'correct_date_href' => $manages
                     ? $base.'/payments/'.$payment->public_id.'/received-on'
                     : null,
+                // Null unless the finance system holds an active allocation of
+                // this payment; then the finished links to its transactions,
+                // empty when no link template is configured.
+                'finance_reconciliation' => $financeBadges[(int) $payment->id] ?? null,
             ])->values()->all(),
         ]);
     }

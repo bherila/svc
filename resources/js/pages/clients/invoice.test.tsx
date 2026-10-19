@@ -396,6 +396,93 @@ describe("a payment's deep link", () => {
     });
 });
 
+describe('a payment reconciled in finance', () => {
+    function paymentWith(
+        finance_reconciliation: { hrefs: string[] } | null,
+    ): Props['payments'][number] {
+        return {
+            id: 'payment-1',
+            status: 'succeeded',
+            method: 'wire',
+            reference: null,
+            received_on: '2026-08-20',
+            correct_date_href: null,
+            amount: 4000,
+            refunded_amount: 0,
+            currency: 'USD',
+            finance_reconciliation,
+        };
+    }
+
+    it('links the badge to the transaction URL the server sent', () => {
+        render(
+            <ClientInvoiceDetail
+                {...props({
+                    payments: [
+                        paymentWith({
+                            hrefs: ['https://finance.example.test/t/abc'],
+                        }),
+                    ],
+                })}
+            />,
+        );
+
+        const link = screen.getByRole('link', {
+            name: 'Reconciled in finance',
+        });
+        expect(link).toHaveAttribute(
+            'href',
+            'https://finance.example.test/t/abc',
+        );
+        expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+    });
+
+    it('shows the badge without a link when no link was configured', () => {
+        render(
+            <ClientInvoiceDetail
+                {...props({ payments: [paymentWith({ hrefs: [] })] })}
+            />,
+        );
+
+        expect(screen.getByText('Reconciled in finance')).toBeInTheDocument();
+        expect(screen.queryByRole('link', { name: /finance/i })).toBeNull();
+    });
+
+    it('links each transaction of a split payment', () => {
+        render(
+            <ClientInvoiceDetail
+                {...props({
+                    payments: [
+                        paymentWith({
+                            hrefs: [
+                                'https://finance.example.test/t/one',
+                                'https://finance.example.test/t/two',
+                            ],
+                        }),
+                    ],
+                })}
+            />,
+        );
+
+        expect(
+            screen.getByRole('link', { name: 'Finance transaction 1 of 2' }),
+        ).toHaveAttribute('href', 'https://finance.example.test/t/one');
+        expect(
+            screen.getByRole('link', { name: 'Finance transaction 2 of 2' }),
+        ).toHaveAttribute('href', 'https://finance.example.test/t/two');
+    });
+
+    it('shows nothing for a payment the server sent no reconciliation for', () => {
+        render(
+            <ClientInvoiceDetail
+                {...props({ payments: [paymentWith(null)] })}
+            />,
+        );
+
+        expect(screen.queryByText('Reconciled in finance')).toBeNull();
+    });
+});
+
 describe('voiding an invoice', () => {
     it('requires a reason and sends it with the void', () => {
         render(
