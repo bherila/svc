@@ -1269,7 +1269,11 @@ final class InvoiceLifecycleService
                 }
                 $observed = ['status' => (string) $locked->status, 'refunded_amount' => (int) $locked->refunded_amount, 'version' => AgentApiVersion::for($locked)];
                 // Read under the payment's lock, which every write of its
-                // refund history holds, so a refund cannot be reversed twice.
+                // refund history holds, so a refund cannot be reversed twice -
+                // from a snapshot proven no older than that lock.
+                if ($kind !== null) {
+                    $refunds->assertSnapshotCurrent($locked);
+                }
                 $target = $change->reverses === null ? null : $refunds->find($locked, $change->reverses);
                 $decision = $change->decide((string) $locked->status, (int) $locked->amount, (int) $locked->refunded_amount, $locked->provider, $target);
                 if ($kind !== null) {

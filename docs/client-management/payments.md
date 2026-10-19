@@ -334,8 +334,20 @@ second reversal of one refund. For a hand-recorded payment the refunds less
 their reversals always equal `refunded_amount`, which stays the total every
 balance is derived from. A payment refunded by hand before the history existed
 was given one refund entry for its whole refunded amount by the migration, so it
-can be reversed like any other. A processor's payment has no entries: its
-refunds are the processor's report of a total, and they follow its events.
+can be reversed like any other; the entry is dated by the payment's latest
+`invoice.payment_refunded` activity (converted from the workspace's wall clock,
+which activity times are written in, to UTC), or by the migration when there is none -
+never by the payment row's `updated_at`, which a later correction also moves.
+A processor's payment has no entries: its refunds are the processor's report of
+a total, and they follow its events.
+
+The history is read without locks of its own: the payment's row lock already
+serialises every writer, and share-locking a payment's often empty index range
+would take gap locks that deadlock two unrelated first refunds on MariaDB.
+Instead the change proves its snapshot is no older than the lock - every history
+write also moves the payment's `lock_version`, so a plain read of it must agree
+with the locked row - and otherwise refuses with a conflict to retry
+(`PaymentVersionChanged`, 409).
 `payments.list` and the invoice screen's payload carry the entries as
 `refunds`, oldest first, with each entry's `reason` returned to owners/admins
 only.

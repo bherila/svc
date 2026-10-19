@@ -5,9 +5,10 @@ namespace App\Services\Billing;
 use App\Models\ClientInvoicePayment;
 use App\Models\ClientInvoicePaymentRefund;
 use App\Models\User;
+use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Billing\PaymentRefundKind;
+use App\Support\Billing\PaymentVersionChanged;
 use App\Support\Billing\RecordedRefund;
-use App\Support\Concurrency\Locks;
 use LogicException;
 
 /**
@@ -21,19 +22,41 @@ use LogicException;
 final class PaymentRefundLedger
 {
     /**
-     * The refund or reversal `$publicId` of this payment, with what answers it.
+     * Refuse to read the history from a snapshot older than the payment lock.
      *
-     * Locking reads, so under MariaDB's REPEATABLE READ they see the entries a
-     * transaction that held the payment lock before this one committed, not
-     * this transaction's older snapshot.
+     * The history is read without locks of its own: the payment's exclusive
+     * lock already serialises every writer, and a share lock over a payment's
+     * (often empty) range of the non-unique index would take gap locks that
+     * deadlock two unrelated payments' first refunds on MariaDB. What a plain
+     * read can get wrong under REPEATABLE READ is the snapshot: one taken
+     * before the previous holder of the payment lock committed would miss its
+     * entry. Every history write also writes the payment and moves its
+     * `lock_version`, so a plain read of that version agreeing with the locked
+     * row proves the snapshot has every entry; disagreeing, the change is
+     * refused as a conflict to retry, before anything is written.
+     *
+     * @param  ClientInvoicePayment  $locked  the payment as read under its row lock
+     *
+     * @throws PaymentVersionChanged when this transaction's snapshot is older than the lock
      */
+    public function assertSnapshotCurrent(ClientInvoicePayment $locked): void
+    {
+        $seen = ClientInvoicePayment::query()
+            ->where('workspace_id', $locked->workspace_id)
+            ->whereKey($locked->id)
+            ->firstOrFail(['id', 'workspace_id', 'lock_version']);
+        if (! AgentApiVersion::matches($seen, AgentApiVersion::for($locked))) {
+            throw new PaymentVersionChanged;
+        }
+    }
+
+    /** The refund or reversal `$publicId` of this payment, with what answers it; see {@see self::assertSnapshotCurrent()}. */
     public function find(ClientInvoicePayment $payment, string $publicId): ?RecordedRefund
     {
         $row = ClientInvoicePaymentRefund::query()
             ->where('workspace_id', $payment->workspace_id)
             ->where('client_invoice_payment_id', $payment->id)
             ->where('public_id', $publicId)
-            ->tap(Locks::forShare())
             ->first(['id', 'public_id', 'kind', 'amount']);
         if ($row === null) {
             return null;
@@ -42,19 +65,17 @@ final class PaymentRefundLedger
             ->where('workspace_id', $payment->workspace_id)
             ->where('client_invoice_payment_id', $payment->id)
             ->where('reverses_refund_id', $row->id)
-            ->tap(Locks::forShare())
             ->value('public_id');
 
         return new RecordedRefund((string) $row->public_id, $row->kind, (int) $row->amount, is_string($reversedBy) ? $reversedBy : null);
     }
 
-    /** How many refund and reversal entries this payment holds, read as {@see self::find()} reads. */
+    /** How many refund and reversal entries this payment holds; see {@see self::assertSnapshotCurrent()}. */
     public function count(ClientInvoicePayment $payment): int
     {
         return ClientInvoicePaymentRefund::query()
             ->where('workspace_id', $payment->workspace_id)
             ->where('client_invoice_payment_id', $payment->id)
-            ->tap(Locks::forShare())
             ->count();
     }
 

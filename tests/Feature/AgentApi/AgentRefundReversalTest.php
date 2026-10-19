@@ -89,6 +89,8 @@ final class AgentRefundReversalTest extends TestCase
         // A retry replays; the same key with another body, or a new key on the
         // version it moved past, is a conflict; a fresh read is refused twice.
         $this->assertSame($reversed, $this->operate($transport, 'payments.reverse_refund', $user, $workspace, $payment->public_id, $refundId, $body, 'synthetic-reversal'));
+        // An explicit null amount is the omitted one, so it replays too.
+        $this->assertSame($reversed, $this->operate($transport, 'payments.reverse_refund', $user, $workspace, $payment->public_id, $refundId, [...$body, 'amount' => null], 'synthetic-reversal'));
         $this->operate($transport, 'payments.reverse_refund', $user, $workspace, $payment->public_id, $refundId, [...$body, 'amount' => 1], 'synthetic-reversal', 409);
         $this->operate($transport, 'payments.reverse_refund', $user, $workspace, $payment->public_id, $refundId, $body, 'synthetic-reversal-stale', 409);
         $this->operate($transport, 'payments.reverse_refund', $user, $workspace, $payment->public_id, $refundId, $this->reversalBody($payment->fresh() ?? $payment), 'synthetic-reversal-twice', 422);
@@ -124,6 +126,32 @@ final class AgentRefundReversalTest extends TestCase
         $this->assertSame(2500, $payment->fresh()?->refunded_amount);
         $this->assertSame(2500, $invoice->fresh()?->balance_amount);
         $this->assertSame((int) $payment->fresh()?->refunded_amount, $this->ledgerTotal($payment));
+    }
+
+    /**
+     * A history read from a snapshot older than the payment lock is a conflict,
+     * not a decision on entries that may be missing. MariaDB's REPEATABLE READ
+     * produces the stale snapshot; here the payment's revision moves between the
+     * locked read and the plain one, which is the difference the check looks for.
+     */
+    public function test_a_payment_that_moved_while_the_reversal_waited_is_a_conflict(): void
+    {
+        [$user, $workspace, , $payment] = $this->fixture();
+        $refundId = $this->refund($user, $workspace, $payment, 100);
+        $body = $this->reversalBody($payment->fresh() ?? $payment);
+        $moved = false;
+        DB::listen(function (QueryExecuted $event) use ($payment, &$moved): void {
+            $sql = str_replace(['"', '`'], '', strtolower($event->sql));
+            if (! $moved && str_starts_with($sql, 'select * from client_invoice_payments') && ! str_contains($sql, 'public_id')) {
+                $moved = true;
+                DB::table('client_invoice_payments')->where('workspace_id', $payment->workspace_id)->where('id', $payment->id)->increment('lock_version');
+            }
+        });
+
+        $this->operate('rest', 'payments.reverse_refund', $user, $workspace, $payment->public_id, $refundId, $body, 'synthetic-moved', 409);
+        $this->assertTrue($moved);
+        $this->assertSame(100, $payment->fresh()?->refunded_amount);
+        $this->assertSame(1, ClientInvoicePaymentRefund::query()->where('workspace_id', $workspace->id)->count());
     }
 
     public function test_a_processor_refund_follows_its_processor(): void
@@ -392,13 +420,27 @@ final class AgentRefundReversalTest extends TestCase
             'provider' => 'stripe', 'provider_payment_identifier' => 'pi_synthetic_'.Str::random(8)]);
         $service->setRefundedAmount($stripe, 2000);
         DB::table('client_invoice_payments')->where('id', $payment->id)->update(['refunded_amount' => 3000]);
+        // Refunded with an activity, then corrected later: the entry is dated
+        // by the refund, not by the correction that moved updated_at.
+        [$otherUser, $otherWorkspace, , $refunded] = $this->fixture();
+        $this->refund($otherUser, $otherWorkspace, $refunded, 500);
+        DB::table('client_company_activity')->where('workspace_id', $otherWorkspace->id)->where('action', 'invoice.payment_refunded')->update(['created_at' => '2026-03-04 05:06:07']);
+        // Activity times are the workspace's wall clock; the entry is UTC.
+        DB::table('workspaces')->where('id', $otherWorkspace->id)->update(['timezone' => 'America/Los_Angeles']);
+        DB::table('client_invoice_payments')->where('id', $refunded->id)->update(['updated_at' => '2026-09-30 00:00:00']);
         $migration = require database_path('migrations/2026_10_19_140000_create_client_invoice_payment_refunds.php');
         Schema::drop('client_invoice_payment_refunds');
+        $this->travelTo('2026-10-19 12:00:00');
         $migration->up();
 
-        $entry = ClientInvoicePaymentRefund::query()->sole();
+        $this->assertSame('2026-03-04 13:06:07', ClientInvoicePaymentRefund::query()->where('workspace_id', $otherWorkspace->id)->sole()->created_at->format('Y-m-d H:i:s'));
+        $entry = ClientInvoicePaymentRefund::query()->where('workspace_id', $workspace->id)->sole();
+        $this->assertSame(2, ClientInvoicePaymentRefund::query()->count());
         $this->assertSame([$workspace->id, $payment->id, PaymentRefundKind::Refund, 3000, null], [$entry->workspace_id, $entry->client_invoice_payment_id, $entry->kind, $entry->amount, $entry->reverses_refund_id]);
         $this->assertStringContainsString('before refunds were recorded one by one', $entry->reason);
+        // No refund activity to date it by: dated when it was backfilled.
+        $this->assertSame('2026-10-19 12:00:00', $entry->created_at->format('Y-m-d H:i:s'));
+        $this->travelBack();
 
         DB::table('client_invoices')->where('id', $invoice->id)->update(['paid_amount' => 7000, 'balance_amount' => 3000, 'status' => 'partially_paid']);
         $this->operate('rest', 'payments.reverse_refund', $user, $workspace, $payment->public_id, (string) $entry->public_id, $this->reversalBody($payment->fresh() ?? $payment), 'synthetic-backfilled');

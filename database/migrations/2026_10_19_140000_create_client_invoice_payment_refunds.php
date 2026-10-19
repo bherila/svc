@@ -1,5 +1,6 @@
 <?php
 
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
@@ -54,12 +55,38 @@ return new class extends Migration
                 ->references(['workspace_id', 'id'])->on('client_invoice_payment_refunds')->cascadeOnDelete();
         });
 
+        // When the money was refunded: the payment's latest refund activity.
+        // Not the payment row's updated_at, which any later correction of its
+        // method, reference, note or date also moves. A payment with no such
+        // activity (refunded by an import or a hand repair) is dated when it
+        // was backfilled, which is the one moment this row can vouch for.
+        $backfilledAt = now('UTC')->format('Y-m-d H:i:s');
         DB::table('client_invoice_payments')
             ->whereNull('provider')
             ->where('refunded_amount', '>', 0)
             ->orderBy('id')
-            ->select(['id', 'workspace_id', 'refunded_amount', 'updated_at', 'created_at'])
-            ->chunkById(500, function ($payments): void {
+            ->select(['id', 'public_id', 'workspace_id', 'refunded_amount'])
+            ->chunkById(500, function ($payments) use ($backfilledAt): void {
+                $refundedAt = [];
+                // Activity times are the workspace's wall clock
+                // (ClientActivityRecorder writes WorkspaceClock::now() into a
+                // timezone-less column); entries are UTC, as every new one is.
+                $timezones = DB::table('workspaces')->whereIn('id', $payments->pluck('workspace_id')->unique()->all())->pluck('timezone', 'id');
+                foreach ($payments->groupBy('workspace_id') as $workspaceId => $inWorkspace) {
+                    $timezone = $timezones[$workspaceId] ?? null;
+                    $timezone = is_string($timezone) && $timezone !== '' ? $timezone : 'UTC';
+                    $latest = DB::table('client_company_activity')
+                        ->where('workspace_id', $workspaceId)
+                        ->where('subject_type', 'client_invoice_payment')
+                        ->where('action', 'invoice.payment_refunded')
+                        ->whereIn('subject_public_id', $inWorkspace->pluck('public_id')->all())
+                        ->groupBy('subject_public_id')
+                        ->selectRaw('subject_public_id, max(created_at) as refunded_at')
+                        ->pluck('refunded_at', 'subject_public_id');
+                    foreach ($latest as $publicId => $at) {
+                        $refundedAt[$workspaceId.'|'.$publicId] = CarbonImmutable::parse((string) $at, $timezone)->utc()->format('Y-m-d H:i:s');
+                    }
+                }
                 DB::table('client_invoice_payment_refunds')->insert($payments->map(static fn (object $payment): array => [
                     'public_id' => (string) Str::uuid(),
                     'workspace_id' => $payment->workspace_id,
@@ -69,7 +96,7 @@ return new class extends Migration
                     'reason' => self::BACKFILL_REASON,
                     'reverses_refund_id' => null,
                     'recorded_by_user_id' => null,
-                    'created_at' => $payment->updated_at ?? $payment->created_at ?? now(),
+                    'created_at' => $refundedAt[$payment->workspace_id.'|'.$payment->public_id] ?? $backfilledAt,
                 ])->all());
             });
     }

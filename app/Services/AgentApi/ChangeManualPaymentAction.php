@@ -65,6 +65,13 @@ final class ChangeManualPaymentAction
      */
     public function reverseRefund(User $user, Workspace $workspace, string $clientId, string $key, string $paymentId, string $refundId, array $payload): array
     {
+        // A null amount means what an omitted one does - the whole refund -
+        // so it is dropped before the request is hashed, and a retry sending
+        // either form replays the same receipt.
+        if (array_key_exists('amount', $payload) && $payload['amount'] === null) {
+            unset($payload['amount']);
+        }
+
         return $this->run('payments.reverse_refund', $user, $workspace, $clientId, $key, $paymentId, $payload, [
             'body.amount' => ['sometimes', 'nullable', 'integer:strict', 'min:1'],
         ], static fn (array $data): ManualPaymentChange => ManualPaymentChange::reversal($refundId, $data['amount'] ?? null, $data['reason']), ['refund_id' => $refundId]);
