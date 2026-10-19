@@ -18,6 +18,8 @@ use App\Services\Credentials\RevokeCredentialsIssuedDuringRevocation;
 use App\Services\Mcp\Context\McpPrincipalResolver;
 use App\Services\Mcp\Context\McpPrincipalResolverInterface;
 use App\Support\AgentApi\AgentApiScopes;
+use App\Support\AgentApi\InternalApiDispatch;
+use App\Support\AgentApi\MarkedInternalAgentApiTransport;
 use App\Support\AgentApi\ProviderIdentityWrites;
 use App\Support\Auth\PersonalAccessTokenIdentity;
 use Bherila\McpLaravelBridge\Capabilities\Availability;
@@ -77,7 +79,10 @@ class AppServiceProvider extends ServiceProvider
         // The REST route gate's view: cutovers and scopes.
         $this->app->bind(Availability::class, static fn ($app): Availability => $app->make(AgentAvailability::class)->rest());
         $this->app->bind(PrincipalResolver::class, AgentPrincipalResolver::class);
-        $this->app->bind(InternalAgentApiTransport::class, fn ($app): InternalAgentApiTransport => new InternalAgentApiTransport(
+        // The nested request is marked, so the REST throttle counts the
+        // client's MCP request once rather than twice (#459).
+        $this->app->scoped(InternalApiDispatch::class);
+        $this->app->bind(InternalAgentApiTransport::class, fn ($app): InternalAgentApiTransport => new MarkedInternalAgentApiTransport(
             router: $app->make(Router::class),
             exceptions: $app->make(ExceptionHandler::class),
             outerRequest: $app->make('request'),

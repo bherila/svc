@@ -14,6 +14,7 @@ use App\Services\Mcp\AgentMcpApiFailure;
 use App\Support\AgentApi\AgentApiScopes;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 use Tests\Concerns\CallsMcp;
 use Tests\TestCase;
@@ -176,6 +177,21 @@ final class AgentMcpRestRoutedWritesTest extends TestCase
         $this->assertRefusal('Approving time is not enabled for agents.', $this->callTool($this->initialize(), 'time_entries.log', $arguments));
         $this->assertSame(0, ClientTimeEntry::query()->count());
         $this->assertDatabaseCount('agent_mutation_receipts', 0);
+    }
+
+    public function test_a_routed_call_is_counted_once_against_the_principals_throttle(): void
+    {
+        [$workspace, $project, $manager] = $this->fixture();
+        $this->actingAsMcp($manager, [AgentApiScopes::MCP_USE, AgentApiScopes::TASKS_WRITE]);
+        $key = sha1((string) $manager->getAuthIdentifier());
+        RateLimiter::clear($key);
+
+        $session = $this->initialize();
+        $this->data($this->callTool($session, 'tasks.create', ['workspace_id' => $workspace->public_id, 'project_id' => $project->public_id, 'title' => 'Synthetic counted task', 'idempotency_key' => 'counted-task']));
+        $this->assertSame(2, RateLimiter::attempts($key), 'initialize and the tool call, not the nested REST request');
+
+        $this->withHeader('Idempotency-Key', 'counted-task-rest')->postJson("/api/v1/workspaces/{$workspace->public_id}/projects/{$project->public_id}/tasks", ['title' => 'Synthetic REST task'])->assertCreated();
+        $this->assertSame(3, RateLimiter::attempts($key), 'a REST client is still counted');
     }
 
     /** @param array<string, mixed> $body

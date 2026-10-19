@@ -30,6 +30,7 @@ use App\Http\Middleware\AuthenticateFirstPartySession;
 use App\Http\Middleware\EnsureAgentWorkspaceVisible;
 use App\Http\Middleware\EnsureOperationDeployed;
 use App\Http\Middleware\NoStoreAgentResponse;
+use App\Http\Middleware\ThrottleOuterAgentRequests;
 use App\Models\Workspace;
 use App\Support\AgentApi\AgentApiScopes;
 use App\Support\Square\SquareIdentifiers;
@@ -95,7 +96,7 @@ $inVisibleWorkspace = static fn (RoutingRoute $route): RoutingRoute => $route
 // the MCP endpoint.
 Route::prefix('v1')
     ->name('agent-api.v1.')
-    ->middleware([ExpectOAuthResource::class.':rest', AuthenticateFirstPartySession::class, 'auth:api', 'throttle:60,1', NoStoreAgentResponse::class])
+    ->middleware([ExpectOAuthResource::class.':rest', AuthenticateFirstPartySession::class, 'auth:api', ThrottleOuterAgentRequests::class.':60,1', NoStoreAgentResponse::class])
     ->group(function () use ($operation, $inVisibleWorkspace): void {
         $operation('context.get', [AgentReadController::class, 'context']);
         $operation('workspaces.create', [AgentWorkspaceMiscController::class, 'create']);
