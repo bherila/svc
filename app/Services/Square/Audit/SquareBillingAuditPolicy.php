@@ -62,22 +62,22 @@ final class SquareBillingAuditPolicy
 
     /**
      * Whether an invoice's payments are svc's to account for: it is actively
-     * linked, in a series an agreement is billed in, or a confirmed
-     * customer's.
+     * linked, a member of a series an agreement is billed in dated within
+     * that agreement, or a confirmed customer's.
      *
-     * @param  array<string, mixed>  $billedSeries  keyed by series key
+     * @param  array<string, SquareAuditAgreement>  $billedSeries  keyed by series key
      * @param  array<string, true>  $mappedCustomers
      */
-    public static function inPaymentReach(bool $linked, ?string $seriesKey, ?string $customerId, array $billedSeries, array $mappedCustomers): bool
+    public static function inPaymentReach(bool $linked, ?string $seriesKey, ?string $customerId, ?string $date, array $billedSeries, array $mappedCustomers): bool
     {
         return $linked
-            || ($seriesKey !== null && isset($billedSeries[$seriesKey]))
+            || ($seriesKey !== null && isset($billedSeries[$seriesKey]) && $billedSeries[$seriesKey]->governs($date))
             || ($customerId !== null && isset($mappedCustomers[$customerId]));
     }
 
     /**
      * The series keys whose bills, from each agreement's start on, come from
-     * more than one Square location. Square numbers invoices uniquely per
+     * more than one Square location, or from one Square did not name. Square numbers invoices uniquely per
      * location only, so such a prefix is two series.
      *
      * @param  list<SquareAuditAgreement>  $agreements
@@ -92,11 +92,13 @@ final class SquareBillingAuditPolicy
         }
         $locations = [];
         foreach ($members as [$seriesKey, $status, $date, $location]) {
-            if ($seriesKey === null || $location === null || ! isset($starts[$seriesKey]) || in_array($status, self::UNBILLED_STATUSES, true)
+            if ($seriesKey === null || ! isset($starts[$seriesKey]) || in_array($status, self::UNBILLED_STATUSES, true)
                 || ($date !== null && $date < $starts[$seriesKey])) {
                 continue;
             }
-            $locations[$seriesKey][] = $location;
+            // A bill with no location cannot be tied to the others, so it
+            // makes the prefix as unclassifiable as a second location.
+            $locations[$seriesKey][] = $location ?? "\0unknown";
         }
         $ambiguous = [];
         foreach ($locations as $seriesKey => $seen) {
@@ -168,7 +170,7 @@ final class SquareBillingAuditPolicy
         $unmatched = [];
         $resolved = true;
         foreach ($facts->invoices as $invoice) {
-            if (! self::inPaymentReach($invoice->linked !== null, $invoice->seriesKey, $invoice->customerId, $agreements, $facts->mappedCustomerIds)) {
+            if (! self::inPaymentReach($invoice->linked !== null, $invoice->seriesKey, $invoice->customerId, $invoice->date(), $agreements, $facts->mappedCustomerIds)) {
                 continue;
             }
             // Ids read for an earlier state, or by earlier rules, may name

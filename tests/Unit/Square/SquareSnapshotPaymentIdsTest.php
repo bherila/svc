@@ -47,6 +47,26 @@ final class SquareSnapshotPaymentIdsTest extends TestCase
         $this->assertSame(['pay_captured'], $mapper->paymentIds($order, amountKnown: false), 'A voided authorization is final.');
     }
 
+    public function test_every_status_bearing_tender_type_counts_once_settled(): void
+    {
+        $order = ['tenders' => [
+            ['id' => 'pay_cash', 'type' => 'CASH', 'cash_details' => ['buyer_tendered_money' => ['amount' => 100]]],
+            ['id' => 'pay_bank_done', 'bank_account_details' => ['status' => 'COMPLETED']],
+            ['id' => 'pay_bank_failed', 'bank_account_details' => ['status' => 'FAILED']],
+            ['id' => 'pay_bnpl_voided', 'buy_now_pay_later_details' => ['status' => 'VOIDED']],
+            ['id' => 'pay_account_captured', 'square_account_details' => ['status' => 'CAPTURED']],
+        ]];
+        $mapper = new SquareSnapshotMapper(new SquarePresenter);
+
+        $this->assertSame(['pay_cash', 'pay_bank_done', 'pay_account_captured'], $mapper->paymentIds($order, amountKnown: false));
+        $this->assertFalse($mapper->holdsAuthorization($order));
+
+        $order['tenders'][] = ['id' => 'pay_bank_pending', 'bank_account_details' => ['status' => 'PENDING']];
+        $this->assertTrue($mapper->holdsAuthorization($order));
+        $this->assertNull($mapper->paymentIds($order, amountKnown: false));
+        $this->assertSame(['pay_cash', 'pay_bank_done', 'pay_account_captured'], $mapper->paymentIds($order));
+    }
+
     public function test_an_order_with_more_tenders_than_the_reconciler_accepts_stays_unresolved(): void
     {
         $tenders = [];

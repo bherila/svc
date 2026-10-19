@@ -90,14 +90,16 @@ Square dashboard URLs, and `truncated`:
   has one), that no svc invoice is linked to. `SCHEDULED` members are not billed yet, and `DRAFT`, `CANCELED` and
   `FAILED` ones are no bill, so none of them is flagged.
 - `unmatched_payments`: a Square payment id on an invoice in svc's reach (actively
-  linked, in a billed-in-Square series, or of a confirmed customer) that svc has
+  linked, a billed-in-Square series member within its agreement, or of a confirmed
+  customer) that svc has
   not recorded under provider `square`. `not_recorded` means the invoice is linked
   and the sweep has not recorded the payment, for example because it failed
   closed; `invoice_not_linked` means no svc invoice is linked to receive it. A
   payment recorded against another svc invoice still matches. The mirror takes
   payment ids from the order's tenders - `payment_id`, else the tender's own `id`
-  - and counts a card tender once it is captured: an authorization may still be
-  voided, and a capture changes the invoice's paid amount, so the order is read
+  - and counts a tender once it is settled (a captured card, Square account or buy
+  now pay later tender, a completed bank transfer, or cash): an authorization may
+  still be voided, and a capture changes the invoice's paid amount, so the order is read
   again then. An order with more tenders than the reconciler accepts (100) stays
   unresolved, as does a paid invoice until the sync has read its order or an order
   whose tender list is malformed; ids awaiting a re-read are not reported.
@@ -109,7 +111,8 @@ Square dashboard URLs, and `truncated`:
   `amount`, or whose series the mirror does not hold (`series_not_mirrored`).
   `SCHEDULED` members are not billed yet, and members dated before the
   agreement's start are history; both are left out. Square numbers invoices
-  uniquely per location only, so a prefix used in more than one location is
+  uniquely per location only, so a prefix used in more than one location (or by a
+  bill with no location) is
   reported as `multiple_locations` and nothing else is derived from it - no
   comparison, unmirrored period or unmatched payment - and Square still billing
   after the agreement ended is reported as `billed_after_end`. The agreement's amount

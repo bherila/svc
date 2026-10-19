@@ -37,11 +37,17 @@ final class SquareSnapshotMapper
     /** The tender rules payment ids are read by; see {@see paymentIds()}. */
     public const string TENDER_RULES = 't2';
 
-    /** The one card tender state in which money has moved. */
+    /** The default state of a tender whose type carries none. */
     private const string CAPTURED = 'CAPTURED';
 
-    /** A card tender that may still be captured, or voided. */
-    private const string AUTHORIZED = 'AUTHORIZED';
+    /** Tender details that carry a status, by tender type. */
+    private const array TENDER_DETAILS = ['card_details', 'bank_account_details', 'buy_now_pay_later_details', 'square_account_details'];
+
+    /** Tender states in which money has moved. */
+    private const array SETTLED_TENDER_STATES = ['CAPTURED', 'COMPLETED'];
+
+    /** Tender states that may still settle, or not. */
+    private const array OPEN_TENDER_STATES = ['AUTHORIZED', 'PENDING'];
 
     public function __construct(private readonly SquarePresenter $presenter) {}
 
@@ -216,13 +222,31 @@ final class SquareSnapshotMapper
     public function holdsAuthorization(array $order): bool
     {
         foreach (is_array($order['tenders'] ?? null) ? $order['tenders'] : [] as $tender) {
-            $card = is_array($tender) ? ($tender['card_details'] ?? null) : null;
-            if (is_array($card) && ($card['status'] ?? null) === self::AUTHORIZED) {
+            if (is_array($tender) && in_array(self::tenderState($tender), self::OPEN_TENDER_STATES, true)) {
                 return true;
             }
         }
 
         return false;
+    }
+
+    /**
+     * A tender's state, from whichever status-bearing details its type
+     * carries - card, bank account, buy now pay later, Square account. A
+     * tender without one (cash, external, other) took its money outright.
+     *
+     * @param  array<mixed>  $tender
+     */
+    private static function tenderState(array $tender): string
+    {
+        foreach (self::TENDER_DETAILS as $details) {
+            $detail = $tender[$details] ?? null;
+            if (is_array($detail) && is_string($detail['status'] ?? null)) {
+                return $detail['status'];
+            }
+        }
+
+        return self::CAPTURED;
     }
 
     /**
@@ -264,15 +288,14 @@ final class SquareSnapshotMapper
             if ($id === null) {
                 throw SquareRequestFailed::unreadable();
             }
-            $card = $tender['card_details'] ?? [];
-            $state = is_array($card) ? ($card['status'] ?? self::CAPTURED) : self::CAPTURED;
+            $state = self::tenderState($tender);
             // A later capture is seen by the paid amount changing; with no
             // known amount nothing would ever show it, so an open
             // authorization leaves the ids unresolved.
-            if ($state === self::AUTHORIZED && ! $amountKnown) {
+            if (in_array($state, self::OPEN_TENDER_STATES, true) && ! $amountKnown) {
                 return null;
             }
-            if ($state !== self::CAPTURED) {
+            if (! in_array($state, self::SETTLED_TENDER_STATES, true)) {
                 continue;
             }
             if (! in_array($id, $ids, true)) {

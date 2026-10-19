@@ -442,6 +442,7 @@ final class SquareBillingAuditTest extends TestCase
             'series_key' => '000123',
             'series_occurrence' => $occurrence,
             'square_customer_id' => 'cust_audit_series',
+            'square_location_id' => 'LOCFIXTURE01',
             'status' => $status,
             'currency' => 'USD',
             'total_amount' => 12_345,
@@ -464,7 +465,7 @@ final class SquareBillingAuditTest extends TestCase
     {
         return [
             'workspace_id' => $workspace->id, 'square_invoice_id' => $id, 'invoice_number' => '000000', 'series_key' => null, 'series_occurrence' => null,
-            'square_customer_id' => null, 'status' => 'UNPAID', 'currency' => 'USD', 'total_amount' => 100, 'autopay' => false, 'payment_requests' => '[]',
+            'square_customer_id' => null, 'square_location_id' => 'LOCFIXTURE01', 'status' => 'UNPAID', 'currency' => 'USD', 'total_amount' => 100, 'autopay' => false, 'payment_requests' => '[]',
             'fingerprint' => str_repeat('a', 64), 'synced_at' => '2030-03-01 00:00:00', 'last_seen_at' => '2030-03-01 00:00:00',
             ...$overrides,
         ];

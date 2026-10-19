@@ -98,7 +98,12 @@ final class SquareBillingAuditRepository
         $ambiguous = SquareBillingAuditPolicy::ambiguousSeries($agreements, array_map(static fn (SquareInvoiceSnapshot $snapshot): array => [
             $snapshot->series_key, $snapshot->status, $snapshot->due_on?->toDateString() ?? $snapshot->scheduled_at?->toDateString(), $snapshot->square_location_id,
         ], array_values($snapshots)));
-        $billedSeries = $seriesComplete ? array_diff_key(array_fill_keys($seriesKeys, true), $ambiguous) : [];
+        $billedSeries = [];
+        foreach ($seriesComplete ? $agreements : [] as $agreement) {
+            if (! isset($ambiguous[$agreement->seriesKey])) {
+                $billedSeries[$agreement->seriesKey] = $agreement;
+            }
+        }
 
         // Payment ids are read only for invoices whose payments the audit
         // checks and whose ids are current, a batch at a time, and only up to
@@ -108,7 +113,8 @@ final class SquareBillingAuditRepository
         foreach ($snapshots as $snapshot) {
             if (SquareSnapshotMapper::mayHoldPayment($snapshot->status, $snapshot->paid_amount)
                 && SquareSnapshotMapper::paymentIdsCurrent($snapshot->status, $snapshot->paid_amount, $snapshot->square_order_id, $snapshot->payment_ids_basis)
-                && SquareBillingAuditPolicy::inPaymentReach(isset($links[$snapshot->square_invoice_id]), $snapshot->series_key, $snapshot->square_customer_id, $billedSeries, $mappedCustomers)) {
+                && SquareBillingAuditPolicy::inPaymentReach(isset($links[$snapshot->square_invoice_id]), $snapshot->series_key, $snapshot->square_customer_id,
+                    $snapshot->due_on?->toDateString() ?? $snapshot->scheduled_at?->toDateString(), $billedSeries, $mappedCustomers)) {
                 $wanted[] = $snapshot->square_invoice_id;
             }
         }
