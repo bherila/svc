@@ -64,9 +64,9 @@ Subscribe the Stripe webhook endpoint to these event types:
 - `payment_intent.payment_failed`: records `failure_reason` and logs `invoice.payment_failed`.
 - `payment_intent.canceled`: records a distinct terminal canceled state and logs `invoice.payment_canceled`; an older processing/failure delivery cannot make it pending again.
 - `charge.refunded`: records the charge's cumulative refunded amount on the payment - `refunded` when it is the whole payment, `succeeded` with the refunded amount raised otherwise - and reopens the invoice by that amount.
-- `charge.refund.updated` (or `refund.updated` / `refund.failed`; subscribing to any one is enough): when a refund failed or was canceled, re-reads the charge's refunds from Stripe and records the total of those still standing, so the refunded amount falls again. Other refund updates change nothing.
+- `charge.refund.updated` (or `refund.updated` / `refund.failed`; subscribing to any one is enough): when a refund failed or was canceled, re-reads the charge's refunds from Stripe and records the total of those still standing, so the refunded amount falls again. The live total is applied even when the notification arrives after a newer event for the payment. Other refund updates change nothing.
 - `charge.dispute.created`: marks the payment disputed and reopens the invoice.
-- `charge.dispute.closed`: restores the payment when the dispute is won, including a partial win (the disputed amount is checked against the payment, not required to equal it); keeps it disputed when lost.
+- `charge.dispute.closed`: restores the payment when the dispute is won, including a partial win (the disputed amount is checked against the payment, not required to equal it); keeps it disputed when lost. A win after the invoice was paid again in the meantime is still recorded; the excess becomes the invoice's overpayment (derived credit) and is named as `overpaid_amount` in the `invoice.payment_received` activity.
 
 Refunds and disputes are recorded whatever the payment's finance reconciliation allocations; they are kept and flagged for review (see [the finance reconciliation API](../finance-api.md)).
 - `payment_method.attached`: syncs saved method metadata for the Stripe customer.

@@ -1334,6 +1334,7 @@ final class InvoiceLifecycleService
             if ($lockedPayment->status === $next->value) {
                 return $lockedPayment;
             }
+            $restoredOverpayment = null;
             if ($next === InvoicePaymentStatus::Succeeded && $invoice->status === 'void') {
                 throw new DomainException('A payment succeeded against a void invoice; refund it or un-void the invoice before recording it.');
             }
@@ -1348,8 +1349,20 @@ final class InvoiceLifecycleService
                     ->where('status', InvoicePaymentStatus::Succeeded->value)
                     ->get(['amount', 'refunded_amount'])
                     ->sum(fn (ClientInvoicePayment $other): int => max(0, $other->amount - $other->refunded_amount));
-                if (($lockedPayment->amount - $lockedPayment->refunded_amount) > ($invoice->total_amount - $otherPaid)) {
-                    throw new DomainException('Successful payments cannot exceed the invoice total.');
+                $overpaid = ($lockedPayment->amount - $lockedPayment->refunded_amount) - ($invoice->total_amount - $otherPaid);
+                if ($overpaid > 0) {
+                    // A processor returning a disputed payment's money - a won
+                    // dispute, a closed inquiry - reports money the business
+                    // holds, possibly after the invoice was paid again in the
+                    // meantime. Refusing it would leave the payment disputed
+                    // and the processor's notification failing for good, so it
+                    // is restored and the excess is left to the derived
+                    // overpayment credit, named in the activity for review.
+                    // Everything else is still refused.
+                    if ($manual || $lockedPayment->status !== InvoicePaymentStatus::Disputed->value) {
+                        throw new DomainException('Successful payments cannot exceed the invoice total.');
+                    }
+                    $restoredOverpayment = min($overpaid, $lockedPayment->amount - $lockedPayment->refunded_amount);
                 }
             }
             // Leaving or entering `succeeded` changes the settled money the
@@ -1385,7 +1398,10 @@ final class InvoiceLifecycleService
                 InvoicePaymentStatus::Pending => null,
             };
             if ($action !== null) {
-                $this->recordPaymentActivity($invoice, $lockedPayment, $action, (string) Str::uuid(), $extra === null ? [] : $extra());
+                $this->recordPaymentActivity($invoice, $lockedPayment, $action, (string) Str::uuid(), [
+                    ...($extra === null ? [] : $extra()),
+                    ...($restoredOverpayment === null ? [] : ['overpaid_amount' => $restoredOverpayment]),
+                ]);
             }
             if ($next === InvoicePaymentStatus::Succeeded) {
                 $this->recordMarkedPaid($invoice, $previousInvoiceStatus, (string) Str::uuid());

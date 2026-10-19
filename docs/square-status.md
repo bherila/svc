@@ -39,7 +39,10 @@ A dispute notification names the dispute, which is re-fetched. A dispute on a
 payment svc recorded moves it to `disputed` while an inquiry or chargeback is
 open and when it is lost or accepted, and back to `succeeded` when it is won -
 in part or in full, since the disputed amount may be part of the payment - or
-when an inquiry closes. A refunded payment stays refunded. A dispute on a
+when an inquiry closes. If the invoice was paid again while the dispute was
+open, the restored payment is still recorded; the excess shows as the invoice's
+overpayment, feeds the derived overpayment credit, and is named as
+`overpaid_amount` in the `invoice.payment_received` activity for review. A refunded payment stays refunded. A dispute on a
 payment svc never recorded changes nothing; an unknown state, another currency
 or an amount above the payment is refused and released for retry. The sweep
 does not read disputes, so a missed dispute notification is not recovered. A draft, void invoice, currency
