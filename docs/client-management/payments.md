@@ -148,6 +148,17 @@ method, reference and amount. The only write it offers is **Correct date**,
 described below; a row dated before the invoice's `issue_date` is marked, and
 the table says once, underneath, what the marker means.
 
+A payment the external finance system has reconciled - one with an active
+allocation from `svc.finance.external_system` (`finance` by default), flagged
+for review or not - carries a **Reconciled in finance** badge beside its status,
+shown to workspace owners and admins only. The badge links to the finance
+transaction at `SVC_FINANCE_TRANSACTION_URL`, a template in which
+`{transaction_uuid}` is replaced by the transaction's UUID; a payment split
+across several transactions gets one numbered link per transaction. Without a
+template, or with one that is not an absolute http(s) address, the badge shows
+without a link. Each row is anchored at `#payment-{payment-uuid}`, where the
+payment's deep link lands (see [the finance API](../finance-api.md#deep-links)).
+
 ## Correcting a payment's date
 
 `POST /workspaces/{workspace}/invoices/{clientInvoice}/payments/{clientInvoicePayment}/received-on`,

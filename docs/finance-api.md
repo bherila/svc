@@ -222,6 +222,47 @@ Neither the agent write cutovers (`AGENT_API_WRITES_ENABLED`,
 routes; the MCP switches (`mcp.read`, `mcp.write`, or the tool's own name) withhold
 the tools.
 
+## Deep links
+
+A finance application that shows an SVC payment links to it by its public UUID,
+never by a screen address:
+
+```
+GET /finance-links/payments/{payment-uuid}
+```
+
+The address is permanent: it names the payment and nothing else, so it keeps
+working when SVC's screens move. It is a browser route, not an API operation.
+
+- A signed-in reader who may see the payment is redirected (`302`) to its
+  invoice screen, anchored at the payment's row (`#payment-{payment-uuid}`).
+  "May see" is exactly what the invoice screen requires: membership of the
+  payment's workspace, reach to its client, and every project the invoice bills.
+- Anyone else gets `404`, the same response an unknown UUID gets: a payment in
+  another workspace, a client or invoice this reader cannot reach, a client
+  portal reader, a malformed id, or an integer key. The payment is looked up
+  only inside the reader's own workspaces, so another tenant's row is never
+  read to decide.
+- A reader who is not signed in is sent to sign in, whether or not the payment
+  exists, and returns to the link afterwards.
+- It is throttled to 60 requests a minute per reader.
+
+The other direction is configuration, never code. A payment with an active
+allocation from the finance system shows **Reconciled in finance** on its
+invoice screen, to owners and admins, linking to each allocated transaction:
+
+| Setting                       | Config key                     | Default   |
+| ----------------------------- | ------------------------------ | --------- |
+| `SVC_FINANCE_EXTERNAL_SYSTEM` | `svc.finance.external_system`  | `finance` |
+| `SVC_FINANCE_TRANSACTION_URL` | `svc.finance.transaction_url`  | unset     |
+
+The URL is an absolute http(s) template in which `{transaction_uuid}` is
+replaced, for example
+`https://finance.example.test/transactions/{transaction_uuid}`. The UUID is the
+one the allocation was written with: SVC never re-points it, so a finance system
+that merges transactions keeps resolving the UUIDs it published. Unset, or not
+an absolute http(s) address, the badge has no link.
+
 ## Console
 
 The commands act as the owner or admin `--user` names, through the same
