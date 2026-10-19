@@ -72,7 +72,7 @@ final class SquareMirrorRepository
             ->where(static fn (Builder $due) => $due->whereNull('payment_ids_basis')
                 ->orWhereRaw('payment_ids_basis not in ('.self::basisSql().', '.self::basisSql("'|x'").')'))
             // Orders awaiting an authorization go after everything else.
-            ->orderByRaw('case when payment_ids_basis = '.self::basisSql("'|p'").' then 1 else 0 end')
+            ->orderByRaw('case when payment_ids_basis = '.self::basisSql("'|p'").' or payment_ids_basis = '.self::basisSql("'|r'").' then 1 else 0 end')
             ->orderBy('synced_at')
             ->orderBy('id')
             ->limit(min($limit, 100))
@@ -81,7 +81,8 @@ final class SquareMirrorRepository
         foreach ($rows as $row) {
             $paid = $row->paid_amount === null ? null : (int) $row->paid_amount;
             $stamped = $row->payment_ids_basis === null ? null : (string) $row->payment_ids_basis;
-            if (SquareSnapshotMapper::paymentIdsCurrent((string) $row->status, $paid, (string) $row->square_order_id, $stamped)
+            // A read with no known amount is current but read again in turn.
+            if ((SquareSnapshotMapper::paymentIdsCurrent((string) $row->status, $paid, (string) $row->square_order_id, $stamped) && $stamped !== SquareSnapshotMapper::rereadBasis((string) $row->status))
                 || $stamped === SquareSnapshotMapper::unresolvableBasis((string) $row->status, $paid)) {
                 continue;
             }
@@ -102,7 +103,7 @@ final class SquareMirrorRepository
      *
      * @param  list<string>  $paymentIds
      */
-    public function storePaymentIds(Workspace $workspace, string $invoiceId, string $basis, array $paymentIds): bool
+    public function storePaymentIds(Workspace $workspace, string $invoiceId, string $basis, array $paymentIds, ?CarbonImmutable $rereadAfter = null): bool
     {
         [$status, $paid] = explode('|', $basis, 3);
 
@@ -114,7 +115,9 @@ final class SquareMirrorRepository
             ->when($paid === '', static fn (Builder $query) => $query->whereNull('paid_amount'), static fn (Builder $query) => $query->where('paid_amount', (int) $paid))
             ->update([
                 'payment_ids' => json_encode($paymentIds, JSON_THROW_ON_ERROR),
-                'payment_ids_basis' => $basis,
+                // An unknown amount is read again in turn (rereadBasis()).
+                'payment_ids_basis' => $paid === '' ? SquareSnapshotMapper::rereadBasis($status) : $basis,
+                ...($paid === '' && $rereadAfter !== null ? ['synced_at' => $rereadAfter->utc()->format('Y-m-d H:i:s')] : []),
             ]) > 0;
     }
 

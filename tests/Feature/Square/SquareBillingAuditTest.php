@@ -388,6 +388,21 @@ final class SquareBillingAuditTest extends TestCase
         $this->assertTrue(app(SquareBillingAudit::class)->report($workspace)['complete'], 'The next read is of one generation.');
     }
 
+    public function test_a_read_with_no_known_amount_is_current_but_read_again_in_turn(): void
+    {
+        [$workspace] = $this->fixture();
+        $this->snapshot($workspace, 'inv_unknown', null, '2030-01-15', 'PARTIALLY_PAID', ['series_key' => null, 'invoice_number' => '000601', 'paid_amount' => null, 'total_amount' => null, 'square_order_id' => 'order_unknown', 'synced_at' => '2030-01-01 00:00:00']);
+        $this->snapshot($workspace, 'inv_unread', null, '2030-01-15', 'PAID', ['series_key' => null, 'invoice_number' => '000602', 'paid_amount' => 12_345, 'square_order_id' => 'order_unread', 'synced_at' => '2030-02-01 00:00:00']);
+        $repository = app(SquareMirrorRepository::class);
+
+        $this->assertTrue($repository->storePaymentIds($workspace, 'inv_unknown', 'PARTIALLY_PAID||t2', ['pay_partial_1'], rereadAfter: CarbonImmutable::parse('2030-03-20 12:00:00')));
+        $this->assertSame('PARTIALLY_PAID||t2|r', SquareInvoiceSnapshot::query()->where('workspace_id', $workspace->id)->where('square_invoice_id', 'inv_unknown')->value('payment_ids_basis'));
+        $this->assertSame(['inv_unread', 'inv_unknown'], array_column($repository->invoicesNeedingPaymentIds($workspace, 10), 'square_invoice_id'), 'Read again, after invoices never read.');
+        $this->assertTrue($repository->storePaymentIds($workspace, 'inv_unread', 'PAID|12345|t2', []));
+        $this->assertSame(['inv_unknown'], array_column($repository->invoicesNeedingPaymentIds($workspace, 10), 'square_invoice_id'));
+        $this->assertTrue(app(SquareBillingAudit::class)->report($workspace)['complete'], 'The read is current meanwhile.');
+    }
+
     public function test_an_imported_annual_series_mirrors_its_amount_once_per_cycle(): void
     {
         [$workspace, $owner] = $this->fixture();

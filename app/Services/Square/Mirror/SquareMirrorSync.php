@@ -224,7 +224,7 @@ final class SquareMirrorSync
             $ids = $this->mapper->paymentIds($order, explode('|', $invoice['basis'], 3)[1] !== '');
             if ($ids === null) {
                 $this->mirror->markPaymentIdsUnresolvable($workspace, $invoice['square_invoice_id'], $invoice['basis'], retryAfter: ! $this->mapper->exceedsTenderBound($order) && $this->mapper->holdsAuthorization($order) ? $this->now() : null);
-            } elseif ($this->mirror->storePaymentIds($workspace, $invoice['square_invoice_id'], $invoice['basis'], $ids)) {
+            } elseif ($this->mirror->storePaymentIds($workspace, $invoice['square_invoice_id'], $invoice['basis'], $ids, rereadAfter: $this->now())) {
                 $tally->paymentsResolved++;
             }
         }

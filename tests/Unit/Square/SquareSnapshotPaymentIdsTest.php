@@ -118,7 +118,9 @@ final class SquareSnapshotPaymentIdsTest extends TestCase
         $this->assertTrue(SquareSnapshotMapper::paymentIdsCurrent('UNPAID', 0, 'order_fixture_1', null), 'Nothing paid.');
         $this->assertTrue(SquareSnapshotMapper::paymentIdsCurrent('UNPAID', null, 'order_fixture_1', null), 'Unknown amount, and no payment to hold.');
         $this->assertFalse(SquareSnapshotMapper::paymentIdsCurrent('PAID', null, 'order_fixture_1', null), 'Unknown amount on a paid invoice is read.');
-        $this->assertTrue(SquareSnapshotMapper::paymentIdsCurrent('PAID', null, 'order_fixture_1', 'PAID||t2'));
+        $this->assertFalse(SquareSnapshotMapper::paymentIdsCurrent('PAID', null, 'order_fixture_1', 'PAID||t2'), 'An unknown amount is current only as a reread stamp.');
+        $this->assertTrue(SquareSnapshotMapper::paymentIdsCurrent('PAID', null, 'order_fixture_1', 'PAID||t2|r'));
+        $this->assertSame('PAID||t2|r', SquareSnapshotMapper::rereadBasis('PAID'));
         $this->assertFalse(SquareSnapshotMapper::paymentIdsCurrent('PAID', 1, 'order_fixture_1', null), 'One minor unit paid is a payment.');
     }
 }

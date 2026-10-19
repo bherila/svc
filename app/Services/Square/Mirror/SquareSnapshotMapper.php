@@ -179,7 +179,9 @@ final class SquareSnapshotMapper
     {
         // Without an order there is nothing to read the payments from, so one
         // that may hold a payment stays unresolved rather than counted empty.
-        return ! self::mayHoldPayment($status, $paidAmount) || ($orderId !== null && $basis === self::paymentIdsBasis($status, $paidAmount));
+        // With no known amount nothing shows a later payment, so a read is
+        // current but stamped to be read again (see rereadBasis()).
+        return ! self::mayHoldPayment($status, $paidAmount) || ($orderId !== null && $basis === ($paidAmount === null ? self::rereadBasis($status) : self::paymentIdsBasis($status, $paidAmount)));
     }
 
     /**
@@ -190,6 +192,16 @@ final class SquareSnapshotMapper
     public static function mayHoldPayment(string $status, ?int $paidAmount): bool
     {
         return $paidAmount === null ? in_array($status, self::PAYMENT_STATUSES, true) : $paidAmount > 0;
+    }
+
+    /**
+     * The basis a read of an invoice with no known paid amount is stamped
+     * with: current, but read again in turn after invoices never read, since
+     * a further payment would change neither its status nor its amount.
+     */
+    public static function rereadBasis(string $status): string
+    {
+        return self::paymentIdsBasis($status, null).'|r';
     }
 
     /**
