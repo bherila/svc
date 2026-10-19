@@ -8,6 +8,7 @@ use App\Models\PaymentReconciliation;
 use App\Models\Workspace;
 use App\Services\AgentApi\AgentMutationExecutor;
 use App\Support\AgentApi\ChangeFeedPage;
+use App\Support\Billing\InvoicePaymentStatus;
 use App\Support\Finance\FinanceCaller;
 use App\Support\Finance\FinancePaymentQuery;
 use App\Support\Finance\ReconciliationAllocation;
@@ -103,7 +104,14 @@ final class FinanceReconciliationOperations
 
         return ClientInvoicePayment::query()
             ->where('workspace_id', $workspaceId)
-            ->when($query->status !== null, static fn (Builder $payments) => $payments->where('status', $query->status?->value))
+            // `any` is every status the contract names, never an unreadable
+            // one: a row outside the vocabulary is not a payment anyone can
+            // reconcile, and returning it would break the published enum.
+            ->when(
+                $query->status !== null,
+                static fn (Builder $payments) => $payments->where('status', $query->status?->value),
+                static fn (Builder $payments) => $payments->whereIn('status', InvoicePaymentStatus::all()),
+            )
             ->when($query->invoicePublicId !== null, static fn (Builder $payments) => $payments->whereHas(
                 'invoice',
                 static fn (Builder $invoices) => $invoices->where('workspace_id', $workspaceId)->where('public_id', $query->invoicePublicId),

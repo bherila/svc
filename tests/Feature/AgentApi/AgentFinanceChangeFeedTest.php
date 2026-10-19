@@ -144,6 +144,23 @@ final class AgentFinanceChangeFeedTest extends TestCase
         $this->getJson($this->listPath($workspace, ['status' => 'paid']))->assertUnprocessable()->assertJsonValidationErrors('status');
     }
 
+    public function test_status_any_never_returns_a_status_outside_the_contract(): void
+    {
+        CarbonImmutable::setTestNow('2026-10-01 12:00:00');
+        [$owner, $workspace, $succeeded] = $this->payment('Unreadable status');
+        $legacy = $this->anotherPayment($workspace, 1000);
+        // A status nothing in SVC writes, as an old import might have left it.
+        ClientInvoicePayment::query()->whereKey($legacy->id)->toBase()->update(['status' => 'paid']);
+        $this->actingAsMcp($owner, [AgentApiScopes::FINANCE_READ]);
+
+        $feed = $this->getJson($this->listPath($workspace, ['status' => 'any', 'updated_since' => '2026-01-01T00:00:00Z']))->assertOk();
+        $this->assertSame([$succeeded->public_id], array_column($feed->json('data'), 'id'));
+        $this->assertMatchesSchema($feed);
+        $pages = $this->getJson($this->listPath($workspace, ['status' => 'any']))->assertOk()->assertJsonPath('meta.total', 1);
+        $this->assertSame([$succeeded->public_id], array_column($pages->json('data'), 'id'));
+        $this->assertMatchesSchema($pages);
+    }
+
     public function test_the_finance_token_reads_the_feed_too(): void
     {
         CarbonImmutable::setTestNow('2026-10-01 12:00:00');

@@ -121,7 +121,8 @@ switches it from numbered pages to change order:
 - The next pass sends that watermark as `updated_since`, which is inclusive.
   Starting a few seconds earlier is harmless, and covers a write whose
   transaction committed after the previous pass read.
-- `status=any` (either order) returns every status. A full refund moves a
+- `status=any` (either order) returns every recognised status, never a row whose
+  status is outside the published enum. A full refund moves a
   payment to `refunded` while a partial refund leaves it `succeeded`, so a
   synchronizer reads `any`. Payments are never deleted.
 - A row never stamped with `updated_at` comes last in a full pass and never
