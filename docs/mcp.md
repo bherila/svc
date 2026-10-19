@@ -241,6 +241,16 @@ before it exchanges a code. And `grant_type=client_credentials` is refused at
 `/oauth/token` with `unsupported_grant_type`, whatever the client: every
 credential acts for a person.
 
+A REST connection disconnects itself with `DELETE /api/v1/connection`
+(`connections.disconnect`, any REST credential): every credential the person
+holds for the calling OAuth client - pending authorization codes, refresh
+tokens, then access tokens - is revoked through `CredentialRevoker` and fenced,
+so a first-party application turned off by the person cannot act or refresh
+again. Other applications' connections, and other people's connections to the
+same application, are untouched; a personal API token, which shares one client
+with the person's other personal tokens, ends only itself. An MCP connection
+uses `connections.revoke` instead.
+
 ## Public capability inventory
 
 With all read scopes, discovery exposes these read-only tools, in this order:

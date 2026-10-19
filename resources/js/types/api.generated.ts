@@ -488,6 +488,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    '/connection': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** @description Disconnects the calling application from the calling person's account, as a finance system does when the person turns its connection off. Every credential the person holds for the calling OAuth client is revoked in one transaction - pending authorization codes and refresh tokens before access tokens - so nothing issued to that client can act or mint a replacement, including a refresh already in flight. Other applications' connections, and other people's connections to the same application, are unaffected. A personal API token disconnects only itself. Any REST credential may call it; an MCP connection uses connections.revoke. */
+        delete: operations['connections.disconnect'];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     '/connections/{token}': {
         parameters: {
             query?: never;
@@ -5880,6 +5897,43 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['CompanySquareStateResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'connections.disconnect': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Disconnected */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The token is missing, expired or revoked, or is not a REST credential. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
                 };
             };
             default: components['responses']['Error'];

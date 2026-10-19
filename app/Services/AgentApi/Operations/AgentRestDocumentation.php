@@ -682,6 +682,17 @@ final class AgentRestDocumentation
                 'response_description' => 'Square customer confirmed',
                 'extensions' => ['x-mcp-tool' => 'companies.square_customer.set', 'x-svc-flags' => ['AGENT_API_WRITES_ENABLED', 'AGENT_API_CLIENT_WRITES_ENABLED']],
             ],
+            'connections.disconnect' => [
+                'method' => 'DELETE',
+                'scopes' => [],
+                'description' => 'Disconnects the calling application from the calling person\'s account, as a finance system does when the person turns its connection off. Every credential the person holds for the calling OAuth client is revoked in one transaction - pending authorization codes and refresh tokens before access tokens - so nothing issued to that client can act or mint a replacement, including a refresh already in flight. Other applications\' connections, and other people\'s connections to the same application, are unaffected. A personal API token disconnects only itself. Any REST credential may call it; an MCP connection uses connections.revoke.',
+                'parameters' => [],
+                'response_description' => 'Disconnected',
+                'errors' => [
+                    401 => 'The token is missing, expired or revoked, or is not a REST credential.',
+                    429 => 'Too many requests (retry after Retry-After).',
+                ],
+            ],
             'connections.revoke' => [
                 'method' => 'DELETE',
                 'scopes' => ['mcp:use'],

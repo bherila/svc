@@ -72,6 +72,7 @@ Route::prefix('v1')
     ->middleware([ExpectOAuthResource::class.':rest', AuthenticateFirstPartySession::class, 'auth:api', ThrottleOuterAgentRequests::class.':60,1', NoStoreAgentResponse::class])
     ->group(function () use ($operation, $inVisibleWorkspace): void {
         $operation('context.get', [AgentReadController::class, 'context']);
+        $operation('connections.disconnect', [AgentConnectionController::class, 'disconnect']);
         $operation('workspaces.create', [AgentWorkspaceMiscController::class, 'create']);
         $operation('search', [AgentWorkspaceMiscController::class, 'search'])
             ->middleware(EnsureAgentWorkspaceVisible::class)->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']));

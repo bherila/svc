@@ -81,6 +81,10 @@ A first-party finance system is registered once with
 screen, allow-listed in `AGENT_API_FIRST_PARTY_OAUTH_CLIENTS` (see
 [first-party applications](mcp.md#first-party-applications)).
 
+When the person turns the connection off, the finance system calls
+`connections.disconnect` (`DELETE /api/v1/connection`) with its own access
+token: every credential the person holds for that client is revoked.
+
 Before trusting a connection, the finance system reads `context.get`
 (`identity:read`): its `provider_subject` is the person's subject at the trusted
 identity provider (null for an account not bound to it), to compare with the

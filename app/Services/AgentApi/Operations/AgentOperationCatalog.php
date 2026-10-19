@@ -100,6 +100,7 @@ final class AgentOperationCatalog
         'companies.square_customer.clear' => ['clients.square-customer.destroy', '/workspaces/{workspace}/clients/{client}/square-customer', [200]],
         'companies.square_customer.get' => ['clients.square-customer.show', '/workspaces/{workspace}/clients/{client}/square-customer', [200]],
         'companies.square_customer.set' => ['clients.square-customer.update', '/workspaces/{workspace}/clients/{client}/square-customer', [200]],
+        'connections.disconnect' => ['connection.destroy', '/connection', [204]],
         'connections.revoke' => ['connections.destroy', '/connections/{token}', [204]],
         'context.get' => ['context', '/context', [200]],
         'expense_schedules.create' => ['expense-schedules.store', '/workspaces/{workspace}/expense-schedules', [201]],
@@ -1551,6 +1552,7 @@ final class AgentOperationCatalog
             $this->restOperation('expenses.receipts.upload', 'Upload expense receipt', Effect::Upload, [AgentDeploymentFlags::EXPENSES], new WriteSafety(IdempotencyKey::Header, expectedVersion: true)),
             $this->restOperation('invoices.download_pdf', 'Download invoice PDF', Effect::Download),
             $this->restOperation('connections.revoke', 'Revoke this connection', Effect::Destructive, safety: new WriteSafety(note: 'Revokes only the calling connection; repeating it is harmless.'), idempotent: true),
+            $this->restOperation('connections.disconnect', 'Disconnect this application', Effect::Destructive, safety: new WriteSafety(note: 'Revokes only the calling application\'s credentials for the calling person; repeating it is harmless.'), idempotent: true),
         ];
     }
 
@@ -1647,7 +1649,11 @@ final class AgentOperationCatalog
             title: $title,
             description: is_string($documented['description']) ? $documented['description'] : '',
             effect: $effect,
-            requirement: new Requirement(scopes: $documented['scopes'], flags: $cutovers),
+            // No scope documented: any authenticated credential, as ending
+            // one's own connection needs no right beyond having it.
+            requirement: $documented['scopes'] === []
+                ? new Requirement(flags: $cutovers, authenticated: true)
+                : new Requirement(scopes: $documented['scopes'], flags: $cutovers),
             idempotent: $idempotent,
             safety: $safety ?? new WriteSafety,
             rest: $this->rest($id),
