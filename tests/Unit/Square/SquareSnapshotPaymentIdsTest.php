@@ -29,6 +29,16 @@ final class SquareSnapshotPaymentIdsTest extends TestCase
         $this->assertNull($row['total_amount']);
         $this->assertSame('USD', $row['currency'], 'The readable requests still name the currency.');
         $this->assertSame(12_345, $mapper->invoice(self::squareInvoice('inv_fixture_1'))['total_amount'] ?? null);
+
+        $paid = self::squareInvoice('inv_fixture_1');
+        $paid['payment_requests'][0]['total_completed_amount_money'] = ['amount' => 100, 'currency' => 'USD'];
+        $other = [...$paid['payment_requests'][0], 'uid' => 'request_fixture_2'];
+        unset($other['total_completed_amount_money']);
+        $paid['payment_requests'][] = $other;
+        $row = $mapper->invoice($paid);
+        $this->assertNotNull($row);
+        $this->assertNull($row['paid_amount'], 'A request whose payments cannot be read leaves the paid amount unknown.');
+        $this->assertSame(0, $mapper->invoice(self::squareInvoice('inv_fixture_1'))['paid_amount'] ?? null);
     }
 
     public function test_a_tender_names_its_payment_by_payment_id_else_by_its_own_id_and_only_captured_card_tenders_count(): void

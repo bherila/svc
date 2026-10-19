@@ -153,7 +153,8 @@ final class SquareMirrorRepository
             ->where('status', $status)
             ->when($paid === '', static fn (Builder $query) => $query->whereNull('paid_amount'), static fn (Builder $query) => $query->where('paid_amount', (int) $paid))
             // Never over ids another sync has just resolved for this state.
-            ->where(static fn (Builder $query) => $query->whereNull('payment_ids_basis')->orWhere('payment_ids_basis', '!=', $basis))
+            // A reread stamp is resolved too.
+            ->where(static fn (Builder $query) => $query->whereNull('payment_ids_basis')->orWhereNotIn('payment_ids_basis', [$basis, SquareSnapshotMapper::rereadBasis($status)]))
             ->update([
                 'payment_ids' => null,
                 'payment_ids_basis' => $basis.($retryAfter !== null ? '|p' : '|x'),

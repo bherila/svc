@@ -345,6 +345,7 @@ final class SquareSnapshotMapper
         $total = null;
         $paid = null;
         $totalUnreadable = false;
+        $paidUnreadable = false;
         foreach ($requests as $request) {
             $computed = self::amount($request['computed_amount_money'] ?? null);
             if ($computed !== null) {
@@ -359,6 +360,9 @@ final class SquareSnapshotMapper
             if ($completed !== null) {
                 $currencies[] = $completed[1];
                 $paid = ($paid ?? 0) + $completed[0];
+            } else {
+                // Likewise for what has been paid against it.
+                $paidUnreadable = true;
             }
         }
         if ($next !== null) {
@@ -372,7 +376,7 @@ final class SquareSnapshotMapper
         return [
             'currency' => $currencies[0] ?? null,
             'total_amount' => $totalUnreadable ? null : $total,
-            'paid_amount' => $paid,
+            'paid_amount' => $paidUnreadable ? null : $paid,
             'next_payment_amount' => $next['amount'] ?? null,
         ];
     }

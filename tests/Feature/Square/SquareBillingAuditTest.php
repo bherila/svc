@@ -401,6 +401,8 @@ final class SquareBillingAuditTest extends TestCase
         $this->assertTrue($repository->storePaymentIds($workspace, 'inv_unread', 'PAID|12345|t2', []));
         $this->assertSame(['inv_unknown'], array_column($repository->invoicesNeedingPaymentIds($workspace, 10), 'square_invoice_id'));
         $this->assertTrue(app(SquareBillingAudit::class)->report($workspace)['complete'], 'The read is current meanwhile.');
+        $this->assertFalse($repository->markPaymentIdsUnresolvable($workspace, 'inv_unknown', 'PARTIALLY_PAID||t2', retryAfter: CarbonImmutable::parse('2030-03-20 12:00:00')), 'A slower reader never undoes a reread.');
+        $this->assertSame('PARTIALLY_PAID||t2|r', SquareInvoiceSnapshot::query()->where('workspace_id', $workspace->id)->where('square_invoice_id', 'inv_unknown')->value('payment_ids_basis'));
     }
 
     public function test_a_linked_member_past_the_series_bound_is_still_checked(): void
