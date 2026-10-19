@@ -13,8 +13,13 @@ use App\Services\AgentApi\PaymentCollectionGuard;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Services\Square\SquareLinkService;
 use App\Support\AgentApi\AgentApiVersion;
+use App\Support\Concurrency\LockAcquisition;
+use App\Support\Concurrency\LockMode;
+use App\Support\Concurrency\LockOrderRecorder;
+use App\Support\Concurrency\LockResource;
 use App\Support\Square\SquareInvoiceReference;
 use App\Support\Square\SquareMatchMethod;
+use DomainException;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -145,12 +150,67 @@ final class AgentPaymentCollectionGuardTest extends TestCase
         $locked->setAttribute('lock_version', (int) $locked->lock_version + 1);
 
         try {
-            app(PaymentCollectionGuard::class)->assertMayRecord($locked);
+            $guard = app(PaymentCollectionGuard::class);
+            $guard->assertMayRecord($locked, $guard->holdAgreement($locked));
             $this->fail('A stale snapshot should be refused.');
         } catch (HttpException $exception) {
             $this->assertSame(409, $exception->getStatusCode());
         }
-        app(PaymentCollectionGuard::class)->assertMayRecord($invoice->refresh());
+        $guard = app(PaymentCollectionGuard::class);
+        $guard->assertMayRecord($invoice->refresh(), $guard->holdAgreement($invoice));
+    }
+
+    /**
+     * The agreement's billed-in-Square marker moves no invoice, so it is read
+     * under a share lock on the agreement, taken before the invoice's lock in
+     * the registry's order: current, and held until this payment commits.
+     */
+    public function test_the_agreement_marker_is_share_locked_before_the_invoice(): void
+    {
+        [$owner, $workspace, $invoice] = $this->fixture();
+        LockOrderRecorder::start();
+        try {
+            $this->record('rest', $owner, $workspace, $this->payload($invoice, 1000), 'synthetic-lock-order');
+            $sequence = collect(LockOrderRecorder::acquisitions())
+                ->first(static fn (array $locks): bool => in_array(LockResource::ClientInvoice, array_map(static fn (LockAcquisition $lock): LockResource => $lock->resource, $locks), true));
+            $this->assertIsArray($sequence);
+            $resources = array_map(static fn (LockAcquisition $lock): LockResource => $lock->resource, $sequence);
+            $agreement = array_search(LockResource::ClientAgreement, $resources, true);
+            $invoiceLock = array_search(LockResource::ClientInvoice, $resources, true);
+            $this->assertIsInt($agreement, 'The agreement is locked');
+            $this->assertIsInt($invoiceLock);
+            $this->assertLessThan($invoiceLock, $agreement, 'The agreement is locked before the invoice');
+            $this->assertSame(LockMode::Share, $sequence[$agreement]->mode);
+        } finally {
+            LockOrderRecorder::stop();
+        }
+    }
+
+    /**
+     * The guard decides from the marker as the share-locked read saw it, not
+     * from a later snapshot read, and refuses an invoice whose agreement
+     * changed after that read.
+     */
+    public function test_the_held_agreement_marker_decides(): void
+    {
+        [, , $invoice] = $this->fixture();
+        $guard = app(PaymentCollectionGuard::class);
+        $held = $guard->holdAgreement($invoice);
+        $this->assertSame(['agreement_id' => (int) $invoice->client_agreement_id, 'series_key' => null], $held);
+
+        try {
+            $guard->assertMayRecord($invoice, [...$held, 'series_key' => '000001']);
+            $this->fail('A marker the locked read saw should refuse.');
+        } catch (DomainException $exception) {
+            $this->assertStringContainsString('is collected through Square', $exception->getMessage());
+        }
+        try {
+            $guard->assertMayRecord($invoice, ['agreement_id' => null, 'series_key' => null]);
+            $this->fail('An invoice whose agreement moved should be refused.');
+        } catch (HttpException $exception) {
+            $this->assertSame(409, $exception->getStatusCode());
+        }
+        $guard->assertMayRecord($invoice, $held);
     }
 
     /** @return iterable<string, array{string, string}> */

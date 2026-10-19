@@ -94,12 +94,15 @@ final class RecordPaymentAction
                 }
                 $invoice = ClientInvoice::query()->where('workspace_id', $workspace->id)
                     ->where('public_id', $data['invoice_id'])->firstOrFail();
+                // The agreement's Square marker, read current and held before the
+                // invoice lock that record() takes next.
+                $agreement = $this->collection->holdAgreement($invoice);
                 // Domain keys are workspace-wide; namespace them by caller and operation
                 // so an agent receipt cannot collide with a CLI/import receipt.
                 $payment = $this->receivedPayments->record($workspace, $invoice, $facts, RecordReceivedPayment::agentKey($user->id, $clientId, $key),
-                    function (ClientInvoice $locked) use ($data): void {
+                    function (ClientInvoice $locked) use ($data, $agreement): void {
                         abort_unless(AgentApiVersion::matches($locked, $data['expected_version']), 409, 'The invoice has changed; read it and retry.');
-                        $this->collection->assertMayRecord($locked);
+                        $this->collection->assertMayRecord($locked, $agreement);
                     });
                 if ($allocation !== null) {
                     $this->reconciliations->upsert($workspace, $payment, $user, [
