@@ -191,7 +191,11 @@ release=0123456789ab-42-1
 diagnostic_cron=${canonical_cron/\/fixture\/php//opt/cpanel/ea-php85/root/usr/bin/php}
 printf '%s\n' "$diagnostic_cron" >"$crontab_file"
 cat >"$temporary/audit.sh" <<'MOCK'
-printf '%s\n' "$*" >"$FIXTURE_AUDIT_ARGS"
+printf '%s\n' "$*" >>"$FIXTURE_AUDIT_ARGS"
+if [ "$7" = generation ]; then
+    echo "runtime-audit generation=${FIXTURE_GENERATION:-current}"
+    exit 0
+fi
 case $FIXTURE_AUDIT in
     exact)
         echo 'runtime-audit identity=exact paths=canonical writable=yes database=persistent phase=finalized'
@@ -231,10 +235,16 @@ expect_diagnose_failure() {
     fi
 }
 
-rm -f "$temporary/ssh.log" "$temporary/node.log"
+rm -f "$temporary/ssh.log" "$temporary/node.log" "$temporary/audit-args"
 run_diagnose >"$temporary/output" 2>&1 || { cat "$temporary/output" >&2; fail 'diagnostic rejected a healthy reviewed release'; }
-grep -Fqx "svc-laravel /opt/cpanel/ea-php85/root/usr/bin/php 1G $release $commit storage finalized" "$temporary/audit-args" \
-    || fail 'diagnostic did not run the finalized runtime audit for the reviewed identity'
+identity="svc-laravel /opt/cpanel/ea-php85/root/usr/bin/php 1G $release $commit storage"
+printf '%s\n' "$identity finalized" "$identity generation" | cmp -s - "$temporary/audit-args" \
+    || fail 'diagnostic did not audit the reviewed identity first and re-prove its generation last'
+
+# A deploy that begins after the runtime audit supersedes the reviewed release; the later checks
+# must not then be reported as proof about it.
+FIXTURE_GENERATION=superseded expect_diagnose_failure 'a release superseded during the diagnostic'
+grep -Fq 'did not stay current for the whole diagnostic' "$temporary/output" || fail 'diagnostic did not name the mid-run supersession'
 grep -Fq 'exactly one canonical SVC scheduler cron line' "$temporary/output" || fail 'diagnostic skipped the cron audit'
 grep -qx assets "$temporary/node.log" || fail 'diagnostic skipped the hashed asset audit'
 grep -Fq -e '--ttl=15' -e '--revoke' -e 'storage:status' "$temporary/ssh.log" && fail 'diagnostic ran a credential or storage write command'

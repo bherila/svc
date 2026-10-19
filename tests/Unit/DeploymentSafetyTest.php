@@ -211,6 +211,13 @@ class DeploymentSafetyTest extends TestCase
         $this->assertStringContainsString('"$persistent" finalized', $diagnose);
         $this->assertStringContainsString('phase=finalized', $diagnose);
         $this->assertStringContainsString("= 'runtime-audit generation=superseded'", $diagnose);
+        // Not serialised with deploys, so the reviewed generation is re-proven after every check.
+        $this->assertStringContainsString('"$persistent" generation', $diagnose);
+        $this->assertStringContainsString("= 'runtime-audit generation=current'", $diagnose);
+        $this->assertStringContainsString(
+            "runtime_audit\ncron_audit\nasset_audit\ngeneration_recheck\n\nif [ \"\$failures\" -ne 0 ]",
+            $diagnose,
+        );
         $this->assertStringContainsString('<scripts/deploy/cron-audit.sh', $diagnose);
         $this->assertStringContainsString('node scripts/deploy/verify-hashed-assets.mjs', $diagnose);
         foreach ([$workflow, $diagnose] as $file) {

@@ -12,6 +12,8 @@
 #   2. Exactly one canonical SVC scheduler cron line (scripts/deploy/cron-audit.sh).
 #   3. The rendered home page references the deployed manifest's hashed JS and CSS, and each is
 #      served with the right MIME type (scripts/deploy/verify-hashed-assets.mjs).
+#   4. The action's deployment generation is still the reviewed release, so no deploy began while
+#      checks 2 and 3 ran.
 #
 # Environment:
 #   DIAG_SSH_TARGET    SSH alias written by the pinned action's configure-ssh.sh
@@ -135,9 +137,25 @@ REMOTE
     fi
 }
 
+# The diagnostic is not serialised with deploys (sharing their concurrency group could displace a
+# pending deploy), so a deploy could replace the release while the cron and asset checks run.
+# The durable generation changes at every deploy begin, including one that later fails and
+# restores the old release; proving it unchanged binds every observation to the reviewed release.
+generation_recheck() {
+    local status=0
+    remote "bash -s -- $(printf '%q ' "$stable_dir" "$php" "$memory" "$release" "$commit" "$persistent" generation)" \
+        <"$audit" >"$work/generation" 2>/dev/null || status=$?
+    if [ "$status" -eq 0 ] && [ "$(cat "$work/generation")" = 'runtime-audit generation=current' ]; then
+        passed 'the reviewed release was still current after every check'
+    else
+        failed 'the reviewed release did not stay current for the whole diagnostic'
+    fi
+}
+
 runtime_audit
 cron_audit
 asset_audit
+generation_recheck
 
 if [ "$failures" -ne 0 ]; then
     echo "::error::SVC deployment diagnostic failed $failures check(s)." >&2
