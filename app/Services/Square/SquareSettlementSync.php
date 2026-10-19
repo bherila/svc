@@ -42,7 +42,10 @@ final class SquareSettlementSync
         $this->assertServes($workspace);
         $payout = $this->client->getPayout($payoutId)['payout'] ?? null;
 
-        return $this->apply($workspace, is_array($payout) ? SquarePayoutFacts::from($payout, $payoutId) : throw SquareRequestFailed::unreadable(), $apply);
+        $facts = is_array($payout) ? SquarePayoutFacts::from($payout, $payoutId) : throw SquareRequestFailed::unreadable();
+
+        // A transfer into a Square balance reaches no bank account: nothing to store.
+        return $facts === null ? new PayoutSyncResult([], 0, 0) : $this->apply($workspace, $facts, $apply);
     }
 
     /**
@@ -70,7 +73,10 @@ final class SquareSettlementSync
                     if (! is_string($id)) {
                         throw SquareRequestFailed::unreadable();
                     }
-                    yield $this->apply($workspace, SquarePayoutFacts::from($payout, $id), $apply);
+                    $facts = SquarePayoutFacts::from($payout, $id);
+                    if ($facts !== null) {
+                        yield $this->apply($workspace, $facts, $apply);
+                    }
                 }
                 $cursor = is_string($page['cursor'] ?? null) && $page['cursor'] !== '' ? $page['cursor'] : null;
             } while ($cursor !== null);

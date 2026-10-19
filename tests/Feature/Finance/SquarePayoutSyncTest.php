@@ -98,10 +98,30 @@ final class SquarePayoutSyncTest extends TestCase
         $this->deliver($this->hint('evt_fixture_simple', 'payout.sent', 'po_fixture_2'))->assertOk();
 
         $payout = ProcessorPayout::query()->where('workspace_id', $workspace->id)->sole();
-        $this->assertSame([-2_500, PayoutType::Instant->value, PayoutStatus::Paid->value], [$payout->amount, $payout->type, $payout->status]);
+        // Part of the balance, to a bank account: a manual transfer, not an instant one.
+        $this->assertSame([-2_500, PayoutType::Manual->value, PayoutStatus::Paid->value], [$payout->amount, $payout->type, $payout->status]);
         $this->assertSame(300, $payment->fresh()?->provider_fee_amount);
         $this->assertSame([445, 'po_fixture_2'], [$second->fresh()?->provider_fee_amount, $second->fresh()?->provider_payout_identifier]);
         $this->assertSame('cursor-fixture-1', $this->lastQuery('cursor'));
+    }
+
+    public function test_a_transfer_into_a_square_balance_is_no_payout_and_an_instant_one_is_typed_so(): void
+    {
+        [$workspace, $payment] = $this->fixture();
+        $this->payouts['po_fixture_1']['destination'] = ['type' => 'SQUARE_STORED_BALANCE', 'id' => 'ssb:fixture'];
+
+        $this->deliver($this->hint('evt_fixture_checking', 'payout.paid', 'po_fixture_1'))->assertOk();
+
+        $this->assertSame(0, ProcessorPayout::query()->count());
+        $this->assertNull($payment->fresh()?->provider_payout_identifier);
+        // Nothing to settle, so its entries are not read.
+        $this->assertSame(['GET /v2/payouts/po_fixture_1'], $this->sent());
+        $this->assertSame(1, DB::table('square_webhook_receipts')->where('workspace_id', $workspace->id)->whereNotNull('completed_at')->count());
+
+        $this->payouts['po_fixture_2'] = [...$this->payout('po_fixture_2'), 'type' => 'SIMPLE', 'destination' => ['type' => 'CARD', 'id' => 'card:fixture']];
+        $this->entries['po_fixture_2'] = [[]];
+        $this->deliver($this->hint('evt_fixture_instant', 'payout.paid', 'po_fixture_2'))->assertOk();
+        $this->assertSame(PayoutType::Instant->value, ProcessorPayout::query()->sole()->type);
     }
 
     public function test_an_unreadable_payout_is_retried_and_stores_nothing(): void

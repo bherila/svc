@@ -20,6 +20,11 @@ with `GET /v2/payouts/{id}/payout-entries` (the access token needs Square's
 `PAYOUTS_READ` permission), stored for the connected workspace, and recorded on
 each charged payment with its arrival date and fee (see
 [processor settlement and payouts](finance-api.md#processor-settlement-and-payouts)).
+Square's payout `type` is how much of the balance moved: a whole-balance
+`BATCH` payout is stored as `automatic`, and a part-balance `SIMPLE` payout as
+`instant` when it went to a card or carries a `payout_fee`, `manual` otherwise.
+A transfer into a Square balance (`SQUARE_STORED_BALANCE`, or the deprecated
+`SQUARE_BALANCE`) reaches no bank account and is not stored.
 Reconciling a payment also records its capture time and Square's processing fee
 so far, as a fee charged (positive). Square's documents disagree on the sign of
 `processing_fee` amounts - the payments guide reports deductions as negative,

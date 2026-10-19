@@ -20,14 +20,36 @@ final class SquarePayoutFactsTest extends TestCase
         $this->assertSame(['square', 'po_fixture_1', -2_500, 'USD', '2030-02-03', PayoutType::Automatic, PayoutStatus::InTransit, 1_896_253_200_123],
             [$facts->provider, $facts->identifier, $facts->amount, $facts->currency, $facts->arrivalDate, $facts->type, $facts->status, $facts->observedAtMs]);
         $simple = SquarePayoutFacts::from([...$this->payout(), 'type' => 'SIMPLE', 'status' => 'FAILED', 'arrival_date' => null], 'po_fixture_1');
-        $this->assertSame([PayoutType::Instant, PayoutStatus::Failed, null], [$simple->type, $simple->status, $simple->arrivalDate]);
-        $this->assertSame(PayoutStatus::Paid, SquarePayoutFacts::from([...$this->payout(), 'status' => 'PAID'], 'po_fixture_1')->status);
+        $this->assertSame([PayoutType::Manual, PayoutStatus::Failed, null], [$simple?->type, $simple?->status, $simple?->arrivalDate]);
+        $this->assertSame(PayoutStatus::Paid, SquarePayoutFacts::from([...$this->payout(), 'status' => 'PAID'], 'po_fixture_1')?->status);
         // Without an update time, its creation time.
         $created = $this->payout();
         unset($created['updated_at']);
-        $this->assertSame(1_896_249_600_000, SquarePayoutFacts::from($created, 'po_fixture_1')->observedAtMs);
+        $this->assertSame(1_896_249_600_000, SquarePayoutFacts::from($created, 'po_fixture_1')?->observedAtMs);
         // Square's reference spelling of the currency is read too.
-        $this->assertSame('USD', SquarePayoutFacts::from([...$this->payout(), 'amount_money' => ['amount' => 1, 'currency_code' => 'USD']], 'po_fixture_1')->currency);
+        $this->assertSame('USD', SquarePayoutFacts::from([...$this->payout(), 'amount_money' => ['amount' => 1, 'currency_code' => 'USD']], 'po_fixture_1')?->currency);
+    }
+
+    /** @return iterable<string, array{0: array<string, mixed>, 1: ?PayoutType}> */
+    public static function types(): iterable
+    {
+        // BATCH moves the whole balance on Square's schedule; SIMPLE moves part of it.
+        yield 'batch to a bank' => [['type' => 'BATCH', 'destination' => ['type' => 'BANK_ACCOUNT']], PayoutType::Automatic];
+        yield 'batch, destination unsaid' => [['type' => 'BATCH'], PayoutType::Automatic];
+        yield 'simple to a bank' => [['type' => 'SIMPLE', 'destination' => ['type' => 'BANK_ACCOUNT']], PayoutType::Manual];
+        yield 'simple to a card' => [['type' => 'SIMPLE', 'destination' => ['type' => 'CARD']], PayoutType::Instant];
+        yield 'simple with a transfer fee' => [['type' => 'SIMPLE', 'destination' => ['type' => 'BANK_ACCOUNT'], 'payout_fee' => [['amount_money' => ['amount' => 50, 'currency' => 'USD']]]], PayoutType::Instant];
+        yield 'simple with no transfer fee' => [['type' => 'SIMPLE', 'payout_fee' => []], PayoutType::Manual];
+        // Into a Square balance: no bank account is reached.
+        yield 'into Square Checking' => [['type' => 'SIMPLE', 'destination' => ['type' => 'SQUARE_STORED_BALANCE']], null];
+        yield 'into the old Square balance' => [['type' => 'BATCH', 'destination' => ['type' => 'SQUARE_BALANCE']], null];
+    }
+
+    /** @param array<string, mixed> $override */
+    #[DataProvider('types')]
+    public function test_the_type_is_how_the_money_left_and_a_square_balance_is_no_payout(array $override, ?PayoutType $type): void
+    {
+        $this->assertSame($type, SquarePayoutFacts::from([...$this->payout(), ...$override], 'po_fixture_1')?->type);
     }
 
     /** @return iterable<string, array{0: array<string, mixed>, 1?: string}> */
