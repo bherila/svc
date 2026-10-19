@@ -660,6 +660,27 @@ The CLI `svc:billing:payment` records payments through the same
 `ReceivedPaymentData` rules and `RecordReceivedPayment` operation, so it accepts
 exactly the statuses and fields `payments.record` does. Browser URLs remain the route for initiating a customer payment.
 
+`payments.record` also takes an optional, closed `finance_reconciliation`
+(`external_system_slug`, `external_transaction_uuid`, `allocated_amount`),
+which writes the new payment's finance allocation in the same transaction and
+receipt, as `finance.reconciliations.upsert` would. It needs the
+`finance:reconcile` scope as well (checked again on a replay) and a
+`succeeded` payment, never sets `external_finance_transaction_uuid`, and is
+audited under both operations. Null means none. See
+[the finance API](finance-api.md#recording-a-deposit-and-its-allocation-in-one-call).
+
+Whatever it carries, `payments.record` refuses a new payment, under the
+invoice lock, while another payment on the invoice is `pending`, is a Stripe
+payment stored as `failed` (whose intent can still be confirmed), or carries a
+status SVC cannot read exactly, and while Square collects the invoice. Recording
+any payment, even a pending one, advances the invoice's version. `invoices.get`
+shows owners and admins `pending_payments` and `collection_owner` (`svc` or
+`square`) for exactly these two checks; both are null for other readers. A
+completed receipt replays before either check, so a retry of a payment already
+recorded still answers with it. The website's payment form, a payment folded
+into `invoices.issue`, the console and the processors' webhooks are not
+affected.
+
 ### Correcting a recorded payment
 
 `payments.correct` corrects a payment's **descriptive** fields - `method`,

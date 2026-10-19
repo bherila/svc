@@ -4,6 +4,7 @@ namespace Tests\Unit\AgentApi;
 
 use App\Services\AgentApi\Operations\AgentDeploymentFlags;
 use App\Services\AgentApi\Operations\AgentOperationCatalog;
+use App\Services\AgentApi\RecordPaymentAction;
 use App\Services\Mcp\AgentMcpWriteTools;
 use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
 use Bherila\McpLaravelBridge\Capabilities\Effect;
@@ -54,6 +55,44 @@ final class ManualPaymentOperationContractTest extends TestCase
             $this->assertIsArray($refund);
             $this->assertSame(['name' => 'refund', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'string', 'format' => 'uuid']],
                 array_diff_key($refund, ['description' => true]));
+        } finally {
+            AgentApiResponseSchemaCatalog::flush();
+            Container::setInstance($previous);
+        }
+    }
+
+    /**
+     * payments.record documents each refusal by status, as the checked
+     * document publishes it, and its request closes finance_reconciliation to
+     * its three fields (S6).
+     */
+    public function test_recording_documents_its_refusals_and_closes_the_allocation(): void
+    {
+        $previous = Container::getInstance();
+        new Application(dirname(__DIR__, 3));
+        AgentApiResponseSchemaCatalog::flush();
+        try {
+            $document = json_decode((string) file_get_contents(dirname(__DIR__, 3).'/public/openapi/svc-agent-v1.json'), true, flags: JSON_THROW_ON_ERROR);
+            $operation = (new AgentOperationCatalog)->registry()->find('payments.record');
+            $this->assertNotNull($operation);
+            $rest = $operation->rest;
+            $this->assertNotNull($rest);
+            $this->assertSame(['payments:record', 'billing:read'], $operation->requirement->scopes);
+            $this->assertSame([401, 403, 404, 409, 422, 429], array_keys($rest->responses));
+            $published = $document['paths'][$rest->path]['post'];
+            foreach ($rest->responses as $status => $response) {
+                $this->assertSame($published['responses'][(string) $status], $response, (string) $status);
+            }
+            $this->assertStringContainsString('finance:reconcile', $rest->responses[403]['description']);
+            $this->assertStringContainsString('pending', $rest->responses[422]['description']);
+            $this->assertStringContainsString('Square', $rest->responses[422]['description']);
+
+            $allocation = $document['components']['schemas']['ReceivedPaymentRecordRequest']['properties']['finance_reconciliation'];
+            $this->assertSame(['object', 'null'], $allocation['type']);
+            $this->assertFalse($allocation['additionalProperties']);
+            $this->assertSame(['external_system_slug', 'external_transaction_uuid', 'allocated_amount'], $allocation['required']);
+            $this->assertSame($allocation['required'], array_keys($allocation['properties']));
+            $this->assertSame(RecordPaymentAction::RECONCILIATION_FIELDS, $allocation['required']);
         } finally {
             AgentApiResponseSchemaCatalog::flush();
             Container::setInstance($previous);

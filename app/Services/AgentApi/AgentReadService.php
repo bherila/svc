@@ -414,10 +414,17 @@ final class AgentReadService
         $this->requireWorkspace($user, $workspace);
         $record = $this->invoiceQuery($user, $workspace)->where('public_id', $invoiceId)->with(['clientCompany' => fn ($companies) => $companies->where('workspace_id', $workspace->id), 'lines' => fn ($lines) => $lines->where('workspace_id', $workspace->id), 'lines.project' => fn ($projects) => $projects->where('workspace_id', $workspace->id)])->firstOrFail();
 
-        return $this->invoicePresenter->present($workspace, $record, $this->access->isWorkspaceManager($user, $workspace)) + [
+        $manager = $this->access->isWorkspaceManager($user, $workspace);
+        // Managers only, like the delivery state: why payments.record would
+        // refuse this invoice (G6), asked the way its guard asks.
+        $collection = $manager ? app(PaymentCollectionGuard::class)->summary($record) : ['pending_payments' => null, 'collection_owner' => null];
+
+        return $this->invoicePresenter->present($workspace, $record, $manager) + [
             // Managers only, like the delivery state: who collects this invoice (#438).
-            'square' => $this->access->isWorkspaceManager($user, $workspace) ? app(SquareLinkPresenter::class)->invoice($record) : null,
-            'corrections' => $this->access->isWorkspaceManager($user, $workspace)
+            'square' => $manager ? app(SquareLinkPresenter::class)->invoice($record) : null,
+            'pending_payments' => $collection['pending_payments'],
+            'collection_owner' => $collection['collection_owner'],
+            'corrections' => $manager
                 ? app(InvoiceCorrectionReadService::class)->agentHistory($workspace, $record) : [],
             'lines' => $record->lines->map(fn ($line): array => ['id' => $line->public_id] + $this->invoicePresenter->line($line))->values()->all(),
         ];

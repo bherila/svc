@@ -96,8 +96,10 @@ final class AgentMcpWriteTools
 
     /**
      * Record money already received. Omitted optional fields mean what the
-     * browser form means by them: today, no reference or note, succeeded.
+     * browser form means by them: today, no reference or note, succeeded, and
+     * no finance allocation.
      *
+     * @param  array<string, mixed>|null  $finance_reconciliation
      * @return array<string, mixed>
      */
     public function paymentsRecord(
@@ -114,12 +116,15 @@ final class AgentMcpWriteTools
         #[Schema(maxLength: ReceivedPaymentData::NOTES_MAX_LENGTH)] ?string $notes = null,
         #[Schema(enum: ['pending', 'succeeded'])] ?string $status = null,
         #[Schema(format: 'uuid')] ?string $external_finance_transaction_uuid = null,
+        ?array $finance_reconciliation = null,
     ): array {
         // The body the tool always sent, nulls included: the route reads an
         // explicit null exactly as an omitted field, so receipts written
-        // before the tool reached REST replay unchanged.
+        // before the tool reached REST replay unchanged. The route decides
+        // finance_reconciliation's finance:reconcile scope from this
+        // connection's token.
         return $this->rest->call('payments.record', ['workspace' => $workspace_id],
-            compact('invoice_id', 'amount', 'currency', 'received_on', 'method', 'reference', 'notes', 'status', 'external_finance_transaction_uuid', 'expected_version', 'confirm'),
+            compact('invoice_id', 'amount', 'currency', 'received_on', 'method', 'reference', 'notes', 'status', 'external_finance_transaction_uuid', 'finance_reconciliation', 'expected_version', 'confirm'),
             $idempotency_key);
     }
 

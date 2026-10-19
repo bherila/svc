@@ -10,6 +10,8 @@ use App\Services\AgentApi\AgentPaymentReadService;
 use App\Services\AgentApi\ChangeManualPaymentAction;
 use App\Services\AgentApi\CorrectPaymentAction;
 use App\Services\AgentApi\RecordPaymentAction;
+use App\Services\Authorization\AgentTokenScopes;
+use App\Support\AgentApi\AgentApiScopes;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -29,10 +31,11 @@ final class AgentPaymentController extends Controller
             (int) ($data['limit'] ?? 25), $data['cursor'] ?? null));
     }
 
-    public function store(Request $request, Workspace $workspace, AgentMutationContextFactory $contexts, RecordPaymentAction $action, AgentPaymentReadService $reads): JsonResponse
+    public function store(Request $request, Workspace $workspace, AgentMutationContextFactory $contexts, RecordPaymentAction $action, AgentPaymentReadService $reads, AgentTokenScopes $scopes): JsonResponse
     {
         $context = $contexts->fromAuthenticatedClient($request);
-        $ids = $action->run($context->user, $workspace, $context->oauthClientId, $context->idempotencyKey, $request->all());
+        $ids = $action->run($context->user, $workspace, $context->oauthClientId, $context->idempotencyKey, $request->all(),
+            $scopes->allows($request, AgentApiScopes::FINANCE_RECONCILE));
 
         return response()->json($reads->result($context->user, $workspace, $ids), 201);
     }

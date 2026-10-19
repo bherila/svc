@@ -12019,7 +12019,9 @@
                                     "service_period_end",
                                     "automatic_delivery_status",
                                     "automatic_delivery_due_at",
-                                    "square"
+                                    "square",
+                                    "pending_payments",
+                                    "collection_owner"
                                 ],
                                 "properties": {
                                     "id": {
@@ -12175,6 +12177,26 @@
                                             }
                                         ],
                                         "description": "Workspace managers only; null for other viewers. Who collects this invoice and its Square link."
+                                    },
+                                    "pending_payments": {
+                                        "type": [
+                                            "integer",
+                                            "null"
+                                        ],
+                                        "minimum": 0,
+                                        "description": "Workspace managers only; null for other viewers. Payments on this invoice that may still be in flight: pending, a Stripe payment stored as failed (its intent can still be confirmed), or a status SVC cannot read. payments.record refuses while this is above zero."
+                                    },
+                                    "collection_owner": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "enum": [
+                                            "svc",
+                                            "square",
+                                            null
+                                        ],
+                                        "description": "Workspace managers only; null for other viewers. square when Square collects this invoice (see square.square_collects), so its payments arrive through Square and payments.record refuses; svc otherwise."
                                     }
                                 }
                             },
@@ -12271,7 +12293,7 @@
                                     },
                                     "square_collects": {
                                         "type": "boolean",
-                                        "description": "True when the invoice is linked or its agreement is billed in Square. SVC then never emails it to the client, charges it or offers a payment link; issuing and recording payments stay open."
+                                        "description": "True when the invoice is linked or its agreement is billed in Square. SVC then never emails it to the client, charges it or offers a payment link; issuing stays open, and so does recording a payment on the website, but payments.record refuses."
                                     },
                                     "collection_refusal": {
                                         "type": [
@@ -12718,7 +12740,9 @@
                                     "service_period_end",
                                     "automatic_delivery_status",
                                     "automatic_delivery_due_at",
-                                    "square"
+                                    "square",
+                                    "pending_payments",
+                                    "collection_owner"
                                 ],
                                 "properties": {
                                     "id": {
@@ -12874,6 +12898,26 @@
                                             }
                                         ],
                                         "description": "Workspace managers only; null for other viewers. Who collects this invoice and its Square link."
+                                    },
+                                    "pending_payments": {
+                                        "type": [
+                                            "integer",
+                                            "null"
+                                        ],
+                                        "minimum": 0,
+                                        "description": "Workspace managers only; null for other viewers. Payments on this invoice that may still be in flight: pending, a Stripe payment stored as failed (its intent can still be confirmed), or a status SVC cannot read. payments.record refuses while this is above zero."
+                                    },
+                                    "collection_owner": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "enum": [
+                                            "svc",
+                                            "square",
+                                            null
+                                        ],
+                                        "description": "Workspace managers only; null for other viewers. square when Square collects this invoice (see square.square_collects), so its payments arrive through Square and payments.record refuses; svc otherwise."
                                     }
                                 }
                             },
@@ -13035,7 +13079,7 @@
                                     },
                                     "square_collects": {
                                         "type": "boolean",
-                                        "description": "True when the invoice is linked or its agreement is billed in Square. SVC then never emails it to the client, charges it or offers a payment link; issuing and recording payments stay open."
+                                        "description": "True when the invoice is linked or its agreement is billed in Square. SVC then never emails it to the client, charges it or offers a payment link; issuing stays open, and so does recording a payment on the website, but payments.record refuses."
                                     },
                                     "collection_refusal": {
                                         "type": [
@@ -15541,7 +15585,7 @@
                                     },
                                     "square_collects": {
                                         "type": "boolean",
-                                        "description": "True when the invoice is linked or its agreement is billed in Square. SVC then never emails it to the client, charges it or offers a payment link; issuing and recording payments stay open."
+                                        "description": "True when the invoice is linked or its agreement is billed in Square. SVC then never emails it to the client, charges it or offers a payment link; issuing stays open, and so does recording a payment on the website, but payments.record refuses."
                                     },
                                     "collection_refusal": {
                                         "type": [
@@ -15771,7 +15815,7 @@
                                     },
                                     "square_collects": {
                                         "type": "boolean",
-                                        "description": "True when the invoice is linked or its agreement is billed in Square. SVC then never emails it to the client, charges it or offers a payment link; issuing and recording payments stay open."
+                                        "description": "True when the invoice is linked or its agreement is billed in Square. SVC then never emails it to the client, charges it or offers a payment link; issuing stays open, and so does recording a payment on the website, but payments.record refuses."
                                     },
                                     "collection_refusal": {
                                         "type": [
@@ -16015,7 +16059,7 @@
                                     },
                                     "square_collects": {
                                         "type": "boolean",
-                                        "description": "True when the invoice is linked or its agreement is billed in Square. SVC then never emails it to the client, charges it or offers a payment link; issuing and recording payments stay open."
+                                        "description": "True when the invoice is linked or its agreement is billed in Square. SVC then never emails it to the client, charges it or offers a payment link; issuing stays open, and so does recording a payment on the website, but payments.record refuses."
                                     },
                                     "collection_refusal": {
                                         "type": [
@@ -17721,7 +17765,38 @@
                                     "null"
                                 ],
                                 "format": "uuid",
-                                "description": "The finance system's transaction this payment was received as."
+                                "description": "The finance system's transaction this payment was received as. Superseded by finance_reconciliation, which records the allocation itself; this column is kept for existing callers."
+                            },
+                            "finance_reconciliation": {
+                                "type": [
+                                    "object",
+                                    "null"
+                                ],
+                                "additionalProperties": false,
+                                "required": [
+                                    "external_system_slug",
+                                    "external_transaction_uuid",
+                                    "allocated_amount"
+                                ],
+                                "description": "Also write this payment's finance reconciliation allocation, in the same transaction and receipt: what finance.reconciliations.upsert would write for the new payment, active, in the payment's currency. Needs finance:reconcile and status succeeded; allocated_amount is at most amount. Omitted or null writes none.",
+                                "properties": {
+                                    "external_system_slug": {
+                                        "type": "string",
+                                        "maxLength": 80,
+                                        "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                                        "description": "The external finance system, as a lowercase slug."
+                                    },
+                                    "external_transaction_uuid": {
+                                        "type": "string",
+                                        "format": "uuid",
+                                        "description": "That system's transaction the payment is reconciled to."
+                                    },
+                                    "allocated_amount": {
+                                        "type": "integer",
+                                        "minimum": 1,
+                                        "description": "Minor units of the payment the transaction covers."
+                                    }
+                                }
                             }
                         },
                         "required": [
@@ -17736,7 +17811,7 @@
                         ],
                         "additionalProperties": false
                     },
-                    "description": "Record money already received using an explicit invoice, amount in minor units, currency and method. Give the actual payment date as received_on (it defaults to today, never the invoice date); reference, notes and the finance transaction id are optional; status is succeeded, or pending for money that has not cleared. Current invoice version, explicit user confirmation and idempotency key required. Owner/admin only; overpayments refused. Never charges a customer or issues a refund.",
+                    "description": "Record money already received using an explicit invoice, amount in minor units, currency and method. Give the actual payment date as received_on (it defaults to today, never the invoice date); reference, notes and the finance transaction id are optional; status is succeeded, or pending for money that has not cleared. finance_reconciliation (external system slug, transaction UUID, allocated amount; needs finance:reconcile) also writes the payment's finance allocation in the same transaction. Current invoice version, explicit user confirmation and idempotency key required. Owner/admin only; overpayments refused, and so is any payment while another on the invoice is pending or Square collects it (invoices.get shows pending_payments and collection_owner). Never charges a customer or issues a refund.",
                     "annotations": {
                         "readOnlyHint": false,
                         "destructiveHint": false,
@@ -28382,9 +28457,9 @@
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.generate_period": "a736a25f33ed9607",
-                "invoices.get": "790ff02f4ec45336",
+                "invoices.get": "ec39ca94673449ec",
                 "invoices.hold_delivery": "5d5d70aa02fac988",
-                "invoices.issue": "8b90ba16b85fdc58",
+                "invoices.issue": "a6d503fec0064faa",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
@@ -28393,16 +28468,16 @@
                 "invoices.send": "7eade4913e162ab2",
                 "invoices.send_reminder": "8f62ca2de82c197b",
                 "invoices.square_candidates": "09693c77227c6c63",
-                "invoices.square_link": "9346fefe8d8337f7",
-                "invoices.square_reconcile": "690de0adf0059205",
-                "invoices.square_unlink": "8c2cd7af26e27706",
+                "invoices.square_link": "6ef66408313e9484",
+                "invoices.square_reconcile": "88cbeaf1317d393e",
+                "invoices.square_unlink": "43197a34c12c579f",
                 "invoices.update_details": "9c25cf205acf1a39",
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "0db82875e0823846",
                 "payments.correct": "f23dd37fdcc72186",
                 "payments.list": "a911cc9b30a4c54a",
-                "payments.record": "6447224551ee0333",
+                "payments.record": "6e97fdf4cc486dc1",
                 "payments.refund": "80c0a9955b9c1756",
                 "payments.reverse_refund": "12db1ed6c5733d4e",
                 "payments.set_status": "dbf7e8a65c846db0",
@@ -28583,8 +28658,8 @@
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.get": "790ff02f4ec45336",
-                "invoices.issue": "8b90ba16b85fdc58",
+                "invoices.get": "ec39ca94673449ec",
+                "invoices.issue": "a6d503fec0064faa",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.send": "7eade4913e162ab2",
@@ -28744,8 +28819,8 @@
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.get": "790ff02f4ec45336",
-                "invoices.issue": "8b90ba16b85fdc58",
+                "invoices.get": "ec39ca94673449ec",
+                "invoices.issue": "a6d503fec0064faa",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.send": "7eade4913e162ab2",
@@ -28905,8 +28980,8 @@
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.get": "790ff02f4ec45336",
-                "invoices.issue": "8b90ba16b85fdc58",
+                "invoices.get": "ec39ca94673449ec",
+                "invoices.issue": "a6d503fec0064faa",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.send": "7eade4913e162ab2",
@@ -29066,8 +29141,8 @@
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.get": "790ff02f4ec45336",
-                "invoices.issue": "8b90ba16b85fdc58",
+                "invoices.get": "ec39ca94673449ec",
+                "invoices.issue": "a6d503fec0064faa",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.send": "7eade4913e162ab2",
@@ -29222,7 +29297,7 @@
                 "finance.invoice_payments.list": "25681f84faec8b6e",
                 "finance.payouts.list": "49fbdd79e642c84c",
                 "invoices.corrections.get": "aa93da895756b80b",
-                "invoices.get": "790ff02f4ec45336",
+                "invoices.get": "ec39ca94673449ec",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
@@ -29327,7 +29402,7 @@
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.generate_period": "a736a25f33ed9607",
-                "invoices.get": "790ff02f4ec45336",
+                "invoices.get": "ec39ca94673449ec",
                 "invoices.hold_delivery": "5d5d70aa02fac988",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
@@ -29335,9 +29410,9 @@
                 "invoices.reminders.list": "86e53f8c46db44c6",
                 "invoices.send_reminder": "8f62ca2de82c197b",
                 "invoices.square_candidates": "09693c77227c6c63",
-                "invoices.square_link": "9346fefe8d8337f7",
-                "invoices.square_reconcile": "690de0adf0059205",
-                "invoices.square_unlink": "8c2cd7af26e27706",
+                "invoices.square_link": "6ef66408313e9484",
+                "invoices.square_reconcile": "88cbeaf1317d393e",
+                "invoices.square_unlink": "43197a34c12c579f",
                 "invoices.update_details": "9c25cf205acf1a39",
                 "invoices.update_draft": "2db06ccf7247d243",
                 "square.customers.get": "8d7d9a7b89dbe75b",
@@ -29501,7 +29576,7 @@
             "tools": {
                 "context.get": "d36731571bd94125",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "790ff02f4ec45336",
+                "invoices.get": "ec39ca94673449ec",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "0db82875e0823846",
@@ -29563,7 +29638,7 @@
             "tools": {
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.get": "790ff02f4ec45336",
+                "invoices.get": "ec39ca94673449ec",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.update_details": "9c25cf205acf1a39",
@@ -29711,7 +29786,7 @@
             "tools": {
                 "context.get": "d36731571bd94125",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "790ff02f4ec45336",
+                "invoices.get": "ec39ca94673449ec",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "0db82875e0823846",
@@ -29773,7 +29848,7 @@
             "tools": {
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.get": "790ff02f4ec45336",
+                "invoices.get": "ec39ca94673449ec",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.update_details": "9c25cf205acf1a39",
@@ -29917,7 +29992,7 @@
                 "finance.reconciliations.deactivate": "41db4066d9b89d5c",
                 "finance.reconciliations.upsert": "75cfbd94043071d2",
                 "invoices.corrections.get": "aa93da895756b80b",
-                "invoices.get": "790ff02f4ec45336",
+                "invoices.get": "ec39ca94673449ec",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
@@ -30079,7 +30154,7 @@
                 "finance.reconciliations.deactivate": "41db4066d9b89d5c",
                 "finance.reconciliations.upsert": "75cfbd94043071d2",
                 "invoices.corrections.get": "aa93da895756b80b",
-                "invoices.get": "790ff02f4ec45336",
+                "invoices.get": "ec39ca94673449ec",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
@@ -30244,7 +30319,7 @@
             "tools": {
                 "context.get": "d36731571bd94125",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "790ff02f4ec45336",
+                "invoices.get": "ec39ca94673449ec",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "0db82875e0823846",
@@ -30404,7 +30479,7 @@
             "tools": {
                 "context.get": "d36731571bd94125",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "790ff02f4ec45336",
+                "invoices.get": "ec39ca94673449ec",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "0db82875e0823846",
@@ -30564,7 +30639,7 @@
             "tools": {
                 "context.get": "d36731571bd94125",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "790ff02f4ec45336",
+                "invoices.get": "ec39ca94673449ec",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "0db82875e0823846",
@@ -30724,7 +30799,7 @@
             "tools": {
                 "context.get": "d36731571bd94125",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "790ff02f4ec45336",
+                "invoices.get": "ec39ca94673449ec",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "0db82875e0823846",
@@ -30871,7 +30946,7 @@
                 "finance.reconciliations.deactivate": "41db4066d9b89d5c",
                 "finance.reconciliations.upsert": "75cfbd94043071d2",
                 "invoices.corrections.get": "aa93da895756b80b",
-                "invoices.get": "790ff02f4ec45336",
+                "invoices.get": "ec39ca94673449ec",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
@@ -31031,7 +31106,7 @@
                 "finance.reconciliations.deactivate": "41db4066d9b89d5c",
                 "finance.reconciliations.upsert": "75cfbd94043071d2",
                 "invoices.corrections.get": "aa93da895756b80b",
-                "invoices.get": "790ff02f4ec45336",
+                "invoices.get": "ec39ca94673449ec",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
@@ -31209,7 +31284,7 @@
             "tools": {
                 "context.get": "d36731571bd94125",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "790ff02f4ec45336",
+                "invoices.get": "ec39ca94673449ec",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "0db82875e0823846",
@@ -31367,7 +31442,7 @@
             "tools": {
                 "context.get": "d36731571bd94125",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "790ff02f4ec45336",
+                "invoices.get": "ec39ca94673449ec",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "0db82875e0823846",
@@ -31525,7 +31600,7 @@
             "tools": {
                 "context.get": "d36731571bd94125",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "790ff02f4ec45336",
+                "invoices.get": "ec39ca94673449ec",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "0db82875e0823846",
@@ -31683,7 +31758,7 @@
             "tools": {
                 "context.get": "d36731571bd94125",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "790ff02f4ec45336",
+                "invoices.get": "ec39ca94673449ec",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "0db82875e0823846",
@@ -31822,7 +31897,7 @@
                 "finance.reconciliations.deactivate": "41db4066d9b89d5c",
                 "finance.reconciliations.upsert": "75cfbd94043071d2",
                 "invoices.corrections.get": "aa93da895756b80b",
-                "invoices.get": "790ff02f4ec45336",
+                "invoices.get": "ec39ca94673449ec",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
@@ -31984,7 +32059,7 @@
                 "finance.reconciliations.deactivate": "41db4066d9b89d5c",
                 "finance.reconciliations.upsert": "75cfbd94043071d2",
                 "invoices.corrections.get": "aa93da895756b80b",
-                "invoices.get": "790ff02f4ec45336",
+                "invoices.get": "ec39ca94673449ec",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
@@ -32164,7 +32239,7 @@
             "tools": {
                 "context.get": "d36731571bd94125",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "790ff02f4ec45336",
+                "invoices.get": "ec39ca94673449ec",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "0db82875e0823846",
@@ -32324,7 +32399,7 @@
             "tools": {
                 "context.get": "d36731571bd94125",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "790ff02f4ec45336",
+                "invoices.get": "ec39ca94673449ec",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "0db82875e0823846",
@@ -32484,7 +32559,7 @@
             "tools": {
                 "context.get": "d36731571bd94125",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "790ff02f4ec45336",
+                "invoices.get": "ec39ca94673449ec",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "0db82875e0823846",
@@ -32644,7 +32719,7 @@
             "tools": {
                 "context.get": "d36731571bd94125",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "790ff02f4ec45336",
+                "invoices.get": "ec39ca94673449ec",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "0db82875e0823846",
@@ -32768,17 +32843,17 @@
                 "finance.reconciliations.deactivate": "41db4066d9b89d5c",
                 "finance.reconciliations.upsert": "75cfbd94043071d2",
                 "invoices.corrections.get": "aa93da895756b80b",
-                "invoices.get": "790ff02f4ec45336",
+                "invoices.get": "ec39ca94673449ec",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
                 "invoices.reminders.list": "86e53f8c46db44c6",
                 "invoices.square_candidates": "09693c77227c6c63",
-                "invoices.square_reconcile": "690de0adf0059205",
+                "invoices.square_reconcile": "88cbeaf1317d393e",
                 "operations.summary": "0db82875e0823846",
                 "payments.correct": "f23dd37fdcc72186",
                 "payments.list": "a911cc9b30a4c54a",
-                "payments.record": "6447224551ee0333",
+                "payments.record": "6e97fdf4cc486dc1",
                 "payments.refund": "80c0a9955b9c1756",
                 "payments.reverse_refund": "12db1ed6c5733d4e",
                 "payments.set_status": "dbf7e8a65c846db0",
@@ -32930,17 +33005,17 @@
                 "finance.reconciliations.deactivate": "41db4066d9b89d5c",
                 "finance.reconciliations.upsert": "75cfbd94043071d2",
                 "invoices.corrections.get": "aa93da895756b80b",
-                "invoices.get": "790ff02f4ec45336",
+                "invoices.get": "ec39ca94673449ec",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
                 "invoices.reminders.list": "86e53f8c46db44c6",
                 "invoices.square_candidates": "09693c77227c6c63",
-                "invoices.square_reconcile": "690de0adf0059205",
+                "invoices.square_reconcile": "88cbeaf1317d393e",
                 "operations.summary": "0db82875e0823846",
                 "payments.correct": "f23dd37fdcc72186",
                 "payments.list": "a911cc9b30a4c54a",
-                "payments.record": "6447224551ee0333",
+                "payments.record": "6e97fdf4cc486dc1",
                 "payments.refund": "80c0a9955b9c1756",
                 "payments.reverse_refund": "12db1ed6c5733d4e",
                 "payments.set_status": "dbf7e8a65c846db0",
@@ -33125,7 +33200,7 @@
             "tools": {
                 "context.get": "d36731571bd94125",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "790ff02f4ec45336",
+                "invoices.get": "ec39ca94673449ec",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "0db82875e0823846",
@@ -33285,7 +33360,7 @@
             "tools": {
                 "context.get": "d36731571bd94125",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "790ff02f4ec45336",
+                "invoices.get": "ec39ca94673449ec",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "0db82875e0823846",
@@ -33445,7 +33520,7 @@
             "tools": {
                 "context.get": "d36731571bd94125",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "790ff02f4ec45336",
+                "invoices.get": "ec39ca94673449ec",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "0db82875e0823846",
@@ -33605,7 +33680,7 @@
             "tools": {
                 "context.get": "d36731571bd94125",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "790ff02f4ec45336",
+                "invoices.get": "ec39ca94673449ec",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "0db82875e0823846",
@@ -33757,7 +33832,7 @@
                 "finance.invoice_payments.list": "25681f84faec8b6e",
                 "finance.payouts.list": "49fbdd79e642c84c",
                 "invoices.corrections.get": "aa93da895756b80b",
-                "invoices.get": "790ff02f4ec45336",
+                "invoices.get": "ec39ca94673449ec",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
@@ -33917,7 +33992,7 @@
                 "finance.invoice_payments.list": "25681f84faec8b6e",
                 "finance.payouts.list": "49fbdd79e642c84c",
                 "invoices.corrections.get": "aa93da895756b80b",
-                "invoices.get": "790ff02f4ec45336",
+                "invoices.get": "ec39ca94673449ec",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
@@ -34095,7 +34170,7 @@
             "tools": {
                 "context.get": "d36731571bd94125",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "790ff02f4ec45336",
+                "invoices.get": "ec39ca94673449ec",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "0db82875e0823846",
@@ -34253,7 +34328,7 @@
             "tools": {
                 "context.get": "d36731571bd94125",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "790ff02f4ec45336",
+                "invoices.get": "ec39ca94673449ec",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "0db82875e0823846",
@@ -34411,7 +34486,7 @@
             "tools": {
                 "context.get": "d36731571bd94125",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "790ff02f4ec45336",
+                "invoices.get": "ec39ca94673449ec",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "0db82875e0823846",
@@ -34569,7 +34644,7 @@
             "tools": {
                 "context.get": "d36731571bd94125",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "790ff02f4ec45336",
+                "invoices.get": "ec39ca94673449ec",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "0db82875e0823846",
@@ -34678,9 +34753,9 @@
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.generate_period": "a736a25f33ed9607",
-                "invoices.get": "790ff02f4ec45336",
+                "invoices.get": "ec39ca94673449ec",
                 "invoices.hold_delivery": "5d5d70aa02fac988",
-                "invoices.issue": "8b90ba16b85fdc58",
+                "invoices.issue": "a6d503fec0064faa",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
@@ -34689,16 +34764,16 @@
                 "invoices.send": "7eade4913e162ab2",
                 "invoices.send_reminder": "8f62ca2de82c197b",
                 "invoices.square_candidates": "09693c77227c6c63",
-                "invoices.square_link": "9346fefe8d8337f7",
-                "invoices.square_reconcile": "690de0adf0059205",
-                "invoices.square_unlink": "8c2cd7af26e27706",
+                "invoices.square_link": "6ef66408313e9484",
+                "invoices.square_reconcile": "88cbeaf1317d393e",
+                "invoices.square_unlink": "43197a34c12c579f",
                 "invoices.update_details": "9c25cf205acf1a39",
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "0db82875e0823846",
                 "payments.correct": "f23dd37fdcc72186",
                 "payments.list": "a911cc9b30a4c54a",
-                "payments.record": "6447224551ee0333",
+                "payments.record": "6e97fdf4cc486dc1",
                 "payments.refund": "80c0a9955b9c1756",
                 "payments.reverse_refund": "12db1ed6c5733d4e",
                 "payments.set_status": "dbf7e8a65c846db0",
@@ -34839,9 +34914,9 @@
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.generate_period": "a736a25f33ed9607",
-                "invoices.get": "790ff02f4ec45336",
+                "invoices.get": "ec39ca94673449ec",
                 "invoices.hold_delivery": "5d5d70aa02fac988",
-                "invoices.issue": "8b90ba16b85fdc58",
+                "invoices.issue": "a6d503fec0064faa",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
@@ -34850,16 +34925,16 @@
                 "invoices.send": "7eade4913e162ab2",
                 "invoices.send_reminder": "8f62ca2de82c197b",
                 "invoices.square_candidates": "09693c77227c6c63",
-                "invoices.square_link": "9346fefe8d8337f7",
-                "invoices.square_reconcile": "690de0adf0059205",
-                "invoices.square_unlink": "8c2cd7af26e27706",
+                "invoices.square_link": "6ef66408313e9484",
+                "invoices.square_reconcile": "88cbeaf1317d393e",
+                "invoices.square_unlink": "43197a34c12c579f",
                 "invoices.update_details": "9c25cf205acf1a39",
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "0db82875e0823846",
                 "payments.correct": "f23dd37fdcc72186",
                 "payments.list": "a911cc9b30a4c54a",
-                "payments.record": "6447224551ee0333",
+                "payments.record": "6e97fdf4cc486dc1",
                 "payments.refund": "80c0a9955b9c1756",
                 "payments.reverse_refund": "12db1ed6c5733d4e",
                 "payments.set_status": "dbf7e8a65c846db0",
@@ -35038,8 +35113,8 @@
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.get": "790ff02f4ec45336",
-                "invoices.issue": "8b90ba16b85fdc58",
+                "invoices.get": "ec39ca94673449ec",
+                "invoices.issue": "a6d503fec0064faa",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.send": "7eade4913e162ab2",
@@ -35199,8 +35274,8 @@
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.get": "790ff02f4ec45336",
-                "invoices.issue": "8b90ba16b85fdc58",
+                "invoices.get": "ec39ca94673449ec",
+                "invoices.issue": "a6d503fec0064faa",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.send": "7eade4913e162ab2",
@@ -35360,8 +35435,8 @@
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.get": "790ff02f4ec45336",
-                "invoices.issue": "8b90ba16b85fdc58",
+                "invoices.get": "ec39ca94673449ec",
+                "invoices.issue": "a6d503fec0064faa",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.send": "7eade4913e162ab2",
@@ -35521,8 +35596,8 @@
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.get": "790ff02f4ec45336",
-                "invoices.issue": "8b90ba16b85fdc58",
+                "invoices.get": "ec39ca94673449ec",
+                "invoices.issue": "a6d503fec0064faa",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.send": "7eade4913e162ab2",
@@ -35649,7 +35724,7 @@
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.generate_period": "a736a25f33ed9607",
                 "invoices.hold_delivery": "5d5d70aa02fac988",
-                "invoices.issue": "8b90ba16b85fdc58",
+                "invoices.issue": "a6d503fec0064faa",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
@@ -35658,16 +35733,16 @@
                 "invoices.send": "7eade4913e162ab2",
                 "invoices.send_reminder": "8f62ca2de82c197b",
                 "invoices.square_candidates": "09693c77227c6c63",
-                "invoices.square_link": "9346fefe8d8337f7",
-                "invoices.square_reconcile": "690de0adf0059205",
-                "invoices.square_unlink": "8c2cd7af26e27706",
+                "invoices.square_link": "6ef66408313e9484",
+                "invoices.square_reconcile": "88cbeaf1317d393e",
+                "invoices.square_unlink": "43197a34c12c579f",
                 "invoices.update_details": "9c25cf205acf1a39",
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "0db82875e0823846",
                 "payments.correct": "f23dd37fdcc72186",
                 "payments.list": "a911cc9b30a4c54a",
-                "payments.record": "6447224551ee0333",
+                "payments.record": "6e97fdf4cc486dc1",
                 "payments.refund": "80c0a9955b9c1756",
                 "payments.reverse_refund": "12db1ed6c5733d4e",
                 "payments.set_status": "dbf7e8a65c846db0",
@@ -35809,7 +35884,7 @@
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.generate_period": "a736a25f33ed9607",
                 "invoices.hold_delivery": "5d5d70aa02fac988",
-                "invoices.issue": "8b90ba16b85fdc58",
+                "invoices.issue": "a6d503fec0064faa",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
@@ -35818,16 +35893,16 @@
                 "invoices.send": "7eade4913e162ab2",
                 "invoices.send_reminder": "8f62ca2de82c197b",
                 "invoices.square_candidates": "09693c77227c6c63",
-                "invoices.square_link": "9346fefe8d8337f7",
-                "invoices.square_reconcile": "690de0adf0059205",
-                "invoices.square_unlink": "8c2cd7af26e27706",
+                "invoices.square_link": "6ef66408313e9484",
+                "invoices.square_reconcile": "88cbeaf1317d393e",
+                "invoices.square_unlink": "43197a34c12c579f",
                 "invoices.update_details": "9c25cf205acf1a39",
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "0db82875e0823846",
                 "payments.correct": "f23dd37fdcc72186",
                 "payments.list": "a911cc9b30a4c54a",
-                "payments.record": "6447224551ee0333",
+                "payments.record": "6e97fdf4cc486dc1",
                 "payments.refund": "80c0a9955b9c1756",
                 "payments.reverse_refund": "12db1ed6c5733d4e",
                 "payments.set_status": "dbf7e8a65c846db0",
@@ -36006,7 +36081,7 @@
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.issue": "8b90ba16b85fdc58",
+                "invoices.issue": "a6d503fec0064faa",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.send": "7eade4913e162ab2",
@@ -36164,7 +36239,7 @@
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.issue": "8b90ba16b85fdc58",
+                "invoices.issue": "a6d503fec0064faa",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.send": "7eade4913e162ab2",
@@ -36322,7 +36397,7 @@
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.issue": "8b90ba16b85fdc58",
+                "invoices.issue": "a6d503fec0064faa",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.send": "7eade4913e162ab2",
@@ -36480,7 +36555,7 @@
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.issue": "8b90ba16b85fdc58",
+                "invoices.issue": "a6d503fec0064faa",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.send": "7eade4913e162ab2",
@@ -37436,9 +37511,9 @@
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.generate_period": "a736a25f33ed9607",
-                "invoices.get": "790ff02f4ec45336",
+                "invoices.get": "ec39ca94673449ec",
                 "invoices.hold_delivery": "5d5d70aa02fac988",
-                "invoices.issue": "8b90ba16b85fdc58",
+                "invoices.issue": "a6d503fec0064faa",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
@@ -37447,16 +37522,16 @@
                 "invoices.send": "7eade4913e162ab2",
                 "invoices.send_reminder": "8f62ca2de82c197b",
                 "invoices.square_candidates": "09693c77227c6c63",
-                "invoices.square_link": "9346fefe8d8337f7",
-                "invoices.square_reconcile": "690de0adf0059205",
-                "invoices.square_unlink": "8c2cd7af26e27706",
+                "invoices.square_link": "6ef66408313e9484",
+                "invoices.square_reconcile": "88cbeaf1317d393e",
+                "invoices.square_unlink": "43197a34c12c579f",
                 "invoices.update_details": "9c25cf205acf1a39",
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "0db82875e0823846",
                 "payments.correct": "f23dd37fdcc72186",
                 "payments.list": "a911cc9b30a4c54a",
-                "payments.record": "6447224551ee0333",
+                "payments.record": "6e97fdf4cc486dc1",
                 "payments.refund": "80c0a9955b9c1756",
                 "payments.reverse_refund": "12db1ed6c5733d4e",
                 "payments.set_status": "dbf7e8a65c846db0",
@@ -37599,9 +37674,9 @@
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.generate_period": "a736a25f33ed9607",
-                "invoices.get": "790ff02f4ec45336",
+                "invoices.get": "ec39ca94673449ec",
                 "invoices.hold_delivery": "5d5d70aa02fac988",
-                "invoices.issue": "8b90ba16b85fdc58",
+                "invoices.issue": "a6d503fec0064faa",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
@@ -37610,16 +37685,16 @@
                 "invoices.send": "7eade4913e162ab2",
                 "invoices.send_reminder": "8f62ca2de82c197b",
                 "invoices.square_candidates": "09693c77227c6c63",
-                "invoices.square_link": "9346fefe8d8337f7",
-                "invoices.square_reconcile": "690de0adf0059205",
-                "invoices.square_unlink": "8c2cd7af26e27706",
+                "invoices.square_link": "6ef66408313e9484",
+                "invoices.square_reconcile": "88cbeaf1317d393e",
+                "invoices.square_unlink": "43197a34c12c579f",
                 "invoices.update_details": "9c25cf205acf1a39",
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "0db82875e0823846",
                 "payments.correct": "f23dd37fdcc72186",
                 "payments.list": "a911cc9b30a4c54a",
-                "payments.record": "6447224551ee0333",
+                "payments.record": "6e97fdf4cc486dc1",
                 "payments.refund": "80c0a9955b9c1756",
                 "payments.reverse_refund": "12db1ed6c5733d4e",
                 "payments.set_status": "dbf7e8a65c846db0",
@@ -37800,8 +37875,8 @@
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.get": "790ff02f4ec45336",
-                "invoices.issue": "8b90ba16b85fdc58",
+                "invoices.get": "ec39ca94673449ec",
+                "invoices.issue": "a6d503fec0064faa",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.send": "7eade4913e162ab2",
@@ -37961,8 +38036,8 @@
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.get": "790ff02f4ec45336",
-                "invoices.issue": "8b90ba16b85fdc58",
+                "invoices.get": "ec39ca94673449ec",
+                "invoices.issue": "a6d503fec0064faa",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.send": "7eade4913e162ab2",
@@ -38122,8 +38197,8 @@
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.get": "790ff02f4ec45336",
-                "invoices.issue": "8b90ba16b85fdc58",
+                "invoices.get": "ec39ca94673449ec",
+                "invoices.issue": "a6d503fec0064faa",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.send": "7eade4913e162ab2",
@@ -38283,8 +38358,8 @@
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.get": "790ff02f4ec45336",
-                "invoices.issue": "8b90ba16b85fdc58",
+                "invoices.get": "ec39ca94673449ec",
+                "invoices.issue": "a6d503fec0064faa",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.send": "7eade4913e162ab2",
