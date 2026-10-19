@@ -48,9 +48,7 @@ final class AgentPaymentCollectionGuardTest extends TestCase
         $this->assertSame('pending', $pending[0]['status']);
 
         $refused = $this->record($transport, $owner, $workspace, $this->payload($invoice->refresh(), 6000), 'synthetic-transfer', 422);
-        if ($transport === 'rest') {
-            $this->assertStringContainsString('has 1 payment still in flight', $refused);
-        }
+        $this->assertStringContainsString('has 1 payment still in flight', $refused);
         $this->assertSame(1, ClientInvoicePayment::query()->where('workspace_id', $workspace->id)->count());
         $audit = AgentMutationAudit::query()->where('workspace_id', $workspace->id)->where('operation', 'payments.record')->latest('id')->firstOrFail();
         $this->assertSame(['failed', 'domain'], [$audit->outcome, $audit->error_category]);
@@ -172,9 +170,7 @@ final class AgentPaymentCollectionGuardTest extends TestCase
         $this->makeSquareCollected($reason, $owner, $workspace, $invoice);
 
         $refused = $this->record($transport, $owner, $workspace, $this->payload($invoice->refresh(), 10000), 'synthetic-square', 422);
-        if ($transport === 'rest') {
-            $this->assertStringContainsString('is collected through Square', $refused);
-        }
+        $this->assertStringContainsString('is collected through Square', $refused);
         $this->assertSame(0, ClientInvoicePayment::query()->where('workspace_id', $workspace->id)->count());
         $this->assertDatabaseCount('agent_mutation_receipts', 0);
     }
@@ -316,7 +312,7 @@ final class AgentPaymentCollectionGuardTest extends TestCase
 
     /**
      * Record over REST or MCP. A success returns the payments; a refusal
-     * returns its message over REST.
+     * returns its message.
      *
      * @param  array<string, mixed>  $payload
      */
@@ -337,15 +333,13 @@ final class AgentPaymentCollectionGuardTest extends TestCase
             'params' => ['name' => 'payments.record', 'arguments' => [...$payload, 'workspace_id' => $workspace->public_id, 'idempotency_key' => $key]],
         ], $headers)->assertOk()->json();
         if ($expected !== 201) {
-            // The tool calls the action directly, and a refusal it raises
-            // reaches the client as a tool error without its reason (as every
-            // payments.record refusal over MCP does); the failed audit carries
-            // what was refused.
-            $this->assertArrayHasKey('error', $result, json_encode($result, JSON_THROW_ON_ERROR));
+            // The tool reaches the REST route, so a refusal comes back as a
+            // tool error carrying the route's own message.
+            $this->assertTrue($result['result']['isError'] ?? false, json_encode($result, JSON_THROW_ON_ERROR));
             $audit = AgentMutationAudit::query()->where('workspace_id', $workspace->id)->where('operation', 'payments.record')->latest('id')->firstOrFail();
             $this->assertSame('failed', $audit->outcome);
 
-            return null;
+            return (string) ($result['result']['content'][0]['text'] ?? '');
         }
         $this->assertFalse($result['result']['isError'] ?? false, json_encode($result, JSON_THROW_ON_ERROR));
 
