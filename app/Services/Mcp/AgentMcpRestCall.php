@@ -58,7 +58,7 @@ final class AgentMcpRestCall
         $uri = ltrim($uri, '/');
         // The transport hands its query to Request::create, which files it as
         // the form body of anything but a GET; a write's query travels in its URI.
-        $read = in_array(strtoupper($rest->method), ['GET', 'HEAD'], true);
+        $read = in_array($rest->method, ['GET', 'HEAD'], true);
         if (! $read && $query !== []) {
             $uri .= '?'.http_build_query($query);
         }

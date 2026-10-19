@@ -61,18 +61,20 @@ final class AgentMcpRestCallTest extends TestCase
     {
         $transport = new RecordingAgentApiTransport;
         $call = new AgentMcpRestCall($transport, app(OperationRegistry::class));
+        $wrongPath = 'Operation [tasks.update] takes the path parameters [workspace, task].';
         foreach ([
-            ['synthetic.unknown', ['workspace' => 'a']],
-            ['tasks.update', ['workspace' => 'a']],
-            ['tasks.update', ['workspace' => 'a', 'task' => 'b', 'project' => 'c']],
-            ['tasks.update', ['workspace' => 'a', 'project' => 'b']],
+            ['synthetic.unknown', ['workspace' => 'a'], 'Operation [synthetic.unknown] has no REST binding.'],
+            ['tasks.update', ['workspace' => 'a'], $wrongPath],
+            ['tasks.update', ['workspace' => 'a', 'task' => 'b', 'project' => 'c'], $wrongPath],
+            ['tasks.update', ['workspace' => 'a', 'project' => 'b'], $wrongPath],
             // An MCP-only operation has no route to call.
-            ['resources.current_context', []],
-        ] as [$operation, $path]) {
+            ['resources.current_context', [], 'Operation [resources.current_context] has no REST binding.'],
+        ] as [$operation, $path, $message]) {
             try {
                 $call->call($operation, $path);
                 $this->fail("{$operation} reached the transport.");
-            } catch (LogicException) {
+            } catch (LogicException $exception) {
+                $this->assertSame($message, $exception->getMessage());
             }
         }
         $this->assertSame([], $transport->requests);
@@ -86,6 +88,7 @@ final class AgentMcpRestCallTest extends TestCase
             [403, ['message' => 'Internal synthetic detail.'], 'This connection lacks the required permission.'],
             [500, ['message' => 'Internal synthetic detail.'], 'The SVC API request could not be completed.'],
             [200, null, 'The SVC API request could not be completed.'],
+            [300, ['data' => []], 'The SVC API request could not be completed.'],
             [302, ['data' => []], 'The SVC API request could not be completed.'],
         ] as [$status, $body, $message]) {
             $call = new AgentMcpRestCall(new RecordingAgentApiTransport($status, $body), app(OperationRegistry::class));
