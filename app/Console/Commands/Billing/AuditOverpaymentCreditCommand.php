@@ -30,6 +30,9 @@ final class AuditOverpaymentCreditCommand extends Command
 
     protected $description = 'Compare overpayment credit funded with credit consumed, per workspace, company and currency';
 
+    /** Workspaces, or pools' companies, looked up per query in --list. */
+    private const int LOOKUP_BATCH = 500;
+
     public function handle(OverpaymentCreditAuditor $auditor): int
     {
         $format = (string) $this->option('format');
@@ -154,20 +157,26 @@ final class AuditOverpaymentCreditCommand extends Command
         // Only the pools' own workspaces and companies, so a scoped listing
         // reads nothing of other tenants. A company stamped to another
         // workspace than its pool's resolves to "missing".
+        // Everything in bounded batches, whatever the number of workspaces,
+        // and a company is only looked for in its pool's workspace.
+        $workspaces = [];
         $workspaceIds = array_values(array_unique(array_map(static fn (CreditPoolPartition $partition): int => $partition->workspaceId, $partitions)));
-        $workspaces = $workspaceIds === [] ? [] : DB::table('workspaces')->whereIn('id', $workspaceIds)->pluck('public_id', 'id')->all();
-        $companies = [];
+        foreach (array_chunk($workspaceIds, self::LOOKUP_BATCH) as $chunk) {
+            $workspaces += DB::table('workspaces')->whereIn('id', $chunk)->pluck('public_id', 'id')->all();
+        }
+        $pairs = [];
         foreach ($partitions as $partition) {
             if ($partition->companyId !== null) {
-                $companies[$partition->workspaceId][] = $partition->companyId;
+                $pairs[$partition->workspaceId.':'.$partition->companyId] = [$partition->workspaceId, $partition->companyId];
             }
         }
-        // In bounded batches, whatever the number of workspaces; a company
-        // only names a pool of its own workspace.
         $names = [];
-        $companyIds = array_values(array_unique(array_merge([], ...array_values($companies))));
-        foreach (array_chunk($companyIds, 500) as $chunk) {
-            foreach (DB::table('client_companies')->whereIn('workspace_id', $workspaceIds)->whereIn('id', $chunk)->get(['id', 'workspace_id', 'public_id']) as $company) {
+        foreach (array_chunk(array_values($pairs), self::LOOKUP_BATCH) as $chunk) {
+            $rows = DB::table('client_companies')
+                ->whereIn('workspace_id', array_values(array_unique(array_column($chunk, 0))))
+                ->whereIn('id', array_values(array_unique(array_column($chunk, 1))))
+                ->get(['id', 'workspace_id', 'public_id']);
+            foreach ($rows as $company) {
                 $names[(int) $company->workspace_id][(int) $company->id] = (string) $company->public_id;
             }
         }

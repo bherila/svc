@@ -21,7 +21,7 @@ cd "$HOME/$app_dir"
 for probe in svc:stripe:status svc:brevo:status svc:square:status; do
     status=0
     output=$("$php" artisan "$probe" --format=json) || status=$?
-    if [ "$status" -eq 1 ] && ! printf '%s' "$output" | "$php" -r 'exit(is_array(json_decode(stream_get_contents(STDIN), true)) ? 0 : 1);'; then
+    if [ "$status" -eq 1 ] && ! printf '%s' "$output" | "$php" -r 'exit(json_decode(stream_get_contents(STDIN)) instanceof stdClass ? 0 : 1);'; then
         printf '%s\n' "$output"
         echo "::error::$probe exited 1 without its JSON report." >&2
         exit 1
