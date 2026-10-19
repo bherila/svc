@@ -10,7 +10,11 @@ use App\Models\ClientProject;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Billing\Balances\ClosingBalance;
+use App\Services\Billing\Balances\MonthSummary;
+use App\Services\Billing\Balances\OpeningBalance;
 use App\Services\Billing\DeferredBacklogReader;
+use App\Services\Billing\DeferredBacklogReadService;
 use App\Services\Billing\DeferredBillingAllocator;
 use App\Services\Billing\InvoiceLineComposer;
 use App\Support\Billing\DeferredBacklogIssue;
@@ -203,6 +207,17 @@ final class DeferredBacklogParityTest extends TestCase
         $this->assertSame(30, $backlogs[$successor->id]->minutes);
         $this->assertSame(self::THROUGH, $backlogs[$successor->id]->through);
         $this->assertSame(9000, $backlogs[$successor->id]->amount);
+        // A re-carried balance is read to the same day: the successor's months
+        // never land on the agreement it replaced.
+        $reader = app(DeferredBacklogReader::class);
+        $this->assertSame('2026-03-31', $reader->segmentEnd($this->workspace, $outgoing, CarbonImmutable::parse(self::THROUGH))->toDateString());
+        $this->assertSame(self::THROUGH, $reader->segmentEnd($this->workspace, $successor, CarbonImmutable::parse(self::THROUGH))->toDateString());
+        $ledger = array_map(static fn (string $period, float $carried): MonthSummary => new MonthSummary(
+            new OpeningBalance(0, 0, 0, 0, 0, 0, 0, 0), new ClosingBalance(0, 0, 0, 0, 0, 0),
+            hoursWorked: 0, yearMonth: $period, retainerHours: 0, recarriedDeferredHours: $carried,
+        ), ['2026-03', '2026-04', '2026-05'], [1.0, 2.0, 3.0]);
+        $this->assertSame(60, app(DeferredBacklogReadService::class)->carriedMinutes($this->workspace, $outgoing, $ledger, CarbonImmutable::parse(self::THROUGH)));
+        $this->assertSame(180, app(DeferredBacklogReadService::class)->carriedMinutes($this->workspace, $successor, $ledger, CarbonImmutable::parse(self::THROUGH)));
         // Until the outgoing final invoice links it, termination of the
         // outgoing agreement through the handover collects exactly its share.
         $this->assertSame(

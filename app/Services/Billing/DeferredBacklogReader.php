@@ -104,6 +104,17 @@ final class DeferredBacklogReader
     }
 
     /**
+     * The last day one agreement's backlog runs to, for a caller that has to
+     * read something else - its ledger's re-carried balance - to the same day.
+     */
+    public function segmentEnd(Workspace $workspace, ClientAgreement $agreement, CarbonImmutable $through): CarbonImmutable
+    {
+        $companyId = (int) $agreement->client_company_id;
+
+        return $this->segmentThrough($agreement, $this->segments((int) $workspace->id, [$companyId])[$companyId] ?? new Collection, $through);
+    }
+
+    /**
      * The last day an agreement's backlog runs to.
      *
      * The workspace's today, the agreement's own end - where its capacity

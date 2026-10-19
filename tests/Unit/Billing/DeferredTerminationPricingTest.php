@@ -11,6 +11,7 @@ use App\Services\Billing\DeferredBacklogReadService;
 use App\Services\Billing\MoneyService;
 use App\Support\Billing\DeferredTerminationPricing;
 use App\Support\Billing\FlatHourlyPricing;
+use Carbon\CarbonImmutable;
 use DomainException;
 use InvalidArgumentException;
 use RuntimeException;
@@ -150,9 +151,16 @@ final class DeferredTerminationPricingTest extends TestCase
             recarriedDeferredHours: $carried,
         );
 
-        $this->assertSame(0, DeferredBacklogReadService::carriedMinutesOf([]));
-        $this->assertSame(45, DeferredBacklogReadService::carriedMinutesOf([$month('2026-02', 3.0), $month('2026-03', 0.75)]));
-        $this->assertSame(1, DeferredBacklogReadService::carriedMinutesOf([$month('2026-03', 0.0084)]));
+        $march = CarbonImmutable::parse('2026-03-15');
+        $ledger = [$month('2026-02', 3.0), $month('2026-03', 0.75), $month('2026-04', 9.0)];
+
+        $this->assertSame(0, DeferredBacklogReadService::carriedMinutesOf([], $march));
+        // The month the backlog's last day falls in, never a later one.
+        $this->assertSame(45, DeferredBacklogReadService::carriedMinutesOf($ledger, $march));
+        $this->assertSame(180, DeferredBacklogReadService::carriedMinutesOf($ledger, CarbonImmutable::parse('2026-02-28')));
+        $this->assertSame(540, DeferredBacklogReadService::carriedMinutesOf($ledger, CarbonImmutable::parse('2026-05-01')));
+        $this->assertSame(0, DeferredBacklogReadService::carriedMinutesOf($ledger, CarbonImmutable::parse('2026-01-31')));
+        $this->assertSame(1, DeferredBacklogReadService::carriedMinutesOf([$month('2026-03', 0.0084)], $march));
     }
 
     public function test_lines_that_together_exceed_the_integer_range_refuse_rather_than_becoming_a_float(): void
