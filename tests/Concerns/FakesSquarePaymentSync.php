@@ -27,6 +27,9 @@ trait FakesSquarePaymentSync
     /** @var array<string, array<string, mixed>> */
     private array $squarePayments = [];
 
+    /** @var array<string, array<string, mixed>> */
+    private array $squareDisputes = [];
+
     private ?int $squareInvoiceFailureStatus = null;
 
     /** @return array{Workspace, User, ClientCompany, ClientInvoice} */
@@ -66,10 +69,31 @@ trait FakesSquarePaymentSync
 
                 return Http::response(['payment' => $this->squarePayments[$id] ?? null]);
             }
+            if (str_starts_with($path, '/v2/disputes/')) {
+                $id = substr($path, strlen('/v2/disputes/'));
+
+                return isset($this->squareDisputes[$id]) ? Http::response(['dispute' => $this->squareDisputes[$id]]) : Http::response(['errors' => [['category' => 'INVALID_REQUEST_ERROR', 'code' => 'NOT_FOUND']]], 404);
+            }
 
             return Http::response([], 404);
         });
 
         return [$workspace, $owner, $company, $invoice];
+    }
+
+    /** @return array<string, mixed> */
+    private static function squareDispute(string $id, string $paymentId, string $state, int $amount = 12_345): array
+    {
+        return [
+            'id' => $id,
+            'amount_money' => ['amount' => $amount, 'currency' => 'USD'],
+            'reason' => 'NOT_AS_DESCRIBED',
+            'state' => $state,
+            'disputed_payment' => ['payment_id' => $paymentId],
+            'card_brand' => 'VISA',
+            'location_id' => 'LOCFIXTURE01',
+            'created_at' => '2030-02-02T10:00:00Z',
+            'updated_at' => '2030-02-02T10:00:00Z',
+        ];
     }
 }

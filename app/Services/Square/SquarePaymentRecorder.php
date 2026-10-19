@@ -9,9 +9,11 @@ use App\Models\Workspace;
 use App\Services\Billing\BillingMaintenance;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Services\Billing\RecordReceivedPayment;
+use App\Support\Billing\InvoicePaymentStatus;
 use App\Support\Billing\ReceivedPaymentData;
 use App\Support\Billing\ReceivedPaymentProvider;
 use App\Support\Concurrency\Locks;
+use App\Support\Square\SquareDisputeFacts;
 use App\Support\Square\SquarePaymentFacts;
 use DomainException;
 use Illuminate\Support\Facades\DB;
@@ -62,6 +64,43 @@ final class SquarePaymentRecorder
             // Completed refunds are cumulative. A slower fetch never undoes one.
             if ($facts->refundedAmount > $payment->refunded_amount) {
                 $this->invoices->setRefundedAmount($payment, $facts->refundedAmount, $workspace);
+            }
+
+            return true;
+        });
+    }
+
+    /**
+     * Move a recorded payment into or out of dispute, as Square now reports
+     * the dispute. A dispute on a payment svc never recorded changes nothing.
+     *
+     * The disputed amount may be part of the payment; it is checked against
+     * the payment, and a partial win restores the payment as a whole win does.
+     * Only `succeeded` and `disputed` move: a refunded payment stays refunded.
+     * Reconciliation allocations are kept and flagged by the status change.
+     */
+    public function recordDispute(Workspace $workspace, SquareDisputeFacts $dispute): bool
+    {
+        return DB::transaction(function () use ($workspace, $dispute): bool {
+            BillingMaintenance::share($workspace->id);
+            $payment = ClientInvoicePayment::query()->where('workspace_id', $workspace->id)
+                ->where('provider', 'square')->where('provider_payment_identifier', $dispute->paymentId)->tap(Locks::forUpdate())->first();
+            if ($payment === null) {
+                return false;
+            }
+            if ($dispute->currency !== $payment->currency || $dispute->amount > $payment->amount) {
+                throw new DomainException('Square dispute facts do not match the recorded payment.');
+            }
+            $current = InvoicePaymentStatus::tryFrom((string) $payment->status);
+            $next = $dispute->resolvedForMerchant ? InvoicePaymentStatus::Succeeded : InvoicePaymentStatus::Disputed;
+            $moves = match ($current) {
+                InvoicePaymentStatus::Succeeded => $next === InvoicePaymentStatus::Disputed,
+                InvoicePaymentStatus::Disputed => $next === InvoicePaymentStatus::Succeeded,
+                InvoicePaymentStatus::Pending, InvoicePaymentStatus::Failed, InvoicePaymentStatus::Canceled,
+                InvoicePaymentStatus::Refunded, null => false,
+            };
+            if ($moves) {
+                $this->invoices->setPaymentStatus($payment, $next->value, $workspace);
             }
 
             return true;

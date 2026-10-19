@@ -4,10 +4,12 @@ namespace Tests\Feature\Square;
 
 use App\Models\ClientInvoicePayment;
 use App\Models\InvoiceSquareLink;
+use App\Services\Finance\PaymentReconciliationService;
 use App\Services\Square\SquareLinkService;
 use App\Services\Square\SquarePaymentReconciler;
 use App\Services\Square\SquareWebhookReceipts;
 use App\Support\AgentApi\AgentApiVersion;
+use App\Support\Finance\ReconciliationReviewReason;
 use App\Support\Square\SquareInvoiceReference;
 use App\Support\Square\SquareMatchMethod;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -15,6 +17,7 @@ use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
 use Tests\Concerns\FakesSquarePaymentSync;
 use Tests\TestCase;
@@ -81,6 +84,110 @@ final class SquareWebhookTest extends TestCase
         $this->deliver(['event_id' => 'evt_fixture_refund', 'type' => 'refund.updated', 'data' => ['id' => 'refund_fixture_1', 'object' => ['refund' => ['payment_id' => 'pay_fixture_1', 'amount_money' => ['amount' => 12_345, 'currency' => 'USD']]]]])->assertOk();
         $this->assertSame(345, $invoice->fresh()->balance_amount);
         $this->assertSame(1, $invoice->payments()->count());
+    }
+
+    public function test_refund_after_a_full_reconciliation_is_recorded_and_flags_the_allocation(): void
+    {
+        [$workspace, $owner, , $invoice] = $this->paymentFixture();
+        app(SquarePaymentReconciler::class)->invoice($workspace, 'inv_fixture_1');
+        $payment = $invoice->payments()->firstOrFail();
+        $allocation = app(PaymentReconciliationService::class)->upsert($workspace, $payment, $owner, [
+            'external_system_slug' => 'finance', 'external_transaction_uuid' => (string) Str::uuid(), 'allocated_amount' => 12_345, 'currency' => 'USD',
+        ]);
+
+        $this->squarePayments['pay_fixture_1']['refunded_money'] = ['amount' => 345, 'currency' => 'USD'];
+        $this->deliver(['event_id' => 'evt_fixture_reconciled_refund', 'type' => 'refund.updated', 'data' => ['object' => ['refund' => ['payment_id' => 'pay_fixture_1']]]])->assertOk();
+
+        $this->assertSame(345, $payment->fresh()->refunded_amount);
+        $this->assertSame('succeeded', $payment->fresh()->status);
+        $this->assertTrue($allocation->fresh()->is_active);
+        $this->assertSame(12_345, $allocation->fresh()->allocated_amount);
+        $this->assertSame(ReconciliationReviewReason::ProcessorRefund, $allocation->fresh()->review_reason);
+
+        $this->squarePayments['pay_fixture_1']['refunded_money'] = ['amount' => 12_345, 'currency' => 'USD'];
+        $this->deliver(['event_id' => 'evt_fixture_reconciled_full_refund', 'type' => 'refund.updated', 'data' => ['object' => ['refund' => ['payment_id' => 'pay_fixture_1']]]])->assertOk();
+        $this->assertSame('refunded', $payment->fresh()->status);
+        $this->assertSame(12_345, $invoice->fresh()->balance_amount);
+    }
+
+    public function test_dispute_events_refetch_the_dispute_and_move_the_payment(): void
+    {
+        [$workspace, $owner, , $invoice] = $this->paymentFixture();
+        app(SquarePaymentReconciler::class)->invoice($workspace, 'inv_fixture_1');
+        $payment = $invoice->payments()->firstOrFail();
+        $allocation = app(PaymentReconciliationService::class)->upsert($workspace, $payment, $owner, [
+            'external_system_slug' => 'finance', 'external_transaction_uuid' => (string) Str::uuid(), 'allocated_amount' => 12_345, 'currency' => 'USD',
+        ]);
+
+        // The notification's own state is ignored; the dispute is re-fetched.
+        $this->squareDisputes['dispute_fixture_1'] = self::squareDispute('dispute_fixture_1', 'pay_fixture_1', 'EVIDENCE_REQUIRED', 5_000);
+        $this->deliver(['event_id' => 'evt_fixture_dispute_created', 'type' => 'dispute.created', 'data' => ['type' => 'dispute', 'id' => 'dispute_fixture_1', 'object' => ['dispute' => ['state' => 'WON']]]])->assertOk();
+
+        $this->assertSame('disputed', $payment->fresh()->status);
+        $this->assertSame(12_345, $invoice->fresh()->balance_amount);
+        $this->assertSame(ReconciliationReviewReason::ProcessorDispute, $allocation->fresh()->review_reason);
+        $this->assertTrue($allocation->fresh()->is_active);
+
+        // A partial win: the disputed amount, not the whole payment, is what was contested.
+        $this->squareDisputes['dispute_fixture_1']['state'] = 'WON';
+        $this->deliver(['event_id' => 'evt_fixture_dispute_won', 'type' => 'dispute.state.updated', 'data' => ['type' => 'dispute', 'id' => 'dispute_fixture_1']])->assertOk();
+
+        $this->assertSame('succeeded', $payment->fresh()->status);
+        $this->assertSame('paid', $invoice->fresh()->status);
+        $this->assertSame(1, $invoice->payments()->count());
+    }
+
+    public function test_a_lost_or_accepted_dispute_keeps_the_payment_disputed(): void
+    {
+        [$workspace, , , $invoice] = $this->paymentFixture();
+        app(SquarePaymentReconciler::class)->invoice($workspace, 'inv_fixture_1');
+        foreach (['INQUIRY_EVIDENCE_REQUIRED', 'PROCESSING', 'LOST', 'ACCEPTED'] as $index => $state) {
+            $this->squareDisputes['dispute_fixture_2'] = self::squareDispute('dispute_fixture_2', 'pay_fixture_1', $state);
+            $this->deliver(['event_id' => 'evt_fixture_dispute_state_'.$index, 'type' => 'dispute.state.updated', 'data' => ['type' => 'dispute', 'id' => 'dispute_fixture_2']])->assertOk();
+            $this->assertSame('disputed', $invoice->payments()->firstOrFail()->status, $state);
+        }
+    }
+
+    public function test_a_closed_inquiry_restores_the_payment(): void
+    {
+        [$workspace, , , $invoice] = $this->paymentFixture();
+        app(SquarePaymentReconciler::class)->invoice($workspace, 'inv_fixture_1');
+        $this->squareDisputes['dispute_fixture_3'] = self::squareDispute('dispute_fixture_3', 'pay_fixture_1', 'INQUIRY_PROCESSING');
+        $this->deliver(['event_id' => 'evt_fixture_inquiry_open', 'type' => 'dispute.created', 'data' => ['type' => 'dispute', 'id' => 'dispute_fixture_3']])->assertOk();
+        $this->assertSame('disputed', $invoice->payments()->firstOrFail()->status);
+
+        $this->squareDisputes['dispute_fixture_3']['state'] = 'INQUIRY_CLOSED';
+        $this->deliver(['event_id' => 'evt_fixture_inquiry_closed', 'type' => 'dispute.state.updated', 'data' => ['type' => 'dispute', 'id' => 'dispute_fixture_3']])->assertOk();
+        $this->assertSame('succeeded', $invoice->payments()->firstOrFail()->status);
+    }
+
+    public function test_a_dispute_on_an_unrecorded_payment_changes_nothing(): void
+    {
+        [$workspace, , , $invoice] = $this->paymentFixture();
+        $this->squareDisputes['dispute_fixture_4'] = self::squareDispute('dispute_fixture_4', 'pay_fixture_unknown', 'EVIDENCE_REQUIRED');
+        $this->deliver(['event_id' => 'evt_fixture_unknown_dispute', 'type' => 'dispute.created', 'data' => ['type' => 'dispute', 'id' => 'dispute_fixture_4']])->assertOk();
+
+        $this->assertSame(0, $invoice->payments()->count());
+        $this->assertSame(1, DB::table('square_webhook_receipts')->where('workspace_id', $workspace->id)->whereNotNull('completed_at')->count());
+    }
+
+    public function test_an_unreadable_dispute_is_released_for_retry(): void
+    {
+        [$workspace, , , $invoice] = $this->paymentFixture();
+        app(SquarePaymentReconciler::class)->invoice($workspace, 'inv_fixture_1');
+        $event = ['event_id' => 'evt_fixture_unreadable_dispute', 'type' => 'dispute.created', 'data' => ['type' => 'dispute', 'id' => 'dispute_fixture_5']];
+        $cases = [
+            'an unknown state' => ['state' => 'SOMETHING_NEW'],
+            'another currency' => ['amount_money' => ['amount' => 100, 'currency' => 'EUR']],
+            'more than the payment' => ['amount_money' => ['amount' => 12_346, 'currency' => 'USD']],
+            'a different dispute' => ['id' => 'dispute_fixture_other'],
+        ];
+        foreach ($cases as $label => $override) {
+            $this->squareDisputes['dispute_fixture_5'] = [...self::squareDispute('dispute_fixture_5', 'pay_fixture_1', 'EVIDENCE_REQUIRED'), ...$override];
+            $this->deliver($event)->assertStatus(503);
+            $this->assertSame('succeeded', $invoice->payments()->firstOrFail()->status, $label);
+        }
+        $this->deliver(['event_id' => 'evt_fixture_bad_dispute_hint', 'type' => 'dispute.created', 'data' => ['type' => 'dispute', 'id' => '../payments/pay_fixture_1']])->assertBadRequest();
     }
 
     public function test_failed_refetch_releases_the_event_for_retry(): void

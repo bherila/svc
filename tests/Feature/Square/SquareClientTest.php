@@ -70,6 +70,7 @@ final class SquareClientTest extends TestCase
         $client->retrieveOrder('order_fixture_1');
         $client->listPayments('2026-01-01T00:00:00Z', '2026-02-01T00:00:00Z', 'LOCFIXTURE01', false, null, 500);
         $client->getPayment('pay_fixture_1');
+        $client->getDispute('dispute_fixture_1');
 
         $allowed = [];
         foreach (SquareEndpoint::cases() as $endpoint) {
@@ -77,7 +78,7 @@ final class SquareClientTest extends TestCase
         }
         $pattern = '~^(?:'.str_replace('\{id\}', '[^/?]+', implode('|', $allowed)).')(?:\?.*)?$~';
         $recorded = Http::recorded();
-        $this->assertCount(10, $recorded);
+        $this->assertCount(11, $recorded);
         foreach ($recorded as [$request]) {
             /** @var Request $request */
             $this->assertStringStartsWith(self::SQUARE_BASE.'/v2/', $request->url());

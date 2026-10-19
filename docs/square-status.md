@@ -3,7 +3,8 @@
 The signed receiver is `POST /api/webhooks/square`. Register the notification URL
 under the application's configured `APP_URL`, for example
 `https://svc.example.test/api/webhooks/square`, for `invoice.updated`,
-`invoice.payment_made`, `payment.updated` and `refund.updated`.
+`invoice.payment_made`, `payment.updated`, `refund.updated`, `dispute.created`
+and `dispute.state.updated` (or its older name, `dispute.state.changed`).
 The local operator installs `SQUARE_WEBHOOK_SIGNATURE_KEY`; an absent key refuses
 requests with 403 before decoding, database work or Square reads. Oversized bodies
 are refused with 413 before hashing.
@@ -12,7 +13,8 @@ The receiver checks the base64 HMAC-SHA256 signature over that configured URL
 followed by the exact raw request body. It has no session, authentication or CSRF
 middleware. Any external application edge must also permit the machine path.
 Only event and object identifiers are used from a signed notification. Invoice,
-order and payment facts are re-fetched through the existing read-only client.
+order, payment and dispute facts are re-fetched through the existing read-only
+client.
 No raw webhook body or signature key is stored in a receipt.
 
 `svc:square:reconcile-payments` runs every fifteen minutes without overlapping.
@@ -29,7 +31,18 @@ or unreadable individual records can be skipped so other records are reconciled.
 Completed full and partial payments use the received-payment service, with
 provider `square` and the payment identifier as the existing unique provider key.
 Refunds apply the existing received-payment correction and are cumulative, so a
-slower response cannot restore refunded money. A draft, void invoice, currency
+slower response cannot restore refunded money. A refund or dispute is recorded
+whatever the payment's finance reconciliation allocations; they are kept and
+flagged for review (see [the finance reconciliation API](finance-api.md)).
+
+A dispute notification names the dispute, which is re-fetched. A dispute on a
+payment svc recorded moves it to `disputed` while an inquiry or chargeback is
+open and when it is lost or accepted, and back to `succeeded` when it is won -
+in part or in full, since the disputed amount may be part of the payment - or
+when an inquiry closes. A refunded payment stays refunded. A dispute on a
+payment svc never recorded changes nothing; an unknown state, another currency
+or an amount above the payment is refused and released for retry. The sweep
+does not read disputes, so a missed dispute notification is not recovered. A draft, void invoice, currency
 mismatch, over-balance payment, invalid data or ambiguous tip allocation is
 refused instead of changing the ledger. Failed events release their durable
 claim and answer 503 for retry; successfully completed event IDs do no more work.

@@ -8,6 +8,7 @@ use App\Models\SquareInvoiceSnapshot;
 use App\Models\Workspace;
 use App\Services\Square\Mirror\SquareMirrorRepository;
 use App\Services\Square\Mirror\SquareSnapshotMapper;
+use App\Support\Square\SquareDisputeFacts;
 use App\Support\Square\SquarePaymentFacts;
 use App\Support\WorkspaceClock;
 
@@ -91,6 +92,17 @@ final class SquarePaymentReconciler
         if ($snapshot !== null) {
             $this->invoice($workspace, $snapshot->square_invoice_id);
         }
+    }
+
+    /** A dispute is re-fetched by its id; its payment is matched only among recorded ones. */
+    public function dispute(Workspace $workspace, string $disputeId): void
+    {
+        if (! SquareConfiguration::fromConfig()->servesWorkspace($workspace)) {
+            throw SquareRequestFailed::notConnected();
+        }
+        $dispute = $this->client->getDispute($disputeId)['dispute'] ?? null;
+        $facts = is_array($dispute) ? SquareDisputeFacts::from($dispute, $disputeId) : throw SquareRequestFailed::unreadable();
+        $this->payments->recordDispute($workspace, $facts);
     }
 
     /** @return iterable<InvoiceSquareLink> */
