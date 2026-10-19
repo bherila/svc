@@ -44,8 +44,9 @@ final class SquareSnapshotPaymentIdsTest extends TestCase
         $this->assertSame('pay_100', $ids[99]);
         $tenders[] = ['id' => 'tender_101', 'payment_id' => 'pay_101'];
         $this->assertNull($mapper->paymentIds(['tenders' => $tenders]));
-        $this->assertSame([], $mapper->paymentIds(['tenders' => 'none']));
-        $this->assertSame([], $mapper->paymentIds([]));
+        $this->assertNull($mapper->paymentIds(['tenders' => 'none']), 'Malformed, not empty.');
+        $this->assertNull($mapper->paymentIds(['tenders' => ['first' => ['id' => 'pay_1']]]), 'Not a list.');
+        $this->assertSame([], $mapper->paymentIds([]), 'An order with no tenders has no payments.');
     }
 
     public function test_payment_ids_are_current_for_the_status_paid_amount_and_tender_rules_they_were_read_for(): void

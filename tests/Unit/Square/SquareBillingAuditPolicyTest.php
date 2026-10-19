@@ -289,10 +289,12 @@ final class SquareBillingAuditPolicyTest extends TestCase
 
     public function test_an_unresolved_invoice_in_reach_makes_the_audit_incomplete(): void
     {
-        $unresolved = new SquareAuditInvoice('inv_pending', '000123-R-0001', '000123', 1, 'cust_series', null, null, 'PAID', 'USD', 12_345, 12_345, '2030-01-15', null, false, [], null, false);
+        $unresolved = new SquareAuditInvoice('inv_pending', '000123-R-0001', '000123', 1, 'cust_series', null, null, 'PAID', 'USD', 12_345, 12_345, '2030-01-15', null, false, ['pay_stale_rules'], null, false);
         $stranger = new SquareAuditInvoice('inv_stranger', '000500', null, null, 'cust_stranger', null, null, 'PAID', 'USD', 100, 100, '2030-01-15', null, false, [], null, false);
 
         $this->assertFalse(self::classify([$unresolved])->complete);
+        $this->assertSame([], self::classify([$unresolved])->unmatchedPayments, 'Ids awaiting a re-read are not reported.');
+        $this->assertSame(['pay_current'], array_column(self::classify([$unresolved, self::invoice('inv_fixture_2', 2, '2030-02-15', 'PAID', payments: ['pay_current'])])->unmatchedPayments, 'payment_id'), 'Later invoices are still checked.');
         $this->assertFalse(self::classify([$unresolved, self::invoice('inv_fixture_2', 2, '2030-02-15', 'PAID')])->complete);
         $this->assertFalse(self::classify([self::invoice('inv_fixture_2', 2, '2030-02-15', 'PAID'), $unresolved])->complete);
         $this->assertTrue(self::classify([self::invoice('inv_fixture_2', 2, '2030-02-15', 'PAID'), self::invoice('inv_fixture_3', 3, '2030-03-15', 'PAID')])->complete);

@@ -113,8 +113,12 @@ final class SquareBillingAuditPolicy
             if (! $inReach) {
                 continue;
             }
+            // Ids read for an earlier state, or by earlier rules, may name
+            // tenders that took no money: they wait for the re-read.
             if (! $invoice->paymentIdsResolved) {
                 $resolved = false;
+
+                continue;
             }
             foreach ($invoice->paymentIds as $paymentId) {
                 if (! isset($facts->recordedPaymentIds[$paymentId])) {
