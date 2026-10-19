@@ -45,7 +45,6 @@ return [
         static fn (string $host): string => trim($host),
         explode(',', (string) env('AGENT_API_MCP_ALLOWED_HOSTS', '')),
     ))),
-    'dynamic_client_retention_days' => (int) env('AGENT_API_DYNAMIC_CLIENT_RETENTION_DAYS', 30),
     // OAuth client ids of first-party applications approved without a consent
     // screen (comma-separated). Only an operator-registered, confidential,
     // authorization-code client qualifies (App\Support\Auth\OAuthClient); register

@@ -8,7 +8,10 @@ Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
 
-Schedule::command('svc:oauth:prune-dynamic-clients')->daily()->withoutOverlapping();
+// Stale, unused self-registered OAuth clients past
+// bherila-auth.oauth_server.dynamic_clients.retention_days (#460). The vendor's
+// prune; svc:oauth:prune-dynamic-clients is an alias of it.
+Schedule::command('bherila-auth:prune-dynamic-clients')->daily()->withoutOverlapping();
 // Expired Passport access tokens, refresh tokens and authorization codes (#458),
 // a day past the 30-day refresh-token lifetime after their own expiry. Never
 // Passport's default (revoked rows at any age, and expired rows after a week):
