@@ -34,7 +34,7 @@ final class SquareSnapshotMapper
     public const array PAYMENT_STATUSES = ['PAID', 'PARTIALLY_PAID', 'PARTIALLY_REFUNDED', 'REFUNDED', 'PAYMENT_PENDING'];
 
     /** The tender rules payment ids are read by; see {@see paymentIds()}. */
-    private const string TENDER_RULES = 't2';
+    public const string TENDER_RULES = 't2';
 
     /** The one card tender state in which money has moved. */
     private const string CAPTURED = 'CAPTURED';

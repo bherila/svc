@@ -119,8 +119,8 @@ invoices within its reach, their active links, customers and recorded payment id
 once, with every query bounded and scoped to the workspace, and classifies them in
 `SquareBillingAuditPolicy` without the database. Series members load first under
 their own bound, so a large mirror never hides a billed-in-Square series.
-`complete` is false when the last completed sync was truncated (or none has
-completed), when a bound (5,000 series members, 5,000 other mirrored invoices or
+`complete` is false unless the newest sync run completed without truncation (a
+run still going or failed leaves the mirror between generations), when a bound (5,000 series members, 5,000 other mirrored invoices or
 500 agreements) was reached, or while the sync has yet to read the payment ids of
 a paid invoice in reach (it reads a bounded number of orders per run, and stamps
 an order too large to read so it does not hold up the rest). The counts are then

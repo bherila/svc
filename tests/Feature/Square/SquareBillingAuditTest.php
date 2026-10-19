@@ -239,6 +239,33 @@ final class SquareBillingAuditTest extends TestCase
         $this->assertSame(['inv_audit_1'], array_column($repository->invoicesNeedingPaymentIds($workspace, 10), 'square_invoice_id'));
     }
 
+    public function test_the_lookup_queue_skips_current_and_unresolvable_rows_in_the_query(): void
+    {
+        [$workspace] = $this->fixture();
+        foreach (['current' => 'PAID|12345|t2', 'stamped' => 'PAID|12345|t2|x', 'unknown_current' => 'PAID||t2'] as $name => $basis) {
+            $this->snapshot($workspace, 'inv_'.$name, null, '2030-01-15', 'PAID', ['series_key' => null, 'invoice_number' => '00000'.strlen($name), 'paid_amount' => str_starts_with($name, 'unknown') ? null : 12_345, 'square_order_id' => 'order_'.$name, 'payment_ids' => [], 'payment_ids_basis' => $basis, 'synced_at' => '2030-01-01 00:00:00']);
+        }
+        $this->snapshot($workspace, 'inv_due', null, '2030-01-15', 'PAID', ['series_key' => null, 'invoice_number' => '000999', 'paid_amount' => 12_345, 'square_order_id' => 'order_due', 'synced_at' => '2030-02-01 00:00:00']);
+        $repository = app(SquareMirrorRepository::class);
+
+        $this->assertSame(['inv_due'], array_column($repository->invoicesNeedingPaymentIds($workspace, 1), 'square_invoice_id'));
+
+        // Another sync resolved the ids for this state first: they are kept.
+        $this->assertTrue($repository->storePaymentIds($workspace, 'inv_due', 'PAID|12345|t2', ['pay_audit_kept']));
+        $this->assertFalse($repository->markPaymentIdsUnresolvable($workspace, 'inv_due', 'PAID|12345|t2'));
+        $this->assertSame(['pay_audit_kept'], SquareInvoiceSnapshot::query()->where('workspace_id', $workspace->id)->where('square_invoice_id', 'inv_due')->value('payment_ids'));
+    }
+
+    public function test_a_newer_unfinished_or_failed_sync_leaves_the_audit_incomplete(): void
+    {
+        [$workspace] = $this->fixture();
+        $this->assertTrue(app(SquareBillingAudit::class)->report($workspace)['complete']);
+        $run = SquareSyncRun::query()->create(['workspace_id' => $workspace->id, 'trigger' => SquareSyncRun::TRIGGER_SCHEDULE, 'status' => SquareSyncRun::RUNNING, 'api_version' => '2026-09-16', 'started_at' => '2030-03-20 11:45:00']);
+        $this->assertFalse(app(SquareBillingAudit::class)->report($workspace)['complete']);
+        $run->forceFill(['status' => SquareSyncRun::FAILED, 'error_code' => 'unauthorized'])->save();
+        $this->assertFalse(app(SquareBillingAudit::class)->report($workspace)['complete']);
+    }
+
     public function test_an_imported_annual_series_mirrors_its_amount_once_per_cycle(): void
     {
         [$workspace, $owner] = $this->fixture();

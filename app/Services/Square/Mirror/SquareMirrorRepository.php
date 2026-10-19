@@ -67,10 +67,14 @@ final class SquareMirrorRepository
             ->whereNotNull('square_order_id')
             ->where(static fn (Builder $paid) => $paid->where('paid_amount', '>', 0)
                 ->orWhere(static fn (Builder $unknown) => $unknown->whereNull('paid_amount')->whereIn('status', SquareSnapshotMapper::PAYMENT_STATUSES)))
+            // Current and unresolvable rows are left out by the database, so
+            // the read is bounded by the limit, not by the paid history.
+            ->where(static fn (Builder $due) => $due->whereNull('payment_ids_basis')
+                ->orWhereRaw('payment_ids_basis not in ('.self::basisSql().', '.self::basisSql("'|x'").')'))
             ->orderBy('synced_at')
             ->orderBy('id')
-            ->select(['square_invoice_id', 'square_order_id', 'status', 'paid_amount', 'payment_ids_basis'])
-            ->lazy(min($limit, 100));
+            ->limit(min($limit, 100))
+            ->get(['square_invoice_id', 'square_order_id', 'status', 'paid_amount', 'payment_ids_basis']);
         $due = [];
         foreach ($rows as $row) {
             $paid = $row->paid_amount === null ? null : (int) $row->paid_amount;
@@ -113,6 +117,20 @@ final class SquareMirrorRepository
     }
 
     /**
+     * {@see SquareSnapshotMapper::paymentIdsBasis()} in SQL, for the row's own
+     * status and paid amount, followed by `$suffix`.
+     *
+     * @param  literal-string  $suffix
+     * @return literal-string
+     */
+    private static function basisSql(string $suffix = "''"): string
+    {
+        return DB::connection()->getDriverName() === 'sqlite'
+            ? "(status || '|' || coalesce(cast(paid_amount as char), '') || '|".SquareSnapshotMapper::TENDER_RULES."' || ".$suffix.')'
+            : "concat(status, '|', coalesce(cast(paid_amount as char), ''), '|".SquareSnapshotMapper::TENDER_RULES."', ".$suffix.')';
+    }
+
+    /**
      * Stamps an invoice whose order could not be read into payment ids for
      * the state named by `$basis`, so the lookup queue moves past it until
      * the invoice changes. Its payment ids stay unresolved.
@@ -127,6 +145,8 @@ final class SquareMirrorRepository
             ->whereNull('deleted_at')
             ->where('status', $status)
             ->when($paid === '', static fn (Builder $query) => $query->whereNull('paid_amount'), static fn (Builder $query) => $query->where('paid_amount', (int) $paid))
+            // Never over ids another sync has just resolved for this state.
+            ->where(static fn (Builder $query) => $query->whereNull('payment_ids_basis')->orWhere('payment_ids_basis', '!=', $basis))
             ->update([
                 'payment_ids' => null,
                 'payment_ids_basis' => $basis.'|x',

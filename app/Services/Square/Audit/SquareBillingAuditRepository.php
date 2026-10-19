@@ -67,9 +67,10 @@ final class SquareBillingAuditRepository
             ->get($columns);
         $reachComplete = $reach->count() <= self::MAX_INVOICES;
         $complete = $complete && $seriesComplete && $reachComplete;
-        $lastSync = SquareSyncRun::query()->where('workspace_id', $workspace->id)->where('status', SquareSyncRun::COMPLETED)
-            ->orderByDesc('finished_at')->orderByDesc('id')->first(['truncated']);
-        $mirrorComplete = $lastSync !== null && ! $lastSync->truncated;
+        // The newest run must be the complete one: a newer run that is still
+        // going, or failed, has left the mirror between generations.
+        $lastSync = SquareSyncRun::query()->where('workspace_id', $workspace->id)->orderByDesc('id')->first(['status', 'truncated']);
+        $mirrorComplete = $lastSync !== null && $lastSync->status === SquareSyncRun::COMPLETED && ! $lastSync->truncated;
         $snapshots = [];
         foreach ([...$members->all(), ...$reach->take(self::MAX_INVOICES)->all()] as $snapshot) {
             $snapshots[$snapshot->square_invoice_id] ??= $snapshot;
