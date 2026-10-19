@@ -34,6 +34,12 @@ final class AgentApiScopes
 
     public const string PAYMENTS_RECORD = 'payments:record';
 
+    /** The finance reconciliation surface (#457); a Sanctum finance.read token holds it there. */
+    public const string FINANCE_READ = 'finance:read';
+
+    /** The finance reconciliation surface (#457); a Sanctum finance.reconcile token holds it there. */
+    public const string FINANCE_RECONCILE = 'finance:reconcile';
+
     public const string CLIENTS_READ = 'clients:read';
 
     public const string CLIENTS_WRITE = 'clients:write';
@@ -102,6 +108,8 @@ final class AgentApiScopes
             self::EXPENSES_WRITE => 'Record, edit and delete draft expenses as a workspace manager',
             self::PAYMENTS_READ => 'Read received payments on authorized invoices',
             self::PAYMENTS_RECORD => 'Record money already received and correct a recorded payment\'s method, reference or date; never initiate a charge',
+            self::FINANCE_READ => 'Read received payments with their finance reconciliation allocations as a workspace owner or admin',
+            self::FINANCE_RECONCILE => 'Record and withdraw finance reconciliation allocations against received payments as a workspace owner or admin; never moves money',
             self::CLIENTS_READ => 'Read client companies as a workspace manager',
             self::CLIENTS_WRITE => 'Create, edit and archive client companies and their agreements as a workspace manager',
             self::PROPOSALS_READ => 'Read authorized proposals and their commercial terms',

@@ -4206,6 +4206,407 @@
                 "x-agent-mcp-tool": "expenses.unapprove"
             }
         },
+        "/workspaces/{workspace}/invoice-payments": {
+            "get": {
+                "operationId": "finance.invoice_payments.list",
+                "description": "Received payments with what each is worth net of refunds, how much of that its active finance reconciliation allocations cover, and every allocation, active first; newest received first. Succeeded payments unless status is given; 50 a page unless per_page is (at most 100), numbered by page. Workspace owners/admins; with the finance token, any workspace member. Internal ids, payment notes and processor payment identifiers are never returned. The Sanctum finance token issued by svc:auth:issue-token is accepted too, its finance.read and finance.reconcile abilities standing for these scopes.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "finance:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "pending",
+                                "succeeded",
+                                "failed",
+                                "refunded",
+                                "disputed",
+                                "canceled"
+                            ],
+                            "default": "succeeded"
+                        }
+                    },
+                    {
+                        "name": "invoice",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "received_from",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "format": "date"
+                        }
+                    },
+                    {
+                        "name": "received_to",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "format": "date"
+                        }
+                    },
+                    {
+                        "name": "per_page",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 50
+                        }
+                    },
+                    {
+                        "name": "page",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "default": 1
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "A page of received payments with their allocations",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/FinanceInvoicePaymentListResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Not signed in, or the token is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The caller may not read this workspace's payments, or the token lacks finance:read (the finance token, finance.read).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace does not exist or the caller is not in it.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "A filter is invalid (`errors` names it): an unknown status, a malformed invoice id or date, received_to before received_from, or per_page out of range.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "read",
+                "x-agent-idempotent": true,
+                "x-agent-mcp-tool": "finance.invoice_payments.list",
+                "x-mcp-tool": "finance.invoice_payments.list"
+            }
+        },
+        "/workspaces/{workspace}/invoice-payments/{payment}/reconciliations/{external_system}/{transaction}": {
+            "delete": {
+                "operationId": "finance.reconciliations.deactivate",
+                "description": "Stop the allocation the path names counting toward its payment. It is kept, with its history, rather than deleted, and setting it again with finance.reconciliations.upsert reactivates it. Idempotent by its path, so it takes no Idempotency-Key. Workspace owners/admins only. The Sanctum finance token issued by svc:auth:issue-token is accepted too, its finance.read and finance.reconcile abilities standing for these scopes.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "finance:reconcile"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/PaymentId"
+                    },
+                    {
+                        "name": "external_system",
+                        "in": "path",
+                        "required": true,
+                        "description": "The external finance system, as a lowercase slug.",
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 80,
+                            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+                        }
+                    },
+                    {
+                        "name": "transaction",
+                        "in": "path",
+                        "required": true,
+                        "description": "The external finance system's transaction UUID.",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The allocation, no longer active",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/FinanceReconciliationResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Not signed in, or the token is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The caller is not a workspace owner or admin, or the token lacks finance:reconcile (the finance token, finance.reconcile).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace does not exist or the caller is not in it; the payment or allocation does not exist in this workspace; or the system or transaction is not a slug and a UUID.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "external_system is longer than 80 characters (`errors` names external_system_slug).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "local_write",
+                "x-agent-idempotent": true,
+                "x-agent-write-safety": {
+                    "note": "Idempotent by its path (payment, external system, transaction): repeating it is the same write, so it takes no idempotency key."
+                },
+                "x-agent-mcp-tool": "finance.reconciliations.deactivate",
+                "x-mcp-tool": "finance.reconciliations.deactivate"
+            },
+            "put": {
+                "operationId": "finance.reconciliations.upsert",
+                "description": "Create or update the finance reconciliation allocation the path names: the share of a received payment, in integer minor units of its currency, that one transaction in an external finance system covers. One transaction may cover several payments and one payment several transactions, but a payment's active allocations never exceed what it is worth net of refunds, and only a succeeded payment can be reconciled. Answers 201 when it created the allocation and 200 when it updated it. Idempotent by its path, so it takes no Idempotency-Key. Nothing moves money. Workspace owners/admins only. The Sanctum finance token issued by svc:auth:issue-token is accepted too, its finance.read and finance.reconcile abilities standing for these scopes.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "finance:reconcile"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/FinanceReconciliationRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/PaymentId"
+                    },
+                    {
+                        "name": "external_system",
+                        "in": "path",
+                        "required": true,
+                        "description": "The external finance system, as a lowercase slug.",
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 80,
+                            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+                        }
+                    },
+                    {
+                        "name": "transaction",
+                        "in": "path",
+                        "required": true,
+                        "description": "The external finance system's transaction UUID.",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The allocation, updated (201 when this created it)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/FinanceReconciliationResponse"
+                                }
+                            }
+                        }
+                    },
+                    "201": {
+                        "description": "Created",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/FinanceReconciliationResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Not signed in, or the token is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The caller is not a workspace owner or admin, or the token lacks finance:reconcile (the finance token, finance.reconcile).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace does not exist or the caller is not in it; the payment does not exist in this workspace; or the system or transaction is not a slug and a UUID.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "A field is invalid (`errors` names it, or external_system_slug for the path), or the payment is not succeeded, its currency differs, or the active allocations would exceed its amount net of refunds.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "local_write",
+                "x-agent-idempotent": true,
+                "x-agent-write-safety": {
+                    "note": "Idempotent by its path (payment, external system, transaction): repeating it is the same write, so it takes no idempotency key."
+                },
+                "x-agent-mcp-tool": "finance.reconciliations.upsert",
+                "x-mcp-tool": "finance.reconciliations.upsert"
+            }
+        },
         "/workspaces/{workspace}/invoices/{invoice}/time": {
             "post": {
                 "operationId": "invoices.add_time",
@@ -5758,11 +6159,12 @@
         "/workspaces/{workspace}/payments/{payment}": {
             "patch": {
                 "operationId": "payments.correct",
-                "description": "Owner/admin correction of a received payment's descriptive fields: method, reference, notes and received_on, at least one of which must be given. Requires confirm: true, the version from payments.list and a reason, which is kept in the client history. Omitted fields are unchanged; an explicit null reference or note clears it. A stale version is refused with 409 and a correction that changes nothing records nothing. Amount, currency, status, refunds, the invoice and processor fields cannot be changed. Never initiates a charge or a refund. Requires both outer workflow and payment write flags.",
+                "description": "Owner/admin correction of a received payment's descriptive fields: method, reference, notes and received_on, at least one of which must be given. Requires confirm: true, the version from payments.list (hence payments:read as well as payments:record) and a reason, which is kept in the client history. Omitted fields are unchanged; an explicit null reference or note clears it. A stale version is refused with 409 and a correction that changes nothing records nothing. Amount, currency, status, refunds, the invoice and processor fields cannot be changed. Never initiates a charge or a refund. Requires both outer workflow and payment write flags.",
                 "security": [
                     {
                         "oauth2": [
-                            "payments:record"
+                            "payments:record",
+                            "payments:read"
                         ]
                     },
                     {
@@ -8847,6 +9249,8 @@
                             "expenses:write": "Record, edit and delete draft expenses as a workspace manager",
                             "payments:read": "Read received payments on authorized invoices",
                             "payments:record": "Record money already received and correct a recorded payment's method, reference or date; never initiate a charge",
+                            "finance:read": "Read received payments with their finance reconciliation allocations as a workspace owner or admin",
+                            "finance:reconcile": "Record and withdraw finance reconciliation allocations against received payments as a workspace owner or admin; never moves money",
                             "clients:read": "Read client companies as a workspace manager",
                             "clients:write": "Create, edit and archive client companies and their agreements as a workspace manager",
                             "proposals:read": "Read authorized proposals and their commercial terms",
@@ -11060,6 +11464,455 @@
                             "null"
                         ],
                         "format": "uuid"
+                    }
+                }
+            },
+            "FinanceInvoicePayment": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "id",
+                    "status",
+                    "amount",
+                    "refunded_amount",
+                    "disputed_amount",
+                    "net_amount",
+                    "reconciled_amount",
+                    "unreconciled_amount",
+                    "currency",
+                    "received_on",
+                    "method",
+                    "reference",
+                    "provider",
+                    "invoice",
+                    "reconciliations",
+                    "created_at",
+                    "updated_at"
+                ],
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "pending",
+                            "succeeded",
+                            "failed",
+                            "refunded",
+                            "disputed",
+                            "canceled"
+                        ]
+                    },
+                    "amount": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "refunded_amount": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "disputed_amount": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "minimum": 0,
+                        "description": "While disputed, what the processor's dispute holds back (the whole amount when the processor did not say); null for any other status."
+                    },
+                    "net_amount": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "amount less refunded_amount, never below zero."
+                    },
+                    "reconciled_amount": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "What the active allocations cover."
+                    },
+                    "unreconciled_amount": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "net_amount less reconciled_amount, never below zero."
+                    },
+                    "currency": {
+                        "type": "string",
+                        "pattern": "^[A-Z]{3}$"
+                    },
+                    "received_on": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date"
+                    },
+                    "method": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "reference": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "provider": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "The processor that recorded the payment, or null for one recorded by hand."
+                    },
+                    "invoice": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "id",
+                            "number",
+                            "status",
+                            "total_amount",
+                            "currency",
+                            "client"
+                        ],
+                        "properties": {
+                            "id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "number": {
+                                "type": "string"
+                            },
+                            "status": {
+                                "$ref": "#/components/schemas/InvoiceStatus"
+                            },
+                            "total_amount": {
+                                "type": "integer"
+                            },
+                            "currency": {
+                                "type": "string",
+                                "pattern": "^[A-Z]{3}$"
+                            },
+                            "client": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "id",
+                                    "name"
+                                ],
+                                "properties": {
+                                    "id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "name": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "reconciliations": {
+                        "type": "array",
+                        "description": "Every allocation, active first, newest first.",
+                        "items": {
+                            "$ref": "#/components/schemas/FinanceReconciliation"
+                        }
+                    },
+                    "created_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time"
+                    },
+                    "updated_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time"
+                    }
+                }
+            },
+            "FinanceInvoicePaymentListResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data",
+                    "links",
+                    "meta"
+                ],
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/FinanceInvoicePayment"
+                        }
+                    },
+                    "links": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "first",
+                            "last",
+                            "prev",
+                            "next"
+                        ],
+                        "properties": {
+                            "first": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "format": "uri"
+                            },
+                            "last": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "format": "uri"
+                            },
+                            "prev": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "format": "uri"
+                            },
+                            "next": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "format": "uri"
+                            }
+                        }
+                    },
+                    "meta": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "current_page",
+                            "from",
+                            "last_page",
+                            "links",
+                            "path",
+                            "per_page",
+                            "to",
+                            "total"
+                        ],
+                        "properties": {
+                            "current_page": {
+                                "type": "integer",
+                                "minimum": 1
+                            },
+                            "from": {
+                                "type": [
+                                    "integer",
+                                    "null"
+                                ]
+                            },
+                            "last_page": {
+                                "type": "integer",
+                                "minimum": 1
+                            },
+                            "links": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "required": [
+                                        "url",
+                                        "label",
+                                        "page",
+                                        "active"
+                                    ],
+                                    "properties": {
+                                        "url": {
+                                            "type": [
+                                                "string",
+                                                "null"
+                                            ],
+                                            "format": "uri"
+                                        },
+                                        "label": {
+                                            "type": "string"
+                                        },
+                                        "page": {
+                                            "type": [
+                                                "integer",
+                                                "null"
+                                            ]
+                                        },
+                                        "active": {
+                                            "type": "boolean"
+                                        }
+                                    }
+                                }
+                            },
+                            "path": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "format": "uri"
+                            },
+                            "per_page": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 100
+                            },
+                            "to": {
+                                "type": [
+                                    "integer",
+                                    "null"
+                                ]
+                            },
+                            "total": {
+                                "type": "integer",
+                                "minimum": 0
+                            }
+                        }
+                    }
+                }
+            },
+            "FinanceReconciliation": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "id",
+                    "external_system",
+                    "external_transaction_id",
+                    "allocated_amount",
+                    "currency",
+                    "reconciled_on",
+                    "is_active",
+                    "needs_review",
+                    "review_reason",
+                    "review_flagged_at",
+                    "created_at",
+                    "updated_at"
+                ],
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "external_system": {
+                        "type": "string",
+                        "maxLength": 80,
+                        "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                        "description": "The external finance system, as a lowercase slug."
+                    },
+                    "external_transaction_id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "The external finance system's transaction UUID."
+                    },
+                    "allocated_amount": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Minor units of the payment this transaction covers."
+                    },
+                    "currency": {
+                        "type": "string",
+                        "pattern": "^[A-Z]{3}$"
+                    },
+                    "reconciled_on": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date"
+                    },
+                    "is_active": {
+                        "type": "boolean",
+                        "description": "Whether it counts toward the payment's reconciled amount. An inactive allocation is kept with its history."
+                    },
+                    "needs_review": {
+                        "type": "boolean",
+                        "description": "Active and flagged because the payment processor refunded or disputed the payment after this allocation was written. Cleared by the next write that fits the payment, or by deactivating it."
+                    },
+                    "review_reason": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "enum": [
+                            "processor_refund",
+                            "processor_dispute",
+                            null
+                        ],
+                        "description": "Why it was last flagged."
+                    },
+                    "review_flagged_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time"
+                    },
+                    "created_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time"
+                    },
+                    "updated_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time"
+                    }
+                }
+            },
+            "FinanceReconciliationRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "allocated_amount",
+                    "currency"
+                ],
+                "properties": {
+                    "allocated_amount": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Minor units of the payment the transaction covers."
+                    },
+                    "currency": {
+                        "type": "string",
+                        "pattern": "^[A-Z]{3}$",
+                        "description": "The payment's currency."
+                    },
+                    "reconciled_on": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date"
+                    },
+                    "is_active": {
+                        "type": "boolean",
+                        "default": true,
+                        "description": "false keeps the allocation without it counting."
+                    }
+                }
+            },
+            "FinanceReconciliationResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data"
+                ],
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/FinanceReconciliation"
                     }
                 }
             },

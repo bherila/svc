@@ -30,7 +30,8 @@ class FinanceReconciliationApiTest extends TestCase
         Auth::forgetGuards();
         $outsider = User::factory()->create();
         $outsiderToken = $outsider->createToken('outsider', ['finance.read'], now()->addHour())->plainTextToken;
-        $this->withToken($outsiderToken)->getJson($path)->assertForbidden();
+        // A workspace the caller is not in is concealed, as on every workspace route (#457).
+        $this->withToken($outsiderToken)->getJson($path)->assertNotFound();
 
         Auth::forgetGuards();
         $readToken = $owner->createToken('read', ['finance.read'], now()->addHour())->plainTextToken;

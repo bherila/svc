@@ -86,8 +86,9 @@ return Application::configure(basePath: dirname(__DIR__))
         // A route that declared its protected resource (ExpectOAuthResource:<name>)
         // challenges with that resource's own metadata document, from
         // configuration rather than the request's host (RFC 9728 section 5.1).
-        // Anything else under /api/v1 - the Sanctum finance routes - keeps the
-        // plain JSON 401, pointing at the REST resource it sits under.
+        // Anything else under /api/v1 keeps the plain JSON 401, pointing at
+        // the REST resource it sits under. Every route there names its
+        // resource today, the finance reconciliation routes included (#457).
         $exceptions->render(function (AuthenticationException $exception, Request $request) {
             $challenge = OAuthProtectedResource::unauthenticated($request);
             if ($challenge !== null) {

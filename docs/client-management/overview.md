@@ -824,8 +824,11 @@ and would refuse the write — see [overpayment credits](overpayment-credits.md)
   categories below are what that showed when this was written:
   - the **agent API** (`/api/v1/*`) uses `auth:api` (Passport) with a scope
     check per route and an expected OAuth resource;
-  - the **finance reconciliation API** uses `auth:sanctum` with the
-    `finance.read` / `finance.reconcile` abilities;
+  - the **finance reconciliation routes** are agent API operations too (#457),
+    gated by the `finance:read` / `finance:reconcile` scopes, and admit
+    `auth:sanctum` as well as `auth:api`: the finance integration's Sanctum
+    token, whose `finance.read` / `finance.reconcile` abilities stand for those
+    scopes there and open nothing else;
   - **two adapter webhooks** are unauthenticated by design and verify the
     caller themselves. `POST /api/webhooks/stripe` constructs the event through
     `StripeGateway::constructWebhookEvent()` with the `Stripe-Signature` header
@@ -956,8 +959,10 @@ SVC stores identifiers and nothing else: no banking data, no transaction
 records, no ledger, and no foreign key into another application's database. The
 coupling is deliberately one-directional and opaque so the finance side stays a
 replaceable adapter. See
-[the finance reconciliation API](../finance-api.md) and the `finance.read` /
-`finance.reconcile` abilities.
+[the finance reconciliation API](../finance-api.md): the
+`finance.invoice_payments.list`, `finance.reconciliations.upsert` and
+`finance.reconciliations.deactivate` operations, over REST, MCP and the
+`svc:finance:*` commands.
 
 ## Time entry invoiced status
 

@@ -220,7 +220,9 @@ With all read scopes, discovery exposes these read-only tools, in this order:
 `billing.audit_missing_billed_overage`, and
 `billing.audit_opening_rollover`. While Square is configured, managers also
 see the read-only `square.*` pass-through tools described under
-[Square read-only pass-through](#square-read-only-pass-through-438).
+[Square read-only pass-through](#square-read-only-pass-through-438). Managers holding
+`finance:read` also see `finance.invoice_payments.list`, described under
+[Finance reconciliation](#finance-reconciliation-457).
 
 Agreement tools require `billing:read` and an SVC workspace-manager role. Each
 agreement names the client it is with (`client_id`, `client_name`) and, when it
@@ -605,12 +607,28 @@ exactly the statuses and fields `payments.record` does. Browser URLs remain the 
 ### Correcting a recorded payment
 
 `payments.correct` corrects a payment's **descriptive** fields - `method`,
-`reference`, `notes` and `received_on` - and nothing else. It is gated exactly as
-`payments.record` is: the `payments:record` scope, an owner/admin, both
-`AGENT_API_WRITES_ENABLED` and `AGENT_API_PAYMENT_WRITES_ENABLED`, and the MCP
-kill switch, each rechecked before a receipt is replayed. REST is
+`reference`, `notes` and `received_on` - and nothing else. It is gated as
+`payments.set_status` and `payments.refund` are: the `payments:record` scope
+together with `payments:read`, which supplies the version it checks, an
+owner/admin, both `AGENT_API_WRITES_ENABLED` and
+`AGENT_API_PAYMENT_WRITES_ENABLED`, and the MCP kill switch, each rechecked
+before a receipt is replayed. REST is
 `PATCH /api/v1/workspaces/{workspace}/payments/{payment}` with the key in
 `Idempotency-Key`.
+
+**Grant change (#473).** Until #473, `payments.correct` needed only
+`payments:record`. It now also needs `payments:read`. An existing OAuth client,
+dynamic registration, personal API token or operator-issued agent token that holds
+`payments:record` without `payments:read` keeps every other payment tool, but
+`payments.correct` disappears from its `tools/list` (`context.get` lists it as
+withheld, `scope_not_granted`) and the REST route answers 403 with
+`error="insufficient_scope", scope="payments:read"`. Nothing is migrated
+silently: re-authorize the client requesting both scopes, or issue a
+replacement token with both (`svc:auth:issue-agent-token ... payments:record
+payments:read`) and revoke the old one. A client that could already call
+`payments.set_status` or `payments.refund` holds both and is unaffected; in
+practice every client that corrects a payment already reads it first with
+`payments.list` and so already holds `payments:read`.
 
 - `expected_version` is required: the `version` a `payments.list` row carries.
   Any write to the payment - a status change, a refund, another correction -
@@ -677,6 +695,34 @@ key; every gate is rechecked before a receipt replays.
 Operators use the same rules without the agent gates through
 `svc:billing:payment-status` and `svc:billing:refund-payment`, each with
 `--expected-version` and `--dry-run`.
+
+### Finance reconciliation (#457)
+
+`finance.invoice_payments.list`, `finance.reconciliations.upsert` and
+`finance.reconciliations.deactivate` are the finance reconciliation routes
+(`/api/v1/workspaces/{workspace}/invoice-payments…`, see
+[the finance reconciliation API](finance-api.md)) as operations: in the OpenAPI
+document, gated by `finance:read` and `finance:reconcile`, and served as MCP tools
+through `AgentMcpFinanceTools`, which dispatches each tool to its own REST
+binding with `AgentMcpRestCall` like every other routed tool, so a tool and its
+route run one
+`FinanceReconciliationOperations`. The `svc:finance:payments`,
+`svc:finance:reconcile` and `svc:finance:unreconcile` commands call the same
+operation.
+
+- Over OAuth and MCP every finance operation needs a workspace owner/admin; the
+  tools are manager-only in discovery. The finance integration's Sanctum token
+  keeps its original contract on the same routes, where its `finance.read` /
+  `finance.reconcile` abilities stand for the two scopes.
+- The writes are named by their path - payment, external system, transaction -
+  and are the same write however often they are sent, so the tools take no
+  `idempotency_key` and the routes no `Idempotency-Key`. Each write is audited in
+  `agent_mutation_audits`.
+- They sit behind no write cutover, since the finance integration never did; the
+  MCP switches (`mcp.read`, `mcp.write`, or the tool name) withhold the tools.
+- The tool arguments are the REST ones, with the path parameters named
+  `payment_id`, `external_system` and `transaction_id`, and the list's invoice
+  filter `invoice_id`.
 
 ### Changing a due date or scheduled issue date
 

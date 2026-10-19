@@ -26,6 +26,8 @@ use Tests\TestCase;
  * Gated like `payments.record` - both write cutovers, the payments:record
  * scope, a workspace owner/admin and the MCP kill switch - with the version
  * the agent read and a reason required, and every gate rechecked on replay.
+ * The version comes from `payments.list`, so payments:read is required too
+ * (#473), as it is for `payments.set_status` and `payments.refund`.
  */
 final class AgentPaymentCorrectionTest extends TestCase
 {
@@ -212,6 +214,37 @@ final class AgentPaymentCorrectionTest extends TestCase
         $this->assertUnchanged($payment);
     }
 
+    /** The version it checks comes from payments.list, so the record scope alone is not enough either (#473). */
+    public function test_the_read_scope_is_required_as_well_as_the_record_scope(): void
+    {
+        [$user, $workspace, $payment] = $this->fixture();
+        $this->assertSame(['payments:record', 'payments:read'], $this->agentOperation('payments.correct')->requirement->scopes);
+        $this->assertSame(['payments:record', 'payments:read'], AgentApiResponseSchemaCatalog::scopesForOperation('payments.correct'));
+
+        $this->actingAsMcp($user, ['payments:record']);
+        $this->withHeader('Idempotency-Key', 'synthetic-record-only')
+            ->patchJson($this->url($workspace, $payment->public_id), $this->body($payment))
+            ->assertForbidden()
+            ->assertJsonPath('operation', 'payments.correct')
+            ->assertJsonPath('reason', 'missing_scope')
+            ->assertJsonPath('detail', 'payments:read')
+            ->assertHeader('WWW-Authenticate', 'Bearer error="insufficient_scope", scope="payments:read"');
+
+        $this->actingAsMcp($user, ['mcp:use', 'payments:record', 'billing:read']);
+        $headers = $this->initialize();
+        $names = array_column($this->postJson('/api/v1/mcp', ['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/list'], $headers)->assertOk()->json('result.tools'), 'name');
+        $this->assertNotContains('payments.correct', $names);
+        $this->assertContains('payments.record', $names);
+        $this->assertUnchanged($payment);
+        $this->assertDatabaseCount('agent_mutation_receipts', 0);
+
+        $this->actingAsMcp($user, ['payments:record', 'payments:read']);
+        $this->withHeader('Idempotency-Key', 'synthetic-record-and-read')
+            ->patchJson($this->url($workspace, $payment->public_id), $this->body($payment))
+            ->assertOk();
+        $this->assertSame('ach', $payment->fresh()?->method);
+    }
+
     #[DataProvider('transports')]
     public function test_members_are_refused_and_a_revoked_role_cannot_replay(string $transport): void
     {
@@ -241,7 +274,7 @@ final class AgentPaymentCorrectionTest extends TestCase
     public function test_the_whole_request_scopes_every_tenant_read_and_write(): void
     {
         [$user, $workspace, $payment] = $this->fixture();
-        $this->actingAsMcp($user, ['payments:record']);
+        $this->actingAsMcp($user, ['payments:record', 'payments:read']);
         $queries = [];
         DB::listen(function (QueryExecuted $event) use (&$queries): void {
             $sql = str_replace(['"', '`'], '', strtolower($event->sql));

@@ -33,6 +33,9 @@ final class AgentMcpContractTest extends TestCase
     use InspectsAgentOperations;
     use RefreshDatabase;
 
+    /** Finance reconciliation writes (#457): a PUT or DELETE named by payment, system and transaction. */
+    private const array IDEMPOTENT_BY_PATH = ['finance.reconciliations.upsert', 'finance.reconciliations.deactivate'];
+
     public function test_invoice_workflow_contract_matches_routes_and_nested_cutovers(): void
     {
         config(['agent_api.writes_enabled' => true, 'agent_api.invoice_writes_enabled' => true]);
@@ -233,6 +236,9 @@ final class AgentMcpContractTest extends TestCase
             'expenses.receipts.upload_url' => ['expenses:read', 'expenses:write'],
             'expenses.unapprove' => ['expenses:read', 'expenses:write'],
             'expenses.update' => ['expenses:write'],
+            'finance.invoice_payments.list' => ['finance:read'],
+            'finance.reconciliations.deactivate' => ['finance:reconcile'],
+            'finance.reconciliations.upsert' => ['finance:reconcile'],
             'invoices.add_time' => ['billing:write', 'billing:read'],
             'invoices.correct' => ['billing:deliver'],
             'invoices.corrections.get' => ['billing:read'],
@@ -257,7 +263,7 @@ final class AgentMcpContractTest extends TestCase
             'invoices.update_draft' => ['billing:write'],
             'invoices.void' => ['billing:deliver'],
             'operations.summary' => ['identity:read'],
-            'payments.correct' => ['payments:record'],
+            'payments.correct' => ['payments:record', 'payments:read'],
             'payments.list' => ['payments:read'],
             'payments.record' => ['payments:record', 'billing:read'],
             'payments.refund' => ['payments:record', 'payments:read'],
@@ -354,6 +360,13 @@ final class AgentMcpContractTest extends TestCase
 
                 continue;
             }
+            if ($definition->id === 'finance.reconciliations.deactivate') {
+                // A DELETE on its path, with no body to inherit.
+                $this->assertNull($definition->rest?->requestSchema);
+                $this->assertNull($definition->input);
+
+                continue;
+            }
             $body = AgentApiResponseSchemaCatalog::requestForOperation($definition->id);
             $input = $this->toolInputSchema($definition->id);
             $encoded = json_encode($input, JSON_THROW_ON_ERROR);
@@ -391,6 +404,18 @@ final class AgentMcpContractTest extends TestCase
                 $this->assertStringContainsString('upload itself requires an idempotency key and parent version', $definition->safety->note);
                 $this->assertNotContains('#/components/parameters/IdempotencyKey', $parameterRefs);
                 $this->assertNotContains('idempotency_key', $input['required'] ?? []);
+
+                continue;
+            }
+            if (in_array($definition->id, self::IDEMPOTENT_BY_PATH, true)) {
+                // A PUT or DELETE on its natural key is the same write however
+                // often it is sent (#457): no key, and the safety says why.
+                $this->assertSame(IdempotencyKey::None, $definition->safety->idempotencyKey, $definition->id);
+                $this->assertTrue($definition->isIdempotent(), $definition->id);
+                $this->assertContains($definition->rest?->method, ['PUT', 'DELETE'], $definition->id);
+                $this->assertStringContainsString('Idempotent by its path', (string) $definition->safety->note, $definition->id);
+                $this->assertNotContains('#/components/parameters/IdempotencyKey', $parameterRefs, $definition->id);
+                $this->assertArrayNotHasKey('idempotency_key', $input['properties'] ?? [], $definition->id);
 
                 continue;
             }

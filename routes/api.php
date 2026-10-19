@@ -23,8 +23,7 @@ use App\Http\Controllers\Api\V1\AgentSquareMirrorController;
 use App\Http\Controllers\Api\V1\AgentTaskMutationController;
 use App\Http\Controllers\Api\V1\AgentTimeEntryMutationController;
 use App\Http\Controllers\Api\V1\AgentWorkspaceMiscController;
-use App\Http\Controllers\Api\V1\InvoicePaymentController;
-use App\Http\Controllers\Api\V1\PaymentReconciliationController;
+use App\Http\Controllers\Api\V1\FinanceReconciliationController;
 use App\Http\Controllers\SquareWebhookController;
 use App\Http\Middleware\AuthenticateFirstPartySession;
 use App\Http\Middleware\EnsureAgentWorkspaceVisible;
@@ -33,6 +32,7 @@ use App\Http\Middleware\NoStoreAgentResponse;
 use App\Http\Middleware\ThrottleOuterAgentRequests;
 use App\Models\Workspace;
 use App\Support\AgentApi\AgentApiScopes;
+use App\Support\Finance\ReconciliationTarget;
 use App\Support\Square\SquareIdentifiers;
 use Bherila\McpLaravelBridge\Http\McpHttpSecurityMiddleware;
 use BWH\Auth\Http\Middleware\ExpectOAuthResource;
@@ -40,35 +40,8 @@ use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Routing\Route as RoutingRoute;
 use Illuminate\Support\Facades\Route;
 use Laravel\Passport\Http\Middleware\CheckToken;
-use Laravel\Sanctum\Http\Middleware\CheckAbilities;
 
 Route::post('/webhooks/square', SquareWebhookController::class)->name('svc.billing.square.webhook');
-
-Route::middleware(['auth:sanctum', 'throttle:60,1'])
-    ->prefix('v1/workspaces/{workspace}')
-    ->group(function (): void {
-        Route::get('/invoice-payments', InvoicePaymentController::class)
-            ->middleware(CheckAbilities::class.':finance.read')
-            ->name('api.v1.invoice-payments.index');
-
-        Route::put(
-            '/invoice-payments/{clientInvoicePayment}/reconciliations/{externalSystemSlug}/{externalTransactionUuid}',
-            [PaymentReconciliationController::class, 'upsert'],
-        )
-            ->where('externalSystemSlug', '[a-z0-9]+(?:-[a-z0-9]+)*')
-            ->whereUuid('externalTransactionUuid')
-            ->middleware(CheckAbilities::class.':finance.reconcile')
-            ->name('api.v1.payment-reconciliations.upsert');
-
-        Route::delete(
-            '/invoice-payments/{clientInvoicePayment}/reconciliations/{externalSystemSlug}/{externalTransactionUuid}',
-            [PaymentReconciliationController::class, 'destroy'],
-        )
-            ->where('externalSystemSlug', '[a-z0-9]+(?:-[a-z0-9]+)*')
-            ->whereUuid('externalTransactionUuid')
-            ->middleware(CheckAbilities::class.':finance.reconcile')
-            ->name('api.v1.payment-reconciliations.destroy');
-    });
 
 /*
  * Every agent operation is declared once in AgentOperationCatalog (#408):
@@ -404,6 +377,30 @@ Route::prefix('v1')
             $operation($operationId, [AgentPaymentReminderController::class, $action])->whereUuid($id)->middleware(EnsureAgentWorkspaceVisible::class)->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']));
         }
         $operation('agreements.square_series.clear', [AgentSquareLinkController::class, 'clearAgreement'])->whereUuid('agreement')->middleware(EnsureAgentWorkspaceVisible::class)->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']));
+    });
+
+// The finance reconciliation operations (#457): the REST audience's OAuth
+// tokens (finance:read, finance:reconcile), and the Sanctum token the finance
+// integration has always used, whose finance.read and finance.reconcile
+// abilities the route gate reads as those scopes (AgentPrincipalResolver).
+// Sanctum is tried first, so its tokens never reach Passport's validator. Not
+// the website's session: nothing in the browser reconciles.
+Route::prefix('v1')
+    ->name('agent-api.v1.')
+    ->middleware([ExpectOAuthResource::class.':rest', 'auth:sanctum,api', ThrottleOuterAgentRequests::class.':60,1', NoStoreAgentResponse::class])
+    ->group(function () use ($operation): void {
+        // A workspace the caller cannot see answers 404 before anything else,
+        // as on every other workspace route: nothing - not even a failed
+        // write's audit - reaches a tenant the caller is not in.
+        $operation('finance.invoice_payments.list', [FinanceReconciliationController::class, 'index'])
+            ->middleware(EnsureAgentWorkspaceVisible::class)->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']));
+        foreach (['finance.reconciliations.upsert' => 'upsert', 'finance.reconciliations.deactivate' => 'destroy'] as $operationId => $action) {
+            $operation($operationId, [FinanceReconciliationController::class, $action])
+                ->middleware(EnsureAgentWorkspaceVisible::class)->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))
+                ->whereUuid('payment')
+                ->where('external_system', ReconciliationTarget::SYSTEM_PATTERN)
+                ->whereUuid('transaction');
+        }
     });
 
 // Disconnecting takes `mcp:use`, which only the MCP resource admits, so the

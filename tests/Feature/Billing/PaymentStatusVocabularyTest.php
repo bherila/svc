@@ -462,7 +462,8 @@ final class PaymentStatusVocabularyTest extends TestCase
         'app/Services/Billing/StripePaymentIntentService.php',
         'app/Services/Billing/StripeWebhookService.php',
         'app/Services/Finance/PaymentReconciliationService.php',
-        'app/Http/Controllers/Api/V1/InvoicePaymentController.php',
+        'app/Support/Finance/FinancePaymentQuery.php',
+        'app/Services/Finance/FinanceReconciliationOperations.php',
         'app/Http/Requests/Billing/StorePaymentRequest.php',
     ];
 
