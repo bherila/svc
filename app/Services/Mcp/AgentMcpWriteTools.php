@@ -11,7 +11,6 @@ use App\Services\AgentApi\AgentExpenseMutationAction;
 use App\Services\AgentApi\AgentExpenseReadService;
 use App\Services\AgentApi\AgentPaymentReadService;
 use App\Services\AgentApi\AgentReadService;
-use App\Services\AgentApi\AgentTaskMutationAction;
 use App\Services\AgentApi\ChangeManualPaymentAction;
 use App\Services\AgentApi\CorrectPaymentAction;
 use App\Services\AgentApi\DeleteTimeEntryAction;
@@ -22,7 +21,6 @@ use App\Services\AgentApi\UpdateTimeEntryAction;
 use App\Services\Mcp\Context\McpAccountContextResolver;
 use App\Services\Mcp\Context\McpRequestContext;
 use App\Support\AgentApi\Presenters\AgentInvoicePresenter;
-use App\Support\AgentApi\Presenters\AgentTaskPresenter;
 use App\Support\AgentApi\Presenters\AgentTimeEntryPresenter;
 use App\Support\Billing\InvoiceEmailDraft;
 use App\Support\Billing\ReceivedPaymentData;
@@ -39,9 +37,7 @@ final class AgentMcpWriteTools
         private readonly LogTimeEntriesAction $logTime,
         private readonly UpdateTimeEntryAction $updateTime,
         private readonly DeleteTimeEntryAction $deleteTime,
-        private readonly AgentTaskMutationAction $tasks,
         private readonly AgentTimeEntryPresenter $timeEntries,
-        private readonly AgentTaskPresenter $taskPresenter,
         private readonly McpAccountContextResolver $accounts,
         private readonly ?McpRequestContext $requestContext = null,
     ) {}
@@ -242,9 +238,7 @@ final class AgentMcpWriteTools
             $this->logTime,
             $this->updateTime,
             $this->deleteTime,
-            $this->tasks,
             $this->timeEntries,
-            $this->taskPresenter,
             $this->accounts,
             $context,
         );
@@ -494,12 +488,7 @@ final class AgentMcpWriteTools
     /** @return array<string, mixed> */
     public function tasksCreate(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $project_id, #[Schema(minLength: 1, maxLength: 255)] string $title, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key, ?string $description = null, ?bool $is_visible_to_client = null): array
     {
-        $context = $this->workspaceContext($workspace_id, 'tasks:write');
-        $workspace = $this->workspace($context);
-        $actor = User::query()->findOrFail($context->principal->subject->id);
-        $task = $this->tasks->create($actor, $workspace, $context->principal->clientId, $idempotency_key, $project_id, array_filter(compact('title', 'description', 'is_visible_to_client'), static fn (mixed $value): bool => $value !== null));
-
-        return ['data' => $this->taskPresenter->present($workspace, $task)];
+        return $this->rest->call('tasks.create', ['workspace' => $workspace_id, 'project' => $project_id], array_filter(compact('title', 'description', 'is_visible_to_client'), static fn (mixed $value): bool => $value !== null), $idempotency_key);
     }
 
     /** @return array<string, mixed> */
@@ -514,19 +503,7 @@ final class AgentMcpWriteTools
         #[Schema(enum: ['open', 'in_progress', 'completed'])] ?string $status = null,
         ?bool $is_visible_to_client = null,
     ): array {
-        $body = compact('expected_version');
-        foreach (compact('title', 'description', 'status', 'is_visible_to_client') as $name => $value) {
-            if ($this->requestArguments->has($context, $name)) {
-                $body[$name] = $value;
-            }
-        }
-
-        $context = $this->workspaceContext($workspace_id, 'tasks:write');
-        $workspace = $this->workspace($context);
-        $actor = User::query()->findOrFail($context->principal->subject->id);
-        $task = $this->tasks->update($actor, $workspace, $context->principal->clientId, $idempotency_key, $task_id, $body);
-
-        return ['data' => $this->taskPresenter->present($workspace, $task)];
+        return $this->rest->call('tasks.update', ['workspace' => $workspace_id, 'task' => $task_id], compact('expected_version') + $this->provided($context, compact('title', 'description', 'status', 'is_visible_to_client')), $idempotency_key);
     }
 
     /** @return array<string, mixed> */
@@ -772,6 +749,18 @@ final class AgentMcpWriteTools
         #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key,
     ): array {
         return $this->rest->call('billing_schedules.generate', ['workspace' => $workspace_id, 'schedule' => $schedule_id], compact('expected_version', 'confirm'), $idempotency_key);
+    }
+
+    /**
+     * The optional arguments the caller actually sent, so an omitted field
+     * stays omitted and an explicit null still clears.
+     *
+     * @param  array<string, mixed>  $values
+     * @return array<string, mixed>
+     */
+    private function provided(RequestContext $request, array $values): array
+    {
+        return array_filter($values, fn (string $name): bool => $this->requestArguments->has($request, $name), ARRAY_FILTER_USE_KEY);
     }
 
     private function context(string $scope): McpRequestContext
