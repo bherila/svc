@@ -29,21 +29,26 @@ final class TimeEntryCreationParityTest extends TestCase
         yield 'manager nonbillable' => ['manager', 12500, false, null];
         yield 'contributor default rate' => ['contributor', null, true, null];
         yield 'contributor nonbillable' => ['contributor', null, false, 'EUR'];
+        // Omitted means billable on every transport, the console included (#460).
+        yield 'manager billable omitted' => ['manager', 12500, null, null];
+        yield 'contributor billable omitted' => ['contributor', null, null, null];
     }
 
     #[DataProvider('validRates')]
-    public function test_web_rest_and_mcp_create_the_same_time(string $role, ?int $rate, bool $billable, ?string $currency): void
+    public function test_web_rest_and_mcp_create_the_same_time(string $role, ?int $rate, ?bool $billable, ?string $currency): void
     {
         [$user, $workspace, $project, $task] = $this->fixture($role);
         $payload = $this->payload($project, $task) + [
             'billing_rate_amount' => $rate,
             'currency' => $currency,
-            'is_billable' => $billable,
             'is_deferred' => true,
             'is_visible_to_client' => true,
             'client_visible_description' => 'Synthetic client-facing work',
         ];
-        foreach (['web', 'rest', 'mcp'] as $transport) {
+        if ($billable !== null) {
+            $payload['is_billable'] = $billable;
+        }
+        foreach (['web', 'rest', 'mcp', 'cli'] as $transport) {
             $this->submit($transport, $user, $workspace, $project, $payload);
             $entry = ClientTimeEntry::query()->where('workspace_id', $workspace->id)->latest('id')->firstOrFail();
             $this->assertSame($workspace->id, $entry->workspace_id);
@@ -55,13 +60,13 @@ final class TimeEntryCreationParityTest extends TestCase
             $this->assertSame($rate, $entry->billing_rate_amount);
             $this->assertSame($rate === null ? null : 'explicit', $entry->billing_rate_source);
             $this->assertSame($currency ?? 'CAD', $entry->currency);
-            $this->assertSame($billable, $entry->is_billable);
+            $this->assertSame($billable ?? true, $entry->is_billable);
             $this->assertTrue($entry->is_deferred);
             $this->assertTrue($entry->is_visible_to_client);
             $this->assertSame('Synthetic client-facing work', $entry->client_visible_description);
             $this->assertSame('draft', $entry->status);
         }
-        $this->assertDatabaseCount('client_time_entries', 3);
+        $this->assertDatabaseCount('client_time_entries', 4);
     }
 
     public static function delegatedRates(): iterable
@@ -129,7 +134,7 @@ final class TimeEntryCreationParityTest extends TestCase
     public function test_contributors_cannot_price_time_through_any_transport(int $rate, bool $billable): void
     {
         [$user, $workspace, $project, $task] = $this->fixture('contributor');
-        foreach (['web', 'rest', 'mcp'] as $transport) {
+        foreach (['web', 'rest', 'mcp', 'cli'] as $transport) {
             $this->submit($transport, $user, $workspace, $project, $this->payload($project, $task) + [
                 'billing_rate_amount' => $rate, 'is_billable' => $billable,
             ], 422);
@@ -154,7 +159,7 @@ final class TimeEntryCreationParityTest extends TestCase
         [, $foreignWorkspace, $foreignProject, $foreignTask] = $this->fixture('manager');
         // Even membership in both tenants must not make mixed tenant IDs valid.
         $foreignWorkspace->memberships()->create(['user_id' => $user->id, 'role' => 'owner']);
-        foreach (['web', 'rest', 'mcp'] as $transport) {
+        foreach (['web', 'rest', 'mcp', 'cli'] as $transport) {
             $this->submit($transport, $user, $workspace, $foreignProject, $this->payload($foreignProject, $foreignTask), 404, 'not_found');
             $this->submit($transport, $user, $workspace, $project, $this->payload($project, $foreignTask), 404, 'not_found');
         }
@@ -168,7 +173,7 @@ final class TimeEntryCreationParityTest extends TestCase
             'workspace_id' => $workspace->id, 'client_company_id' => $project->client_company_id, 'name' => 'Other synthetic project',
         ]);
         $task->forceFill(['client_project_id' => $otherProject->id])->save();
-        foreach (['web', 'rest', 'mcp'] as $transport) {
+        foreach (['web', 'rest', 'mcp', 'cli'] as $transport) {
             $this->submit($transport, $user, $workspace, $project, $this->payload($project, $task), 422, 'domain');
         }
         $this->assertDatabaseCount('client_time_entries', 0);
@@ -187,7 +192,7 @@ final class TimeEntryCreationParityTest extends TestCase
                 $companyReads[] = $sql;
             }
         });
-        foreach (['web', 'rest', 'mcp'] as $transport) {
+        foreach (['web', 'rest', 'mcp', 'cli'] as $transport) {
             $this->submit($transport, $user, $workspace, $project, $this->payload($project, $task), 422, 'domain');
         }
         $this->assertNotEmpty($companyReads);
@@ -204,9 +209,48 @@ final class TimeEntryCreationParityTest extends TestCase
             'worked_on' => now()->toDateString(), 'minutes' => 30, 'description' => 'Synthetic internal work'];
     }
 
+    /**
+     * `svc:engagement:log-time` with the payload as its arguments (#460). The
+     * console answers with an exit code where the API answers with a status:
+     * 0 for 201, `INVALID` for 422, `FAILURE` for 403 and 404.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    private function submitThroughTheConsole(User $user, Workspace $workspace, ClientProject $project, array $payload, int $expected): void
+    {
+        $arguments = [
+            'workspace' => $workspace->public_id,
+            'project' => $project->public_id,
+            'minutes' => (string) $payload['minutes'],
+            'description' => $payload['description'],
+            '--user' => $user->email,
+            '--worked-on' => $payload['worked_on'],
+            '--task' => $payload['task_id'] ?? null,
+            '--billable' => ($payload['is_billable'] ?? null) === true,
+            '--no-billable' => ($payload['is_billable'] ?? null) === false,
+            '--deferred' => (bool) ($payload['is_deferred'] ?? false),
+            '--client-description' => $payload['client_visible_description'] ?? null,
+            '--internal' => ($payload['is_visible_to_client'] ?? null) === false,
+            '--rate' => isset($payload['billing_rate_amount']) ? (string) $payload['billing_rate_amount'] : null,
+            '--currency' => $payload['currency'] ?? null,
+        ];
+        $exit = match ($expected) {
+            201 => 0,
+            422 => 2,
+            default => 1,
+        };
+        $this->artisan('svc:engagement:log-time', array_filter($arguments, fn (mixed $value): bool => $value !== null && $value !== false))
+            ->assertExitCode($exit);
+    }
+
     /** @param array<string, mixed> $payload */
     private function submit(string $transport, User $user, Workspace $workspace, ClientProject $project, array $payload, int $expected = 201, string $expectedCategory = 'validation', bool $approvalScope = true, ?string $idempotencyKey = null): void
     {
+        if ($transport === 'cli') {
+            $this->submitThroughTheConsole($user, $workspace, $project, $payload, $expected);
+
+            return;
+        }
         if ($transport === 'web') {
             $this->actingAs($user, 'web')->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), str()->random(40))->withHeader('Idempotency-Key', $idempotencyKey ?? 'synthetic-'.str()->uuid())->postJson("/api/v1/workspaces/{$workspace->public_id}/time-entries", ['entries' => [$payload]])->assertStatus($expected);
 
