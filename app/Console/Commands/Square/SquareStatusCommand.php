@@ -62,8 +62,13 @@ final class SquareStatusCommand extends Command
         $overdue = $workspace !== null && ($freshness['last_synced_at'] === null || CarbonImmutable::parse((string) $freshness['last_synced_at'])->lt($now->subMinutes(self::OVERDUE_AFTER_MINUTES)));
         $status['last_run_abandoned'] = $abandoned;
         $status['sync_overdue'] = $overdue;
-        // A truncated run completed but left the mirror short of Square.
-        $healthy = $workspace !== null && ! $abandoned && ! $overdue
+        // A truncated run completed but left the mirror short of Square -
+        // whether it is the latest run, or the completed one a newer run is
+        // still retrying.
+        $lastCompleted = $workspace === null ? null : SquareSyncRun::query()->where('workspace_id', $workspace->id)->where('status', SquareSyncRun::COMPLETED)
+            ->orderByDesc('finished_at')->orderByDesc('id')->first(['truncated']);
+        $status['last_completed_truncated'] = $lastCompleted?->truncated === true;
+        $healthy = $workspace !== null && ! $abandoned && ! $overdue && ! $status['last_completed_truncated']
             && ($lastRun === null || ($lastRun['status'] !== SquareSyncRun::FAILED && $lastRun['truncated'] !== true));
 
         if ($format === 'json') {

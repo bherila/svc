@@ -244,7 +244,7 @@ final class SquareOperabilityTest extends TestCase
         $output = Artisan::output();
         $this->assertStringNotContainsString(self::SQUARE_TOKEN, $output);
         $this->assertStringNotContainsString('fixture-signature-key', $output);
-        $this->assertSame(['provider' => 'square', 'configured' => true, 'environment' => 'sandbox', 'square_version' => '2026-09-16', 'workspace_present' => true, 'webhook_signature_key_present' => true, 'last_synced_at' => null, 'last_run' => null, 'last_run_abandoned' => false, 'sync_overdue' => true], json_decode($output, true, flags: JSON_THROW_ON_ERROR));
+        $this->assertSame(['provider' => 'square', 'configured' => true, 'environment' => 'sandbox', 'square_version' => '2026-09-16', 'workspace_present' => true, 'webhook_signature_key_present' => true, 'last_synced_at' => null, 'last_run' => null, 'last_run_abandoned' => false, 'sync_overdue' => true, 'last_completed_truncated' => false], json_decode($output, true, flags: JSON_THROW_ON_ERROR));
 
         $run = SquareSyncRun::query()->create(['workspace_id' => $workspace->id, 'trigger' => SquareSyncRun::TRIGGER_SCHEDULE, 'status' => SquareSyncRun::COMPLETED, 'api_version' => '2026-09-16', 'started_at' => '2030-02-02 11:50:00', 'finished_at' => '2030-02-02 11:51:00', 'invoices_seen' => 3, 'invoices_changed' => 1]);
         $this->assertSame(0, Artisan::call('svc:square:status', ['--format' => 'json']));
@@ -263,6 +263,10 @@ final class SquareOperabilityTest extends TestCase
         $stuck->forceFill(['status' => SquareSyncRun::COMPLETED, 'finished_at' => now(), 'truncated' => true])->save();
         $this->assertSame(1, Artisan::call('svc:square:status', ['--format' => 'json']), 'Completed, but short of Square.');
         $this->assertTrue(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['last_run']['truncated']);
+        // A newer run retrying it does not make the truncated mirror healthy.
+        SquareSyncRun::query()->create(['workspace_id' => $workspace->id, 'trigger' => SquareSyncRun::TRIGGER_SCHEDULE, 'status' => SquareSyncRun::RUNNING, 'api_version' => '2026-09-16']);
+        $this->assertSame(1, Artisan::call('svc:square:status', ['--format' => 'json']));
+        $this->assertTrue(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['last_completed_truncated']);
         $stuck->delete();
         $this->travel(30)->minutes();
         $this->assertSame(1, Artisan::call('svc:square:status', ['--format' => 'json']), 'No completed sync for over an hour.');
@@ -281,7 +285,7 @@ final class SquareOperabilityTest extends TestCase
     {
         $this->connectSquare(null);
         $this->assertSame(1, Artisan::call('svc:square:status', ['--format' => 'json']));
-        $this->assertSame(['provider' => 'square', 'configured' => false, 'environment' => null, 'square_version' => null, 'workspace_present' => false, 'webhook_signature_key_present' => false, 'last_synced_at' => null, 'last_run' => null, 'last_run_abandoned' => false, 'sync_overdue' => false], json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR));
+        $this->assertSame(['provider' => 'square', 'configured' => false, 'environment' => null, 'square_version' => null, 'workspace_present' => false, 'webhook_signature_key_present' => false, 'last_synced_at' => null, 'last_run' => null, 'last_run_abandoned' => false, 'sync_overdue' => false, 'last_completed_truncated' => false], json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR));
 
         config(['services.square.workspace' => '00000000-0000-4000-8000-000000000999']);
         $this->assertSame(1, Artisan::call('svc:square:status', ['--format' => 'json']));
