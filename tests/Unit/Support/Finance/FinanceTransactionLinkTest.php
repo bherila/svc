@@ -32,6 +32,13 @@ final class FinanceTransactionLinkTest extends TestCase
         );
     }
 
+    public function test_the_scheme_is_matched_without_regard_to_case(): void
+    {
+        $link = new FinanceTransactionLink('HTTPS://finance.example.test/t/{transaction_uuid}');
+
+        $this->assertSame('HTTPS://finance.example.test/t/'.self::UUID, $link->href(self::UUID));
+    }
+
     public function test_surrounding_whitespace_in_the_configured_template_is_ignored(): void
     {
         $link = new FinanceTransactionLink("  https://finance.example.test/t/{transaction_uuid}\n");
@@ -55,6 +62,7 @@ final class FinanceTransactionLinkTest extends TestCase
             'data' => ['data:text/html,{transaction_uuid}'],
             'other scheme' => ['ftp://finance.example.test/{transaction_uuid}'],
             'no host' => ['https:///{transaction_uuid}'],
+            'scheme without authority' => ['https:{transaction_uuid}'],
         ];
     }
 

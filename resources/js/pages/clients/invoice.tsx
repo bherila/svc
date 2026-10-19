@@ -1317,7 +1317,7 @@ export default function ClientInvoiceDetail({
                                                     )}
                                                 </TableCell>
                                                 <TableCell>
-                                                    <span className="flex flex-wrap items-center gap-1">
+                                                    <span className="flex items-center gap-1">
                                                         <Badge variant="outline">
                                                             {statusLabel(
                                                                 payment.status,

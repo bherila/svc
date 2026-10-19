@@ -18,6 +18,7 @@ use App\Services\Billing\InvoiceFromTimeService;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Services\Billing\RecordReceivedPayment;
 use App\Services\Files\AttachmentStorageService;
+use App\Services\Finance\PaymentReconciliationService;
 use App\Services\Square\Mirror\SquareMirrorRepository;
 use App\Services\Square\Mirror\SquareSnapshotMapper;
 use App\Services\Square\SquareLinkService;
@@ -92,9 +93,17 @@ $invoice = $service->issue($service->createDraft($workspace, $company, [
     'quantity' => '2', 'unit_amount' => 5000, 'tax_amount' => 0, 'sort_order' => 1,
 ]]), $workspace);
 $date = app(WorkspaceClock::class)->today($workspace)->subDay()->toDateString();
-$service->applyPayment($invoice, [
+$layoutPayment = $service->applyPayment($invoice, [
     'amount' => 1000, 'currency' => 'USD', 'method' => 'wire', 'received_on' => $date,
 ], $workspace);
+// Reconciled in finance, split across two transactions: the badge and both
+// numbered links share the status cell.
+foreach (['5f0d7c1e-0000-4000-8000-000000000001', '5f0d7c1e-0000-4000-8000-000000000002'] as $transaction) {
+    app(PaymentReconciliationService::class)->upsert($workspace, $layoutPayment, $owner, [
+        'external_system_slug' => 'finance', 'external_transaction_uuid' => $transaction,
+        'allocated_amount' => 500, 'currency' => 'USD', 'is_active' => true,
+    ]);
+}
 $company->forceFill([
     'billing_email' => 'billing-notifications@synthetic-layout.example.test',
     'automatic_invoice_email_enabled' => true,

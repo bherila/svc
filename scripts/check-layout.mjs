@@ -128,6 +128,9 @@ try {
         SVC_LAYOUT_RUNTIME: runtime,
         // Shows the seeded portal invitations on client settings; nothing here asks a provider.
         SVC_PORTAL_INVITATIONS_ENABLED: 'true',
+        // Links the seeded "Reconciled in finance" badge; never requested.
+        SVC_FINANCE_TRANSACTION_URL:
+            'https://finance.example.test/transactions/{transaction_uuid}',
         SVC_LAYOUT_PORTAL_PAGES: portalOnly ? '1' : '0',
         SVC_LAYOUT_DEFERRED_BACKLOG: backlogOnly ? '1' : '0',
     };
@@ -639,6 +642,14 @@ try {
             }
 
             if (screen === 'invoice') {
+                await expect(
+                    page.getByText('Reconciled in finance', { exact: true }),
+                ).toBeVisible();
+                await expect(
+                    page.getByRole('link', {
+                        name: 'Finance transaction 2 of 2',
+                    }),
+                ).toBeVisible();
                 await page
                     .getByRole('button', {
                         name: 'Record payment',
