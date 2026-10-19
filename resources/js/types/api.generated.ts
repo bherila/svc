@@ -719,7 +719,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Received payments with what each is worth net of refunds, how much of that its active finance reconciliation allocations cover, and every allocation, active first; newest received first. Succeeded payments unless status is given; 50 a page unless per_page is (at most 100), numbered by page. Workspace owners/admins; with the finance token, any workspace member. Internal ids, payment notes and processor payment identifiers are never returned. The Sanctum finance token issued by svc:auth:issue-token is accepted too, its finance.read and finance.reconcile abilities standing for these scopes. */
+        /** @description Received payments with what each is worth net of refunds, how much of that its active finance reconciliation allocations cover, and every allocation, active first; newest received first. Succeeded payments unless status is given; status=any returns every status, so a full refund (refunded) and a partial one (still succeeded) are both seen. 50 a page unless per_page is (at most 100), numbered by page. For incremental sync, name updated_since, watermark or cursor instead of page: payments then come newest change first (updated_at, then id) inside a snapshot watermark that the first page of a pass fixes (now, or an earlier time given) and every page returns in meta; follow meta.next_cursor until it is null, then start the next pass with updated_since set to that watermark (inclusive; starting a few seconds earlier is harmless). Timestamps only find candidates: compare version, which also moves when one of the payment's allocations changes. Payments are never deleted. Workspace owners/admins; with the finance token, any workspace member. Internal ids, payment notes and processor payment identifiers are never returned. The Sanctum finance token issued by svc:auth:issue-token is accepted too, its finance.read and finance.reconcile abilities standing for these scopes. */
         get: operations['finance.invoice_payments.list'];
         put?: never;
         post?: never;
@@ -1935,6 +1935,15 @@ export interface components {
         CapacityLedgerResponse: {
             data: components['schemas']['CapacityLedger'];
         };
+        ChangeFeedMeta: {
+            /** @description Null on the last page of the pass. */
+            next_cursor: string | null;
+            /**
+             * Format: date-time
+             * @description The pass's snapshot upper bound; the next pass's updated_since.
+             */
+            watermark: string;
+        };
         ClientCompany: {
             version: string;
             /** Format: uuid */
@@ -2284,7 +2293,8 @@ export interface components {
         };
         FinanceInvoicePaymentListResponse: {
             data: components['schemas']['FinanceInvoicePayment'][];
-            links: {
+            /** @description Numbered pages only. */
+            links?: {
                 /** Format: uri */
                 first: string | null;
                 /** Format: uri */
@@ -2294,23 +2304,27 @@ export interface components {
                 /** Format: uri */
                 next: string | null;
             };
-            meta: {
-                current_page: number;
-                from: number | null;
-                last_page: number;
-                links: {
-                    /** Format: uri */
-                    url: string | null;
-                    label: string;
-                    page: number | null;
-                    active: boolean;
-                }[];
+            /** @description ChangeFeedMeta when the request named updated_since, watermark or cursor; FinancePageMeta otherwise. */
+            meta:
+                | components['schemas']['FinancePageMeta']
+                | components['schemas']['ChangeFeedMeta'];
+        };
+        FinancePageMeta: {
+            current_page: number;
+            from: number | null;
+            last_page: number;
+            links: {
                 /** Format: uri */
-                path: string | null;
-                per_page: number;
-                to: number | null;
-                total: number;
-            };
+                url: string | null;
+                label: string;
+                page: number | null;
+                active: boolean;
+            }[];
+            /** Format: uri */
+            path: string | null;
+            per_page: number;
+            to: number | null;
+            total: number;
         };
         FinanceReconciliation: {
             /** Format: uuid */
@@ -4261,6 +4275,10 @@ export interface components {
         TaskId: string;
         TimeEntryId: string;
         InvoiceId: string;
+        /** @description Only records changed at or after this time (inclusive): the previous pass's watermark. Naming updated_since or watermark switches a listing to change order - newest change first inside a snapshot watermark returned in meta - and a cursor from one order is refused in the other. */
+        UpdatedSince: string;
+        /** @description The pass's snapshot upper bound. Fixed by its first page (now when omitted, never in the future) and returned by every page; with a cursor, omit it or send the same one. */
+        Watermark: string;
         TokenId: string;
         Limit: number;
         Cursor: string;
@@ -6495,12 +6513,18 @@ export interface operations {
                     | 'failed'
                     | 'refunded'
                     | 'disputed'
-                    | 'canceled';
+                    | 'canceled'
+                    | 'any';
                 invoice?: string;
                 received_from?: string;
                 received_to?: string;
                 per_page?: number;
                 page?: number;
+                /** @description Only records changed at or after this time (inclusive): the previous pass's watermark. Naming updated_since or watermark switches a listing to change order - newest change first inside a snapshot watermark returned in meta - and a cursor from one order is refused in the other. */
+                updated_since?: components['parameters']['UpdatedSince'];
+                /** @description The pass's snapshot upper bound. Fixed by its first page (now when omitted, never in the future) and returned by every page; with a cursor, omit it or send the same one. */
+                watermark?: components['parameters']['Watermark'];
+                cursor?: components['parameters']['Cursor'];
             };
             header?: never;
             path: {
@@ -6546,7 +6570,7 @@ export interface operations {
                     'application/json': components['schemas']['Error'];
                 };
             };
-            /** @description A filter is invalid (`errors` names it): an unknown status, a malformed invoice id or date, received_to before received_from, or per_page out of range. */
+            /** @description A filter is invalid (`errors` names it): an unknown status, a malformed invoice id or date, received_to before received_from, per_page out of range, a watermark in the future, or page on a change-feed request. Also a cursor from another workspace, query or watermark. */
             422: {
                 headers: {
                     [name: string]: unknown;

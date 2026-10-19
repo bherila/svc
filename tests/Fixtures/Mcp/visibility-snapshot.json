@@ -8838,7 +8838,8 @@
                                     "failed",
                                     "refunded",
                                     "disputed",
-                                    "canceled"
+                                    "canceled",
+                                    "any"
                                 ]
                             },
                             "invoice_id": {
@@ -8872,9 +8873,36 @@
                                 "maximum": 100
                             },
                             "page": {
-                                "type": "integer",
-                                "default": 1,
+                                "type": [
+                                    "null",
+                                    "integer"
+                                ],
+                                "default": null,
                                 "minimum": 1
+                            },
+                            "updated_since": {
+                                "type": [
+                                    "null",
+                                    "string"
+                                ],
+                                "default": null,
+                                "format": "date-time"
+                            },
+                            "watermark": {
+                                "type": [
+                                    "null",
+                                    "string"
+                                ],
+                                "default": null,
+                                "format": "date-time"
+                            },
+                            "cursor": {
+                                "type": [
+                                    "null",
+                                    "string"
+                                ],
+                                "default": null,
+                                "maxLength": 2048
                             }
                         },
                         "required": [
@@ -8882,7 +8910,7 @@
                         ],
                         "additionalProperties": false
                     },
-                    "description": "Received payments with what each is worth net of refunds, how much of that its active finance reconciliation allocations cover, and every allocation, active first; newest received first. Succeeded payments unless status is given; 50 a page unless per_page is (at most 100), numbered by page. Workspace owners/admins; with the finance token, any workspace member. Internal ids, payment notes and processor payment identifiers are never returned. The Sanctum finance token issued by svc:auth:issue-token is accepted too, its finance.read and finance.reconcile abilities standing for these scopes.",
+                    "description": "Received payments with what each is worth net of refunds, how much of that its active finance reconciliation allocations cover, and every allocation, active first; newest received first. Succeeded payments unless status is given; status=any returns every status, so a full refund (refunded) and a partial one (still succeeded) are both seen. 50 a page unless per_page is (at most 100), numbered by page. For incremental sync, name updated_since, watermark or cursor instead of page: payments then come newest change first (updated_at, then id) inside a snapshot watermark that the first page of a pass fixes (now, or an earlier time given) and every page returns in meta; follow meta.next_cursor until it is null, then start the next pass with updated_since set to that watermark (inclusive; starting a few seconds earlier is harmless). Timestamps only find candidates: compare version, which also moves when one of the payment's allocations changes. Payments are never deleted. Workspace owners/admins; with the finance token, any workspace member. Internal ids, payment notes and processor payment identifiers are never returned. The Sanctum finance token issued by svc:auth:issue-token is accepted too, its finance.read and finance.reconcile abilities standing for these scopes.",
                     "annotations": {
                         "readOnlyHint": true,
                         "destructiveHint": false,
@@ -8894,7 +8922,6 @@
                         "additionalProperties": false,
                         "required": [
                             "data",
-                            "links",
                             "meta"
                         ],
                         "properties": {
@@ -8942,96 +8969,44 @@
                                         ],
                                         "format": "uri"
                                     }
-                                }
+                                },
+                                "description": "Numbered pages only."
                             },
                             "meta": {
+                                "oneOf": [
+                                    {
+                                        "$ref": "#/$defs/FinancePageMeta"
+                                    },
+                                    {
+                                        "$ref": "#/$defs/ChangeFeedMeta"
+                                    }
+                                ],
+                                "description": "ChangeFeedMeta when the request named updated_since, watermark or cursor; FinancePageMeta otherwise."
+                            }
+                        },
+                        "$defs": {
+                            "ChangeFeedMeta": {
                                 "type": "object",
                                 "additionalProperties": false,
                                 "required": [
-                                    "current_page",
-                                    "from",
-                                    "last_page",
-                                    "links",
-                                    "path",
-                                    "per_page",
-                                    "to",
-                                    "total"
+                                    "next_cursor",
+                                    "watermark"
                                 ],
                                 "properties": {
-                                    "current_page": {
-                                        "type": "integer",
-                                        "minimum": 1
-                                    },
-                                    "from": {
-                                        "type": [
-                                            "integer",
-                                            "null"
-                                        ]
-                                    },
-                                    "last_page": {
-                                        "type": "integer",
-                                        "minimum": 1
-                                    },
-                                    "links": {
-                                        "type": "array",
-                                        "items": {
-                                            "type": "object",
-                                            "additionalProperties": false,
-                                            "required": [
-                                                "url",
-                                                "label",
-                                                "page",
-                                                "active"
-                                            ],
-                                            "properties": {
-                                                "url": {
-                                                    "type": [
-                                                        "string",
-                                                        "null"
-                                                    ],
-                                                    "format": "uri"
-                                                },
-                                                "label": {
-                                                    "type": "string"
-                                                },
-                                                "page": {
-                                                    "type": [
-                                                        "integer",
-                                                        "null"
-                                                    ]
-                                                },
-                                                "active": {
-                                                    "type": "boolean"
-                                                }
-                                            }
-                                        }
-                                    },
-                                    "path": {
+                                    "next_cursor": {
                                         "type": [
                                             "string",
                                             "null"
                                         ],
-                                        "format": "uri"
+                                        "description": "Null on the last page of the pass."
                                     },
-                                    "per_page": {
-                                        "type": "integer",
-                                        "minimum": 1,
-                                        "maximum": 100
-                                    },
-                                    "to": {
-                                        "type": [
-                                            "integer",
-                                            "null"
-                                        ]
-                                    },
-                                    "total": {
-                                        "type": "integer",
-                                        "minimum": 0
+                                    "watermark": {
+                                        "type": "string",
+                                        "format": "date-time",
+                                        "description": "The pass's snapshot upper bound; the next pass's updated_since."
                                     }
                                 }
-                            }
-                        },
-                        "$defs": {
+                            },
                             "FinanceInvoicePayment": {
                                 "type": "object",
                                 "additionalProperties": false,
@@ -9199,6 +9174,92 @@
                                             "null"
                                         ],
                                         "format": "date-time"
+                                    }
+                                }
+                            },
+                            "FinancePageMeta": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "current_page",
+                                    "from",
+                                    "last_page",
+                                    "links",
+                                    "path",
+                                    "per_page",
+                                    "to",
+                                    "total"
+                                ],
+                                "properties": {
+                                    "current_page": {
+                                        "type": "integer",
+                                        "minimum": 1
+                                    },
+                                    "from": {
+                                        "type": [
+                                            "integer",
+                                            "null"
+                                        ]
+                                    },
+                                    "last_page": {
+                                        "type": "integer",
+                                        "minimum": 1
+                                    },
+                                    "links": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "additionalProperties": false,
+                                            "required": [
+                                                "url",
+                                                "label",
+                                                "page",
+                                                "active"
+                                            ],
+                                            "properties": {
+                                                "url": {
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ],
+                                                    "format": "uri"
+                                                },
+                                                "label": {
+                                                    "type": "string"
+                                                },
+                                                "page": {
+                                                    "type": [
+                                                        "integer",
+                                                        "null"
+                                                    ]
+                                                },
+                                                "active": {
+                                                    "type": "boolean"
+                                                }
+                                            }
+                                        }
+                                    },
+                                    "path": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "uri"
+                                    },
+                                    "per_page": {
+                                        "type": "integer",
+                                        "minimum": 1,
+                                        "maximum": 100
+                                    },
+                                    "to": {
+                                        "type": [
+                                            "integer",
+                                            "null"
+                                        ]
+                                    },
+                                    "total": {
+                                        "type": "integer",
+                                        "minimum": 0
                                     }
                                 }
                             },
@@ -26341,7 +26402,7 @@
                 "expenses.receipts.upload_url": "c53d1f0b0ac10262",
                 "expenses.unapprove": "ae21aae8d227dc06",
                 "expenses.update": "1e517d25f792bde9",
-                "finance.invoice_payments.list": "d631e9b4ee478b93",
+                "finance.invoice_payments.list": "12e8952271c83948",
                 "finance.reconciliations.deactivate": "d1b06a6b9905d69e",
                 "finance.reconciliations.upsert": "201ea35719d4b506",
                 "invoices.add_time": "ee27431f3eebdb38",
@@ -27161,7 +27222,7 @@
                 "expenses.list": "444aff51ddc70e0d",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
-                "finance.invoice_payments.list": "d631e9b4ee478b93",
+                "finance.invoice_payments.list": "12e8952271c83948",
                 "invoices.corrections.get": "aa93da895756b80b",
                 "invoices.get": "790ff02f4ec45336",
                 "invoices.list": "07979ef323922adf",
@@ -27836,7 +27897,7 @@
                 "expenses.list": "444aff51ddc70e0d",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
-                "finance.invoice_payments.list": "d631e9b4ee478b93",
+                "finance.invoice_payments.list": "12e8952271c83948",
                 "finance.reconciliations.deactivate": "d1b06a6b9905d69e",
                 "finance.reconciliations.upsert": "201ea35719d4b506",
                 "invoices.corrections.get": "aa93da895756b80b",
@@ -27993,7 +28054,7 @@
                 "expenses.list": "444aff51ddc70e0d",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
-                "finance.invoice_payments.list": "d631e9b4ee478b93",
+                "finance.invoice_payments.list": "12e8952271c83948",
                 "finance.reconciliations.deactivate": "d1b06a6b9905d69e",
                 "finance.reconciliations.upsert": "201ea35719d4b506",
                 "invoices.corrections.get": "aa93da895756b80b",
@@ -28760,7 +28821,7 @@
                 "expenses.list": "444aff51ddc70e0d",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
-                "finance.invoice_payments.list": "d631e9b4ee478b93",
+                "finance.invoice_payments.list": "12e8952271c83948",
                 "finance.reconciliations.deactivate": "d1b06a6b9905d69e",
                 "finance.reconciliations.upsert": "201ea35719d4b506",
                 "invoices.corrections.get": "aa93da895756b80b",
@@ -28915,7 +28976,7 @@
                 "expenses.list": "444aff51ddc70e0d",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
-                "finance.invoice_payments.list": "d631e9b4ee478b93",
+                "finance.invoice_payments.list": "12e8952271c83948",
                 "finance.reconciliations.deactivate": "d1b06a6b9905d69e",
                 "finance.reconciliations.upsert": "201ea35719d4b506",
                 "invoices.corrections.get": "aa93da895756b80b",
@@ -29681,7 +29742,7 @@
                 "expenses.list": "444aff51ddc70e0d",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
-                "finance.invoice_payments.list": "d631e9b4ee478b93",
+                "finance.invoice_payments.list": "12e8952271c83948",
                 "finance.reconciliations.deactivate": "d1b06a6b9905d69e",
                 "finance.reconciliations.upsert": "201ea35719d4b506",
                 "invoices.corrections.get": "aa93da895756b80b",
@@ -29838,7 +29899,7 @@
                 "expenses.list": "444aff51ddc70e0d",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
-                "finance.invoice_payments.list": "d631e9b4ee478b93",
+                "finance.invoice_payments.list": "12e8952271c83948",
                 "finance.reconciliations.deactivate": "d1b06a6b9905d69e",
                 "finance.reconciliations.upsert": "201ea35719d4b506",
                 "invoices.corrections.get": "aa93da895756b80b",
@@ -30599,7 +30660,7 @@
                 "expenses.receipts.upload_url": "c53d1f0b0ac10262",
                 "expenses.unapprove": "ae21aae8d227dc06",
                 "expenses.update": "1e517d25f792bde9",
-                "finance.invoice_payments.list": "d631e9b4ee478b93",
+                "finance.invoice_payments.list": "12e8952271c83948",
                 "finance.reconciliations.deactivate": "d1b06a6b9905d69e",
                 "finance.reconciliations.upsert": "201ea35719d4b506",
                 "invoices.corrections.get": "aa93da895756b80b",
@@ -30756,7 +30817,7 @@
                 "expenses.receipts.upload_url": "c53d1f0b0ac10262",
                 "expenses.unapprove": "ae21aae8d227dc06",
                 "expenses.update": "1e517d25f792bde9",
-                "finance.invoice_payments.list": "d631e9b4ee478b93",
+                "finance.invoice_payments.list": "12e8952271c83948",
                 "finance.reconciliations.deactivate": "d1b06a6b9905d69e",
                 "finance.reconciliations.upsert": "201ea35719d4b506",
                 "invoices.corrections.get": "aa93da895756b80b",
@@ -31558,7 +31619,7 @@
                 "expenses.list": "444aff51ddc70e0d",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
-                "finance.invoice_payments.list": "d631e9b4ee478b93",
+                "finance.invoice_payments.list": "12e8952271c83948",
                 "invoices.corrections.get": "aa93da895756b80b",
                 "invoices.get": "790ff02f4ec45336",
                 "invoices.list": "07979ef323922adf",
@@ -31713,7 +31774,7 @@
                 "expenses.list": "444aff51ddc70e0d",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
-                "finance.invoice_payments.list": "d631e9b4ee478b93",
+                "finance.invoice_payments.list": "12e8952271c83948",
                 "invoices.corrections.get": "aa93da895756b80b",
                 "invoices.get": "790ff02f4ec45336",
                 "invoices.list": "07979ef323922adf",
@@ -32444,7 +32505,7 @@
                 "expenses.receipts.upload_url": "c53d1f0b0ac10262",
                 "expenses.unapprove": "ae21aae8d227dc06",
                 "expenses.update": "1e517d25f792bde9",
-                "finance.invoice_payments.list": "d631e9b4ee478b93",
+                "finance.invoice_payments.list": "12e8952271c83948",
                 "finance.reconciliations.deactivate": "d1b06a6b9905d69e",
                 "finance.reconciliations.upsert": "201ea35719d4b506",
                 "invoices.add_time": "ee27431f3eebdb38",
@@ -32600,7 +32661,7 @@
                 "expenses.receipts.upload_url": "c53d1f0b0ac10262",
                 "expenses.unapprove": "ae21aae8d227dc06",
                 "expenses.update": "1e517d25f792bde9",
-                "finance.invoice_payments.list": "d631e9b4ee478b93",
+                "finance.invoice_payments.list": "12e8952271c83948",
                 "finance.reconciliations.deactivate": "d1b06a6b9905d69e",
                 "finance.reconciliations.upsert": "201ea35719d4b506",
                 "invoices.add_time": "ee27431f3eebdb38",
@@ -33384,7 +33445,7 @@
                 "expenses.receipts.upload_url": "c53d1f0b0ac10262",
                 "expenses.unapprove": "ae21aae8d227dc06",
                 "expenses.update": "1e517d25f792bde9",
-                "finance.invoice_payments.list": "d631e9b4ee478b93",
+                "finance.invoice_payments.list": "12e8952271c83948",
                 "finance.reconciliations.deactivate": "d1b06a6b9905d69e",
                 "finance.reconciliations.upsert": "201ea35719d4b506",
                 "invoices.add_time": "ee27431f3eebdb38",
@@ -33539,7 +33600,7 @@
                 "expenses.receipts.upload_url": "c53d1f0b0ac10262",
                 "expenses.unapprove": "ae21aae8d227dc06",
                 "expenses.update": "1e517d25f792bde9",
-                "finance.invoice_payments.list": "d631e9b4ee478b93",
+                "finance.invoice_payments.list": "12e8952271c83948",
                 "finance.reconciliations.deactivate": "d1b06a6b9905d69e",
                 "finance.reconciliations.upsert": "201ea35719d4b506",
                 "invoices.add_time": "ee27431f3eebdb38",
@@ -35112,7 +35173,7 @@
                 "expenses.receipts.upload_url": "c53d1f0b0ac10262",
                 "expenses.unapprove": "ae21aae8d227dc06",
                 "expenses.update": "1e517d25f792bde9",
-                "finance.invoice_payments.list": "d631e9b4ee478b93",
+                "finance.invoice_payments.list": "12e8952271c83948",
                 "finance.reconciliations.deactivate": "d1b06a6b9905d69e",
                 "finance.reconciliations.upsert": "201ea35719d4b506",
                 "invoices.add_time": "ee27431f3eebdb38",
@@ -35270,7 +35331,7 @@
                 "expenses.receipts.upload_url": "c53d1f0b0ac10262",
                 "expenses.unapprove": "ae21aae8d227dc06",
                 "expenses.update": "1e517d25f792bde9",
-                "finance.invoice_payments.list": "d631e9b4ee478b93",
+                "finance.invoice_payments.list": "12e8952271c83948",
                 "finance.reconciliations.deactivate": "d1b06a6b9905d69e",
                 "finance.reconciliations.upsert": "201ea35719d4b506",
                 "invoices.add_time": "ee27431f3eebdb38",

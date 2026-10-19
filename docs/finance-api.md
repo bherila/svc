@@ -81,12 +81,35 @@ workspace. The finance token's member listing is not extended to OAuth.
 `GET /api/v1/workspaces/{workspace}/invoice-payments` (`finance.invoice_payments.list`)
 
 - Defaults to successful payments and 50 records per page, numbered by `page`.
-- Optional query parameters: `status`, `invoice`, `received_from`, `received_to`,
-  `per_page` (maximum 100) and `page`.
+- Optional query parameters: `status` (or `any`), `invoice`, `received_from`,
+  `received_to`, `per_page` (maximum 100) and `page`; for incremental sync,
+  `updated_since`, `watermark` and `cursor` (below).
 - Returns invoice/client public identifiers, payment/net/reconciled amounts, and
   active plus historical reconciliation allocations, with Laravel's `links` and
   `meta` pagination blocks. Internal database IDs, payment notes, and provider
   payment identifiers are not returned.
+
+### Incremental sync
+
+The listing is also a change feed, with the same semantics as the sibling
+applications' change feeds. Naming `updated_since`, `watermark` or `cursor`
+switches it from numbered pages to change order:
+
+- Payments come newest change first (`updated_at desc, id desc`), `per_page` at a
+  time, with an opaque `meta.next_cursor` bound to its workspace, query and pass;
+  `page` is refused there.
+- The first page of a pass fixes a snapshot `watermark` (now, or an earlier time
+  passed as `watermark`; never a future one) and every page returns it in
+  `meta.watermark`. Rows changed while the pass is paged wait for the next pass.
+  With a cursor, omit `watermark` or send the same one.
+- The next pass sends that watermark as `updated_since`, which is inclusive.
+  Starting a few seconds earlier is harmless, and covers a write whose
+  transaction committed after the previous pass read.
+- `status=any` (either order) returns every status. A full refund moves a
+  payment to `refunded` while a partial refund leaves it `succeeded`, so a
+  synchronizer reads `any`. Payments are never deleted.
+- A row never stamped with `updated_at` comes last in a full pass and never
+  matches `updated_since`.
 
 `PUT /api/v1/workspaces/{workspace}/invoice-payments/{payment}/reconciliations/{external-system}/{transaction-uuid}` (`finance.reconciliations.upsert`)
 

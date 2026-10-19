@@ -4209,7 +4209,7 @@
         "/workspaces/{workspace}/invoice-payments": {
             "get": {
                 "operationId": "finance.invoice_payments.list",
-                "description": "Received payments with what each is worth net of refunds, how much of that its active finance reconciliation allocations cover, and every allocation, active first; newest received first. Succeeded payments unless status is given; 50 a page unless per_page is (at most 100), numbered by page. Workspace owners/admins; with the finance token, any workspace member. Internal ids, payment notes and processor payment identifiers are never returned. The Sanctum finance token issued by svc:auth:issue-token is accepted too, its finance.read and finance.reconcile abilities standing for these scopes.",
+                "description": "Received payments with what each is worth net of refunds, how much of that its active finance reconciliation allocations cover, and every allocation, active first; newest received first. Succeeded payments unless status is given; status=any returns every status, so a full refund (refunded) and a partial one (still succeeded) are both seen. 50 a page unless per_page is (at most 100), numbered by page. For incremental sync, name updated_since, watermark or cursor instead of page: payments then come newest change first (updated_at, then id) inside a snapshot watermark that the first page of a pass fixes (now, or an earlier time given) and every page returns in meta; follow meta.next_cursor until it is null, then start the next pass with updated_since set to that watermark (inclusive; starting a few seconds earlier is harmless). Timestamps only find candidates: compare version, which also moves when one of the payment's allocations changes. Payments are never deleted. Workspace owners/admins; with the finance token, any workspace member. Internal ids, payment notes and processor payment identifiers are never returned. The Sanctum finance token issued by svc:auth:issue-token is accepted too, its finance.read and finance.reconcile abilities standing for these scopes.",
                 "security": [
                     {
                         "oauth2": [
@@ -4235,7 +4235,8 @@
                                 "failed",
                                 "refunded",
                                 "disputed",
-                                "canceled"
+                                "canceled",
+                                "any"
                             ],
                             "default": "succeeded"
                         }
@@ -4282,6 +4283,15 @@
                             "minimum": 1,
                             "default": 1
                         }
+                    },
+                    {
+                        "$ref": "#/components/parameters/UpdatedSince"
+                    },
+                    {
+                        "$ref": "#/components/parameters/Watermark"
+                    },
+                    {
+                        "$ref": "#/components/parameters/Cursor"
                     }
                 ],
                 "responses": {
@@ -4326,7 +4336,7 @@
                         }
                     },
                     "422": {
-                        "description": "A filter is invalid (`errors` names it): an unknown status, a malformed invoice id or date, received_to before received_from, or per_page out of range.",
+                        "description": "A filter is invalid (`errors` names it): an unknown status, a malformed invoice id or date, received_to before received_from, per_page out of range, a watermark in the future, or page on a change-feed request. Also a cursor from another workspace, query or watermark.",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -9329,6 +9339,24 @@
                     "format": "uuid"
                 }
             },
+            "UpdatedSince": {
+                "name": "updated_since",
+                "in": "query",
+                "description": "Only records changed at or after this time (inclusive): the previous pass's watermark. Naming updated_since or watermark switches a listing to change order - newest change first inside a snapshot watermark returned in meta - and a cursor from one order is refused in the other.",
+                "schema": {
+                    "type": "string",
+                    "format": "date-time"
+                }
+            },
+            "Watermark": {
+                "name": "watermark",
+                "in": "query",
+                "description": "The pass's snapshot upper bound. Fixed by its first page (now when omitted, never in the future) and returned by every page; with a cursor, omit it or send the same one.",
+                "schema": {
+                    "type": "string",
+                    "format": "date-time"
+                }
+            },
             "TokenId": {
                 "name": "token",
                 "in": "path",
@@ -10287,6 +10315,28 @@
                 "properties": {
                     "data": {
                         "$ref": "#/components/schemas/CapacityLedger"
+                    }
+                }
+            },
+            "ChangeFeedMeta": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "next_cursor",
+                    "watermark"
+                ],
+                "properties": {
+                    "next_cursor": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Null on the last page of the pass."
+                    },
+                    "watermark": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "The pass's snapshot upper bound; the next pass's updated_since."
                     }
                 }
             },
@@ -11642,7 +11692,6 @@
                 "additionalProperties": false,
                 "required": [
                     "data",
-                    "links",
                     "meta"
                 ],
                 "properties": {
@@ -11690,93 +11739,105 @@
                                 ],
                                 "format": "uri"
                             }
-                        }
+                        },
+                        "description": "Numbered pages only."
                     },
                     "meta": {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "required": [
-                            "current_page",
-                            "from",
-                            "last_page",
-                            "links",
-                            "path",
-                            "per_page",
-                            "to",
-                            "total"
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/FinancePageMeta"
+                            },
+                            {
+                                "$ref": "#/components/schemas/ChangeFeedMeta"
+                            }
                         ],
-                        "properties": {
-                            "current_page": {
-                                "type": "integer",
-                                "minimum": 1
-                            },
-                            "from": {
-                                "type": [
-                                    "integer",
-                                    "null"
-                                ]
-                            },
-                            "last_page": {
-                                "type": "integer",
-                                "minimum": 1
-                            },
-                            "links": {
-                                "type": "array",
-                                "items": {
-                                    "type": "object",
-                                    "additionalProperties": false,
-                                    "required": [
-                                        "url",
-                                        "label",
-                                        "page",
-                                        "active"
+                        "description": "ChangeFeedMeta when the request named updated_since, watermark or cursor; FinancePageMeta otherwise."
+                    }
+                }
+            },
+            "FinancePageMeta": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "current_page",
+                    "from",
+                    "last_page",
+                    "links",
+                    "path",
+                    "per_page",
+                    "to",
+                    "total"
+                ],
+                "properties": {
+                    "current_page": {
+                        "type": "integer",
+                        "minimum": 1
+                    },
+                    "from": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "last_page": {
+                        "type": "integer",
+                        "minimum": 1
+                    },
+                    "links": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                                "url",
+                                "label",
+                                "page",
+                                "active"
+                            ],
+                            "properties": {
+                                "url": {
+                                    "type": [
+                                        "string",
+                                        "null"
                                     ],
-                                    "properties": {
-                                        "url": {
-                                            "type": [
-                                                "string",
-                                                "null"
-                                            ],
-                                            "format": "uri"
-                                        },
-                                        "label": {
-                                            "type": "string"
-                                        },
-                                        "page": {
-                                            "type": [
-                                                "integer",
-                                                "null"
-                                            ]
-                                        },
-                                        "active": {
-                                            "type": "boolean"
-                                        }
-                                    }
+                                    "format": "uri"
+                                },
+                                "label": {
+                                    "type": "string"
+                                },
+                                "page": {
+                                    "type": [
+                                        "integer",
+                                        "null"
+                                    ]
+                                },
+                                "active": {
+                                    "type": "boolean"
                                 }
-                            },
-                            "path": {
-                                "type": [
-                                    "string",
-                                    "null"
-                                ],
-                                "format": "uri"
-                            },
-                            "per_page": {
-                                "type": "integer",
-                                "minimum": 1,
-                                "maximum": 100
-                            },
-                            "to": {
-                                "type": [
-                                    "integer",
-                                    "null"
-                                ]
-                            },
-                            "total": {
-                                "type": "integer",
-                                "minimum": 0
                             }
                         }
+                    },
+                    "path": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "uri"
+                    },
+                    "per_page": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100
+                    },
+                    "to": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "total": {
+                        "type": "integer",
+                        "minimum": 0
                     }
                 }
             },

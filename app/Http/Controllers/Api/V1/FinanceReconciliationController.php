@@ -13,6 +13,7 @@ use App\Support\Finance\FinanceCaller;
 use App\Support\Finance\FinancePaymentQuery;
 use App\Support\Finance\ReconciliationAllocation;
 use App\Support\Finance\ReconciliationTarget;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Laravel\Passport\AccessToken;
@@ -30,11 +31,15 @@ use Laravel\Sanctum\Contracts\HasAbilities;
  */
 final class FinanceReconciliationController extends Controller
 {
-    public function index(Request $request, Workspace $workspace, FinanceReconciliationOperations $operations): AnonymousResourceCollection
+    public function index(Request $request, Workspace $workspace, FinanceReconciliationOperations $operations): AnonymousResourceCollection|JsonResponse
     {
         $caller = $this->caller($request);
+        $query = FinancePaymentQuery::fromInput($request->query());
+        if ($query->changes()) {
+            return response()->json($operations->changes($caller, $workspace, $query));
+        }
 
-        return InvoicePaymentResource::collection($operations->list($caller, $workspace, FinancePaymentQuery::fromInput($request->query())));
+        return InvoicePaymentResource::collection($operations->list($caller, $workspace, $query));
     }
 
     public function upsert(Request $request, Workspace $workspace, string $payment, string $external_system, string $transaction, FinanceReconciliationOperations $operations): PaymentReconciliationResource
