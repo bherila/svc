@@ -421,6 +421,32 @@ final class SquareBillingAuditPolicyTest extends TestCase
         $this->assertSame([], SquareBillingAuditPolicy::ambiguousSeries([self::agreement()], [['000123', 'PAID', null, 'LOCFIXTURE01'], ['000123', 'PAID', null, 'LOCFIXTURE01']]), 'One location twice is one location.');
     }
 
+    public function test_a_bounded_member_load_derives_no_series_periods_or_payments(): void
+    {
+        $members = [self::invoice('inv_here', 1, '2030-01-15', 'UNPAID', payments: ['pay_here'])];
+        $findings = SquareBillingAuditPolicy::classify(new SquareBillingAuditFacts('2030-10-01', [self::agreement()], $members, [], [], [], false, false));
+
+        $this->assertSame([[], []], [$findings->unmirroredPeriods, $findings->unmatchedPayments]);
+    }
+
+    public function test_an_unknown_paid_amount_leaves_the_balance_unknown_unless_nothing_was_paid(): void
+    {
+        $findings = self::classify([
+            self::invoice('inv_u', null, '2030-01-10', 'UNPAID', series: null, customer: 'cust_unpaid', total: 4_000, paid: null),
+            self::invoice('inv_p', null, '2030-01-10', 'PARTIALLY_PAID', series: null, customer: 'cust_partial', total: 4_000, paid: null),
+        ]);
+
+        $this->assertSame([['cust_unpaid', 4_000], ['cust_partial', null]], array_map(static fn (array $customer): array => [$customer['customer_id'], $customer['open_amount']], $findings->unlinkedCustomerBalances));
+    }
+
+    public function test_drift_compares_the_latest_bill_itself_not_an_older_amount(): void
+    {
+        $members = self::monthly(9_000);
+        $members[] = self::invoice('inv_fixture_9', 9, '2030-09-15', 'PAID', linked: true, total: null);
+
+        $this->assertSame([], self::classify($members)->seriesDrift, 'The latest amount is unknown, so it is not compared.');
+    }
+
     public function test_absence_is_not_claimed_when_the_series_load_was_bounded(): void
     {
         $facts = new SquareBillingAuditFacts('2030-10-01', [self::agreement()], [], [], [], [], false, false);

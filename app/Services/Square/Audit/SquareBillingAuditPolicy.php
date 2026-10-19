@@ -113,10 +113,12 @@ final class SquareBillingAuditPolicy
     {
         $ambiguous = self::ambiguousSeries($facts->agreements, array_map(static fn (SquareAuditInvoice $invoice): array => [$invoice->seriesKey, $invoice->status, $invoice->date(), $invoice->locationId], $facts->invoices));
         // A prefix shared by two locations is two series svc cannot tell
-        // apart, so nothing is derived from it but that finding.
+        // apart, so nothing is derived from it but that finding - and when
+        // the members were bounded, an omitted one could be in another
+        // location, so nothing is derived from any series.
         $agreements = [];
         foreach ($facts->agreements as $agreement) {
-            if (! isset($ambiguous[$agreement->seriesKey])) {
+            if ($facts->seriesComplete && ! isset($ambiguous[$agreement->seriesKey])) {
                 $agreements[$agreement->seriesKey] = $agreement;
             }
         }
@@ -211,9 +213,10 @@ final class SquareBillingAuditPolicy
             if ($invoice->currency !== null && ! in_array($invoice->currency, $customer['currencies'], true)) {
                 $customer['currencies'][] = $invoice->currency;
             }
-            // An invoice with no known amount leaves the balance unknown; an
+            // An invoice with no known amount, or an unknown paid amount where
+            // something may have been paid, leaves the balance unknown; an
             // overpaid one owes nothing.
-            if ($invoice->totalAmount === null) {
+            if ($invoice->totalAmount === null || ($invoice->paidAmount === null && $invoice->status !== 'UNPAID')) {
                 $customer['unknown'] = true;
             } else {
                 $customer['amount'] += max(0, $invoice->totalAmount - ($invoice->paidAmount ?? 0));
@@ -294,7 +297,9 @@ final class SquareBillingAuditPolicy
             $cadence = is_string($summary['cadence']) ? $summary['cadence'] : null;
             $currencies = array_values(array_unique(array_filter(array_map(static fn (SquareAuditInvoice $invoice): ?string => $invoice->currency, $billed), 'is_string')));
             $currency = count($currencies) === 1 ? $currencies[0] : null;
-            $amount = is_int($summary['amount']) ? $summary['amount'] : null;
+            // The latest bill's own amount: an unknown one is not compared,
+            // rather than an older one standing in for it.
+            $amount = $billed[array_key_last($billed)]->totalAmount;
             $codes = [];
             if ($agreement->cadence === null || ($cadence !== null && $cadence !== 'unknown' && $cadence !== $agreement->cadence->value)) {
                 $codes[] = self::DRIFT_CADENCE;

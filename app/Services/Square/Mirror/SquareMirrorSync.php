@@ -211,7 +211,8 @@ final class SquareMirrorSync
     {
         foreach ($this->mirror->invoicesNeedingPaymentIds($workspace, $limit) as $invoice) {
             $order = $this->client->retrieveOrder($invoice['square_order_id'])['order'] ?? null;
-            if (! is_array($order)) {
+            // As the reconciler checks it: the order must be the one asked for.
+            if (! is_array($order) || ($order['id'] ?? null) !== $invoice['square_order_id']) {
                 throw SquareRequestFailed::unreadable();
             }
             // An order with more tenders than the reconciler accepts stays

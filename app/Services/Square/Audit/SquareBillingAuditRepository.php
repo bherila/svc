@@ -98,7 +98,7 @@ final class SquareBillingAuditRepository
         $ambiguous = SquareBillingAuditPolicy::ambiguousSeries($agreements, array_map(static fn (SquareInvoiceSnapshot $snapshot): array => [
             $snapshot->series_key, $snapshot->status, $snapshot->due_on?->toDateString() ?? $snapshot->scheduled_at?->toDateString(), $snapshot->square_location_id,
         ], array_values($snapshots)));
-        $billedSeries = array_diff_key(array_fill_keys($seriesKeys, true), $ambiguous);
+        $billedSeries = $seriesComplete ? array_diff_key(array_fill_keys($seriesKeys, true), $ambiguous) : [];
 
         // Payment ids are read only for invoices whose payments the audit
         // checks and whose ids are current, a batch at a time, and only up to
