@@ -2823,6 +2823,77 @@
                     }
                 },
                 {
+                    "name": "billing.audit_unlinked_proposal_agreements",
+                    "title": "Audit unlinked proposal agreements",
+                    "inputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "workspace_id"
+                        ],
+                        "properties": {
+                            "workspace_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            }
+                        }
+                    },
+                    "description": "Workspace managers only. Count the workspace's proposals whose agreement the duplicate guard in acceptance cannot see, as svc:engagement:audit-unlinked-proposal-agreements does for every workspace. Counts only; nothing is repaired or guessed.",
+                    "annotations": {
+                        "readOnlyHint": true,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": false
+                    },
+                    "outputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "data"
+                        ],
+                        "properties": {
+                            "data": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "proposals",
+                                    "sent_without_a_linked_agreement",
+                                    "with_an_unlinked_agreement_on_the_company",
+                                    "with_an_active_unlinked_agreement",
+                                    "accepted_without_a_linked_agreement",
+                                    "unlinked_agreements"
+                                ],
+                                "properties": {
+                                    "proposals": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                    },
+                                    "sent_without_a_linked_agreement": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                    },
+                                    "with_an_unlinked_agreement_on_the_company": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                    },
+                                    "with_an_active_unlinked_agreement": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                    },
+                                    "accepted_without_a_linked_agreement": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                    },
+                                    "unlinked_agreements": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                {
                     "name": "billing.audit_unplaceable_invoices",
                     "title": "Audit unplaceable invoices",
                     "inputSchema": {
@@ -2922,6 +2993,164 @@
                                     "cycle_overage_hours_at_stake": {
                                         "type": "number",
                                         "minimum": 0
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "billing.preflight_schedule_generation",
+                    "title": "Preflight schedule generation",
+                    "inputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "workspace_id"
+                        ],
+                        "properties": {
+                            "workspace_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            }
+                        }
+                    },
+                    "description": "Workspace managers only. Classify every period each of the workspace's active billing schedules is due to bill through today, without writing, and count how many schedules would halt and why, as svc:billing:preflight-schedule-generation does for every workspace. Counts only. It examines at most 60 periods per schedule (the command examines 240), and complete is false when a backlog was longer, so the result is inconclusive rather than clean; a workspace gets 5 per ten minutes.",
+                    "annotations": {
+                        "readOnlyHint": true,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": false
+                    },
+                    "outputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "data"
+                        ],
+                        "properties": {
+                            "data": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "schedules",
+                                    "schedules_due",
+                                    "periods_classified",
+                                    "complete",
+                                    "would_halt",
+                                    "halted_by_a_refusal",
+                                    "halted_by_a_pending_draft",
+                                    "halted_by_a_schedule_defect",
+                                    "schedules_truncated",
+                                    "refusals_by_reason",
+                                    "defects_by_kind"
+                                ],
+                                "properties": {
+                                    "schedules": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                    },
+                                    "schedules_due": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                    },
+                                    "periods_classified": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                    },
+                                    "complete": {
+                                        "type": "boolean"
+                                    },
+                                    "would_halt": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                    },
+                                    "halted_by_a_refusal": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                    },
+                                    "halted_by_a_pending_draft": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                    },
+                                    "halted_by_a_schedule_defect": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                    },
+                                    "schedules_truncated": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                    },
+                                    "refusals_by_reason": {
+                                        "type": "object",
+                                        "additionalProperties": false,
+                                        "required": [
+                                            "dangling_schedule_link",
+                                            "dangling_agreement_link",
+                                            "contradictory_lineage",
+                                            "unattributed_and_contested",
+                                            "unknown_status",
+                                            "unsupported_invoice_kind",
+                                            "incomplete_period",
+                                            "partial_overlap",
+                                            "conflicting_exact_claims"
+                                        ],
+                                        "properties": {
+                                            "dangling_schedule_link": {
+                                                "type": "integer",
+                                                "minimum": 0
+                                            },
+                                            "dangling_agreement_link": {
+                                                "type": "integer",
+                                                "minimum": 0
+                                            },
+                                            "contradictory_lineage": {
+                                                "type": "integer",
+                                                "minimum": 0
+                                            },
+                                            "unattributed_and_contested": {
+                                                "type": "integer",
+                                                "minimum": 0
+                                            },
+                                            "unknown_status": {
+                                                "type": "integer",
+                                                "minimum": 0
+                                            },
+                                            "unsupported_invoice_kind": {
+                                                "type": "integer",
+                                                "minimum": 0
+                                            },
+                                            "incomplete_period": {
+                                                "type": "integer",
+                                                "minimum": 0
+                                            },
+                                            "partial_overlap": {
+                                                "type": "integer",
+                                                "minimum": 0
+                                            },
+                                            "conflicting_exact_claims": {
+                                                "type": "integer",
+                                                "minimum": 0
+                                            }
+                                        }
+                                    },
+                                    "defects_by_kind": {
+                                        "type": "object",
+                                        "additionalProperties": false,
+                                        "required": [
+                                            "unreadable_cadence",
+                                            "unreadable_line_template"
+                                        ],
+                                        "properties": {
+                                            "unreadable_cadence": {
+                                                "type": "integer",
+                                                "minimum": 0
+                                            },
+                                            "unreadable_line_template": {
+                                                "type": "integer",
+                                                "minimum": 0
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -15039,6 +15268,236 @@
                     }
                 },
                 {
+                    "name": "invoices.square_reconcile",
+                    "title": "Reconcile invoice with Square",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "workspace_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "invoice_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "idempotency_key": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 255
+                            }
+                        },
+                        "required": [
+                            "workspace_id",
+                            "invoice_id",
+                            "idempotency_key"
+                        ],
+                        "additionalProperties": false,
+                        "description": "No fields: the invoice's active Square link names what to reconcile."
+                    },
+                    "description": "Workspace managers only. Reconcile one linked invoice with Square now, rather than waiting for a webhook or the sweep every 15 minutes: the same read-only refetch of the Square invoice, its order and payments, then completed payments recorded through the received-payment service with provider square and the Square payment id, and refunds applied as corrections. Repeating it is safe: a Square payment is recorded once and refunds are cumulative. Square is read before the receipt is written, so a failed read or a refused payment leaves no receipt and the same key may be retried; a completed key returns the invoice as it now stands. Each call reads Square up to 102 times, so a workspace gets 20 per ten minutes, then 429 with Retry-After. An invoice with no active Square link is refused with 422, as are Square facts the ledger refuses (a draft or void invoice, a currency mismatch, an over-balance payment). Nothing is created, changed or paid in Square. Returns the invoice's Square state; read invoices.get for its balance.",
+                    "annotations": {
+                        "readOnlyHint": false,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": true
+                    },
+                    "outputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "data"
+                        ],
+                        "properties": {
+                            "data": {
+                                "$ref": "#/$defs/InvoiceSquare"
+                            }
+                        },
+                        "$defs": {
+                            "Currency": {
+                                "type": "string",
+                                "pattern": "^[A-Z]{3}$"
+                            },
+                            "InvoiceSquare": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "invoice_id",
+                                    "invoice_version",
+                                    "link",
+                                    "agreement_series_key",
+                                    "square_collects",
+                                    "collection_refusal",
+                                    "payment_mismatch"
+                                ],
+                                "properties": {
+                                    "invoice_id": {
+                                        "$ref": "#/$defs/Uuid"
+                                    },
+                                    "invoice_version": {
+                                        "$ref": "#/$defs/Version"
+                                    },
+                                    "link": {
+                                        "oneOf": [
+                                            {
+                                                "$ref": "#/$defs/SquareInvoiceLink"
+                                            },
+                                            {
+                                                "type": "null"
+                                            }
+                                        ],
+                                        "description": "The active link to a Square invoice, or null."
+                                    },
+                                    "agreement_series_key": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "pattern": "^[0-9]{6}$",
+                                        "description": "The Square series of the agreement this invoice was generated under, when that agreement is billed in Square."
+                                    },
+                                    "square_collects": {
+                                        "type": "boolean",
+                                        "description": "True when the invoice is linked or its agreement is billed in Square. SVC then never emails it to the client, charges it or offers a payment link; issuing and recording payments stay open."
+                                    },
+                                    "collection_refusal": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "description": "Why SVC will not collect this invoice, as the collection paths report it; null when SVC collects."
+                                    },
+                                    "payment_mismatch": {
+                                        "oneOf": [
+                                            {
+                                                "$ref": "#/$defs/SquarePaymentMismatch"
+                                            },
+                                            {
+                                                "type": "null"
+                                            }
+                                        ]
+                                    }
+                                }
+                            },
+                            "SquareInvoiceId": {
+                                "type": "string",
+                                "maxLength": 191,
+                                "pattern": "^[A-Za-z0-9_][A-Za-z0-9:_=\\-]{0,190}$",
+                                "description": "A Square invoice id, held as an opaque string. SVC checks its shape only; it never resolves it against Square."
+                            },
+                            "SquareInvoiceLink": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "id",
+                                    "square_invoice_id",
+                                    "square_invoice_number",
+                                    "series_key",
+                                    "currency",
+                                    "match_method",
+                                    "score",
+                                    "reasons",
+                                    "linked_at",
+                                    "linked_by"
+                                ],
+                                "properties": {
+                                    "id": {
+                                        "$ref": "#/$defs/Uuid"
+                                    },
+                                    "square_invoice_id": {
+                                        "$ref": "#/$defs/SquareInvoiceId"
+                                    },
+                                    "square_invoice_number": {
+                                        "$ref": "#/$defs/SquareInvoiceNumber"
+                                    },
+                                    "series_key": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "pattern": "^[0-9]{6}$",
+                                        "description": "Derived from the number at link time; null for a one-off."
+                                    },
+                                    "currency": {
+                                        "$ref": "#/$defs/Currency"
+                                    },
+                                    "match_method": {
+                                        "type": "string",
+                                        "enum": [
+                                            "manual",
+                                            "suggested"
+                                        ]
+                                    },
+                                    "score": {
+                                        "type": [
+                                            "integer",
+                                            "null"
+                                        ],
+                                        "minimum": 0,
+                                        "maximum": 100,
+                                        "description": "The suggestion score the person confirmed; null for a manual link."
+                                    },
+                                    "reasons": {
+                                        "type": [
+                                            "array",
+                                            "null"
+                                        ],
+                                        "items": {
+                                            "type": "string"
+                                        },
+                                        "description": "The suggestion reasons the person confirmed; null for a manual link."
+                                    },
+                                    "linked_at": {
+                                        "type": "string",
+                                        "format": "date-time"
+                                    },
+                                    "linked_by": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "description": "Who confirmed the link, by name."
+                                    }
+                                }
+                            },
+                            "SquareInvoiceNumber": {
+                                "type": "string",
+                                "maxLength": 191,
+                                "pattern": "^[!-~](?:[ -~]{0,189}[!-~])?$",
+                                "description": "The Square invoice number as Square shows it. A recurring series occurrence is NNNNNN-R-NNNN, whose six-digit prefix is the series key."
+                            },
+                            "SquarePaymentMismatch": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "code",
+                                    "dashboard_url"
+                                ],
+                                "properties": {
+                                    "code": {
+                                        "type": "string",
+                                        "enum": [
+                                            "paid_outside_square"
+                                        ]
+                                    },
+                                    "dashboard_url": {
+                                        "type": "string",
+                                        "format": "uri"
+                                    }
+                                }
+                            },
+                            "Uuid": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "Version": {
+                                "type": "string",
+                                "pattern": "^[a-f0-9]{64}$"
+                            }
+                        }
+                    }
+                },
+                {
                     "name": "invoices.square_unlink",
                     "title": "Unlink invoice from Square",
                     "inputSchema": {
@@ -26865,7 +27324,9 @@
                 "billing.audit_missing_billed_overage": "57fdb9f7c39ae08e",
                 "billing.audit_opening_rollover": "cb425f17e9208282",
                 "billing.audit_undated_collectible_invoices": "084b292db36f8292",
+                "billing.audit_unlinked_proposal_agreements": "dc2d2aa590a0f1b4",
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
+                "billing.preflight_schedule_generation": "109b58f0e3d98ec4",
                 "billing_audit.stale_and_missing": "e7c615528bc421bf",
                 "billing_schedules.create": "ce808d037fdc2ee7",
                 "billing_schedules.generate": "b1849c503fd5dc21",
@@ -26926,6 +27387,7 @@
                 "invoices.send_reminder": "8f62ca2de82c197b",
                 "invoices.square_candidates": "09693c77227c6c63",
                 "invoices.square_link": "9346fefe8d8337f7",
+                "invoices.square_reconcile": "690de0adf0059205",
                 "invoices.square_unlink": "8c2cd7af26e27706",
                 "invoices.update_details": "9c25cf205acf1a39",
                 "invoices.update_draft": "2db06ccf7247d243",
@@ -27007,7 +27469,9 @@
                     "billing.audit_missing_billed_overage role",
                     "billing.audit_opening_rollover role",
                     "billing.audit_undated_collectible_invoices role",
+                    "billing.audit_unlinked_proposal_agreements role",
                     "billing.audit_unplaceable_invoices role",
+                    "billing.preflight_schedule_generation role",
                     "billing_audit.stale_and_missing role",
                     "billing_schedules.create role",
                     "billing_schedules.generate role",
@@ -27058,6 +27522,7 @@
                     "invoices.send_reminder role",
                     "invoices.square_candidates role",
                     "invoices.square_link role",
+                    "invoices.square_reconcile role",
                     "invoices.square_unlink role",
                     "payments.correct role",
                     "payments.record role",
@@ -27163,7 +27628,9 @@
                     "billing.audit_missing_billed_overage role",
                     "billing.audit_opening_rollover role",
                     "billing.audit_undated_collectible_invoices role",
+                    "billing.audit_unlinked_proposal_agreements role",
                     "billing.audit_unplaceable_invoices role",
+                    "billing.preflight_schedule_generation role",
                     "billing_audit.stale_and_missing role",
                     "billing_schedules.create role",
                     "billing_schedules.generate role",
@@ -27214,6 +27681,7 @@
                     "invoices.send_reminder role",
                     "invoices.square_candidates role",
                     "invoices.square_link role",
+                    "invoices.square_reconcile role",
                     "invoices.square_unlink role",
                     "payments.correct role",
                     "payments.record role",
@@ -27319,7 +27787,9 @@
                     "billing.audit_missing_billed_overage role",
                     "billing.audit_opening_rollover role",
                     "billing.audit_undated_collectible_invoices role",
+                    "billing.audit_unlinked_proposal_agreements role",
                     "billing.audit_unplaceable_invoices role",
+                    "billing.preflight_schedule_generation role",
                     "billing_audit.stale_and_missing role",
                     "billing_schedules.create role",
                     "billing_schedules.generate role",
@@ -27370,6 +27840,7 @@
                     "invoices.send_reminder role",
                     "invoices.square_candidates role",
                     "invoices.square_link role",
+                    "invoices.square_reconcile role",
                     "invoices.square_unlink role",
                     "payments.correct role",
                     "payments.record role",
@@ -27475,7 +27946,9 @@
                     "billing.audit_missing_billed_overage role",
                     "billing.audit_opening_rollover role",
                     "billing.audit_undated_collectible_invoices role",
+                    "billing.audit_unlinked_proposal_agreements role",
                     "billing.audit_unplaceable_invoices role",
+                    "billing.preflight_schedule_generation role",
                     "billing_audit.stale_and_missing role",
                     "billing_schedules.create role",
                     "billing_schedules.generate role",
@@ -27526,6 +27999,7 @@
                     "invoices.send_reminder role",
                     "invoices.square_candidates role",
                     "invoices.square_link role",
+                    "invoices.square_reconcile role",
                     "invoices.square_unlink role",
                     "payments.correct role",
                     "payments.record role",
@@ -27660,6 +28134,7 @@
                     "invoices.send scope_not_granted billing:deliver",
                     "invoices.send_reminder scope_not_granted billing:write",
                     "invoices.square_link scope_not_granted billing:write",
+                    "invoices.square_reconcile scope_not_granted billing:write",
                     "invoices.square_unlink scope_not_granted billing:write",
                     "invoices.update_details scope_not_granted billing:write",
                     "invoices.update_draft scope_not_granted billing:write",
@@ -27709,7 +28184,9 @@
                 "billing.audit_missing_billed_overage": "57fdb9f7c39ae08e",
                 "billing.audit_opening_rollover": "cb425f17e9208282",
                 "billing.audit_undated_collectible_invoices": "084b292db36f8292",
+                "billing.audit_unlinked_proposal_agreements": "dc2d2aa590a0f1b4",
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
+                "billing.preflight_schedule_generation": "109b58f0e3d98ec4",
                 "billing_audit.stale_and_missing": "e7c615528bc421bf",
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
@@ -27814,7 +28291,9 @@
                 "billing.audit_missing_billed_overage": "57fdb9f7c39ae08e",
                 "billing.audit_opening_rollover": "cb425f17e9208282",
                 "billing.audit_undated_collectible_invoices": "084b292db36f8292",
+                "billing.audit_unlinked_proposal_agreements": "dc2d2aa590a0f1b4",
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
+                "billing.preflight_schedule_generation": "109b58f0e3d98ec4",
                 "billing_audit.stale_and_missing": "e7c615528bc421bf",
                 "billing_schedules.create": "ce808d037fdc2ee7",
                 "billing_schedules.get": "fbb225cb7a29d6a7",
@@ -27839,6 +28318,7 @@
                 "invoices.send_reminder": "8f62ca2de82c197b",
                 "invoices.square_candidates": "09693c77227c6c63",
                 "invoices.square_link": "9346fefe8d8337f7",
+                "invoices.square_reconcile": "690de0adf0059205",
                 "invoices.square_unlink": "8c2cd7af26e27706",
                 "invoices.update_details": "9c25cf205acf1a39",
                 "invoices.update_draft": "2db06ccf7247d243",
@@ -27884,7 +28364,9 @@
                     "billing.audit_missing_billed_overage role",
                     "billing.audit_opening_rollover role",
                     "billing.audit_undated_collectible_invoices role",
+                    "billing.audit_unlinked_proposal_agreements role",
                     "billing.audit_unplaceable_invoices role",
+                    "billing.preflight_schedule_generation role",
                     "billing_audit.stale_and_missing role",
                     "billing_schedules.create scope_not_granted billing:write",
                     "billing_schedules.generate scope_not_granted billing:deliver",
@@ -27940,6 +28422,7 @@
                     "invoices.send_reminder scope_not_granted billing:write",
                     "invoices.square_candidates role",
                     "invoices.square_link scope_not_granted billing:write",
+                    "invoices.square_reconcile scope_not_granted billing:write",
                     "invoices.square_unlink scope_not_granted billing:write",
                     "invoices.update_details scope_not_granted billing:write",
                     "invoices.update_draft scope_not_granted billing:write",
@@ -28089,7 +28572,9 @@
                     "billing.audit_missing_billed_overage role",
                     "billing.audit_opening_rollover role",
                     "billing.audit_undated_collectible_invoices role",
+                    "billing.audit_unlinked_proposal_agreements role",
                     "billing.audit_unplaceable_invoices role",
+                    "billing.preflight_schedule_generation role",
                     "billing_audit.stale_and_missing role",
                     "billing_schedules.create scope_not_granted billing:write",
                     "billing_schedules.generate scope_not_granted billing:deliver",
@@ -28145,6 +28630,7 @@
                     "invoices.send_reminder scope_not_granted billing:write",
                     "invoices.square_candidates role",
                     "invoices.square_link scope_not_granted billing:write",
+                    "invoices.square_reconcile scope_not_granted billing:write",
                     "invoices.square_unlink scope_not_granted billing:write",
                     "invoices.update_details scope_not_granted billing:write",
                     "invoices.update_draft scope_not_granted billing:write",
@@ -28325,6 +28811,7 @@
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates deployment_disabled",
                     "invoices.square_link deployment_disabled",
+                    "invoices.square_reconcile deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -28385,7 +28872,9 @@
                 "billing.audit_missing_billed_overage": "57fdb9f7c39ae08e",
                 "billing.audit_opening_rollover": "cb425f17e9208282",
                 "billing.audit_undated_collectible_invoices": "084b292db36f8292",
+                "billing.audit_unlinked_proposal_agreements": "dc2d2aa590a0f1b4",
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
+                "billing.preflight_schedule_generation": "109b58f0e3d98ec4",
                 "billing_audit.stale_and_missing": "e7c615528bc421bf",
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
@@ -28482,6 +28971,7 @@
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates deployment_disabled",
                     "invoices.square_link deployment_disabled",
+                    "invoices.square_reconcile deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -28542,7 +29032,9 @@
                 "billing.audit_missing_billed_overage": "57fdb9f7c39ae08e",
                 "billing.audit_opening_rollover": "cb425f17e9208282",
                 "billing.audit_undated_collectible_invoices": "084b292db36f8292",
+                "billing.audit_unlinked_proposal_agreements": "dc2d2aa590a0f1b4",
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
+                "billing.preflight_schedule_generation": "109b58f0e3d98ec4",
                 "billing_audit.stale_and_missing": "e7c615528bc421bf",
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
@@ -28610,7 +29102,9 @@
                     "billing.audit_missing_billed_overage role",
                     "billing.audit_opening_rollover role",
                     "billing.audit_undated_collectible_invoices role",
+                    "billing.audit_unlinked_proposal_agreements role",
                     "billing.audit_unplaceable_invoices role",
+                    "billing.preflight_schedule_generation role",
                     "billing_audit.stale_and_missing role",
                     "billing_schedules.create deployment_disabled",
                     "billing_schedules.generate deployment_disabled",
@@ -28666,6 +29160,7 @@
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates deployment_disabled",
                     "invoices.square_link deployment_disabled",
+                    "invoices.square_reconcile deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -28765,7 +29260,9 @@
                     "billing.audit_missing_billed_overage role",
                     "billing.audit_opening_rollover role",
                     "billing.audit_undated_collectible_invoices role",
+                    "billing.audit_unlinked_proposal_agreements role",
                     "billing.audit_unplaceable_invoices role",
+                    "billing.preflight_schedule_generation role",
                     "billing_audit.stale_and_missing role",
                     "billing_schedules.create deployment_disabled",
                     "billing_schedules.generate deployment_disabled",
@@ -28821,6 +29318,7 @@
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates deployment_disabled",
                     "invoices.square_link deployment_disabled",
+                    "invoices.square_reconcile deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -28920,7 +29418,9 @@
                     "billing.audit_missing_billed_overage role",
                     "billing.audit_opening_rollover role",
                     "billing.audit_undated_collectible_invoices role",
+                    "billing.audit_unlinked_proposal_agreements role",
                     "billing.audit_unplaceable_invoices role",
+                    "billing.preflight_schedule_generation role",
                     "billing_audit.stale_and_missing role",
                     "billing_schedules.create deployment_disabled",
                     "billing_schedules.generate deployment_disabled",
@@ -28976,6 +29476,7 @@
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates deployment_disabled",
                     "invoices.square_link deployment_disabled",
+                    "invoices.square_reconcile deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -29075,7 +29576,9 @@
                     "billing.audit_missing_billed_overage role",
                     "billing.audit_opening_rollover role",
                     "billing.audit_undated_collectible_invoices role",
+                    "billing.audit_unlinked_proposal_agreements role",
                     "billing.audit_unplaceable_invoices role",
+                    "billing.preflight_schedule_generation role",
                     "billing_audit.stale_and_missing role",
                     "billing_schedules.create deployment_disabled",
                     "billing_schedules.generate deployment_disabled",
@@ -29131,6 +29634,7 @@
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates deployment_disabled",
                     "invoices.square_link deployment_disabled",
+                    "invoices.square_reconcile deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -29259,6 +29763,7 @@
                     "invoices.send deployment_disabled",
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_link deployment_disabled",
+                    "invoices.square_reconcile deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -29308,7 +29813,9 @@
                 "billing.audit_missing_billed_overage": "57fdb9f7c39ae08e",
                 "billing.audit_opening_rollover": "cb425f17e9208282",
                 "billing.audit_undated_collectible_invoices": "084b292db36f8292",
+                "billing.audit_unlinked_proposal_agreements": "dc2d2aa590a0f1b4",
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
+                "billing.preflight_schedule_generation": "109b58f0e3d98ec4",
                 "billing_audit.stale_and_missing": "e7c615528bc421bf",
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
@@ -29414,6 +29921,7 @@
                     "invoices.send deployment_disabled",
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_link deployment_disabled",
+                    "invoices.square_reconcile deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -29463,7 +29971,9 @@
                 "billing.audit_missing_billed_overage": "57fdb9f7c39ae08e",
                 "billing.audit_opening_rollover": "cb425f17e9208282",
                 "billing.audit_undated_collectible_invoices": "084b292db36f8292",
+                "billing.audit_unlinked_proposal_agreements": "dc2d2aa590a0f1b4",
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
+                "billing.preflight_schedule_generation": "109b58f0e3d98ec4",
                 "billing_audit.stale_and_missing": "e7c615528bc421bf",
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
@@ -29542,7 +30052,9 @@
                     "billing.audit_missing_billed_overage role",
                     "billing.audit_opening_rollover role",
                     "billing.audit_undated_collectible_invoices role",
+                    "billing.audit_unlinked_proposal_agreements role",
                     "billing.audit_unplaceable_invoices role",
+                    "billing.preflight_schedule_generation role",
                     "billing_audit.stale_and_missing role",
                     "billing_schedules.create deployment_disabled",
                     "billing_schedules.generate deployment_disabled",
@@ -29598,6 +30110,7 @@
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates role",
                     "invoices.square_link deployment_disabled",
+                    "invoices.square_reconcile deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -29695,7 +30208,9 @@
                     "billing.audit_missing_billed_overage role",
                     "billing.audit_opening_rollover role",
                     "billing.audit_undated_collectible_invoices role",
+                    "billing.audit_unlinked_proposal_agreements role",
                     "billing.audit_unplaceable_invoices role",
+                    "billing.preflight_schedule_generation role",
                     "billing_audit.stale_and_missing role",
                     "billing_schedules.create deployment_disabled",
                     "billing_schedules.generate deployment_disabled",
@@ -29751,6 +30266,7 @@
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates role",
                     "invoices.square_link deployment_disabled",
+                    "invoices.square_reconcile deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -29848,7 +30364,9 @@
                     "billing.audit_missing_billed_overage role",
                     "billing.audit_opening_rollover role",
                     "billing.audit_undated_collectible_invoices role",
+                    "billing.audit_unlinked_proposal_agreements role",
                     "billing.audit_unplaceable_invoices role",
+                    "billing.preflight_schedule_generation role",
                     "billing_audit.stale_and_missing role",
                     "billing_schedules.create deployment_disabled",
                     "billing_schedules.generate deployment_disabled",
@@ -29904,6 +30422,7 @@
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates role",
                     "invoices.square_link deployment_disabled",
+                    "invoices.square_reconcile deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -30001,7 +30520,9 @@
                     "billing.audit_missing_billed_overage role",
                     "billing.audit_opening_rollover role",
                     "billing.audit_undated_collectible_invoices role",
+                    "billing.audit_unlinked_proposal_agreements role",
                     "billing.audit_unplaceable_invoices role",
+                    "billing.preflight_schedule_generation role",
                     "billing_audit.stale_and_missing role",
                     "billing_schedules.create deployment_disabled",
                     "billing_schedules.generate deployment_disabled",
@@ -30057,6 +30578,7 @@
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates role",
                     "invoices.square_link deployment_disabled",
+                    "invoices.square_reconcile deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -30183,6 +30705,7 @@
                     "invoices.send deployment_disabled",
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_link deployment_disabled",
+                    "invoices.square_reconcile deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -30229,7 +30752,9 @@
                 "billing.audit_missing_billed_overage": "57fdb9f7c39ae08e",
                 "billing.audit_opening_rollover": "cb425f17e9208282",
                 "billing.audit_undated_collectible_invoices": "084b292db36f8292",
+                "billing.audit_unlinked_proposal_agreements": "dc2d2aa590a0f1b4",
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
+                "billing.preflight_schedule_generation": "109b58f0e3d98ec4",
                 "billing_audit.stale_and_missing": "e7c615528bc421bf",
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
@@ -30340,6 +30865,7 @@
                     "invoices.send deployment_disabled",
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_link deployment_disabled",
+                    "invoices.square_reconcile deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -30386,7 +30912,9 @@
                 "billing.audit_missing_billed_overage": "57fdb9f7c39ae08e",
                 "billing.audit_opening_rollover": "cb425f17e9208282",
                 "billing.audit_undated_collectible_invoices": "084b292db36f8292",
+                "billing.audit_unlinked_proposal_agreements": "dc2d2aa590a0f1b4",
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
+                "billing.preflight_schedule_generation": "109b58f0e3d98ec4",
                 "billing_audit.stale_and_missing": "e7c615528bc421bf",
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
@@ -30470,7 +30998,9 @@
                     "billing.audit_missing_billed_overage role",
                     "billing.audit_opening_rollover role",
                     "billing.audit_undated_collectible_invoices role",
+                    "billing.audit_unlinked_proposal_agreements role",
                     "billing.audit_unplaceable_invoices role",
+                    "billing.preflight_schedule_generation role",
                     "billing_audit.stale_and_missing role",
                     "billing_schedules.create deployment_disabled",
                     "billing_schedules.generate deployment_disabled",
@@ -30526,6 +31056,7 @@
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates role",
                     "invoices.square_link deployment_disabled",
+                    "invoices.square_reconcile deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -30625,7 +31156,9 @@
                     "billing.audit_missing_billed_overage role",
                     "billing.audit_opening_rollover role",
                     "billing.audit_undated_collectible_invoices role",
+                    "billing.audit_unlinked_proposal_agreements role",
                     "billing.audit_unplaceable_invoices role",
+                    "billing.preflight_schedule_generation role",
                     "billing_audit.stale_and_missing role",
                     "billing_schedules.create deployment_disabled",
                     "billing_schedules.generate deployment_disabled",
@@ -30681,6 +31214,7 @@
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates role",
                     "invoices.square_link deployment_disabled",
+                    "invoices.square_reconcile deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -30780,7 +31314,9 @@
                     "billing.audit_missing_billed_overage role",
                     "billing.audit_opening_rollover role",
                     "billing.audit_undated_collectible_invoices role",
+                    "billing.audit_unlinked_proposal_agreements role",
                     "billing.audit_unplaceable_invoices role",
+                    "billing.preflight_schedule_generation role",
                     "billing_audit.stale_and_missing role",
                     "billing_schedules.create deployment_disabled",
                     "billing_schedules.generate deployment_disabled",
@@ -30836,6 +31372,7 @@
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates role",
                     "invoices.square_link deployment_disabled",
+                    "invoices.square_reconcile deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -30935,7 +31472,9 @@
                     "billing.audit_missing_billed_overage role",
                     "billing.audit_opening_rollover role",
                     "billing.audit_undated_collectible_invoices role",
+                    "billing.audit_unlinked_proposal_agreements role",
                     "billing.audit_unplaceable_invoices role",
+                    "billing.preflight_schedule_generation role",
                     "billing_audit.stale_and_missing role",
                     "billing_schedules.create deployment_disabled",
                     "billing_schedules.generate deployment_disabled",
@@ -30991,6 +31530,7 @@
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates role",
                     "invoices.square_link deployment_disabled",
+                    "invoices.square_reconcile deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -31125,7 +31665,9 @@
                 "billing.audit_missing_billed_overage": "57fdb9f7c39ae08e",
                 "billing.audit_opening_rollover": "cb425f17e9208282",
                 "billing.audit_undated_collectible_invoices": "084b292db36f8292",
+                "billing.audit_unlinked_proposal_agreements": "dc2d2aa590a0f1b4",
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
+                "billing.preflight_schedule_generation": "109b58f0e3d98ec4",
                 "billing_audit.stale_and_missing": "e7c615528bc421bf",
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
@@ -31173,6 +31715,7 @@
                 "invoices.preview_period": "588e53821f4472ec",
                 "invoices.reminders.list": "86e53f8c46db44c6",
                 "invoices.square_candidates": "09693c77227c6c63",
+                "invoices.square_reconcile": "690de0adf0059205",
                 "operations.summary": "0db82875e0823846",
                 "payments.correct": "675e27f39a47eaea",
                 "payments.list": "a9d6e9267ef8ee1a",
@@ -31282,7 +31825,9 @@
                 "billing.audit_missing_billed_overage": "57fdb9f7c39ae08e",
                 "billing.audit_opening_rollover": "cb425f17e9208282",
                 "billing.audit_undated_collectible_invoices": "084b292db36f8292",
+                "billing.audit_unlinked_proposal_agreements": "dc2d2aa590a0f1b4",
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
+                "billing.preflight_schedule_generation": "109b58f0e3d98ec4",
                 "billing_audit.stale_and_missing": "e7c615528bc421bf",
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
@@ -31330,6 +31875,7 @@
                 "invoices.preview_period": "588e53821f4472ec",
                 "invoices.reminders.list": "86e53f8c46db44c6",
                 "invoices.square_candidates": "09693c77227c6c63",
+                "invoices.square_reconcile": "690de0adf0059205",
                 "operations.summary": "0db82875e0823846",
                 "payments.correct": "675e27f39a47eaea",
                 "payments.list": "a9d6e9267ef8ee1a",
@@ -31406,7 +31952,9 @@
                     "billing.audit_missing_billed_overage role",
                     "billing.audit_opening_rollover role",
                     "billing.audit_undated_collectible_invoices role",
+                    "billing.audit_unlinked_proposal_agreements role",
                     "billing.audit_unplaceable_invoices role",
+                    "billing.preflight_schedule_generation role",
                     "billing_audit.stale_and_missing role",
                     "billing_schedules.create deployment_disabled",
                     "billing_schedules.generate deployment_disabled",
@@ -31462,6 +32010,7 @@
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates role",
                     "invoices.square_link deployment_disabled",
+                    "invoices.square_reconcile role",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -31561,7 +32110,9 @@
                     "billing.audit_missing_billed_overage role",
                     "billing.audit_opening_rollover role",
                     "billing.audit_undated_collectible_invoices role",
+                    "billing.audit_unlinked_proposal_agreements role",
                     "billing.audit_unplaceable_invoices role",
+                    "billing.preflight_schedule_generation role",
                     "billing_audit.stale_and_missing role",
                     "billing_schedules.create deployment_disabled",
                     "billing_schedules.generate deployment_disabled",
@@ -31617,6 +32168,7 @@
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates role",
                     "invoices.square_link deployment_disabled",
+                    "invoices.square_reconcile role",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -31716,7 +32268,9 @@
                     "billing.audit_missing_billed_overage role",
                     "billing.audit_opening_rollover role",
                     "billing.audit_undated_collectible_invoices role",
+                    "billing.audit_unlinked_proposal_agreements role",
                     "billing.audit_unplaceable_invoices role",
+                    "billing.preflight_schedule_generation role",
                     "billing_audit.stale_and_missing role",
                     "billing_schedules.create deployment_disabled",
                     "billing_schedules.generate deployment_disabled",
@@ -31772,6 +32326,7 @@
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates role",
                     "invoices.square_link deployment_disabled",
+                    "invoices.square_reconcile role",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -31871,7 +32426,9 @@
                     "billing.audit_missing_billed_overage role",
                     "billing.audit_opening_rollover role",
                     "billing.audit_undated_collectible_invoices role",
+                    "billing.audit_unlinked_proposal_agreements role",
                     "billing.audit_unplaceable_invoices role",
+                    "billing.preflight_schedule_generation role",
                     "billing_audit.stale_and_missing role",
                     "billing_schedules.create deployment_disabled",
                     "billing_schedules.generate deployment_disabled",
@@ -31927,6 +32484,7 @@
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates role",
                     "invoices.square_link deployment_disabled",
+                    "invoices.square_reconcile role",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -32038,6 +32596,7 @@
                     "invoices.send deployment_disabled",
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_link deployment_disabled",
+                    "invoices.square_reconcile deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -32093,7 +32652,9 @@
                 "billing.audit_missing_billed_overage": "57fdb9f7c39ae08e",
                 "billing.audit_opening_rollover": "cb425f17e9208282",
                 "billing.audit_undated_collectible_invoices": "084b292db36f8292",
+                "billing.audit_unlinked_proposal_agreements": "dc2d2aa590a0f1b4",
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
+                "billing.preflight_schedule_generation": "109b58f0e3d98ec4",
                 "billing_audit.stale_and_missing": "e7c615528bc421bf",
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
@@ -32193,6 +32754,7 @@
                     "invoices.send deployment_disabled",
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_link deployment_disabled",
+                    "invoices.square_reconcile deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -32248,7 +32810,9 @@
                 "billing.audit_missing_billed_overage": "57fdb9f7c39ae08e",
                 "billing.audit_opening_rollover": "cb425f17e9208282",
                 "billing.audit_undated_collectible_invoices": "084b292db36f8292",
+                "billing.audit_unlinked_proposal_agreements": "dc2d2aa590a0f1b4",
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
+                "billing.preflight_schedule_generation": "109b58f0e3d98ec4",
                 "billing_audit.stale_and_missing": "e7c615528bc421bf",
                 "billing_schedules.get": "fbb225cb7a29d6a7",
                 "billing_schedules.list": "65119a3d21c1f920",
@@ -32338,7 +32902,9 @@
                     "billing.audit_missing_billed_overage role",
                     "billing.audit_opening_rollover role",
                     "billing.audit_undated_collectible_invoices role",
+                    "billing.audit_unlinked_proposal_agreements role",
                     "billing.audit_unplaceable_invoices role",
+                    "billing.preflight_schedule_generation role",
                     "billing_audit.stale_and_missing role",
                     "billing_schedules.create deployment_disabled",
                     "billing_schedules.generate deployment_disabled",
@@ -32394,6 +32960,7 @@
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates role",
                     "invoices.square_link deployment_disabled",
+                    "invoices.square_reconcile deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -32491,7 +33058,9 @@
                     "billing.audit_missing_billed_overage role",
                     "billing.audit_opening_rollover role",
                     "billing.audit_undated_collectible_invoices role",
+                    "billing.audit_unlinked_proposal_agreements role",
                     "billing.audit_unplaceable_invoices role",
+                    "billing.preflight_schedule_generation role",
                     "billing_audit.stale_and_missing role",
                     "billing_schedules.create deployment_disabled",
                     "billing_schedules.generate deployment_disabled",
@@ -32547,6 +33116,7 @@
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates role",
                     "invoices.square_link deployment_disabled",
+                    "invoices.square_reconcile deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -32644,7 +33214,9 @@
                     "billing.audit_missing_billed_overage role",
                     "billing.audit_opening_rollover role",
                     "billing.audit_undated_collectible_invoices role",
+                    "billing.audit_unlinked_proposal_agreements role",
                     "billing.audit_unplaceable_invoices role",
+                    "billing.preflight_schedule_generation role",
                     "billing_audit.stale_and_missing role",
                     "billing_schedules.create deployment_disabled",
                     "billing_schedules.generate deployment_disabled",
@@ -32700,6 +33272,7 @@
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates role",
                     "invoices.square_link deployment_disabled",
+                    "invoices.square_reconcile deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -32797,7 +33370,9 @@
                     "billing.audit_missing_billed_overage role",
                     "billing.audit_opening_rollover role",
                     "billing.audit_undated_collectible_invoices role",
+                    "billing.audit_unlinked_proposal_agreements role",
                     "billing.audit_unplaceable_invoices role",
+                    "billing.preflight_schedule_generation role",
                     "billing_audit.stale_and_missing role",
                     "billing_schedules.create deployment_disabled",
                     "billing_schedules.generate deployment_disabled",
@@ -32853,6 +33428,7 @@
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates role",
                     "invoices.square_link deployment_disabled",
+                    "invoices.square_reconcile deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -32968,7 +33544,9 @@
                 "billing.audit_missing_billed_overage": "57fdb9f7c39ae08e",
                 "billing.audit_opening_rollover": "cb425f17e9208282",
                 "billing.audit_undated_collectible_invoices": "084b292db36f8292",
+                "billing.audit_unlinked_proposal_agreements": "dc2d2aa590a0f1b4",
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
+                "billing.preflight_schedule_generation": "109b58f0e3d98ec4",
                 "billing_audit.stale_and_missing": "e7c615528bc421bf",
                 "billing_schedules.create": "ce808d037fdc2ee7",
                 "billing_schedules.generate": "b1849c503fd5dc21",
@@ -33029,6 +33607,7 @@
                 "invoices.send_reminder": "8f62ca2de82c197b",
                 "invoices.square_candidates": "09693c77227c6c63",
                 "invoices.square_link": "9346fefe8d8337f7",
+                "invoices.square_reconcile": "690de0adf0059205",
                 "invoices.square_unlink": "8c2cd7af26e27706",
                 "invoices.update_details": "9c25cf205acf1a39",
                 "invoices.update_draft": "2db06ccf7247d243",
@@ -33124,7 +33703,9 @@
                 "billing.audit_missing_billed_overage": "57fdb9f7c39ae08e",
                 "billing.audit_opening_rollover": "cb425f17e9208282",
                 "billing.audit_undated_collectible_invoices": "084b292db36f8292",
+                "billing.audit_unlinked_proposal_agreements": "dc2d2aa590a0f1b4",
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
+                "billing.preflight_schedule_generation": "109b58f0e3d98ec4",
                 "billing_audit.stale_and_missing": "e7c615528bc421bf",
                 "billing_schedules.create": "ce808d037fdc2ee7",
                 "billing_schedules.generate": "b1849c503fd5dc21",
@@ -33185,6 +33766,7 @@
                 "invoices.send_reminder": "8f62ca2de82c197b",
                 "invoices.square_candidates": "09693c77227c6c63",
                 "invoices.square_link": "9346fefe8d8337f7",
+                "invoices.square_reconcile": "690de0adf0059205",
                 "invoices.square_unlink": "8c2cd7af26e27706",
                 "invoices.update_details": "9c25cf205acf1a39",
                 "invoices.update_draft": "2db06ccf7247d243",
@@ -33264,7 +33846,9 @@
                     "billing.audit_missing_billed_overage role",
                     "billing.audit_opening_rollover role",
                     "billing.audit_undated_collectible_invoices role",
+                    "billing.audit_unlinked_proposal_agreements role",
                     "billing.audit_unplaceable_invoices role",
+                    "billing.preflight_schedule_generation role",
                     "billing_audit.stale_and_missing role",
                     "billing_schedules.create role",
                     "billing_schedules.generate role",
@@ -33315,6 +33899,7 @@
                     "invoices.send_reminder role",
                     "invoices.square_candidates role",
                     "invoices.square_link role",
+                    "invoices.square_reconcile role",
                     "invoices.square_unlink role",
                     "payments.correct role",
                     "payments.record role",
@@ -33420,7 +34005,9 @@
                     "billing.audit_missing_billed_overage role",
                     "billing.audit_opening_rollover role",
                     "billing.audit_undated_collectible_invoices role",
+                    "billing.audit_unlinked_proposal_agreements role",
                     "billing.audit_unplaceable_invoices role",
+                    "billing.preflight_schedule_generation role",
                     "billing_audit.stale_and_missing role",
                     "billing_schedules.create role",
                     "billing_schedules.generate role",
@@ -33471,6 +34058,7 @@
                     "invoices.send_reminder role",
                     "invoices.square_candidates role",
                     "invoices.square_link role",
+                    "invoices.square_reconcile role",
                     "invoices.square_unlink role",
                     "payments.correct role",
                     "payments.record role",
@@ -33576,7 +34164,9 @@
                     "billing.audit_missing_billed_overage role",
                     "billing.audit_opening_rollover role",
                     "billing.audit_undated_collectible_invoices role",
+                    "billing.audit_unlinked_proposal_agreements role",
                     "billing.audit_unplaceable_invoices role",
+                    "billing.preflight_schedule_generation role",
                     "billing_audit.stale_and_missing role",
                     "billing_schedules.create role",
                     "billing_schedules.generate role",
@@ -33627,6 +34217,7 @@
                     "invoices.send_reminder role",
                     "invoices.square_candidates role",
                     "invoices.square_link role",
+                    "invoices.square_reconcile role",
                     "invoices.square_unlink role",
                     "payments.correct role",
                     "payments.record role",
@@ -33732,7 +34323,9 @@
                     "billing.audit_missing_billed_overage role",
                     "billing.audit_opening_rollover role",
                     "billing.audit_undated_collectible_invoices role",
+                    "billing.audit_unlinked_proposal_agreements role",
                     "billing.audit_unplaceable_invoices role",
+                    "billing.preflight_schedule_generation role",
                     "billing_audit.stale_and_missing role",
                     "billing_schedules.create role",
                     "billing_schedules.generate role",
@@ -33783,6 +34376,7 @@
                     "invoices.send_reminder role",
                     "invoices.square_candidates role",
                     "invoices.square_link role",
+                    "invoices.square_reconcile role",
                     "invoices.square_unlink role",
                     "payments.correct role",
                     "payments.record role",
@@ -33909,7 +34503,9 @@
                 "billing.audit_missing_billed_overage": "57fdb9f7c39ae08e",
                 "billing.audit_opening_rollover": "cb425f17e9208282",
                 "billing.audit_undated_collectible_invoices": "084b292db36f8292",
+                "billing.audit_unlinked_proposal_agreements": "dc2d2aa590a0f1b4",
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
+                "billing.preflight_schedule_generation": "109b58f0e3d98ec4",
                 "billing_audit.stale_and_missing": "e7c615528bc421bf",
                 "billing_schedules.create": "ce808d037fdc2ee7",
                 "billing_schedules.generate": "b1849c503fd5dc21",
@@ -33968,6 +34564,7 @@
                 "invoices.send_reminder": "8f62ca2de82c197b",
                 "invoices.square_candidates": "09693c77227c6c63",
                 "invoices.square_link": "9346fefe8d8337f7",
+                "invoices.square_reconcile": "690de0adf0059205",
                 "invoices.square_unlink": "8c2cd7af26e27706",
                 "invoices.update_details": "9c25cf205acf1a39",
                 "invoices.update_draft": "2db06ccf7247d243",
@@ -34064,7 +34661,9 @@
                 "billing.audit_missing_billed_overage": "57fdb9f7c39ae08e",
                 "billing.audit_opening_rollover": "cb425f17e9208282",
                 "billing.audit_undated_collectible_invoices": "084b292db36f8292",
+                "billing.audit_unlinked_proposal_agreements": "dc2d2aa590a0f1b4",
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
+                "billing.preflight_schedule_generation": "109b58f0e3d98ec4",
                 "billing_audit.stale_and_missing": "e7c615528bc421bf",
                 "billing_schedules.create": "ce808d037fdc2ee7",
                 "billing_schedules.generate": "b1849c503fd5dc21",
@@ -34123,6 +34722,7 @@
                 "invoices.send_reminder": "8f62ca2de82c197b",
                 "invoices.square_candidates": "09693c77227c6c63",
                 "invoices.square_link": "9346fefe8d8337f7",
+                "invoices.square_reconcile": "690de0adf0059205",
                 "invoices.square_unlink": "8c2cd7af26e27706",
                 "invoices.update_details": "9c25cf205acf1a39",
                 "invoices.update_draft": "2db06ccf7247d243",
@@ -34200,7 +34800,9 @@
                     "billing.audit_missing_billed_overage role",
                     "billing.audit_opening_rollover role",
                     "billing.audit_undated_collectible_invoices role",
+                    "billing.audit_unlinked_proposal_agreements role",
                     "billing.audit_unplaceable_invoices role",
+                    "billing.preflight_schedule_generation role",
                     "billing_audit.stale_and_missing role",
                     "billing_schedules.create role",
                     "billing_schedules.generate role",
@@ -34253,6 +34855,7 @@
                     "invoices.send_reminder role",
                     "invoices.square_candidates role",
                     "invoices.square_link role",
+                    "invoices.square_reconcile role",
                     "invoices.square_unlink role",
                     "payments.correct role",
                     "payments.record role",
@@ -34353,7 +34956,9 @@
                     "billing.audit_missing_billed_overage role",
                     "billing.audit_opening_rollover role",
                     "billing.audit_undated_collectible_invoices role",
+                    "billing.audit_unlinked_proposal_agreements role",
                     "billing.audit_unplaceable_invoices role",
+                    "billing.preflight_schedule_generation role",
                     "billing_audit.stale_and_missing role",
                     "billing_schedules.create role",
                     "billing_schedules.generate role",
@@ -34406,6 +35011,7 @@
                     "invoices.send_reminder role",
                     "invoices.square_candidates role",
                     "invoices.square_link role",
+                    "invoices.square_reconcile role",
                     "invoices.square_unlink role",
                     "payments.correct role",
                     "payments.record role",
@@ -34506,7 +35112,9 @@
                     "billing.audit_missing_billed_overage role",
                     "billing.audit_opening_rollover role",
                     "billing.audit_undated_collectible_invoices role",
+                    "billing.audit_unlinked_proposal_agreements role",
                     "billing.audit_unplaceable_invoices role",
+                    "billing.preflight_schedule_generation role",
                     "billing_audit.stale_and_missing role",
                     "billing_schedules.create role",
                     "billing_schedules.generate role",
@@ -34559,6 +35167,7 @@
                     "invoices.send_reminder role",
                     "invoices.square_candidates role",
                     "invoices.square_link role",
+                    "invoices.square_reconcile role",
                     "invoices.square_unlink role",
                     "payments.correct role",
                     "payments.record role",
@@ -34659,7 +35268,9 @@
                     "billing.audit_missing_billed_overage role",
                     "billing.audit_opening_rollover role",
                     "billing.audit_undated_collectible_invoices role",
+                    "billing.audit_unlinked_proposal_agreements role",
                     "billing.audit_unplaceable_invoices role",
+                    "billing.preflight_schedule_generation role",
                     "billing_audit.stale_and_missing role",
                     "billing_schedules.create role",
                     "billing_schedules.generate role",
@@ -34712,6 +35323,7 @@
                     "invoices.send_reminder role",
                     "invoices.square_candidates role",
                     "invoices.square_link role",
+                    "invoices.square_reconcile role",
                     "invoices.square_unlink role",
                     "payments.correct role",
                     "payments.record role",
@@ -34814,7 +35426,9 @@
                     "billing.audit_missing_billed_overage deployment_disabled",
                     "billing.audit_opening_rollover deployment_disabled",
                     "billing.audit_undated_collectible_invoices deployment_disabled",
+                    "billing.audit_unlinked_proposal_agreements deployment_disabled",
                     "billing.audit_unplaceable_invoices deployment_disabled",
+                    "billing.preflight_schedule_generation deployment_disabled",
                     "billing_audit.stale_and_missing deployment_disabled",
                     "billing_schedules.create deployment_disabled",
                     "billing_schedules.generate deployment_disabled",
@@ -34875,6 +35489,7 @@
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates deployment_disabled",
                     "invoices.square_link deployment_disabled",
+                    "invoices.square_reconcile deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -34948,7 +35563,9 @@
                     "billing.audit_missing_billed_overage deployment_disabled",
                     "billing.audit_opening_rollover deployment_disabled",
                     "billing.audit_undated_collectible_invoices deployment_disabled",
+                    "billing.audit_unlinked_proposal_agreements deployment_disabled",
                     "billing.audit_unplaceable_invoices deployment_disabled",
+                    "billing.preflight_schedule_generation deployment_disabled",
                     "billing_audit.stale_and_missing deployment_disabled",
                     "billing_schedules.create deployment_disabled",
                     "billing_schedules.generate deployment_disabled",
@@ -35009,6 +35626,7 @@
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates deployment_disabled",
                     "invoices.square_link deployment_disabled",
+                    "invoices.square_reconcile deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -35082,7 +35700,9 @@
                     "billing.audit_missing_billed_overage deployment_disabled",
                     "billing.audit_opening_rollover deployment_disabled",
                     "billing.audit_undated_collectible_invoices deployment_disabled",
+                    "billing.audit_unlinked_proposal_agreements deployment_disabled",
                     "billing.audit_unplaceable_invoices deployment_disabled",
+                    "billing.preflight_schedule_generation deployment_disabled",
                     "billing_audit.stale_and_missing deployment_disabled",
                     "billing_schedules.create deployment_disabled",
                     "billing_schedules.generate deployment_disabled",
@@ -35143,6 +35763,7 @@
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates deployment_disabled",
                     "invoices.square_link deployment_disabled",
+                    "invoices.square_reconcile deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -35216,7 +35837,9 @@
                     "billing.audit_missing_billed_overage deployment_disabled",
                     "billing.audit_opening_rollover deployment_disabled",
                     "billing.audit_undated_collectible_invoices deployment_disabled",
+                    "billing.audit_unlinked_proposal_agreements deployment_disabled",
                     "billing.audit_unplaceable_invoices deployment_disabled",
+                    "billing.preflight_schedule_generation deployment_disabled",
                     "billing_audit.stale_and_missing deployment_disabled",
                     "billing_schedules.create deployment_disabled",
                     "billing_schedules.generate deployment_disabled",
@@ -35277,6 +35900,7 @@
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates deployment_disabled",
                     "invoices.square_link deployment_disabled",
+                    "invoices.square_reconcile deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -35350,7 +35974,9 @@
                     "billing.audit_missing_billed_overage deployment_disabled",
                     "billing.audit_opening_rollover deployment_disabled",
                     "billing.audit_undated_collectible_invoices deployment_disabled",
+                    "billing.audit_unlinked_proposal_agreements deployment_disabled",
                     "billing.audit_unplaceable_invoices deployment_disabled",
+                    "billing.preflight_schedule_generation deployment_disabled",
                     "billing_audit.stale_and_missing deployment_disabled",
                     "billing_schedules.create deployment_disabled",
                     "billing_schedules.generate deployment_disabled",
@@ -35411,6 +36037,7 @@
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates deployment_disabled",
                     "invoices.square_link deployment_disabled",
+                    "invoices.square_reconcile deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -35484,7 +36111,9 @@
                     "billing.audit_missing_billed_overage deployment_disabled",
                     "billing.audit_opening_rollover deployment_disabled",
                     "billing.audit_undated_collectible_invoices deployment_disabled",
+                    "billing.audit_unlinked_proposal_agreements deployment_disabled",
                     "billing.audit_unplaceable_invoices deployment_disabled",
+                    "billing.preflight_schedule_generation deployment_disabled",
                     "billing_audit.stale_and_missing deployment_disabled",
                     "billing_schedules.create deployment_disabled",
                     "billing_schedules.generate deployment_disabled",
@@ -35545,6 +36174,7 @@
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates deployment_disabled",
                     "invoices.square_link deployment_disabled",
+                    "invoices.square_reconcile deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -35640,7 +36270,9 @@
                 "billing.audit_missing_billed_overage": "57fdb9f7c39ae08e",
                 "billing.audit_opening_rollover": "cb425f17e9208282",
                 "billing.audit_undated_collectible_invoices": "084b292db36f8292",
+                "billing.audit_unlinked_proposal_agreements": "dc2d2aa590a0f1b4",
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
+                "billing.preflight_schedule_generation": "109b58f0e3d98ec4",
                 "billing_audit.stale_and_missing": "e7c615528bc421bf",
                 "billing_schedules.create": "ce808d037fdc2ee7",
                 "billing_schedules.generate": "b1849c503fd5dc21",
@@ -35697,6 +36329,7 @@
                 "invoices.send_reminder": "8f62ca2de82c197b",
                 "invoices.square_candidates": "09693c77227c6c63",
                 "invoices.square_link": "9346fefe8d8337f7",
+                "invoices.square_reconcile": "690de0adf0059205",
                 "invoices.square_unlink": "8c2cd7af26e27706",
                 "invoices.update_details": "9c25cf205acf1a39",
                 "invoices.update_draft": "2db06ccf7247d243",
@@ -35798,7 +36431,9 @@
                 "billing.audit_missing_billed_overage": "57fdb9f7c39ae08e",
                 "billing.audit_opening_rollover": "cb425f17e9208282",
                 "billing.audit_undated_collectible_invoices": "084b292db36f8292",
+                "billing.audit_unlinked_proposal_agreements": "dc2d2aa590a0f1b4",
                 "billing.audit_unplaceable_invoices": "886054c5a29ee741",
+                "billing.preflight_schedule_generation": "109b58f0e3d98ec4",
                 "billing_audit.stale_and_missing": "e7c615528bc421bf",
                 "billing_schedules.create": "ce808d037fdc2ee7",
                 "billing_schedules.generate": "b1849c503fd5dc21",
@@ -35855,6 +36490,7 @@
                 "invoices.send_reminder": "8f62ca2de82c197b",
                 "invoices.square_candidates": "09693c77227c6c63",
                 "invoices.square_link": "9346fefe8d8337f7",
+                "invoices.square_reconcile": "690de0adf0059205",
                 "invoices.square_unlink": "8c2cd7af26e27706",
                 "invoices.update_details": "9c25cf205acf1a39",
                 "invoices.update_draft": "2db06ccf7247d243",
@@ -35936,7 +36572,9 @@
                     "billing.audit_missing_billed_overage role",
                     "billing.audit_opening_rollover role",
                     "billing.audit_undated_collectible_invoices role",
+                    "billing.audit_unlinked_proposal_agreements role",
                     "billing.audit_unplaceable_invoices role",
+                    "billing.preflight_schedule_generation role",
                     "billing_audit.stale_and_missing role",
                     "billing_schedules.create role",
                     "billing_schedules.generate role",
@@ -35987,6 +36625,7 @@
                     "invoices.send_reminder role",
                     "invoices.square_candidates role",
                     "invoices.square_link role",
+                    "invoices.square_reconcile role",
                     "invoices.square_unlink role",
                     "payments.correct role",
                     "payments.record role",
@@ -36092,7 +36731,9 @@
                     "billing.audit_missing_billed_overage role",
                     "billing.audit_opening_rollover role",
                     "billing.audit_undated_collectible_invoices role",
+                    "billing.audit_unlinked_proposal_agreements role",
                     "billing.audit_unplaceable_invoices role",
+                    "billing.preflight_schedule_generation role",
                     "billing_audit.stale_and_missing role",
                     "billing_schedules.create role",
                     "billing_schedules.generate role",
@@ -36143,6 +36784,7 @@
                     "invoices.send_reminder role",
                     "invoices.square_candidates role",
                     "invoices.square_link role",
+                    "invoices.square_reconcile role",
                     "invoices.square_unlink role",
                     "payments.correct role",
                     "payments.record role",
@@ -36248,7 +36890,9 @@
                     "billing.audit_missing_billed_overage role",
                     "billing.audit_opening_rollover role",
                     "billing.audit_undated_collectible_invoices role",
+                    "billing.audit_unlinked_proposal_agreements role",
                     "billing.audit_unplaceable_invoices role",
+                    "billing.preflight_schedule_generation role",
                     "billing_audit.stale_and_missing role",
                     "billing_schedules.create role",
                     "billing_schedules.generate role",
@@ -36299,6 +36943,7 @@
                     "invoices.send_reminder role",
                     "invoices.square_candidates role",
                     "invoices.square_link role",
+                    "invoices.square_reconcile role",
                     "invoices.square_unlink role",
                     "payments.correct role",
                     "payments.record role",
@@ -36404,7 +37049,9 @@
                     "billing.audit_missing_billed_overage role",
                     "billing.audit_opening_rollover role",
                     "billing.audit_undated_collectible_invoices role",
+                    "billing.audit_unlinked_proposal_agreements role",
                     "billing.audit_unplaceable_invoices role",
+                    "billing.preflight_schedule_generation role",
                     "billing_audit.stale_and_missing role",
                     "billing_schedules.create role",
                     "billing_schedules.generate role",
@@ -36455,6 +37102,7 @@
                     "invoices.send_reminder role",
                     "invoices.square_candidates role",
                     "invoices.square_link role",
+                    "invoices.square_reconcile role",
                     "invoices.square_unlink role",
                     "payments.correct role",
                     "payments.record role",
