@@ -403,6 +403,26 @@ final class SquareBillingAuditTest extends TestCase
         $this->assertTrue(app(SquareBillingAudit::class)->report($workspace)['complete'], 'The read is current meanwhile.');
     }
 
+    public function test_a_linked_member_past_the_series_bound_is_still_checked(): void
+    {
+        [$workspace, , $company] = $this->fixture();
+        // The oldest member, linked and paid, then more members than the bound.
+        $this->snapshot($workspace, 'inv_audit_old', 1, '2030-01-15', 'PAID', ['paid_amount' => 12_345, 'payment_ids' => ['pay_audit_old']]);
+        $this->link($workspace, $this->invoice($workspace, $company, 'SYN-AUDIT-OLD'), 'inv_audit_old');
+        $rows = [];
+        for ($index = 2; $index <= SquareBillingAuditRepository::MAX_SERIES_MEMBERS + 1; $index++) {
+            $rows[] = $this->row($workspace, 'inv_member_'.$index, ['invoice_number' => sprintf('000123-R-%04d', $index % 10_000), 'series_key' => '000123', 'series_occurrence' => $index, 'status' => 'CANCELED']);
+        }
+        foreach (array_chunk($rows, 500) as $chunk) {
+            DB::table('square_invoice_snapshots')->insert($chunk);
+        }
+
+        $report = app(SquareBillingAudit::class)->report($workspace);
+
+        $this->assertFalse($report['complete']);
+        $this->assertSame(['pay_audit_old'], array_column($report['unmatched_payments']['payments'], 'payment_id'));
+    }
+
     public function test_an_imported_annual_series_mirrors_its_amount_once_per_cycle(): void
     {
         [$workspace, $owner] = $this->fixture();

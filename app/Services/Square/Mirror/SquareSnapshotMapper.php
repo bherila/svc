@@ -247,15 +247,27 @@ final class SquareSnapshotMapper
      * carries - card, bank account, buy now pay later, Square account. A
      * tender without one (cash, external, other) took its money outright.
      *
+     *
      * @param  array<mixed>  $tender
+     *
+     * @throws SquareRequestFailed when such details are unreadable
      */
     private static function tenderState(array $tender): string
     {
         foreach (self::TENDER_DETAILS as $details) {
-            $detail = $tender[$details] ?? null;
-            if (is_array($detail) && is_string($detail['status'] ?? null)) {
-                return $detail['status'];
+            if (! array_key_exists($details, $tender)) {
+                continue;
             }
+            // Details in an unreadable shape, or a status that is not one,
+            // make the order unreadable rather than a payment by default.
+            // Square documents the status as optional; absent, the tender is
+            // read as settled, as one without such details is.
+            $detail = $tender[$details];
+            if (! is_array($detail) || (array_key_exists('status', $detail) && ! is_string($detail['status']))) {
+                throw SquareRequestFailed::unreadable();
+            }
+
+            return $detail['status'] ?? self::CAPTURED;
         }
 
         return self::CAPTURED;

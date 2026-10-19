@@ -23,10 +23,9 @@ final class SquareSnapshotPaymentIdsTest extends TestCase
             ['id' => 'tender_fixture_5', 'payment_id' => 'pay_fixture_5', 'card_details' => ['status' => 'AUTHORIZED']],
             ['id' => 'tender_fixture_1', 'payment_id' => 'pay_fixture_1'],
             ['id' => 'tender_fixture_6', 'payment_id' => 'pay_fixture_6', 'card_details' => ['entry_method' => 'ON_FILE']],
-            ['id' => 'tender_fixture_7', 'payment_id' => 'pay_fixture_7', 'card_details' => 'unreadable'],
         ]];
 
-        $this->assertSame(['pay_fixture_1', 'pay_fixture_2', 'pay_fixture_6', 'pay_fixture_7'], (new SquareSnapshotMapper(new SquarePresenter))->paymentIds($order));
+        $this->assertSame(['pay_fixture_1', 'pay_fixture_2', 'pay_fixture_6'], (new SquareSnapshotMapper(new SquarePresenter))->paymentIds($order));
     }
 
     public function test_an_open_authorization_with_no_known_paid_amount_stays_unresolved(): void
@@ -85,7 +84,8 @@ final class SquareSnapshotPaymentIdsTest extends TestCase
         $this->assertTrue($mapper->exceedsTenderBound(['tenders' => $tenders]));
         $this->assertFalse($mapper->exceedsTenderBound(['tenders' => 'none']));
         $this->assertSame([], $mapper->paymentIds([]), 'An order with no tenders has no payments.');
-        foreach (['none', ['first' => ['id' => 'pay_1']], ['not a tender'], [['id' => 'bad id with spaces']], [['type' => 'CARD']], [['id' => 'pay_1'], 'not a tender']] as $malformed) {
+        foreach (['none', ['first' => ['id' => 'pay_1']], ['not a tender'], [['id' => 'bad id with spaces']], [['type' => 'CARD']], [['id' => 'pay_1'], 'not a tender'],
+            [['id' => 'pay_1', 'card_details' => 'unreadable']], [['id' => 'pay_1', 'bank_account_details' => ['status' => 7]]], [['id' => 'pay_1', 'card_details' => ['status' => null]]]] as $malformed) {
             try {
                 $mapper->paymentIds(['tenders' => $malformed]);
                 $this->fail('A malformed tender list must not resolve.');

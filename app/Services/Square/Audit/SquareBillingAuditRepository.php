@@ -72,8 +72,10 @@ final class SquareBillingAuditRepository
                     ->orWhereIn('square_customer_id', $mapped)
                     ->orWhereIn('square_invoice_id', $linked);
             })
-            // Series members were loaded above, under their own bound.
-            ->when($seriesKeys !== [], static fn (Builder $others) => $others->where(static fn (Builder $series) => $series->whereNull('series_key')->orWhereNotIn('series_key', $seriesKeys)))
+            // Series members were loaded above, under their own bound - all of
+            // them, unless that bound was reached; then the omitted ones still
+            // come in through a link or a confirmed customer.
+            ->when($seriesKeys !== [] && $seriesComplete, static fn (Builder $others) => $others->where(static fn (Builder $series) => $series->whereNull('series_key')->orWhereNotIn('series_key', $seriesKeys)))
             ->orderByDesc('id')
             ->limit(self::MAX_INVOICES + 1)
             ->get($columns);
