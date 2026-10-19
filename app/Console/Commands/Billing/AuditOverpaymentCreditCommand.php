@@ -41,8 +41,9 @@ final class AuditOverpaymentCreditCommand extends Command
 
         $workspace = null;
         $requested = $this->option('workspace');
-        if ($requested !== null) {
-            $workspace = Str::isUuid($requested) ? Workspace::query()->where('public_id', $requested)->first() : null;
+        // A bare --workspace must not widen into every tenant.
+        if ($requested !== null || $this->input->hasParameterOption('--workspace')) {
+            $workspace = is_string($requested) && Str::isUuid($requested) ? Workspace::query()->where('public_id', $requested)->first() : null;
             if ($workspace === null) {
                 $this->error('The --workspace option must be the public id of an existing workspace.');
 
@@ -161,10 +162,13 @@ final class AuditOverpaymentCreditCommand extends Command
                 $companies[$partition->workspaceId][] = $partition->companyId;
             }
         }
+        // In bounded batches, whatever the number of workspaces; a company
+        // only names a pool of its own workspace.
         $names = [];
-        foreach ($companies as $workspaceId => $ids) {
-            foreach (DB::table('client_companies')->where('workspace_id', $workspaceId)->whereIn('id', array_values(array_unique($ids)))->get(['id', 'public_id']) as $company) {
-                $names[$workspaceId][(int) $company->id] = (string) $company->public_id;
+        $companyIds = array_values(array_unique(array_merge([], ...array_values($companies))));
+        foreach (array_chunk($companyIds, 500) as $chunk) {
+            foreach (DB::table('client_companies')->whereIn('id', $chunk)->get(['id', 'workspace_id', 'public_id']) as $company) {
+                $names[(int) $company->workspace_id][(int) $company->id] = (string) $company->public_id;
             }
         }
 

@@ -229,6 +229,7 @@ class AuditOverpaymentCreditCommandTest extends TestCase
     {
         $this->assertSame(2, Artisan::call('svc:billing:audit-overpayment-credit', ['--workspace' => '00000000-0000-4000-8000-000000000999']));
         $this->assertSame(2, Artisan::call('svc:billing:audit-overpayment-credit', ['--workspace' => 'not-a-uuid']));
+        $this->assertSame(2, Artisan::call('svc:billing:audit-overpayment-credit', ['--workspace' => null, '--list' => true]), 'A bare --workspace never widens to every tenant.');
     }
 
     private function report(array $options = []): array

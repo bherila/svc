@@ -109,12 +109,31 @@ final class SquareOperabilityTest extends TestCase
         $this->assertSame(1, $invoice->payments()->count());
     }
 
+    public function test_a_replayed_key_applies_what_square_says_now(): void
+    {
+        [$workspace, $owner, , $invoice] = $this->paymentFixture();
+        config(['agent_api.writes_enabled' => true]);
+        $this->actingAsMcp($owner, self::SCOPES);
+        $this->paymentInvoice['status'] = 'UNPAID';
+        $this->squarePayments['pay_fixture_1']['status'] = 'PENDING';
+
+        $this->postJson($this->url($workspace, $invoice), [], ['Idempotency-Key' => 'synthetic-early'])->assertOk();
+        $this->assertSame(0, $invoice->payments()->count());
+
+        $this->paymentInvoice['status'] = 'PAID';
+        $this->squarePayments['pay_fixture_1']['status'] = 'COMPLETED';
+        $this->postJson($this->url($workspace, $invoice), [], ['Idempotency-Key' => 'synthetic-early'])->assertOk();
+        $this->assertSame(['paid', 1], [$invoice->fresh()->status, $invoice->payments()->count()]);
+    }
+
     public function test_the_command_reconciles_one_invoice_by_its_public_id(): void
     {
         [$workspace, , $company, $invoice] = $this->paymentFixture();
         $unlinked = ClientInvoice::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'invoice_number' => 'SYNTHETIC-002', 'invoice_kind' => 'ad_hoc', 'status' => 'issued', 'currency' => 'USD', 'total_amount' => 100, 'balance_amount' => 100]);
 
         $this->artisan('svc:square:reconcile-payments', ['--invoice' => 'not-an-id'])->assertExitCode(2);
+        $this->artisan('svc:square:reconcile-payments', ['--invoice' => null])->assertExitCode(2);
+        $this->assertSame(0, Http::recorded()->count(), 'A bare --invoice never starts the sweep.');
         $this->artisan('svc:square:reconcile-payments', ['--invoice' => '00000000-0000-4000-8000-000000000999'])->assertFailed();
         $this->artisan('svc:square:reconcile-payments', ['--invoice' => $unlinked->public_id])->expectsOutputToContain('not linked to a Square invoice')->assertFailed();
         $this->assertSame(0, Http::recorded()->count());

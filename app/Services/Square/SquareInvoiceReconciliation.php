@@ -74,12 +74,16 @@ final class SquareInvoiceReconciliation
 
                 return [$invoice->public_id];
             },
-            // A replayed key does not re-run the callback, so a Square failure
-            // on this attempt is raised here instead, and audited as one.
+            // A replayed key does not re-run the callback, so this attempt's
+            // outcome is applied here too: a Square failure is raised and
+            // audited as one, and fresh facts reach the ledger.
             function (array $ids) use ($user, $workspace, $refetched): void {
                 $this->admit($user, $workspace);
                 if ($refetched instanceof \Throwable) {
                     throw $refetched;
+                }
+                if ($refetched !== null) {
+                    $this->reconciler->apply($workspace, $refetched);
                 }
             },
         );
