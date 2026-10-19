@@ -7,6 +7,7 @@ use App\Services\Square\SquareClient;
 use App\Services\Square\SquareConfiguration;
 use App\Services\Square\SquarePaymentReconciler;
 use App\Services\Square\SquareRequestFailed;
+use App\Services\Square\SquareSettlementSync;
 use App\Services\Square\SquareWebhookReceipts;
 use App\Support\Square\SquareIdentifiers;
 use DomainException;
@@ -24,7 +25,10 @@ final class SquareWebhookController
      */
     private const array DISPUTE_EVENTS = ['dispute.created', 'dispute.state.updated', 'dispute.state.changed'];
 
-    public function __invoke(Request $request, SquarePaymentReconciler $reconciler, SquareWebhookReceipts $receipts): JsonResponse
+    /** A payout's hint is its own id (S7); the payout is read from the Payouts API. */
+    private const array PAYOUT_EVENTS = ['payout.sent', 'payout.paid', 'payout.failed'];
+
+    public function __invoke(Request $request, SquarePaymentReconciler $reconciler, SquareSettlementSync $settlements, SquareWebhookReceipts $receipts): JsonResponse
     {
         $key = config('services.square.webhook_signature_key');
         $raw = $request->getContent();
@@ -44,7 +48,7 @@ final class SquareWebhookController
             return response()->json(['message' => 'Invalid webhook envelope.'], 400);
         }
         $type = $event['type'] ?? null;
-        if (! in_array($type, ['invoice.updated', 'invoice.payment_made', 'payment.updated', 'refund.updated', ...self::DISPUTE_EVENTS], true)) {
+        if (! in_array($type, ['invoice.updated', 'invoice.payment_made', 'payment.updated', 'refund.updated', ...self::DISPUTE_EVENTS, ...self::PAYOUT_EVENTS], true)) {
             return response()->json(['received' => true]);
         }
         $id = $event['event_id'] ?? null;
@@ -70,6 +74,8 @@ final class SquareWebhookController
                 $reconciler->invoice($workspace, $hint);
             } elseif (in_array($type, self::DISPUTE_EVENTS, true)) {
                 $reconciler->dispute($workspace, $hint);
+            } elseif (in_array($type, self::PAYOUT_EVENTS, true)) {
+                $settlements->payout($workspace, $hint);
             } else {
                 $reconciler->payment($workspace, $hint);
             }

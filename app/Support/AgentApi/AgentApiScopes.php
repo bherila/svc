@@ -108,7 +108,7 @@ final class AgentApiScopes
             self::EXPENSES_WRITE => 'Record, edit and delete draft expenses as a workspace manager',
             self::PAYMENTS_READ => 'Read received payments on authorized invoices',
             self::PAYMENTS_RECORD => 'Record money already received and correct a recorded payment\'s method, reference or date; never initiate a charge',
-            self::FINANCE_READ => 'Read received payments with their finance reconciliation allocations as a workspace owner or admin',
+            self::FINANCE_READ => 'Read received payments with their finance reconciliation allocations, and the processor payouts that settled them, as a workspace owner or admin',
             self::FINANCE_RECONCILE => 'Record and withdraw finance reconciliation allocations against received payments as a workspace owner or admin; never moves money',
             self::CLIENTS_READ => 'Read client companies as a workspace manager',
             self::CLIENTS_WRITE => 'Create, edit and archive client companies and their agreements as a workspace manager',

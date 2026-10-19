@@ -143,6 +143,43 @@ final class SquareClient
     }
 
     /**
+     * The seller's payouts for one location, newest first (S7).
+     *
+     * @param  string|null  $beginTime  RFC 3339
+     * @return array<string, mixed>
+     */
+    public function listPayouts(?string $locationId, ?string $beginTime, ?string $cursor, int $limit): array
+    {
+        return $this->send(SquareEndpoint::ListPayouts, query: [
+            'location_id' => $locationId === null ? null : $this->id($locationId),
+            'begin_time' => $beginTime,
+            'sort_order' => 'DESC',
+            'cursor' => $this->cursor($cursor),
+            'limit' => self::limit($limit, 100),
+        ]);
+    }
+
+    /** @return array<string, mixed> */
+    public function getPayout(string $payoutId): array
+    {
+        return $this->send(SquareEndpoint::GetPayout, $payoutId);
+    }
+
+    /**
+     * What one payout settled: its charges, refunds, fees and adjustments.
+     *
+     * @return array<string, mixed>
+     */
+    public function listPayoutEntries(string $payoutId, ?string $cursor, int $limit): array
+    {
+        return $this->send(SquareEndpoint::ListPayoutEntries, $payoutId, query: [
+            'sort_order' => 'ASC',
+            'cursor' => $this->cursor($cursor),
+            'limit' => self::limit($limit, 100),
+        ]);
+    }
+
+    /**
      * @param  array<string, scalar|null>  $query
      * @param  array<string, mixed>|null  $body
      * @return array<string, mixed>

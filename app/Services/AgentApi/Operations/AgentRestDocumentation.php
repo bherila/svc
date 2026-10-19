@@ -1700,7 +1700,7 @@ final class AgentRestDocumentation
             'finance.invoice_payments.list' => [
                 'method' => 'GET',
                 'scopes' => ['finance:read'],
-                'description' => 'Received payments with what each is worth net of refunds, how much of that its active finance reconciliation allocations cover, and every allocation, active first; newest received first. Succeeded payments unless status is given; status=any returns every status the enum names, so a full refund (refunded) and a partial one (still succeeded) are both seen; a row with an unrecognised status is never returned. 50 a page unless per_page is (at most 100), numbered by page. For incremental sync, name updated_since, watermark or cursor instead of page, with status=any (any other status, received_from and received_to are refused there: a payment can change out of them): payments then come newest change first (updated_at, then id) inside a snapshot watermark that the first page of a pass fixes (now, or an earlier time given) and every page returns in meta; follow meta.next_cursor until it is null, then start the next pass with updated_since set to that watermark (inclusive; starting a few seconds earlier is harmless). Timestamps only find candidates, and consecutive passes overlap: deduplicate by (id, version), where version also moves when one of the payment\'s allocations changes. The embedded invoice and client are read-time snapshots, not change-tracked: a change to the invoice or client does not move the payment, so follow invoices.list and clients.list for them. Payments are never deleted. Workspace owners/admins; with the finance token, any workspace member. Internal ids, payment notes and processor payment identifiers are never returned.'.$token,
+                'description' => 'Received payments with what each is worth net of refunds, how much of that its active finance reconciliation allocations cover, and every allocation, active first; newest received first. Succeeded payments unless status is given; status=any returns every status the enum names, so a full refund (refunded) and a partial one (still succeeded) are both seen; a row with an unrecognised status is never returned. 50 a page unless per_page is (at most 100), numbered by page. For incremental sync, name updated_since, watermark or cursor instead of page, with status=any (any other status, received_from and received_to are refused there: a payment can change out of them): payments then come newest change first (updated_at, then id) inside a snapshot watermark that the first page of a pass fixes (now, or an earlier time given) and every page returns in meta; follow meta.next_cursor until it is null, then start the next pass with updated_since set to that watermark (inclusive; starting a few seconds earlier is harmless). Timestamps only find candidates, and consecutive passes overlap: deduplicate by (id, version), where version also moves when one of the payment\'s allocations changes. The embedded invoice and client are read-time snapshots, not change-tracked: a change to the invoice or client does not move the payment, so follow invoices.list and clients.list for them. Payments are never deleted. A processor payment also carries what the processor reports about settling it: its own payment identifier, its charge time (not received_on, which for Stripe is the day svc heard of it), its fee, and the payout it settled in with that payout\'s arrival date; finance.payouts.list lists the payouts. These move the payment\'s version when the processor reports them. Workspace owners/admins; with the finance token, any workspace member. Internal ids and payment notes are never returned.'.$token,
                 'parameters' => [
                     'WorkspaceId',
                     self::query('status', ['type' => 'string', 'enum' => ['pending', 'succeeded', 'failed', 'refunded', 'disputed', 'canceled', 'any'], 'default' => 'succeeded']),
@@ -1723,6 +1723,33 @@ final class AgentRestDocumentation
                     429 => 'Too many requests (retry after Retry-After).',
                 ],
                 'extensions' => ['x-mcp-tool' => 'finance.invoice_payments.list'],
+            ],
+            'finance.payouts.list' => [
+                'method' => 'GET',
+                'scopes' => ['finance:read'],
+                'description' => 'The payment-processor payouts (Stripe, Square) that settled this workspace\'s payments: each payout\'s signed amount in minor units (negative when the payout took money from the bank account), currency, arrival date, type (automatic, manual or instant) and status (pending, in_transit, paid, failed or canceled); newest arrival first. Its member payments are the payments whose provider_payout_identifier names it, in finance.invoice_payments.list. Matching is net-only: a payout\'s amount is what reached the bank, and refunds, disputes or fees that land in a different payout, and manual or instant Stripe payouts (whose members Stripe does not list), are left for the finance system to treat as unexplained. A payout reported failed or canceled after it was reported paid stays so. 50 a page unless per_page is (at most 100), numbered by page. For incremental sync, name updated_since, watermark or cursor instead of page: the change feed works as on finance.invoice_payments.list (newest change first inside a snapshot watermark; deduplicate by (id, version)) and takes only the provider filter, since a payout\'s status and arrival date can change (status, arrival_from and arrival_to are refused there). Payouts are never deleted. Workspace owners/admins; with the finance token, any workspace member.'.$token,
+                'parameters' => [
+                    'WorkspaceId',
+                    self::query('provider', ['type' => 'string', 'enum' => ['stripe', 'square']]),
+                    self::query('status', ['type' => 'string', 'enum' => ['pending', 'in_transit', 'paid', 'failed', 'canceled']]),
+                    self::query('arrival_from', ['type' => 'string', 'format' => 'date']),
+                    self::query('arrival_to', ['type' => 'string', 'format' => 'date']),
+                    self::query('per_page', ['type' => 'integer', 'minimum' => 1, 'maximum' => 100, 'default' => 50]),
+                    self::query('page', ['type' => 'integer', 'minimum' => 1, 'default' => 1]),
+                    'UpdatedSince',
+                    'Watermark',
+                    'Cursor',
+                ],
+                'response' => 'FinancePayoutListResponse',
+                'response_description' => 'A page of processor payouts',
+                'errors' => [
+                    401 => 'Not signed in, or the token is missing, expired or revoked.',
+                    403 => 'The caller may not read this workspace\'s payouts, or the token lacks finance:read (the finance token, finance.read).',
+                    404 => 'The workspace does not exist or the caller is not in it.',
+                    422 => 'A filter is invalid (`errors` names it): an unknown provider or status, a malformed date, arrival_to before arrival_from, per_page out of range, a watermark in the future, page or a filter other than provider on a change-feed request. Also a cursor from another workspace, query or watermark.',
+                    429 => 'Too many requests (retry after Retry-After).',
+                ],
+                'extensions' => ['x-mcp-tool' => 'finance.payouts.list'],
             ],
             'finance.reconciliations.deactivate' => [
                 'method' => 'DELETE',
@@ -1823,7 +1850,7 @@ final class AgentRestDocumentation
             'UpdatedSince' => [
                 'name' => 'updated_since',
                 'in' => 'query',
-                'description' => 'Only records changed at or after this time (inclusive): the previous pass\'s watermark. Naming updated_since or watermark switches a listing that otherwise pages to change order - newest change first inside a snapshot watermark returned in meta - and a cursor from one order is refused in the other. Consecutive passes overlap by design (see watermark), so deduplicate by (id, version). A change feed takes only filters on what a record never changes - invoices.list: company_id and invoice_kind; clients.list: none; finance.invoice_payments.list: invoice, with status=any - and refuses any other with a 422 naming it, since a record that changes out of a filter would never be delivered again.',
+                'description' => 'Only records changed at or after this time (inclusive): the previous pass\'s watermark. Naming updated_since or watermark switches a listing that otherwise pages to change order - newest change first inside a snapshot watermark returned in meta - and a cursor from one order is refused in the other. Consecutive passes overlap by design (see watermark), so deduplicate by (id, version). A change feed takes only filters on what a record never changes - invoices.list: company_id and invoice_kind; clients.list: none; finance.invoice_payments.list: invoice, with status=any; finance.payouts.list: provider - and refuses any other with a 422 naming it, since a record that changes out of a filter would never be delivered again.',
                 'schema' => ['type' => 'string', 'format' => 'date-time'],
             ],
             'Watermark' => [

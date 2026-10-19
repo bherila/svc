@@ -38,6 +38,13 @@ class InvoicePaymentResource extends JsonResource
             'method' => $this->method,
             'reference' => $this->reference,
             'provider' => $this->provider,
+            // What the processor reports about settling the payment (S7);
+            // null for a payment recorded by hand, and until it reports.
+            'provider_payment_identifier' => $this->provider === null ? null : $this->provider_payment_identifier,
+            'provider_charged_at' => $this->provider_charged_at?->toIso8601String(),
+            'provider_fee_amount' => $this->provider_fee_amount,
+            'provider_payout_identifier' => $this->provider_payout_identifier,
+            'provider_payout_arrival_date' => $this->provider_payout_arrival_date?->toDateString(),
             'invoice' => [
                 'id' => $this->invoice->public_id,
                 'number' => $this->invoice->invoice_number,

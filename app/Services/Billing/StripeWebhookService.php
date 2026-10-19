@@ -9,11 +9,13 @@ use App\Models\ClientStripePaymentMethod;
 use App\Models\Workspace;
 use App\Support\Billing\InvoicePaymentStatus;
 use App\Support\Billing\StripeEventMustBeRetried;
+use App\Support\Billing\StripePayoutFacts;
 use App\Support\Billing\StripeRefundStatus;
 use App\Support\Concurrency\Locks;
 use App\Support\WorkspaceClock;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Stripe\Event;
 
@@ -26,10 +28,18 @@ final class StripeWebhookService
      */
     private const array REFUND_UPDATES = ['charge.refund.updated', 'refund.updated', 'refund.failed'];
 
+    /**
+     * Events that report a payout reaching its end (S7). Each is applied from
+     * the payout object it carries, ordered by the event's own time, so a
+     * payout reported failed after it was reported paid stays failed.
+     */
+    private const array PAYOUT_EVENTS = ['payout.paid', 'payout.failed', 'payout.canceled'];
+
     public function __construct(
         private readonly InvoiceLifecycleService $invoices,
         private readonly StripePaymentMethodService $paymentMethods,
         private readonly StripeGateway $gateway,
+        private readonly StripeSettlementSync $settlements,
         private readonly WorkspaceClock $clock = new WorkspaceClock,
     ) {}
 
@@ -67,7 +77,10 @@ final class StripeWebhookService
         }
 
         try {
-            return $this->handle($event, $object, $ledger);
+            if (in_array((string) $event->type, self::PAYOUT_EVENTS, true)) {
+                return $this->handlePayout($event, $object, $ledger);
+            }
+            $processed = $this->handle($event, $object, $ledger);
         } catch (\DomainException $exception) {
             $ledger->forceFill([
                 'status' => 'failed',
@@ -76,6 +89,64 @@ final class StripeWebhookService
             ])->save();
 
             throw $exception;
+        }
+        if ($event->type === 'payment_intent.succeeded') {
+            $this->recordChargeSettlement($object);
+        }
+
+        return $processed;
+    }
+
+    /**
+     * Store a payout for each workspace whose payments it settles, and record
+     * on each settled payment its payout, arrival date and fee (S7).
+     *
+     * Stripe is read first - the payout's balance transactions, outside any
+     * transaction - and a failure to read it is answered with a retryable
+     * error, leaving the event to be delivered again. Applying the same event
+     * again changes nothing.
+     *
+     * @param  array<string, mixed>  $object
+     */
+    private function handlePayout(Event $event, array $object, ClientStripeEvent $ledger): bool
+    {
+        $payout = StripePayoutFacts::from($object, max(0, (int) ($event->created ?? 0)) * 1000);
+        $result = $this->settlements->apply($payout, $this->settlements->members($payout));
+        $ledger->forceFill([
+            'workspace_id' => $result->soleWorkspaceId(),
+            'status' => 'processed',
+            'processed_at' => $this->clock->now(),
+        ])->save();
+
+        return true;
+    }
+
+    /**
+     * After a payment succeeds and is committed, read its charge's time and
+     * fee from Stripe (S7). Best effort: the payment is already recorded, and
+     * what cannot be read now is filled by the payout that settles it or by
+     * `svc:finance:backfill-payouts`, so a failure here is logged and the
+     * event still succeeds. Skipped where Stripe has no secret key.
+     *
+     * @param  array<string, mixed>  $object
+     */
+    private function recordChargeSettlement(array $object): void
+    {
+        $identifier = is_string($object['id'] ?? null) ? $object['id'] : '';
+        if ($identifier === '' || $this->gateway->mode() === null) {
+            return;
+        }
+        $payment = ClientInvoicePayment::query()->where('provider', 'stripe')->where('provider_payment_identifier', $identifier)->first();
+        if ($payment === null || $payment->workspace_id < 1) {
+            return;
+        }
+        try {
+            $this->settlements->recordCharge($payment);
+        } catch (StripeEventMustBeRetried $failure) {
+            Log::warning('Stripe charge settlement could not be read; the payout or the backfill will fill it.', [
+                'payment' => $payment->public_id,
+                'reason' => $failure->getMessage(),
+            ]);
         }
     }
 

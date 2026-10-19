@@ -22,6 +22,7 @@ final class SquarePaymentReconciler
         private readonly SquareMirrorRepository $mirror,
         private readonly SquarePaymentRecorder $payments,
         private readonly WorkspaceClock $clock,
+        private readonly SquareSettlementSync $settlements,
     ) {}
 
     public function invoice(Workspace $workspace, string $squareInvoiceId): void
@@ -96,6 +97,9 @@ final class SquarePaymentReconciler
             if (! $this->payments->refundExisting($workspace, $fact) && $refetched->activeLink !== null) {
                 $this->payments->record($workspace, $refetched->activeLink, $fact);
             }
+            // Its capture time and Square's fee so far (S7), on the payment
+            // just recorded or already there; nothing when svc has none.
+            $this->settlements->recordCharge($workspace, $fact);
         }
     }
 
@@ -110,6 +114,8 @@ final class SquarePaymentReconciler
             return;
         }
         if ($this->payments->refundExisting($workspace, $facts)) {
+            $this->settlements->recordCharge($workspace, $facts);
+
             return;
         }
         // Only trusted, refetched order identity selects a workspace's links.

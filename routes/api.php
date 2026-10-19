@@ -396,8 +396,10 @@ Route::prefix('v1')
         // A workspace the caller cannot see answers 404 before anything else,
         // as on every other workspace route: nothing - not even a failed
         // write's audit - reaches a tenant the caller is not in.
-        $operation('finance.invoice_payments.list', [FinanceReconciliationController::class, 'index'])
-            ->middleware(EnsureAgentWorkspaceVisible::class)->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']));
+        foreach (['finance.invoice_payments.list' => 'index', 'finance.payouts.list' => 'payouts'] as $operationId => $action) {
+            $operation($operationId, [FinanceReconciliationController::class, $action])
+                ->middleware(EnsureAgentWorkspaceVisible::class)->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']));
+        }
         foreach (['finance.reconciliations.upsert' => 'upsert', 'finance.reconciliations.deactivate' => 'destroy'] as $operationId => $action) {
             $operation($operationId, [FinanceReconciliationController::class, $action])
                 ->middleware(EnsureAgentWorkspaceVisible::class)->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))

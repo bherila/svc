@@ -13,7 +13,8 @@ use Illuminate\Foundation\Application;
 use PHPUnit\Framework\TestCase;
 
 /**
- * The finance reconciliation operations' declarations (#457) and the
+ * The finance reconciliation operations' declarations (#457, and S7's
+ * payout listing) and the
  * payments.correct scopes (#473), checked without booting the application:
  * each REST binding says exactly what the checked OpenAPI document says.
  */
@@ -21,6 +22,7 @@ final class FinanceOperationContractTest extends TestCase
 {
     private const array OPERATIONS = [
         'finance.invoice_payments.list' => ['list', Effect::Read, 'mcp.read', 'GET', '/workspaces/{workspace}/invoice-payments', [200], ['finance:read']],
+        'finance.payouts.list' => ['payouts', Effect::Read, 'mcp.read', 'GET', '/workspaces/{workspace}/payouts', [200], ['finance:read']],
         'finance.reconciliations.upsert' => ['upsert', Effect::LocalWrite, 'mcp.write', 'PUT', '/workspaces/{workspace}/invoice-payments/{payment}/reconciliations/{external_system}/{transaction}', [200, 201], ['finance:reconcile']],
         'finance.reconciliations.deactivate' => ['deactivate', Effect::LocalWrite, 'mcp.write', 'DELETE', '/workspaces/{workspace}/invoice-payments/{payment}/reconciliations/{external_system}/{transaction}', [200], ['finance:reconcile']],
     ];

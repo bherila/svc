@@ -222,6 +222,8 @@ final class DateColumnBoundaryTest extends TestCase
             'sale_or_service_date' => '2026_10_12_210000_create_square_mirror',
         ],
         'invoice_reminder_logs' => ['due_on' => '2026_10_14_120000_create_invoice_reminder_logs'],
+        'client_invoice_payments' => ['provider_payout_arrival_date' => '2026_10_20_000000_add_settlement_facts_to_client_invoice_payments'],
+        'processor_payouts' => ['arrival_date' => '2026_10_20_000100_create_processor_payouts'],
     ];
 
     /**
@@ -283,6 +285,8 @@ final class DateColumnBoundaryTest extends TestCase
             'app/Services/Billing/DeferredBillingAllocator.php' => ['$upToDate'],
             // filters() validates both bounds with date_format:Y-m-d.
             'app/Services/Square/Mirror/SquareMirrorReadService.php' => ['$filters[\'due_from\']', '$filters[\'due_to\']'],
+            // FinancePayoutQuery::fromInput() validates both with date_format:Y-m-d.
+            'app/Services/Finance/FinanceReconciliationOperations.php' => ['(string) $query->arrivalFrom', '(string) $query->arrivalTo'],
         ];
 
         $columns = implode('|', array_map(static fn (string $column): string => preg_quote($column, '/'), self::dateOnlyColumns()));

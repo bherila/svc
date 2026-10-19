@@ -3,8 +3,9 @@
 The signed receiver is `POST /api/webhooks/square`. Register the notification URL
 under the application's configured `APP_URL`, for example
 `https://svc.example.test/api/webhooks/square`, for `invoice.updated`,
-`invoice.payment_made`, `payment.updated`, `refund.updated`, `dispute.created`
-and `dispute.state.updated` (or its older name, `dispute.state.changed`).
+`invoice.payment_made`, `payment.updated`, `refund.updated`, `dispute.created`,
+`dispute.state.updated` (or its older name, `dispute.state.changed`),
+`payout.sent`, `payout.paid` and `payout.failed`.
 The local operator installs `SQUARE_WEBHOOK_SIGNATURE_KEY`; an absent key refuses
 requests with 403 before decoding, database work or Square reads. Oversized bodies
 are refused with 413 before hashing.
@@ -13,8 +14,24 @@ The receiver checks the base64 HMAC-SHA256 signature over that configured URL
 followed by the exact raw request body. It has no session, authentication or CSRF
 middleware. Any external application edge must also permit the machine path.
 Only event and object identifiers are used from a signed notification. Invoice,
-order, payment and dispute facts are re-fetched through the existing read-only
-client.
+order, payment, dispute and payout facts are re-fetched through the existing
+read-only client. A payout is read with `GET /v2/payouts/{id}` and its entries
+with `GET /v2/payouts/{id}/payout-entries` (the access token needs Square's
+`PAYOUTS_READ` permission), stored for the connected workspace, and recorded on
+each charged payment with its arrival date and fee (see
+[processor settlement and payouts](finance-api.md#processor-settlement-and-payouts)).
+Square's payout `type` is how much of the balance moved: a whole-balance
+`BATCH` payout is stored as `automatic`, and a part-balance `SIMPLE` payout as
+`instant` when it went to a card or carries a `payout_fee`, `manual` otherwise.
+A transfer into a Square balance (`SQUARE_STORED_BALANCE`, or the deprecated
+`SQUARE_BALANCE`) reaches no bank account and is not stored.
+Reconciling a payment also records its capture time and Square's processing fee
+so far, as a fee charged (positive). Square's documents disagree on the sign of
+`processing_fee` amounts - the payments guide reports deductions as negative,
+the ProcessingFee reference assessments as positive - so the sign of the
+`INITIAL` fee decides which convention a response uses, and adjustments net in
+it. Payout history is filled by `svc:finance:backfill-payouts`, which lists
+each location's payouts with `GET /v2/payouts`.
 No raw webhook body or signature key is stored in a receipt.
 
 `svc:square:reconcile-payments` runs every fifteen minutes without overlapping.

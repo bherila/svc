@@ -16,7 +16,7 @@ final class ChangeFeedIndexTest extends TestCase
 
     public function test_each_change_feed_table_is_indexed_by_workspace_change_time_and_id(): void
     {
-        foreach (['client_companies', 'client_invoices', 'client_invoice_payments'] as $table) {
+        foreach (['client_companies', 'client_invoices', 'client_invoice_payments', 'processor_payouts'] as $table) {
             $indexes = collect(Schema::getIndexes($table))->keyBy('name');
             $name = $table.'_ws_updated_id_index';
             $this->assertTrue($indexes->has($name), $table);

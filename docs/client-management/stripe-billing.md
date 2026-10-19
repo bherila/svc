@@ -70,6 +70,8 @@ Subscribe the Stripe webhook endpoint to these event types:
 
 Refunds and disputes are recorded whatever the payment's finance reconciliation allocations; they are kept and flagged for review (see [the finance reconciliation API](../finance-api.md)).
 
+- `payout.paid`, `payout.failed` and `payout.canceled`: store the payout for each workspace whose payments its balance transactions name, and record on each charged payment its payout, arrival date and fee (see [processor settlement and payouts](../finance-api.md#processor-settlement-and-payouts)). An automatic payout's balance transactions are read from Stripe; while Stripe cannot be read the endpoint answers 503 and Stripe's retry applies the event. A report older than the one stored changes nothing, so a payout reported failed after it was paid stays failed. A succeeded payment's charge time and fee are read after `payment_intent.succeeded`, best effort; `svc:finance:backfill-payouts` fills history.
+
 - `payment_method.attached`: syncs saved method metadata for the Stripe customer.
 - `payment_method.detached`: soft-deletes the saved method locally after resolving its tenant through the adapter index. An out-of-order detach creates a tombstone, so an older attach cannot resurrect an unusable method.
 - `setup_intent.succeeded`: syncs the saved method and records `payment_method.added`.

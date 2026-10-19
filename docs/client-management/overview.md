@@ -963,9 +963,11 @@ records, no ledger, and no foreign key into another application's database. The
 coupling is deliberately one-directional and opaque so the finance side stays a
 replaceable adapter. See
 [the finance reconciliation API](../finance-api.md): the
-`finance.invoice_payments.list`, `finance.reconciliations.upsert` and
-`finance.reconciliations.deactivate` operations, over REST, MCP and the
-`svc:finance:*` commands.
+`finance.invoice_payments.list`, `finance.payouts.list`,
+`finance.reconciliations.upsert` and `finance.reconciliations.deactivate`
+operations, over REST, MCP and the `svc:finance:*` commands. Processor payouts
+and each payment's fee and payout are the processors' own reports, stored so the
+finance side can match a deposit to the payout it was.
 
 ## Time entry invoiced status
 

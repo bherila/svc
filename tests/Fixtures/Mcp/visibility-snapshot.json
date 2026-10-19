@@ -9602,7 +9602,7 @@
                         ],
                         "additionalProperties": false
                     },
-                    "description": "Received payments with what each is worth net of refunds, how much of that its active finance reconciliation allocations cover, and every allocation, active first; newest received first. Succeeded payments unless status is given; status=any returns every status the enum names, so a full refund (refunded) and a partial one (still succeeded) are both seen; a row with an unrecognised status is never returned. 50 a page unless per_page is (at most 100), numbered by page. For incremental sync, name updated_since, watermark or cursor instead of page, with status=any (any other status, received_from and received_to are refused there: a payment can change out of them): payments then come newest change first (updated_at, then id) inside a snapshot watermark that the first page of a pass fixes (now, or an earlier time given) and every page returns in meta; follow meta.next_cursor until it is null, then start the next pass with updated_since set to that watermark (inclusive; starting a few seconds earlier is harmless). Timestamps only find candidates, and consecutive passes overlap: deduplicate by (id, version), where version also moves when one of the payment's allocations changes. The embedded invoice and client are read-time snapshots, not change-tracked: a change to the invoice or client does not move the payment, so follow invoices.list and clients.list for them. Payments are never deleted. Workspace owners/admins; with the finance token, any workspace member. Internal ids, payment notes and processor payment identifiers are never returned. The Sanctum finance token issued by svc:auth:issue-token is accepted too, its finance.read and finance.reconcile abilities standing for these scopes.",
+                    "description": "Received payments with what each is worth net of refunds, how much of that its active finance reconciliation allocations cover, and every allocation, active first; newest received first. Succeeded payments unless status is given; status=any returns every status the enum names, so a full refund (refunded) and a partial one (still succeeded) are both seen; a row with an unrecognised status is never returned. 50 a page unless per_page is (at most 100), numbered by page. For incremental sync, name updated_since, watermark or cursor instead of page, with status=any (any other status, received_from and received_to are refused there: a payment can change out of them): payments then come newest change first (updated_at, then id) inside a snapshot watermark that the first page of a pass fixes (now, or an earlier time given) and every page returns in meta; follow meta.next_cursor until it is null, then start the next pass with updated_since set to that watermark (inclusive; starting a few seconds earlier is harmless). Timestamps only find candidates, and consecutive passes overlap: deduplicate by (id, version), where version also moves when one of the payment's allocations changes. The embedded invoice and client are read-time snapshots, not change-tracked: a change to the invoice or client does not move the payment, so follow invoices.list and clients.list for them. Payments are never deleted. A processor payment also carries what the processor reports about settling it: its own payment identifier, its charge time (not received_on, which for Stripe is the day svc heard of it), its fee, and the payout it settled in with that payout's arrival date; finance.payouts.list lists the payouts. These move the payment's version when the processor reports them. Workspace owners/admins; with the finance token, any workspace member. Internal ids and payment notes are never returned. The Sanctum finance token issued by svc:auth:issue-token is accepted too, its finance.read and finance.reconcile abilities standing for these scopes.",
                     "annotations": {
                         "readOnlyHint": true,
                         "destructiveHint": false,
@@ -9717,6 +9717,11 @@
                                     "method",
                                     "reference",
                                     "provider",
+                                    "provider_payment_identifier",
+                                    "provider_charged_at",
+                                    "provider_fee_amount",
+                                    "provider_payout_identifier",
+                                    "provider_payout_arrival_date",
                                     "invoice",
                                     "reconciliations",
                                     "created_at",
@@ -9801,6 +9806,43 @@
                                             "null"
                                         ],
                                         "description": "The processor that recorded the payment, or null for one recorded by hand."
+                                    },
+                                    "provider_payment_identifier": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "description": "The processor's own identifier for the payment (a Stripe payment intent, a Square payment); null for a payment recorded by hand."
+                                    },
+                                    "provider_charged_at": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date-time",
+                                        "description": "When the processor charged the payment, as the processor reports it; null until it does, and for a payment recorded by hand. Not received_on, which for Stripe is the day svc heard of the payment."
+                                    },
+                                    "provider_fee_amount": {
+                                        "type": [
+                                            "integer",
+                                            "null"
+                                        ],
+                                        "description": "The processor's fee for the payment in minor units of its currency, positive for a fee charged; null until the processor reports it, or when the payment settled in another currency."
+                                    },
+                                    "provider_payout_identifier": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "description": "The processor payout the payment settled in (finance.payouts.list lists it); null until the processor reports one."
+                                    },
+                                    "provider_payout_arrival_date": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date",
+                                        "description": "The day that payout arrives at the bank, as the processor reports it; null without a payout."
                                     },
                                     "invoice": {
                                         "type": "object",
@@ -10062,6 +10104,377 @@
                                     "paid",
                                     "void"
                                 ]
+                            },
+                            "Version": {
+                                "type": "string",
+                                "pattern": "^[a-f0-9]{64}$"
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "finance.payouts.list",
+                    "title": "List processor payouts for finance reconciliation",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "workspace_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "provider": {
+                                "type": [
+                                    "null",
+                                    "string"
+                                ],
+                                "default": null,
+                                "enum": [
+                                    "stripe",
+                                    "square"
+                                ]
+                            },
+                            "status": {
+                                "type": [
+                                    "null",
+                                    "string"
+                                ],
+                                "default": null,
+                                "enum": [
+                                    "pending",
+                                    "in_transit",
+                                    "paid",
+                                    "failed",
+                                    "canceled"
+                                ]
+                            },
+                            "arrival_from": {
+                                "type": [
+                                    "null",
+                                    "string"
+                                ],
+                                "default": null,
+                                "format": "date"
+                            },
+                            "arrival_to": {
+                                "type": [
+                                    "null",
+                                    "string"
+                                ],
+                                "default": null,
+                                "format": "date"
+                            },
+                            "per_page": {
+                                "type": "integer",
+                                "default": 50,
+                                "minimum": 1,
+                                "maximum": 100
+                            },
+                            "page": {
+                                "type": [
+                                    "null",
+                                    "integer"
+                                ],
+                                "default": null,
+                                "minimum": 1
+                            },
+                            "updated_since": {
+                                "type": [
+                                    "null",
+                                    "string"
+                                ],
+                                "default": null,
+                                "format": "date-time"
+                            },
+                            "watermark": {
+                                "type": [
+                                    "null",
+                                    "string"
+                                ],
+                                "default": null,
+                                "format": "date-time"
+                            },
+                            "cursor": {
+                                "type": [
+                                    "null",
+                                    "string"
+                                ],
+                                "default": null,
+                                "maxLength": 2048
+                            }
+                        },
+                        "required": [
+                            "workspace_id"
+                        ],
+                        "additionalProperties": false
+                    },
+                    "description": "The payment-processor payouts (Stripe, Square) that settled this workspace's payments: each payout's signed amount in minor units (negative when the payout took money from the bank account), currency, arrival date, type (automatic, manual or instant) and status (pending, in_transit, paid, failed or canceled); newest arrival first. Its member payments are the payments whose provider_payout_identifier names it, in finance.invoice_payments.list. Matching is net-only: a payout's amount is what reached the bank, and refunds, disputes or fees that land in a different payout, and manual or instant Stripe payouts (whose members Stripe does not list), are left for the finance system to treat as unexplained. A payout reported failed or canceled after it was reported paid stays so. 50 a page unless per_page is (at most 100), numbered by page. For incremental sync, name updated_since, watermark or cursor instead of page: the change feed works as on finance.invoice_payments.list (newest change first inside a snapshot watermark; deduplicate by (id, version)) and takes only the provider filter, since a payout's status and arrival date can change (status, arrival_from and arrival_to are refused there). Payouts are never deleted. Workspace owners/admins; with the finance token, any workspace member. The Sanctum finance token issued by svc:auth:issue-token is accepted too, its finance.read and finance.reconcile abilities standing for these scopes.",
+                    "annotations": {
+                        "readOnlyHint": true,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": false
+                    },
+                    "outputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "data",
+                            "meta"
+                        ],
+                        "properties": {
+                            "data": {
+                                "type": "array",
+                                "items": {
+                                    "$ref": "#/$defs/FinancePayout"
+                                }
+                            },
+                            "links": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "first",
+                                    "last",
+                                    "prev",
+                                    "next"
+                                ],
+                                "properties": {
+                                    "first": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "uri"
+                                    },
+                                    "last": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "uri"
+                                    },
+                                    "prev": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "uri"
+                                    },
+                                    "next": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "uri"
+                                    }
+                                },
+                                "description": "Numbered pages only."
+                            },
+                            "meta": {
+                                "oneOf": [
+                                    {
+                                        "$ref": "#/$defs/FinancePageMeta"
+                                    },
+                                    {
+                                        "$ref": "#/$defs/ChangeFeedMeta"
+                                    }
+                                ],
+                                "description": "ChangeFeedMeta when the request named updated_since, watermark or cursor; FinancePageMeta otherwise."
+                            }
+                        },
+                        "$defs": {
+                            "ChangeFeedMeta": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "next_cursor",
+                                    "watermark"
+                                ],
+                                "properties": {
+                                    "next_cursor": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "description": "Null on the last page of the pass."
+                                    },
+                                    "watermark": {
+                                        "type": "string",
+                                        "format": "date-time",
+                                        "description": "The pass's snapshot upper bound; the next pass's updated_since."
+                                    }
+                                }
+                            },
+                            "FinancePageMeta": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "current_page",
+                                    "from",
+                                    "last_page",
+                                    "links",
+                                    "path",
+                                    "per_page",
+                                    "to",
+                                    "total"
+                                ],
+                                "properties": {
+                                    "current_page": {
+                                        "type": "integer",
+                                        "minimum": 1
+                                    },
+                                    "from": {
+                                        "type": [
+                                            "integer",
+                                            "null"
+                                        ]
+                                    },
+                                    "last_page": {
+                                        "type": "integer",
+                                        "minimum": 1
+                                    },
+                                    "links": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "additionalProperties": false,
+                                            "required": [
+                                                "url",
+                                                "label",
+                                                "page",
+                                                "active"
+                                            ],
+                                            "properties": {
+                                                "url": {
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ],
+                                                    "format": "uri"
+                                                },
+                                                "label": {
+                                                    "type": "string"
+                                                },
+                                                "page": {
+                                                    "type": [
+                                                        "integer",
+                                                        "null"
+                                                    ]
+                                                },
+                                                "active": {
+                                                    "type": "boolean"
+                                                }
+                                            }
+                                        }
+                                    },
+                                    "path": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "uri"
+                                    },
+                                    "per_page": {
+                                        "type": "integer",
+                                        "minimum": 1,
+                                        "maximum": 100
+                                    },
+                                    "to": {
+                                        "type": [
+                                            "integer",
+                                            "null"
+                                        ]
+                                    },
+                                    "total": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                    }
+                                }
+                            },
+                            "FinancePayout": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "id",
+                                    "version",
+                                    "provider",
+                                    "provider_payout_identifier",
+                                    "amount",
+                                    "currency",
+                                    "arrival_date",
+                                    "type",
+                                    "status",
+                                    "created_at",
+                                    "updated_at"
+                                ],
+                                "properties": {
+                                    "id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "version": {
+                                        "$ref": "#/$defs/Version"
+                                    },
+                                    "provider": {
+                                        "type": "string",
+                                        "enum": [
+                                            "stripe",
+                                            "square"
+                                        ]
+                                    },
+                                    "provider_payout_identifier": {
+                                        "type": "string",
+                                        "description": "The processor's own payout identifier; a payment's provider_payout_identifier names it."
+                                    },
+                                    "amount": {
+                                        "type": "integer",
+                                        "description": "Signed minor units: positive for a deposit to the bank account, negative for a withdrawal from it."
+                                    },
+                                    "currency": {
+                                        "type": "string",
+                                        "pattern": "^[A-Z]{3}$"
+                                    },
+                                    "arrival_date": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date",
+                                        "description": "The day the processor says the payout arrives at the bank."
+                                    },
+                                    "type": {
+                                        "type": "string",
+                                        "enum": [
+                                            "automatic",
+                                            "manual",
+                                            "instant"
+                                        ]
+                                    },
+                                    "status": {
+                                        "type": "string",
+                                        "enum": [
+                                            "pending",
+                                            "in_transit",
+                                            "paid",
+                                            "failed",
+                                            "canceled"
+                                        ],
+                                        "description": "A failed or canceled payout did not reach the bank account, or came back from it."
+                                    },
+                                    "created_at": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date-time"
+                                    },
+                                    "updated_at": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date-time"
+                                    }
+                                }
                             },
                             "Version": {
                                 "type": "string",
@@ -27959,7 +28372,8 @@
                 "expenses.receipts.upload_url": "c53d1f0b0ac10262",
                 "expenses.unapprove": "ae21aae8d227dc06",
                 "expenses.update": "1e517d25f792bde9",
-                "finance.invoice_payments.list": "8bf15e85e9f04798",
+                "finance.invoice_payments.list": "25681f84faec8b6e",
+                "finance.payouts.list": "49fbdd79e642c84c",
                 "finance.reconciliations.deactivate": "41db4066d9b89d5c",
                 "finance.reconciliations.upsert": "75cfbd94043071d2",
                 "invoices.add_time": "ee27431f3eebdb38",
@@ -28104,6 +28518,7 @@
                     "expenses.unapprove role",
                     "expenses.update role",
                     "finance.invoice_payments.list role",
+                    "finance.payouts.list role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time role",
@@ -28264,6 +28679,7 @@
                     "expenses.unapprove role",
                     "expenses.update role",
                     "finance.invoice_payments.list role",
+                    "finance.payouts.list role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time role",
@@ -28424,6 +28840,7 @@
                     "expenses.unapprove role",
                     "expenses.update role",
                     "finance.invoice_payments.list role",
+                    "finance.payouts.list role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time role",
@@ -28584,6 +29001,7 @@
                     "expenses.unapprove role",
                     "expenses.update role",
                     "finance.invoice_payments.list role",
+                    "finance.payouts.list role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time role",
@@ -28801,7 +29219,8 @@
                 "expenses.list": "444aff51ddc70e0d",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
-                "finance.invoice_payments.list": "8bf15e85e9f04798",
+                "finance.invoice_payments.list": "25681f84faec8b6e",
+                "finance.payouts.list": "49fbdd79e642c84c",
                 "invoices.corrections.get": "aa93da895756b80b",
                 "invoices.get": "790ff02f4ec45336",
                 "invoices.list": "c54f80f8f4c1bcda",
@@ -29004,6 +29423,7 @@
                     "expenses.unapprove scope_not_granted expenses:write",
                     "expenses.update scope_not_granted expenses:write",
                     "finance.invoice_payments.list role",
+                    "finance.payouts.list role",
                     "finance.reconciliations.deactivate scope_not_granted finance:reconcile",
                     "finance.reconciliations.upsert scope_not_granted finance:reconcile",
                     "invoices.add_time scope_not_granted billing:write",
@@ -29213,6 +29633,7 @@
                     "expenses.unapprove scope_not_granted expenses:write",
                     "expenses.update scope_not_granted expenses:write",
                     "finance.invoice_payments.list role",
+                    "finance.payouts.list role",
                     "finance.reconciliations.deactivate scope_not_granted finance:reconcile",
                     "finance.reconciliations.upsert scope_not_granted finance:reconcile",
                     "invoices.add_time scope_not_granted billing:write",
@@ -29491,7 +29912,8 @@
                 "expenses.list": "444aff51ddc70e0d",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
-                "finance.invoice_payments.list": "8bf15e85e9f04798",
+                "finance.invoice_payments.list": "25681f84faec8b6e",
+                "finance.payouts.list": "49fbdd79e642c84c",
                 "finance.reconciliations.deactivate": "41db4066d9b89d5c",
                 "finance.reconciliations.upsert": "75cfbd94043071d2",
                 "invoices.corrections.get": "aa93da895756b80b",
@@ -29652,7 +30074,8 @@
                 "expenses.list": "444aff51ddc70e0d",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
-                "finance.invoice_payments.list": "8bf15e85e9f04798",
+                "finance.invoice_payments.list": "25681f84faec8b6e",
+                "finance.payouts.list": "49fbdd79e642c84c",
                 "finance.reconciliations.deactivate": "41db4066d9b89d5c",
                 "finance.reconciliations.upsert": "75cfbd94043071d2",
                 "invoices.corrections.get": "aa93da895756b80b",
@@ -29746,6 +30169,7 @@
                     "expenses.unapprove deployment_disabled",
                     "expenses.update deployment_disabled",
                     "finance.invoice_payments.list role",
+                    "finance.payouts.list role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time deployment_disabled",
@@ -29905,6 +30329,7 @@
                     "expenses.unapprove deployment_disabled",
                     "expenses.update deployment_disabled",
                     "finance.invoice_payments.list role",
+                    "finance.payouts.list role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time deployment_disabled",
@@ -30064,6 +30489,7 @@
                     "expenses.unapprove deployment_disabled",
                     "expenses.update deployment_disabled",
                     "finance.invoice_payments.list role",
+                    "finance.payouts.list role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time deployment_disabled",
@@ -30223,6 +30649,7 @@
                     "expenses.unapprove deployment_disabled",
                     "expenses.update deployment_disabled",
                     "finance.invoice_payments.list role",
+                    "finance.payouts.list role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time deployment_disabled",
@@ -30439,7 +30866,8 @@
                 "expenses.list": "444aff51ddc70e0d",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
-                "finance.invoice_payments.list": "8bf15e85e9f04798",
+                "finance.invoice_payments.list": "25681f84faec8b6e",
+                "finance.payouts.list": "49fbdd79e642c84c",
                 "finance.reconciliations.deactivate": "41db4066d9b89d5c",
                 "finance.reconciliations.upsert": "75cfbd94043071d2",
                 "invoices.corrections.get": "aa93da895756b80b",
@@ -30598,7 +31026,8 @@
                 "expenses.list": "444aff51ddc70e0d",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
-                "finance.invoice_payments.list": "8bf15e85e9f04798",
+                "finance.invoice_payments.list": "25681f84faec8b6e",
+                "finance.payouts.list": "49fbdd79e642c84c",
                 "finance.reconciliations.deactivate": "41db4066d9b89d5c",
                 "finance.reconciliations.upsert": "75cfbd94043071d2",
                 "invoices.corrections.get": "aa93da895756b80b",
@@ -30702,6 +31131,7 @@
                     "expenses.unapprove deployment_disabled",
                     "expenses.update deployment_disabled",
                     "finance.invoice_payments.list role",
+                    "finance.payouts.list role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time deployment_disabled",
@@ -30859,6 +31289,7 @@
                     "expenses.unapprove deployment_disabled",
                     "expenses.update deployment_disabled",
                     "finance.invoice_payments.list role",
+                    "finance.payouts.list role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time deployment_disabled",
@@ -31016,6 +31447,7 @@
                     "expenses.unapprove deployment_disabled",
                     "expenses.update deployment_disabled",
                     "finance.invoice_payments.list role",
+                    "finance.payouts.list role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time deployment_disabled",
@@ -31173,6 +31605,7 @@
                     "expenses.unapprove deployment_disabled",
                     "expenses.update deployment_disabled",
                     "finance.invoice_payments.list role",
+                    "finance.payouts.list role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time deployment_disabled",
@@ -31384,7 +31817,8 @@
                 "expenses.list": "444aff51ddc70e0d",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
-                "finance.invoice_payments.list": "8bf15e85e9f04798",
+                "finance.invoice_payments.list": "25681f84faec8b6e",
+                "finance.payouts.list": "49fbdd79e642c84c",
                 "finance.reconciliations.deactivate": "41db4066d9b89d5c",
                 "finance.reconciliations.upsert": "75cfbd94043071d2",
                 "invoices.corrections.get": "aa93da895756b80b",
@@ -31545,7 +31979,8 @@
                 "expenses.list": "444aff51ddc70e0d",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
-                "finance.invoice_payments.list": "8bf15e85e9f04798",
+                "finance.invoice_payments.list": "25681f84faec8b6e",
+                "finance.payouts.list": "49fbdd79e642c84c",
                 "finance.reconciliations.deactivate": "41db4066d9b89d5c",
                 "finance.reconciliations.upsert": "75cfbd94043071d2",
                 "invoices.corrections.get": "aa93da895756b80b",
@@ -31654,6 +32089,7 @@
                     "expenses.unapprove deployment_disabled",
                     "expenses.update deployment_disabled",
                     "finance.invoice_payments.list role",
+                    "finance.payouts.list role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time deployment_disabled",
@@ -31813,6 +32249,7 @@
                     "expenses.unapprove deployment_disabled",
                     "expenses.update deployment_disabled",
                     "finance.invoice_payments.list role",
+                    "finance.payouts.list role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time deployment_disabled",
@@ -31972,6 +32409,7 @@
                     "expenses.unapprove deployment_disabled",
                     "expenses.update deployment_disabled",
                     "finance.invoice_payments.list role",
+                    "finance.payouts.list role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time deployment_disabled",
@@ -32131,6 +32569,7 @@
                     "expenses.unapprove deployment_disabled",
                     "expenses.update deployment_disabled",
                     "finance.invoice_payments.list role",
+                    "finance.payouts.list role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time deployment_disabled",
@@ -32324,7 +32763,8 @@
                 "expenses.receipts.upload_url": "c53d1f0b0ac10262",
                 "expenses.unapprove": "ae21aae8d227dc06",
                 "expenses.update": "1e517d25f792bde9",
-                "finance.invoice_payments.list": "8bf15e85e9f04798",
+                "finance.invoice_payments.list": "25681f84faec8b6e",
+                "finance.payouts.list": "49fbdd79e642c84c",
                 "finance.reconciliations.deactivate": "41db4066d9b89d5c",
                 "finance.reconciliations.upsert": "75cfbd94043071d2",
                 "invoices.corrections.get": "aa93da895756b80b",
@@ -32485,7 +32925,8 @@
                 "expenses.receipts.upload_url": "c53d1f0b0ac10262",
                 "expenses.unapprove": "ae21aae8d227dc06",
                 "expenses.update": "1e517d25f792bde9",
-                "finance.invoice_payments.list": "8bf15e85e9f04798",
+                "finance.invoice_payments.list": "25681f84faec8b6e",
+                "finance.payouts.list": "49fbdd79e642c84c",
                 "finance.reconciliations.deactivate": "41db4066d9b89d5c",
                 "finance.reconciliations.upsert": "75cfbd94043071d2",
                 "invoices.corrections.get": "aa93da895756b80b",
@@ -32614,6 +33055,7 @@
                     "expenses.unapprove role",
                     "expenses.update role",
                     "finance.invoice_payments.list role",
+                    "finance.payouts.list role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time deployment_disabled",
@@ -32773,6 +33215,7 @@
                     "expenses.unapprove role",
                     "expenses.update role",
                     "finance.invoice_payments.list role",
+                    "finance.payouts.list role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time deployment_disabled",
@@ -32932,6 +33375,7 @@
                     "expenses.unapprove role",
                     "expenses.update role",
                     "finance.invoice_payments.list role",
+                    "finance.payouts.list role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time deployment_disabled",
@@ -33091,6 +33535,7 @@
                     "expenses.unapprove role",
                     "expenses.update role",
                     "finance.invoice_payments.list role",
+                    "finance.payouts.list role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time deployment_disabled",
@@ -33309,7 +33754,8 @@
                 "expenses.list": "444aff51ddc70e0d",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
-                "finance.invoice_payments.list": "8bf15e85e9f04798",
+                "finance.invoice_payments.list": "25681f84faec8b6e",
+                "finance.payouts.list": "49fbdd79e642c84c",
                 "invoices.corrections.get": "aa93da895756b80b",
                 "invoices.get": "790ff02f4ec45336",
                 "invoices.list": "c54f80f8f4c1bcda",
@@ -33468,7 +33914,8 @@
                 "expenses.list": "444aff51ddc70e0d",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
-                "finance.invoice_payments.list": "8bf15e85e9f04798",
+                "finance.invoice_payments.list": "25681f84faec8b6e",
+                "finance.payouts.list": "49fbdd79e642c84c",
                 "invoices.corrections.get": "aa93da895756b80b",
                 "invoices.get": "790ff02f4ec45336",
                 "invoices.list": "c54f80f8f4c1bcda",
@@ -33570,6 +34017,7 @@
                     "expenses.unapprove deployment_disabled",
                     "expenses.update deployment_disabled",
                     "finance.invoice_payments.list role",
+                    "finance.payouts.list role",
                     "finance.reconciliations.deactivate deployment_disabled",
                     "finance.reconciliations.upsert deployment_disabled",
                     "invoices.add_time deployment_disabled",
@@ -33727,6 +34175,7 @@
                     "expenses.unapprove deployment_disabled",
                     "expenses.update deployment_disabled",
                     "finance.invoice_payments.list role",
+                    "finance.payouts.list role",
                     "finance.reconciliations.deactivate deployment_disabled",
                     "finance.reconciliations.upsert deployment_disabled",
                     "invoices.add_time deployment_disabled",
@@ -33884,6 +34333,7 @@
                     "expenses.unapprove deployment_disabled",
                     "expenses.update deployment_disabled",
                     "finance.invoice_payments.list role",
+                    "finance.payouts.list role",
                     "finance.reconciliations.deactivate deployment_disabled",
                     "finance.reconciliations.upsert deployment_disabled",
                     "invoices.add_time deployment_disabled",
@@ -34041,6 +34491,7 @@
                     "expenses.unapprove deployment_disabled",
                     "expenses.update deployment_disabled",
                     "finance.invoice_payments.list role",
+                    "finance.payouts.list role",
                     "finance.reconciliations.deactivate deployment_disabled",
                     "finance.reconciliations.upsert deployment_disabled",
                     "invoices.add_time deployment_disabled",
@@ -34217,7 +34668,8 @@
                 "expenses.receipts.upload_url": "c53d1f0b0ac10262",
                 "expenses.unapprove": "ae21aae8d227dc06",
                 "expenses.update": "1e517d25f792bde9",
-                "finance.invoice_payments.list": "8bf15e85e9f04798",
+                "finance.invoice_payments.list": "25681f84faec8b6e",
+                "finance.payouts.list": "49fbdd79e642c84c",
                 "finance.reconciliations.deactivate": "41db4066d9b89d5c",
                 "finance.reconciliations.upsert": "75cfbd94043071d2",
                 "invoices.add_time": "ee27431f3eebdb38",
@@ -34377,7 +34829,8 @@
                 "expenses.receipts.upload_url": "c53d1f0b0ac10262",
                 "expenses.unapprove": "ae21aae8d227dc06",
                 "expenses.update": "1e517d25f792bde9",
-                "finance.invoice_payments.list": "8bf15e85e9f04798",
+                "finance.invoice_payments.list": "25681f84faec8b6e",
+                "finance.payouts.list": "49fbdd79e642c84c",
                 "finance.reconciliations.deactivate": "41db4066d9b89d5c",
                 "finance.reconciliations.upsert": "75cfbd94043071d2",
                 "invoices.add_time": "ee27431f3eebdb38",
@@ -34520,6 +34973,7 @@
                     "expenses.unapprove role",
                     "expenses.update role",
                     "finance.invoice_payments.list role",
+                    "finance.payouts.list role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time role",
@@ -34680,6 +35134,7 @@
                     "expenses.unapprove role",
                     "expenses.update role",
                     "finance.invoice_payments.list role",
+                    "finance.payouts.list role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time role",
@@ -34840,6 +35295,7 @@
                     "expenses.unapprove role",
                     "expenses.update role",
                     "finance.invoice_payments.list role",
+                    "finance.payouts.list role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time role",
@@ -35000,6 +35456,7 @@
                     "expenses.unapprove role",
                     "expenses.update role",
                     "finance.invoice_payments.list role",
+                    "finance.payouts.list role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time role",
@@ -35181,7 +35638,8 @@
                 "expenses.receipts.upload_url": "c53d1f0b0ac10262",
                 "expenses.unapprove": "ae21aae8d227dc06",
                 "expenses.update": "1e517d25f792bde9",
-                "finance.invoice_payments.list": "8bf15e85e9f04798",
+                "finance.invoice_payments.list": "25681f84faec8b6e",
+                "finance.payouts.list": "49fbdd79e642c84c",
                 "finance.reconciliations.deactivate": "41db4066d9b89d5c",
                 "finance.reconciliations.upsert": "75cfbd94043071d2",
                 "invoices.add_time": "ee27431f3eebdb38",
@@ -35340,7 +35798,8 @@
                 "expenses.receipts.upload_url": "c53d1f0b0ac10262",
                 "expenses.unapprove": "ae21aae8d227dc06",
                 "expenses.update": "1e517d25f792bde9",
-                "finance.invoice_payments.list": "8bf15e85e9f04798",
+                "finance.invoice_payments.list": "25681f84faec8b6e",
+                "finance.payouts.list": "49fbdd79e642c84c",
                 "finance.reconciliations.deactivate": "41db4066d9b89d5c",
                 "finance.reconciliations.upsert": "75cfbd94043071d2",
                 "invoices.add_time": "ee27431f3eebdb38",
@@ -35481,6 +35940,7 @@
                     "expenses.unapprove role",
                     "expenses.update role",
                     "finance.invoice_payments.list role",
+                    "finance.payouts.list role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time role",
@@ -35638,6 +36098,7 @@
                     "expenses.unapprove role",
                     "expenses.update role",
                     "finance.invoice_payments.list role",
+                    "finance.payouts.list role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time role",
@@ -35795,6 +36256,7 @@
                     "expenses.unapprove role",
                     "expenses.update role",
                     "finance.invoice_payments.list role",
+                    "finance.payouts.list role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time role",
@@ -35952,6 +36414,7 @@
                     "expenses.unapprove role",
                     "expenses.update role",
                     "finance.invoice_payments.list role",
+                    "finance.payouts.list role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time role",
@@ -36112,6 +36575,7 @@
                     "expenses.unapprove deployment_disabled",
                     "expenses.update deployment_disabled",
                     "finance.invoice_payments.list deployment_disabled",
+                    "finance.payouts.list deployment_disabled",
                     "finance.reconciliations.deactivate deployment_disabled",
                     "finance.reconciliations.upsert deployment_disabled",
                     "invoices.add_time deployment_disabled",
@@ -36250,6 +36714,7 @@
                     "expenses.unapprove deployment_disabled",
                     "expenses.update deployment_disabled",
                     "finance.invoice_payments.list deployment_disabled",
+                    "finance.payouts.list deployment_disabled",
                     "finance.reconciliations.deactivate deployment_disabled",
                     "finance.reconciliations.upsert deployment_disabled",
                     "invoices.add_time deployment_disabled",
@@ -36388,6 +36853,7 @@
                     "expenses.unapprove deployment_disabled",
                     "expenses.update deployment_disabled",
                     "finance.invoice_payments.list deployment_disabled",
+                    "finance.payouts.list deployment_disabled",
                     "finance.reconciliations.deactivate deployment_disabled",
                     "finance.reconciliations.upsert deployment_disabled",
                     "invoices.add_time deployment_disabled",
@@ -36526,6 +36992,7 @@
                     "expenses.unapprove deployment_disabled",
                     "expenses.update deployment_disabled",
                     "finance.invoice_payments.list deployment_disabled",
+                    "finance.payouts.list deployment_disabled",
                     "finance.reconciliations.deactivate deployment_disabled",
                     "finance.reconciliations.upsert deployment_disabled",
                     "invoices.add_time deployment_disabled",
@@ -36664,6 +37131,7 @@
                     "expenses.unapprove deployment_disabled",
                     "expenses.update deployment_disabled",
                     "finance.invoice_payments.list deployment_disabled",
+                    "finance.payouts.list deployment_disabled",
                     "finance.reconciliations.deactivate deployment_disabled",
                     "finance.reconciliations.upsert deployment_disabled",
                     "invoices.add_time deployment_disabled",
@@ -36802,6 +37270,7 @@
                     "expenses.unapprove deployment_disabled",
                     "expenses.update deployment_disabled",
                     "finance.invoice_payments.list deployment_disabled",
+                    "finance.payouts.list deployment_disabled",
                     "finance.reconciliations.deactivate deployment_disabled",
                     "finance.reconciliations.upsert deployment_disabled",
                     "invoices.add_time deployment_disabled",
@@ -36957,7 +37426,8 @@
                 "expenses.receipts.upload_url": "c53d1f0b0ac10262",
                 "expenses.unapprove": "ae21aae8d227dc06",
                 "expenses.update": "1e517d25f792bde9",
-                "finance.invoice_payments.list": "8bf15e85e9f04798",
+                "finance.invoice_payments.list": "25681f84faec8b6e",
+                "finance.payouts.list": "49fbdd79e642c84c",
                 "finance.reconciliations.deactivate": "41db4066d9b89d5c",
                 "finance.reconciliations.upsert": "75cfbd94043071d2",
                 "invoices.add_time": "ee27431f3eebdb38",
@@ -37119,7 +37589,8 @@
                 "expenses.receipts.upload_url": "c53d1f0b0ac10262",
                 "expenses.unapprove": "ae21aae8d227dc06",
                 "expenses.update": "1e517d25f792bde9",
-                "finance.invoice_payments.list": "8bf15e85e9f04798",
+                "finance.invoice_payments.list": "25681f84faec8b6e",
+                "finance.payouts.list": "49fbdd79e642c84c",
                 "finance.reconciliations.deactivate": "41db4066d9b89d5c",
                 "finance.reconciliations.upsert": "75cfbd94043071d2",
                 "invoices.add_time": "ee27431f3eebdb38",
@@ -37264,6 +37735,7 @@
                     "expenses.unapprove role",
                     "expenses.update role",
                     "finance.invoice_payments.list role",
+                    "finance.payouts.list role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time role",
@@ -37424,6 +37896,7 @@
                     "expenses.unapprove role",
                     "expenses.update role",
                     "finance.invoice_payments.list role",
+                    "finance.payouts.list role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time role",
@@ -37584,6 +38057,7 @@
                     "expenses.unapprove role",
                     "expenses.update role",
                     "finance.invoice_payments.list role",
+                    "finance.payouts.list role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time role",
@@ -37744,6 +38218,7 @@
                     "expenses.unapprove role",
                     "expenses.update role",
                     "finance.invoice_payments.list role",
+                    "finance.payouts.list role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time role",

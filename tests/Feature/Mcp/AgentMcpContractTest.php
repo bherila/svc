@@ -238,6 +238,7 @@ final class AgentMcpContractTest extends TestCase
             'expenses.unapprove' => ['expenses:read', 'expenses:write'],
             'expenses.update' => ['expenses:write'],
             'finance.invoice_payments.list' => ['finance:read'],
+            'finance.payouts.list' => ['finance:read'],
             'finance.reconciliations.deactivate' => ['finance:reconcile'],
             'finance.reconciliations.upsert' => ['finance:reconcile'],
             'invoices.add_time' => ['billing:write', 'billing:read'],
