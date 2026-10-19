@@ -737,10 +737,10 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** @description Create or update the finance reconciliation allocation the path names: the share of a received payment, in integer minor units of its currency, that one transaction in an external finance system covers. One transaction may cover several payments and one payment several transactions, but a payment's active allocations never exceed what it is worth net of refunds, and only a succeeded payment can be reconciled. Answers 201 when it created the allocation and 200 when it updated it. Idempotent by its path, so it takes no Idempotency-Key. Nothing moves money. Workspace owners/admins only. The Sanctum finance token issued by svc:auth:issue-token is accepted too, its finance.read and finance.reconcile abilities standing for these scopes. */
+        /** @description Create or update the finance reconciliation allocation the path names: the share of a received payment, in integer minor units of its currency, that one transaction in an external finance system covers. One transaction may cover several payments and one payment several transactions, but a payment's active allocations never exceed what it is worth net of refunds, and only a succeeded payment can be reconciled. Answers 201 when it created the allocation and 200 when it updated it. is_active is required (the finance token may omit it, keeping the allocation's state), so a delayed retry never reactivates an allocation withdrawn since: send the state wanted now. Any change advances the payment's version. Idempotent by its path, so it takes no Idempotency-Key. Nothing moves money. Workspace owners/admins only. The Sanctum finance token issued by svc:auth:issue-token is accepted too, its finance.read and finance.reconcile abilities standing for these scopes. */
         put: operations['finance.reconciliations.upsert'];
         post?: never;
-        /** @description Stop the allocation the path names counting toward its payment. It is kept, with its history, rather than deleted, and setting it again with finance.reconciliations.upsert reactivates it. Idempotent by its path, so it takes no Idempotency-Key. Workspace owners/admins only. The Sanctum finance token issued by svc:auth:issue-token is accepted too, its finance.read and finance.reconcile abilities standing for these scopes. */
+        /** @description Stop the allocation the path names counting toward its payment. It is kept, with its history, rather than deleted, the payment's version advances, and setting it again with finance.reconciliations.upsert and is_active true reactivates it. Idempotent by its path, so it takes no Idempotency-Key. Workspace owners/admins only. The Sanctum finance token issued by svc:auth:issue-token is accepted too, its finance.read and finance.reconcile abilities standing for these scopes. */
         delete: operations['finance.reconciliations.deactivate'];
         options?: never;
         head?: never;
@@ -2246,6 +2246,7 @@ export interface components {
         FinanceInvoicePayment: {
             /** Format: uuid */
             id: string;
+            version: components['schemas']['Version'];
             /** @enum {string} */
             status:
                 | 'pending'
@@ -2364,10 +2365,7 @@ export interface components {
             currency: string;
             /** Format: date */
             reconciled_on?: string | null;
-            /**
-             * @description false keeps the allocation without it counting.
-             * @default true
-             */
+            /** @description The state wanted now: true counts the allocation (and reactivates a withdrawn one), false keeps it without counting. Required through OAuth and MCP, so a late retry never brings back an allocation withdrawn since; the finance token may omit it, which keeps an existing allocation's state and makes a new one active. */
             is_active: boolean;
         };
         FinanceReconciliationResponse: {

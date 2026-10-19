@@ -49,8 +49,8 @@ final class AgentMcpFinanceTools
         #[Schema(format: 'uuid')] string $transaction_id,
         #[Schema(minimum: 1)] int $allocated_amount,
         #[Schema(pattern: '^[A-Z]{3}$')] string $currency,
+        bool $is_active,
         #[Schema(format: 'date')] ?string $reconciled_on = null,
-        bool $is_active = true,
     ): array {
         return $this->rest->call(
             'finance.reconciliations.upsert',

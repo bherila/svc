@@ -40,6 +40,7 @@ trait IncrementsAgentRevision
                 'lock_version' => DB::raw('lock_version + 1'),
                 'updated_at' => now(),
             ]);
-        $this->refresh();
+        // Reloaded through its workspace too, like every other tenant read.
+        $this->refreshUsingQuery($this->newQueryWithoutScopes()->where($this->qualifyColumn('workspace_id'), $this->workspaceId()));
     }
 }

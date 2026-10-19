@@ -110,11 +110,21 @@ switches it from numbered pages to change order:
   synchronizer reads `any`. Payments are never deleted.
 - A row never stamped with `updated_at` comes last in a full pass and never
   matches `updated_since`.
+- Timestamps locate candidates; `version` detects a change. Each payment carries
+  its opaque revision, which also moves when one of its allocations does. Two
+  changes in the same second still give two versions.
 
 `PUT /api/v1/workspaces/{workspace}/invoice-payments/{payment}/reconciliations/{external-system}/{transaction-uuid}` (`finance.reconciliations.upsert`)
 
-- Accepts `allocated_amount`, `currency`, optional `reconciled_on`, and optional
-  `is_active`. Other fields are ignored.
+- Accepts `allocated_amount`, `currency`, optional `reconciled_on`, and
+  `is_active`. Other fields are ignored. Through OAuth and MCP `is_active` is
+  required: the finance system sends the state it wants now, so a retry that
+  arrives late never brings back an allocation withdrawn in between. The finance
+  token may still omit it, which keeps an existing allocation's state (a new one
+  is active); only an explicit `true` reactivates.
+- Any change - recording, changing or withdrawing an allocation, or clearing its
+  review flag - advances the payment's `version` and `updated_at`, since the
+  listing embeds its allocations; a request that changes nothing leaves them.
 - Is idempotent for the payment/system/transaction tuple, so it takes no
   `Idempotency-Key`: `201` when it created the allocation, `200` when it updated it.
 - Allows one external transaction to cover multiple SVC payments and one payment
@@ -125,8 +135,8 @@ switches it from numbered pages to change order:
 `DELETE /api/v1/workspaces/{workspace}/invoice-payments/{payment}/reconciliations/{external-system}/{transaction-uuid}` (`finance.reconciliations.deactivate`)
 
 - Deactivates the allocation for auditability; it does not delete its history.
-  It also clears a processor review flag (below). Upserting it again
-  reactivates it. Idempotent for the same tuple.
+  It also clears a processor review flag (below). Upserting it again with
+  `is_active: true` reactivates it. Idempotent for the same tuple.
 
 ## Processor refunds and disputes
 

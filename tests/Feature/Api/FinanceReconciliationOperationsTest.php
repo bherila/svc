@@ -62,12 +62,12 @@ final class FinanceReconciliationOperationsTest extends TestCase
         $path = $this->allocationPath($workspace, $payment, 'synthetic-ledger', $transaction);
 
         $this->actingAsMcp($owner, ['finance:reconcile']);
-        $this->putJson($path, ['allocated_amount' => 2500, 'currency' => 'USD', 'reconciled_on' => '2026-08-15'])
+        $this->putJson($path, ['allocated_amount' => 2500, 'currency' => 'USD', 'is_active' => true, 'reconciled_on' => '2026-08-15'])
             ->assertCreated()
             ->assertJsonPath('data.external_system', 'synthetic-ledger')
             ->assertJsonPath('data.external_transaction_id', $transaction)
             ->assertJsonPath('data.is_active', true);
-        $this->putJson($path, ['allocated_amount' => 3000, 'currency' => 'USD'])
+        $this->putJson($path, ['allocated_amount' => 3000, 'currency' => 'USD', 'is_active' => true])
             ->assertOk()
             ->assertJsonPath('data.allocated_amount', 3000);
         $this->assertDatabaseCount('payment_reconciliations', 1);
@@ -106,19 +106,19 @@ final class FinanceReconciliationOperationsTest extends TestCase
             ->assertForbidden()
             ->assertJsonPath('reason', 'missing_scope')
             ->assertHeader('WWW-Authenticate', 'Bearer error="insufficient_scope", scope="finance:read"');
-        $this->putJson($path, ['allocated_amount' => 100, 'currency' => 'USD'])
+        $this->putJson($path, ['allocated_amount' => 100, 'currency' => 'USD', 'is_active' => true])
             ->assertForbidden()
             ->assertHeader('WWW-Authenticate', 'Bearer error="insufficient_scope", scope="finance:reconcile"');
         // Reading does not let a caller write.
         $this->actingAsMcp($owner, ['finance:read']);
-        $this->putJson($path, ['allocated_amount' => 100, 'currency' => 'USD'])->assertForbidden();
+        $this->putJson($path, ['allocated_amount' => 100, 'currency' => 'USD', 'is_active' => true])->assertForbidden();
 
         // A member may not use the OAuth door at all, though the finance token lets one list.
         $member = User::factory()->create();
         $workspace->memberships()->create(['user_id' => $member->id, 'role' => 'member']);
         $this->actingAsMcp($member, ['finance:read', 'finance:reconcile']);
         $this->getJson($this->listPath($workspace))->assertForbidden();
-        $this->putJson($path, ['allocated_amount' => 100, 'currency' => 'USD'])->assertForbidden();
+        $this->putJson($path, ['allocated_amount' => 100, 'currency' => 'USD', 'is_active' => true])->assertForbidden();
         $this->deleteJson($path)->assertForbidden();
 
         $this->assertDatabaseCount('payment_reconciliations', 0);
@@ -135,12 +135,12 @@ final class FinanceReconciliationOperationsTest extends TestCase
 
         $this->actingAsMcp($outsider, ['finance:read', 'finance:reconcile']);
         $this->getJson($this->listPath($workspace))->assertNotFound();
-        $this->putJson($path, ['allocated_amount' => 100, 'currency' => 'USD'])->assertNotFound();
+        $this->putJson($path, ['allocated_amount' => 100, 'currency' => 'USD', 'is_active' => true])->assertNotFound();
         $this->deleteJson($path)->assertNotFound();
 
         Auth::forgetGuards();
         $token = $outsider->createToken('outsider', ['finance.read', 'finance.reconcile'], now()->addHour())->plainTextToken;
-        $this->withToken($token)->putJson($path, ['allocated_amount' => 100, 'currency' => 'USD'])->assertNotFound();
+        $this->withToken($token)->putJson($path, ['allocated_amount' => 100, 'currency' => 'USD', 'is_active' => true])->assertNotFound();
         Auth::forgetGuards();
         $this->withToken($token)->deleteJson($path)->assertNotFound();
 
@@ -174,7 +174,7 @@ final class FinanceReconciliationOperationsTest extends TestCase
         $issued = $owner->createToken('finance integration', ['finance.reconcile'], now()->addHour());
 
         $this->withToken($issued->plainTextToken)
-            ->putJson($this->allocationPath($workspace, $payment, 'synthetic-ledger', (string) Str::uuid()), ['allocated_amount' => 100, 'currency' => 'USD'])
+            ->putJson($this->allocationPath($workspace, $payment, 'synthetic-ledger', (string) Str::uuid()), ['allocated_amount' => 100, 'currency' => 'USD', 'is_active' => true])
             ->assertCreated();
 
         $audit = AgentMutationAudit::query()->where('workspace_id', $workspace->id)->sole();
@@ -196,7 +196,7 @@ final class FinanceReconciliationOperationsTest extends TestCase
         $this->assertNotContains(FinanceReconciliationOperations::UPSERT, $this->deployedToolNames());
 
         $this->actingAsMcp($owner, ['finance:read', 'finance:reconcile']);
-        $this->putJson($this->allocationPath($workspace, $payment, 'synthetic-ledger', (string) Str::uuid()), ['allocated_amount' => 100, 'currency' => 'USD'])->assertCreated();
+        $this->putJson($this->allocationPath($workspace, $payment, 'synthetic-ledger', (string) Str::uuid()), ['allocated_amount' => 100, 'currency' => 'USD', 'is_active' => true])->assertCreated();
         $this->getJson($this->listPath($workspace))->assertOk()->assertJsonPath('data.0.reconciled_amount', 100);
     }
 
@@ -213,7 +213,7 @@ final class FinanceReconciliationOperationsTest extends TestCase
         }
 
         $target = ['workspace_id' => $workspace->public_id, 'payment_id' => $payment->public_id, 'external_system' => 'synthetic-ledger', 'transaction_id' => $transaction];
-        $created = $this->tool($headers, FinanceReconciliationOperations::UPSERT, [...$target, 'allocated_amount' => 2500, 'currency' => 'USD']);
+        $created = $this->tool($headers, FinanceReconciliationOperations::UPSERT, [...$target, 'allocated_amount' => 2500, 'currency' => 'USD', 'is_active' => true]);
         $this->assertSame($transaction, $created['data']['external_transaction_id']);
         $this->assertTrue($created['data']['is_active']);
 
@@ -231,7 +231,7 @@ final class FinanceReconciliationOperationsTest extends TestCase
         $this->assertFalse(PaymentReconciliation::query()->sole()->is_active);
 
         // A refusal the operation makes reaches the agent as a tool error.
-        $refused = $this->tool($headers, FinanceReconciliationOperations::UPSERT, [...$target, 'allocated_amount' => 9000, 'currency' => 'USD'], false);
+        $refused = $this->tool($headers, FinanceReconciliationOperations::UPSERT, [...$target, 'allocated_amount' => 9000, 'currency' => 'USD', 'is_active' => true], false);
         $this->assertStringContainsString('cannot exceed', (string) json_encode($refused));
 
         // Manager-only: a member is not offered them.
@@ -254,7 +254,7 @@ final class FinanceReconciliationOperationsTest extends TestCase
         $headers = $this->initialize();
         $this->tool($headers, FinanceReconciliationOperations::UPSERT, [
             'workspace_id' => $workspace->public_id, 'payment_id' => $payment->public_id, 'external_system' => 'synthetic-ledger',
-            'transaction_id' => (string) Str::uuid(), 'allocated_amount' => 100, 'currency' => 'USD',
+            'transaction_id' => (string) Str::uuid(), 'allocated_amount' => 100, 'currency' => 'USD', 'is_active' => true,
         ]);
         $this->assertSame(2, RateLimiter::attempts($key), 'initialize and the tool call, not the nested REST request');
 
@@ -269,7 +269,7 @@ final class FinanceReconciliationOperationsTest extends TestCase
         foreach ($body['properties'] as $name => $property) {
             $this->assertSame($property, $input['properties'][$name] ?? null, $name);
         }
-        foreach (['workspace_id', 'payment_id', 'external_system', 'transaction_id', 'allocated_amount', 'currency'] as $required) {
+        foreach (['workspace_id', 'payment_id', 'external_system', 'transaction_id', 'allocated_amount', 'currency', 'is_active'] as $required) {
             $this->assertContains($required, $input['required']);
         }
         $this->assertArrayNotHasKey('idempotency_key', $input['properties']);
@@ -328,7 +328,7 @@ final class FinanceReconciliationOperationsTest extends TestCase
         $transaction = (string) Str::uuid();
 
         match ($door) {
-            'rest' => $this->restAsOwner($owner)->putJson($this->allocationPath($workspace, $foreign, 'synthetic-ledger', $transaction), ['allocated_amount' => 100, 'currency' => 'USD'])->assertNotFound(),
+            'rest' => $this->restAsOwner($owner)->putJson($this->allocationPath($workspace, $foreign, 'synthetic-ledger', $transaction), ['allocated_amount' => 100, 'currency' => 'USD', 'is_active' => true])->assertNotFound(),
             'mcp' => $this->assertNotFoundOverMcp($owner, $workspace, $foreign, $transaction),
             'console' => $this->artisan('svc:finance:reconcile', ['--workspace' => $workspace->public_id, '--user' => $owner->public_id, 'payment' => $foreign->public_id, 'system' => 'synthetic-ledger', 'transaction' => $transaction, '--amount' => '100', '--currency' => 'USD'])
                 ->expectsOutputToContain('Not found')->assertFailed(),
@@ -354,7 +354,7 @@ final class FinanceReconciliationOperationsTest extends TestCase
             }
         });
 
-        $this->putJson($path, ['allocated_amount' => 100, 'currency' => 'USD'])->assertCreated();
+        $this->putJson($path, ['allocated_amount' => 100, 'currency' => 'USD', 'is_active' => true])->assertCreated();
         $this->getJson($this->listPath($workspace).'?invoice='.$invoiceId)->assertOk()->assertJsonCount(1, 'data');
         $this->deleteJson($path)->assertOk();
 
@@ -389,7 +389,7 @@ final class FinanceReconciliationOperationsTest extends TestCase
         $headers = $this->initialize();
         $refused = $this->tool($headers, FinanceReconciliationOperations::UPSERT, [
             'workspace_id' => $workspace->public_id, 'payment_id' => $foreign->public_id, 'external_system' => 'synthetic-ledger',
-            'transaction_id' => $transaction, 'allocated_amount' => 100, 'currency' => 'USD',
+            'transaction_id' => $transaction, 'allocated_amount' => 100, 'currency' => 'USD', 'is_active' => true,
         ], false);
         $this->assertNotSame([], $refused);
     }

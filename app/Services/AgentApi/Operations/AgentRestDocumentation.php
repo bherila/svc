@@ -1683,7 +1683,7 @@ final class AgentRestDocumentation
             'finance.reconciliations.deactivate' => [
                 'method' => 'DELETE',
                 'scopes' => ['finance:reconcile'],
-                'description' => 'Stop the allocation the path names counting toward its payment. It is kept, with its history, rather than deleted, and setting it again with finance.reconciliations.upsert reactivates it. Idempotent by its path, so it takes no Idempotency-Key. Workspace owners/admins only.'.$token,
+                'description' => 'Stop the allocation the path names counting toward its payment. It is kept, with its history, rather than deleted, the payment\'s version advances, and setting it again with finance.reconciliations.upsert and is_active true reactivates it. Idempotent by its path, so it takes no Idempotency-Key. Workspace owners/admins only.'.$token,
                 'parameters' => $allocation,
                 'response' => 'FinanceReconciliationResponse',
                 'response_description' => 'The allocation, no longer active',
@@ -1696,7 +1696,7 @@ final class AgentRestDocumentation
             'finance.reconciliations.upsert' => [
                 'method' => 'PUT',
                 'scopes' => ['finance:reconcile'],
-                'description' => 'Create or update the finance reconciliation allocation the path names: the share of a received payment, in integer minor units of its currency, that one transaction in an external finance system covers. One transaction may cover several payments and one payment several transactions, but a payment\'s active allocations never exceed what it is worth net of refunds, and only a succeeded payment can be reconciled. Answers 201 when it created the allocation and 200 when it updated it. Idempotent by its path, so it takes no Idempotency-Key. Nothing moves money. Workspace owners/admins only.'.$token,
+                'description' => 'Create or update the finance reconciliation allocation the path names: the share of a received payment, in integer minor units of its currency, that one transaction in an external finance system covers. One transaction may cover several payments and one payment several transactions, but a payment\'s active allocations never exceed what it is worth net of refunds, and only a succeeded payment can be reconciled. Answers 201 when it created the allocation and 200 when it updated it. is_active is required (the finance token may omit it, keeping the allocation\'s state), so a delayed retry never reactivates an allocation withdrawn since: send the state wanted now. Any change advances the payment\'s version. Idempotent by its path, so it takes no Idempotency-Key. Nothing moves money. Workspace owners/admins only.'.$token,
                 'parameters' => $allocation,
                 'request' => 'FinanceReconciliationRequest',
                 'response' => 'FinanceReconciliationResponse',

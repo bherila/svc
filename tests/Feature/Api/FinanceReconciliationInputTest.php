@@ -90,14 +90,14 @@ final class FinanceReconciliationInputTest extends TestCase
         }
     }
 
-    public function test_an_allocation_is_active_unless_it_says_otherwise(): void
+    public function test_an_allocation_that_does_not_say_leaves_its_activity_to_the_allocation(): void
     {
         $allocation = ReconciliationAllocation::fromInput(['allocated_amount' => '2500', 'currency' => 'USD', 'unknown' => 'ignored']);
 
         $this->assertSame(2500, $allocation->allocatedAmount);
         $this->assertSame('USD', $allocation->currency);
         $this->assertNull($allocation->reconciledOn);
-        $this->assertTrue($allocation->isActive);
+        $this->assertNull($allocation->isActive);
         $target = ReconciliationTarget::of(self::PAYMENT, 'synthetic-ledger', self::TRANSACTION);
         $this->assertSame([
             'external_system_slug' => 'synthetic-ledger',
@@ -105,8 +105,19 @@ final class FinanceReconciliationInputTest extends TestCase
             'allocated_amount' => 2500,
             'currency' => 'USD',
             'reconciled_on' => null,
-            'is_active' => true,
+            'is_active' => null,
         ], $allocation->attributesFor($target));
+    }
+
+    public function test_a_door_that_needs_the_activity_stated_refuses_an_allocation_without_it(): void
+    {
+        try {
+            ReconciliationAllocation::fromInput(['allocated_amount' => 1, 'currency' => 'USD'], statesActivity: true);
+            $this->fail('Accepted an allocation without is_active.');
+        } catch (ValidationException $exception) {
+            $this->assertSame(['is_active'], array_keys($exception->errors()));
+        }
+        $this->assertFalse(ReconciliationAllocation::fromInput(['allocated_amount' => 1, 'currency' => 'USD', 'is_active' => false], statesActivity: true)->isActive);
     }
 
     /** @return iterable<string, array{mixed, bool}> */

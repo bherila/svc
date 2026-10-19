@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Finance\FinanceReconciliationOperations;
 use App\Support\Finance\FinanceCaller;
+use App\Support\Finance\FinanceDoor;
 use App\Support\Finance\FinancePaymentQuery;
 use App\Support\Finance\ReconciliationAllocation;
 use App\Support\Finance\ReconciliationTarget;
@@ -51,7 +52,8 @@ final class FinanceReconciliationController extends Controller
             $caller,
             $workspace,
             ReconciliationTarget::of($payment, $external_system, $transaction),
-            ReconciliationAllocation::fromInput($request->all()),
+            // Required through OAuth (and so MCP): the state wanted now, never left to a default.
+            ReconciliationAllocation::fromInput($request->all(), statesActivity: $caller->door === FinanceDoor::OAuth),
         ));
     }
 
