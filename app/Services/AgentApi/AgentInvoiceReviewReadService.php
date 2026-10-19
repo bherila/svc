@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\AgentAccess;
 use App\Services\Billing\BillingCycleResolver;
+use App\Services\Square\Audit\SquareBillingAudit;
 use App\Services\Square\SquarePaymentMismatchAudit;
 use App\Support\AgentApi\StaleAndMissingInvoiceAudit;
 use App\Support\Billing\InvoiceKind;
@@ -81,6 +82,6 @@ final class AgentInvoiceReviewReadService
             });
 
         return new StaleAndMissingInvoiceAudit($today->toDateString(), $count, $balances, $ids, $missingCount, $missing,
-            app(SquarePaymentMismatchAudit::class)->report($workspace));
+            app(SquarePaymentMismatchAudit::class)->report($workspace), app(SquareBillingAudit::class)->report($workspace));
     }
 }

@@ -303,6 +303,20 @@ final class SquareMirrorSyncTest extends TestCase
         $this->assertSame(['PAID', 3, 12_345, ['pay_fixture_1']], [$snapshot->status, $snapshot->square_version, $snapshot->paid_amount, $snapshot->payment_ids]);
     }
 
+    public function test_a_paid_order_showing_no_settled_tender_is_retried_not_taken_as_paymentless(): void
+    {
+        $this->squareOrderOverrides = ['tenders' => [['id' => 'tender_fixture_1', 'payment_id' => 'pay_fixture_1', 'card_details' => ['status' => 'AUTHORIZED']]]];
+        $this->serveSquareAccount();
+        $this->sync();
+
+        $snapshot = SquareInvoiceSnapshot::query()->where('square_invoice_id', 'inv:0-fixture2')->sole();
+        $this->assertSame(['PAID|12345|t3|p', null], [$snapshot->getAttribute('payment_ids_basis'), $snapshot->payment_ids]);
+
+        $this->squareOrderOverrides = [];
+        $this->sync();
+        $this->assertSame(['pay_fixture_1'], SquareInvoiceSnapshot::query()->where('square_invoice_id', 'inv:0-fixture2')->sole()->payment_ids);
+    }
+
     public function test_an_older_copy_never_replaces_a_newer_one(): void
     {
         $mapper = app(SquareSnapshotMapper::class);

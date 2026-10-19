@@ -43,6 +43,9 @@ trait ServesSyntheticSquareAccount
      * @param  list<array<string, mixed>>|null  $invoices
      * @param  list<list<array<string, mixed>>>|null  $invoicePages
      */
+    /** Fields every served order takes instead of the fixture's. @var array<string, mixed> */
+    protected array $squareOrderOverrides = [];
+
     protected function serveSquareAccount(?array $invoices = null, ?array $invoicePages = null, bool $loopCursor = false): void
     {
         $second = self::squareCustomer('cust_fixture_b');
@@ -69,7 +72,7 @@ trait ServesSyntheticSquareAccount
             return match (true) {
                 $path === '/v2/locations' => Http::response(['locations' => [self::squareLocation()]]),
                 $path === '/v2/customers' => Http::response(['customers' => $account['customers']]),
-                str_starts_with($path, '/v2/orders/') => Http::response(['order' => self::squareOrder(rawurldecode(substr($path, strlen('/v2/orders/'))))]),
+                str_starts_with($path, '/v2/orders/') => Http::response(['order' => [...self::squareOrder(rawurldecode(substr($path, strlen('/v2/orders/')))), ...$this->squareOrderOverrides]]),
                 default => Http::response(['errors' => [['category' => 'INVALID_REQUEST_ERROR', 'code' => 'NOT_FOUND']]], 404),
             };
         });

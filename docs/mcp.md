@@ -902,7 +902,11 @@ collects, and the refusal text) for managers and null otherwise;
 invoice's mirrored `public_url`. Managers also receive `payment_mismatch` when
 SVC is paid outside Square while Square remains open, with a finished dashboard
 link. `billing_audit.stale_and_missing` includes the same flags in
-`square_payment_mismatches`, with a count and at most 100 invoices.
+`square_payment_mismatches`, with a count and at most 100 invoices, and the
+phase-two flags in `square_billing_audit`: billed series periods with no linked
+svc invoice, Square payments svc has not recorded, unlinked customers with an
+open balance, and series drift from the agreement (see
+[billing-audit flags](square-status.md#billing-audit-flags)).
 See [payment status transport](square-status.md) for the signed receiver and sweep.
 
 ### Payment reminders (#438)
