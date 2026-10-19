@@ -63,9 +63,12 @@ Subscribe the Stripe webhook endpoint to these event types:
 - `payment_intent.processing`: records pending ACH/card state without marking the invoice paid.
 - `payment_intent.payment_failed`: records `failure_reason` and logs `invoice.payment_failed`.
 - `payment_intent.canceled`: records a distinct terminal canceled state and logs `invoice.payment_canceled`; an older processing/failure delivery cannot make it pending again.
-- `charge.refunded`: soft-deletes the original payment for full refunds; inserts a negative `stripe_refund` ledger row for partial refunds, then refreshes invoice paid/issued status from the ledger balance.
-- `charge.dispute.created`: soft-deletes the Stripe payment row and reopens the invoice.
-- `charge.dispute.closed`: restores the payment when the dispute is won; keeps it disputed when lost.
+- `charge.refunded`: records the charge's cumulative refunded amount on the payment - `refunded` when it is the whole payment, `succeeded` with the refunded amount raised otherwise - and reopens the invoice by that amount.
+- `charge.refund.updated` (or `refund.updated` / `refund.failed`; subscribing to any one is enough): when a refund failed or was canceled, re-reads the charge's refunds from Stripe and records the total of those still standing, so the refunded amount falls again. Other refund updates change nothing.
+- `charge.dispute.created`: marks the payment disputed and reopens the invoice.
+- `charge.dispute.closed`: restores the payment when the dispute is won, including a partial win (the disputed amount is checked against the payment, not required to equal it); keeps it disputed when lost.
+
+Refunds and disputes are recorded whatever the payment's finance reconciliation allocations; they are kept and flagged for review (see [the finance reconciliation API](../finance-api.md)).
 - `payment_method.attached`: syncs saved method metadata for the Stripe customer.
 - `payment_method.detached`: soft-deletes the saved method locally after resolving its tenant through the adapter index. An out-of-order detach creates a tombstone, so an older attach cannot resurrect an unusable method.
 - `setup_intent.succeeded`: syncs the saved method and records `payment_method.added`.

@@ -17,6 +17,13 @@ use Stripe\Event;
 
 final class StripeWebhookService
 {
+    /**
+     * Events that report a change to one refund. `charge.refund.updated` is
+     * Stripe's older name, `refund.updated` and `refund.failed` the current
+     * ones; any of them may be subscribed, and each is handled the same way.
+     */
+    private const array REFUND_UPDATES = ['charge.refund.updated', 'refund.updated', 'refund.failed'];
+
     public function __construct(
         private readonly InvoiceLifecycleService $invoices,
         private readonly StripePaymentMethodService $paymentMethods,
@@ -76,12 +83,20 @@ final class StripeWebhookService
         // Resolve scope outside the business transaction: its first ordinary
         // read must not establish a snapshot before the payment/invoice locks.
         $paymentWorkspaceId = null;
-        if (str_starts_with((string) $event->type, 'payment_intent.') || str_starts_with((string) $event->type, 'charge.')) {
+        $type = (string) $event->type;
+        if (str_starts_with($type, 'payment_intent.') || str_starts_with($type, 'charge.') || in_array($type, self::REFUND_UPDATES, true)) {
             $probe = $this->paymentQuery($object)->first(['workspace_id']);
             $paymentWorkspaceId = $probe !== null && $probe->workspace_id > 0 ? $probe->workspace_id : null;
         }
+        // A refund that failed or was canceled is no longer refunded, and the
+        // event names only that one refund. What still stands is read from
+        // Stripe, outside the business transaction, so the same failure
+        // reported twice - or under both of its names - is applied once.
+        $standingRefunds = $paymentWorkspaceId !== null && $this->isUndoneRefund($type, $object)
+            ? $this->standingRefundTotal($object)
+            : null;
 
-        return DB::transaction(function () use ($event, $object, $ledger, $paymentWorkspaceId): bool {
+        return DB::transaction(function () use ($event, $object, $ledger, $paymentWorkspaceId, $standingRefunds): bool {
             if ($paymentWorkspaceId !== null) {
                 BillingMaintenance::share($paymentWorkspaceId);
             }
@@ -124,7 +139,7 @@ final class StripeWebhookService
                 );
                 $ledger->workspace_id = is_int($workspaceId) && $workspaceId > 0 ? $workspaceId : null;
             } else {
-                $this->handleInvoiceEvent($event, $object, $ledger, $paymentWorkspaceId);
+                $this->handleInvoiceEvent($event, $object, $ledger, $paymentWorkspaceId, $standingRefunds);
             }
 
             $ledger->forceFill(['status' => 'processed', 'processed_at' => $this->clock->now()])->save();
@@ -133,8 +148,11 @@ final class StripeWebhookService
         });
     }
 
-    /** @param array<string, mixed> $object */
-    private function handleInvoiceEvent(Event $event, array $object, ClientStripeEvent $ledger, ?int $paymentWorkspaceId): void
+    /**
+     * @param  array<string, mixed>  $object
+     * @param  array{amount: int, currency: string}|null  $standingRefunds  for a refund that failed or was canceled, what Stripe still holds refunded on its charge
+     */
+    private function handleInvoiceEvent(Event $event, array $object, ClientStripeEvent $ledger, ?int $paymentWorkspaceId, ?array $standingRefunds): void
     {
         $payment = $paymentWorkspaceId === null ? null : $this->paymentQuery($object)
             ->where('workspace_id', $paymentWorkspaceId)->tap(Locks::forUpdate())->first();
@@ -168,6 +186,20 @@ final class StripeWebhookService
             $this->invoices->setRefundedAmount($payment, $refundedAmount);
             $this->recordPaymentEvent($payment, $providerCreatedAt, (string) $event->id);
             $ledger->workspace_id = $payment->workspace_id;
+        } elseif (in_array($event->type, self::REFUND_UPDATES, true) && $payment !== null) {
+            $ledger->workspace_id = $payment->workspace_id;
+            // Any other refund update - a trace reference, metadata - leaves
+            // the refunded total where `charge.refunded` put it, and is not
+            // recorded as the payment's latest event: that would make the
+            // `charge.refunded` it may have overtaken look older and skip it.
+            if ($standingRefunds === null || $this->isOlderPaymentEvent($payment, $providerCreatedAt, InvoicePaymentStatus::Refunded->value)) {
+                return;
+            }
+            if ($standingRefunds['currency'] !== $payment->currency) {
+                throw new \DomainException('Stripe refund currency does not match the invoice payment.');
+            }
+            $this->invoices->setRefundedAmount($payment, $standingRefunds['amount']);
+            $this->recordPaymentEvent($payment, $providerCreatedAt, (string) $event->id);
         } elseif ($status !== null && $payment !== null) {
             if ($this->isOlderPaymentEvent($payment, $providerCreatedAt, $status)) {
                 $ledger->workspace_id = $payment->workspace_id;
@@ -177,7 +209,13 @@ final class StripeWebhookService
             if ($status === InvoicePaymentStatus::Succeeded->value) {
                 $amount = (int) ($object['amount_received'] ?? $object['amount'] ?? 0);
                 $currency = strtoupper((string) ($object['currency'] ?? ''));
-                if ($amount !== (int) $payment->amount || $currency !== $payment->currency) {
+                if ($event->type === 'charge.dispute.closed') {
+                    // A won dispute carries the amount that was disputed, which
+                    // may be part of the payment: a partial win restores it.
+                    if ($amount < 1 || $amount > (int) $payment->amount || $currency !== $payment->currency) {
+                        throw new \DomainException('Stripe dispute does not match the disputed invoice payment.');
+                    }
+                } elseif ($amount !== (int) $payment->amount || $currency !== $payment->currency) {
                     throw new \DomainException('Stripe payment does not match the pending invoice payment.');
                 }
             }
@@ -189,6 +227,41 @@ final class StripeWebhookService
         } elseif ($event->type === 'payment_intent.succeeded') {
             $this->createSuccessfulPayment($event, $object, $ledger);
         }
+    }
+
+    /** @param array<string, mixed> $object */
+    private function isUndoneRefund(string $type, array $object): bool
+    {
+        return in_array($type, self::REFUND_UPDATES, true)
+            && in_array($object['status'] ?? null, ['failed', 'canceled'], true);
+    }
+
+    /**
+     * The refunds on the event's charge that still stand - every one that has
+     * not failed or been canceled - totalled, as Stripe reports them now.
+     *
+     * @param  array<string, mixed>  $object  the refund the event reported
+     * @return array{amount: int, currency: string}
+     */
+    private function standingRefundTotal(array $object): array
+    {
+        $charge = $object['charge'] ?? null;
+        $chargeId = is_array($charge) ? ($charge['id'] ?? null) : $charge;
+        if (! is_string($chargeId) || $chargeId === '') {
+            throw new \DomainException('The Stripe refund does not identify its charge.');
+        }
+        $currency = is_string($object['currency'] ?? null) ? strtoupper($object['currency']) : '';
+        $total = 0;
+        foreach ($this->gateway->client()->refunds->all(['charge' => $chargeId, 'limit' => 100])->autoPagingIterator() as $refund) {
+            if (strtoupper($refund->currency) !== $currency) {
+                throw new \DomainException('Stripe refunds on one charge disagree about its currency.');
+            }
+            if (! in_array($refund->status, ['failed', 'canceled'], true)) {
+                $total += max(0, $refund->amount);
+            }
+        }
+
+        return ['amount' => $total, 'currency' => $currency];
     }
 
     private function isOlderPaymentEvent(
