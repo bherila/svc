@@ -177,12 +177,40 @@ delete OAuth rows merely to recover the endpoint.
    smoke credential issuer establishes the resource before Passport signs the
    JWT; never patch `resource_uri` after token issuance.
 
-Passport may purge an expired access-token row while its longer-lived refresh
-credential remains valid. Because Passport's refresh table does not retain the
-client identifier independently, dynamic-client pruning conservatively defers
-all deletions while any such active, unattributed refresh credential exists.
-This favors connection continuity over cleanup; pruning resumes after the
-credential expires or is revoked.
+A manual `passport:purge` with Passport's defaults can delete an expired or
+revoked access-token row while its longer-lived refresh credential remains
+valid; the scheduled purge never does (see [Token retention](#token-retention)).
+Because a legacy refresh row may record neither owner nor client, dynamic-client
+pruning conservatively defers all deletions while any such active, unattributed
+refresh credential exists. This favors connection continuity over cleanup;
+pruning resumes after the credential expires or is revoked.
+
+## Token retention
+
+The scheduler runs `passport:purge --expired --hours=744` daily
+(`routes/console.php`; the deployment's one `schedule:run` cron line runs it, no
+queue worker is involved). It deletes access tokens, refresh tokens and
+authorization codes 31 days after their own expiry, revoked or not, which
+removes the rows each deployment smoke mints and revokes.
+
+It is deliberately not Passport's default (revoked rows at any age, expired rows
+after a week):
+
+- An access token, revoked or merely expired, can be the only record of who
+  holds a live refresh token issued with it. Revocation by person
+  (`svc:auth:revoke-connections`) and the owner backfill find a legacy refresh
+  token through that row; deleting it turns the token into one of the
+  `unattributed_refresh_tokens`, and any such token defers every dynamic-client
+  prune. Refresh tokens live 30 days, so 744 hours (30 days and one spare) past
+  an access token's expiry every refresh token issued with it has expired too.
+  A test fails if the refresh lifetime grows past the retention.
+- Revoked rows are evidence: a revocation keeps them for the investigation, and
+  the purge leaves them for 31 days past expiry.
+
+The revocation fence lives in the application cache, keyed by person, client and
+token-id digest, never by row, so a purge does not lift it. Do not run
+`passport:purge` without `--expired` during or after an incident; if the table
+needs trimming sooner, lower nothing below the refresh-token lifetime.
 
 ## Per-endpoint resources and provider identity cutover
 
