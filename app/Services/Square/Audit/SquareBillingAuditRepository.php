@@ -63,6 +63,9 @@ final class SquareBillingAuditRepository
             ->orderByDesc('id')->limit(self::MAX_SERIES_MEMBERS + 1)->get($columns);
         $seriesComplete = $members->count() <= self::MAX_SERIES_MEMBERS;
         $members = $members->take(self::MAX_SERIES_MEMBERS);
+        // Loaded newest first, so a bounded load holds exactly the members
+        // from this id up; older ones are left for the reach query.
+        $oldestLoaded = $seriesComplete ? null : $members->min('id');
 
         $mapped = CompanySquareCustomer::query()->where('workspace_id', $workspace->id)->whereNotNull('active_customer_slot')->select('active_customer_slot');
         $linked = InvoiceSquareLink::query()->where('workspace_id', $workspace->id)->whereNotNull('active_square_invoice_slot')->select('active_square_invoice_slot');
@@ -72,10 +75,11 @@ final class SquareBillingAuditRepository
                     ->orWhereIn('square_customer_id', $mapped)
                     ->orWhereIn('square_invoice_id', $linked);
             })
-            // Series members were loaded above, under their own bound - all of
-            // them, unless that bound was reached; then the omitted ones still
-            // come in through a link or a confirmed customer.
-            ->when($seriesKeys !== [] && $seriesComplete, static fn (Builder $others) => $others->where(static fn (Builder $series) => $series->whereNull('series_key')->orWhereNotIn('series_key', $seriesKeys)))
+            // The series members loaded above are left out, so they spend none
+            // of this bound; any older ones a bounded load omitted still come
+            // in through a link or a confirmed customer.
+            ->when($seriesKeys !== [], static fn (Builder $others) => $others->where(static fn (Builder $series) => $series->whereNull('series_key')->orWhereNotIn('series_key', $seriesKeys)
+                ->when($oldestLoaded !== null, static fn (Builder $older) => $older->orWhere('id', '<', $oldestLoaded))))
             ->orderByDesc('id')
             ->limit(self::MAX_INVOICES + 1)
             ->get($columns);

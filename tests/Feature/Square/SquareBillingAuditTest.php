@@ -413,7 +413,9 @@ final class SquareBillingAuditTest extends TestCase
         $this->link($workspace, $this->invoice($workspace, $company, 'SYN-AUDIT-OLD'), 'inv_audit_old');
         $rows = [];
         for ($index = 2; $index <= SquareBillingAuditRepository::MAX_SERIES_MEMBERS + 1; $index++) {
-            $rows[] = $this->row($workspace, 'inv_member_'.$index, ['invoice_number' => sprintf('000123-R-%04d', $index % 10_000), 'series_key' => '000123', 'series_occurrence' => $index, 'status' => 'CANCELED']);
+            // The loaded members are a confirmed customer's too, and must not
+            // crowd the omitted one out of the reach.
+            $rows[] = $this->row($workspace, 'inv_member_'.$index, ['invoice_number' => sprintf('000123-R-%04d', $index % 10_000), 'series_key' => '000123', 'series_occurrence' => $index, 'square_customer_id' => 'cust_audit_series', 'status' => 'CANCELED']);
         }
         foreach (array_chunk($rows, 500) as $chunk) {
             DB::table('square_invoice_snapshots')->insert($chunk);
