@@ -1150,7 +1150,14 @@ export default function ClientInvoiceDetail({
                                     </TableHeader>
                                     <TableBody>
                                         {payments.map((payment) => (
-                                            <TableRow key={payment.id}>
+                                            // The anchor a payment's permanent
+                                            // deep link lands on
+                                            // (/finance-links/payments/{id}).
+                                            <TableRow
+                                                key={payment.id}
+                                                id={`payment-${payment.id}`}
+                                                className="scroll-mt-24 target:bg-muted"
+                                            >
                                                 <TableCell>
                                                     {correcting ===
                                                     payment.id ? (

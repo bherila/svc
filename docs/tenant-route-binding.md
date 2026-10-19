@@ -26,7 +26,10 @@ A tenant-owned implicit binding without one of these contexts fails closed befor
 reading the tenant table. New route families need an explicit context rule and a
 request-level isolation test. Soft-deleted binding uses the same tenant resolver.
 String parameters resolved explicitly by controllers, including the agent API,
-continue to require their own scoped repository lookups.
+continue to require their own scoped repository lookups. The finance deep link
+`/finance-links/payments/{payment}` has no workspace segment: it takes the UUID
+as a string and `FinancePaymentLinkResolver` reads the payment only among the
+reader's own workspace memberships, in SQL, before reading anything else.
 
 `TenantRouteBindingTest` drives real HTTP routes across the current implicit
 binding model types and checks the emitted queries with either SQL quoting style.

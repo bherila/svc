@@ -363,6 +363,39 @@ describe('correcting a recorded payment date', () => {
     });
 });
 
+describe("a payment's deep link", () => {
+    /**
+     * `/finance-links/payments/{id}` redirects here with `#payment-{id}`;
+     * the row has to carry that anchor or the link lands at the top of the
+     * page with nothing to say which payment it meant.
+     */
+    it('anchors each payment row at its public id', () => {
+        const { container } = render(
+            <ClientInvoiceDetail
+                {...props({
+                    payments: [
+                        {
+                            id: 'payment-uuid-1',
+                            status: 'succeeded',
+                            method: 'wire',
+                            reference: null,
+                            received_on: '2026-08-20',
+                            correct_date_href: null,
+                            amount: 4000,
+                            refunded_amount: 0,
+                            currency: 'USD',
+                        },
+                    ],
+                })}
+            />,
+        );
+
+        const row = container.querySelector('#payment-payment-uuid-1');
+        expect(row?.tagName).toBe('TR');
+        expect(row).toHaveTextContent('$40.00');
+    });
+});
+
 describe('voiding an invoice', () => {
     it('requires a reason and sends it with the void', () => {
         render(

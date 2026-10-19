@@ -6,6 +6,7 @@ use App\Http\Controllers\ClientPortalController;
 use App\Http\Controllers\ClientProjectAccessController;
 use App\Http\Controllers\ClientProjectController;
 use App\Http\Controllers\ClientTaskController;
+use App\Http\Controllers\Finance\FinancePaymentLinkController;
 use App\Http\Controllers\McpSetupController;
 use App\Http\Controllers\OAuthLoginController;
 use App\Http\Controllers\OpenApiDocumentController;
@@ -57,6 +58,14 @@ Route::middleware('auth')->group(function (): void {
         ->withoutMiddleware(HandleInertiaRequests::class)
         ->middleware('throttle:120,1')
         ->name('search');
+
+    // A payment's permanent address for an external finance system: the
+    // payment's public UUID and nothing else, redirected to whichever screen
+    // shows it today. Anything this reader may not open is the same 404 as a
+    // payment that does not exist. Throttled so it cannot be used to probe.
+    Route::get('/finance-links/payments/{payment}', FinancePaymentLinkController::class)
+        ->middleware('throttle:60,1')
+        ->name('finance-links.payments.show');
 
     Route::post('/workspaces', [WorkspaceController::class, 'store'])->name('workspaces.store');
 
