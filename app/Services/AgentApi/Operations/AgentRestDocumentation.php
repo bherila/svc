@@ -121,7 +121,7 @@ final class AgentRestDocumentation
             403 => 'The token lacks time:write; the caller may not log time on a project; a billing rate or approve: true was sent without time:approve; or approval was asked for while AGENT_API_WRITES_ENABLED is off or without the approver role on every project. Each is checked again on a replay.',
             404 => 'The workspace, a project or a task is not visible to the caller, or AGENT_API_TIME_ENTRY_WRITES_ENABLED is off.',
             409 => 'The Idempotency-Key was already used with a different request (approve is part of the request), or the first request with it is still being processed.',
-            422 => 'The Idempotency-Key header is missing, view is not read, an entry has an unknown field, or a field is invalid (`errors` names it): a date outside the time sheet, or a billing rate from someone who could not approve the entry.',
+            422 => 'The Idempotency-Key header is missing, view is not read or is sent as a field, an entry has an unknown field, or a field is invalid (`errors` names it): a date outside the time sheet, or a billing rate from someone who could not approve the entry.',
             429 => 'Too many requests (retry after Retry-After).',
         ],
         'time_entries.update' => [
@@ -136,7 +136,7 @@ final class AgentRestDocumentation
             401 => 'Not signed in, or the token is missing, expired or revoked.',
             403 => 'The token lacks time:write, or the entry is someone else\'s and the caller is not a workspace owner or admin (checked again on a replay).',
             404 => 'The workspace or entry is not visible to the caller, or AGENT_API_TIME_ENTRY_WRITES_ENABLED is off.',
-            409 => 'expected_version is no longer current (read the entry again), the entry is no longer a draft, or the Idempotency-Key was already used with a different request.',
+            409 => 'expected_version is no longer current (read the entry again), the entry is approved without a draft invoice or allocated to an issued, paid or void one, or the Idempotency-Key was already used with a different request.',
             422 => 'The Idempotency-Key header is missing, or expected_version is missing or malformed.',
             429 => 'Too many requests (retry after Retry-After).',
         ],
@@ -169,7 +169,7 @@ final class AgentRestDocumentation
             403 => 'The caller is not a workspace owner or admin, or the token lacks billing:deliver; with a payment, also without payments:record or while AGENT_API_PAYMENT_WRITES_ENABLED is off. Each is checked again on a replay.',
             404 => 'The workspace or invoice is not visible to the caller, or an invoice write cutover is off.',
             409 => 'expected_version is no longer current (read the invoice again), or the Idempotency-Key was already used with a different request (payment is part of the request).',
-            422 => 'The Idempotency-Key header is missing, view is not read, confirm is not true, or a field is invalid (`errors` names it). Also when the invoice is not a draft, or the payment is in another currency, exceeds the balance or predates the issue date.',
+            422 => 'The Idempotency-Key header is missing, view is not read or is sent as a field, confirm is not true, or a field is invalid (`errors` names it). Also when the invoice cannot be issued (void, or a draft that fails its checks), when a payment is sent for an invoice that is no longer a draft, or when the payment is in another currency, exceeds the balance or predates the issue date. Without a payment, an invoice already issued, partially paid or paid is returned as it is, not refused.',
             429 => 'Too many requests (retry after Retry-After).',
         ],
     ];
@@ -1362,7 +1362,7 @@ final class AgentRestDocumentation
             'time_entries.delete' => [
                 'method' => 'DELETE',
                 'scopes' => ['time:write'],
-                'description' => 'Soft-delete draft time using its current version: the caller\'s own, or anyone\'s as a workspace owner or admin. Approved and invoiced time is refused. Requires AGENT_API_TIME_ENTRY_WRITES_ENABLED.',
+                'description' => 'Soft-delete draft time, or approved time on a regenerable draft invoice (the invoice is regenerated in the same transaction), using its current version: the caller\'s own, or anyone\'s as a workspace owner or admin. Time on an issued, paid or void invoice is refused. Requires AGENT_API_TIME_ENTRY_WRITES_ENABLED.',
                 'parameters' => ['WorkspaceId', 'TimeEntryId', 'IdempotencyKey'],
                 'request' => 'ExpectedVersionRequest',
                 'response' => 'DeletionResponse',

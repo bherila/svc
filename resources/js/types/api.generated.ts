@@ -1614,7 +1614,7 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** @description Soft-delete draft time using its current version: the caller's own, or anyone's as a workspace owner or admin. Approved and invoiced time is refused. Requires AGENT_API_TIME_ENTRY_WRITES_ENABLED. */
+        /** @description Soft-delete draft time, or approved time on a regenerable draft invoice (the invoice is regenerated in the same transaction), using its current version: the caller's own, or anyone's as a workspace owner or admin. Time on an issued, paid or void invoice is refused. Requires AGENT_API_TIME_ENTRY_WRITES_ENABLED. */
         delete: operations['time_entries.delete'];
         options?: never;
         head?: never;
@@ -6715,7 +6715,7 @@ export interface operations {
                     'application/json': components['schemas']['Error'];
                 };
             };
-            /** @description The Idempotency-Key header is missing, view is not read, confirm is not true, or a field is invalid (`errors` names it). Also when the invoice is not a draft, or the payment is in another currency, exceeds the balance or predates the issue date. */
+            /** @description The Idempotency-Key header is missing, view is not read or is sent as a field, confirm is not true, or a field is invalid (`errors` names it). Also when the invoice cannot be issued (void, or a draft that fails its checks), when a payment is sent for an invoice that is no longer a draft, or when the payment is in another currency, exceeds the balance or predates the issue date. Without a payment, an invoice already issued, partially paid or paid is returned as it is, not refused. */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -8322,7 +8322,7 @@ export interface operations {
                     'application/json': components['schemas']['Error'];
                 };
             };
-            /** @description expected_version is no longer current (read the entry again), the entry is no longer a draft, or the Idempotency-Key was already used with a different request. */
+            /** @description expected_version is no longer current (read the entry again), the entry is approved without a draft invoice or allocated to an issued, paid or void one, or the Idempotency-Key was already used with a different request. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -8537,7 +8537,7 @@ export interface operations {
                     'application/json': components['schemas']['Error'];
                 };
             };
-            /** @description The Idempotency-Key header is missing, view is not read, an entry has an unknown field, or a field is invalid (`errors` names it): a date outside the time sheet, or a billing rate from someone who could not approve the entry. */
+            /** @description The Idempotency-Key header is missing, view is not read or is sent as a field, an entry has an unknown field, or a field is invalid (`errors` names it): a date outside the time sheet, or a billing rate from someone who could not approve the entry. */
             422: {
                 headers: {
                     [name: string]: unknown;
