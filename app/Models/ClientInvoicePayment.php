@@ -8,6 +8,7 @@ use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
 use App\Models\Concerns\IncrementsAgentRevision;
 use App\Services\Billing\InvoiceLifecycleService;
+use App\Services\Finance\ProcessorSettlementRecorder;
 use App\Support\Billing\InvoicePaymentStatus;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -21,17 +22,26 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property int|null $disputed_amount
  * @property int|null $provider_dispute_updated_at_ms
  * @property int $lock_version
+ * @property CarbonImmutable|null $provider_charged_at
+ * @property int|null $provider_fee_amount
+ * @property string|null $provider_payout_identifier
+ * @property CarbonImmutable|null $provider_payout_arrival_date
  *
  * `lock_version` is maintained by {@see IncrementsAgentRevision} on every
  * Eloquent save, so any write to the row - a status transition, a refund, a
  * correction - moves the opaque version an agent read.
+ *
+ * The processor settlement facts - `provider_charged_at`, `provider_fee_amount`,
+ * `provider_payout_identifier`, `provider_payout_arrival_date` - are not
+ * fillable: only the processor's reports set them
+ * ({@see ProcessorSettlementRecorder}).
  */
 #[Fillable([
     'workspace_id', 'client_invoice_id', 'status', 'amount', 'refunded_amount', 'disputed_amount', 'currency', 'received_on',
     'method', 'reference', 'notes', 'provider', 'provider_payment_identifier',
     'provider_event_created_at', 'provider_event_id', 'provider_dispute_updated_at_ms', 'external_finance_transaction_uuid', 'idempotency_key',
 ])]
-#[Hidden(['id', 'workspace_id', 'client_invoice_id', 'notes', 'provider_payment_identifier', 'provider_event_created_at', 'provider_event_id', 'provider_dispute_updated_at_ms', 'external_finance_transaction_uuid', 'idempotency_key', 'lock_version'])]
+#[Hidden(['id', 'workspace_id', 'client_invoice_id', 'notes', 'provider_payment_identifier', 'provider_event_created_at', 'provider_event_id', 'provider_dispute_updated_at_ms', 'external_finance_transaction_uuid', 'idempotency_key', 'lock_version', 'provider_charged_at', 'provider_fee_amount', 'provider_payout_identifier', 'provider_payout_arrival_date'])]
 class ClientInvoicePayment extends Model implements WorkspaceOwned
 {
     /**
@@ -52,6 +62,9 @@ class ClientInvoicePayment extends Model implements WorkspaceOwned
             'received_on' => DateOnly::class,
             'provider_event_created_at' => 'integer',
             'provider_dispute_updated_at_ms' => 'integer',
+            'provider_charged_at' => 'immutable_datetime',
+            'provider_fee_amount' => 'integer',
+            'provider_payout_arrival_date' => DateOnly::class,
         ];
     }
 

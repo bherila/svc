@@ -7,6 +7,7 @@ use App\Models\ClientCompany;
 use App\Models\ClientCompanyMembership;
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceEmailDelivery;
+use App\Models\ClientInvoicePayment;
 use App\Models\PaymentReconciliation;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
@@ -55,6 +56,12 @@ final class FillableCoverageTest extends TestCase
     private const MODEL_EXEMPT = [
         ClientCompany::class => [
             'credit_revision' => 'The credit pool\'s revision. Advanced only by OverpaymentCreditService::recordPoolChange(), under the company lock, in the transaction that changed the pool; a value assigned through the model would let a stale snapshot pass issue()\'s credit check.',
+        ],
+        ClientInvoicePayment::class => [
+            'provider_charged_at' => 'A processor settlement fact (S7). Written only by ProcessorSettlementRecorder from what Stripe or Square reports, through the query builder with the payment\'s revision; assignable through the model, a correction could invent the processor\'s own record.',
+            'provider_fee_amount' => 'Written with provider_charged_at, by the same recorder.',
+            'provider_payout_identifier' => 'Written with provider_charged_at, by the same recorder.',
+            'provider_payout_arrival_date' => 'Written with provider_charged_at, by the same recorder.',
         ],
         PaymentReconciliation::class => [
             'review_reason' => 'Set only by InvoiceLifecycleService when a payment processor refunds or disputes the payment, and cleared by PaymentReconciliationService::upsert(); a caller-assigned value would hide a refund from review.',
