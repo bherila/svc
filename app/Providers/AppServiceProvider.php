@@ -18,11 +18,14 @@ use App\Services\Credentials\RevokeCredentialsIssuedDuringRevocation;
 use App\Services\Mcp\Context\McpPrincipalResolver;
 use App\Services\Mcp\Context\McpPrincipalResolverInterface;
 use App\Support\AgentApi\AgentApiScopes;
+use App\Support\AgentApi\InternalApiDispatch;
+use App\Support\AgentApi\MarkedInternalAgentApiTransport;
 use App\Support\AgentApi\ProviderIdentityWrites;
 use App\Support\Auth\PersonalAccessTokenIdentity;
 use Bherila\McpLaravelBridge\Capabilities\Availability;
 use Bherila\McpLaravelBridge\Capabilities\OperationRegistry;
 use Bherila\McpLaravelBridge\Capabilities\PrincipalResolver;
+use Bherila\McpLaravelBridge\Http\AgentApiTransport;
 use Bherila\McpLaravelBridge\Http\InternalAgentApiTransport;
 use Bherila\McpLaravelBridge\Http\McpHttpPolicy;
 use Bherila\McpLaravelBridge\Http\OperationRoutes;
@@ -76,14 +79,23 @@ class AppServiceProvider extends ServiceProvider
         // The REST route gate's view: cutovers and scopes.
         $this->app->bind(Availability::class, static fn ($app): Availability => $app->make(AgentAvailability::class)->rest());
         $this->app->bind(PrincipalResolver::class, AgentPrincipalResolver::class);
-        $this->app->bind(InternalAgentApiTransport::class, fn ($app): InternalAgentApiTransport => new InternalAgentApiTransport(
+        // The nested request is marked, so the REST throttle counts the
+        // client's MCP request once rather than twice (#459).
+        $this->app->scoped(InternalApiDispatch::class);
+        $this->app->bind(InternalAgentApiTransport::class, fn ($app): InternalAgentApiTransport => new MarkedInternalAgentApiTransport(
             router: $app->make(Router::class),
             exceptions: $app->make(ExceptionHandler::class),
             outerRequest: $app->make('request'),
             application: $app,
+            // The REST route runs on the caller's own scheme and host, so the
+            // links it returns (web_url, signed downloads) point where the
+            // caller reached SVC rather than at a bare `localhost`.
+            apiPrefix: $app->make('request')->getSchemeAndHttpHost().'/api/v1',
             allowedHeaders: ['Idempotency-Key', 'X-Request-Id'],
             temporaryFilePrefix: 'svc-agent-',
         ));
+        // MCP tools reach their REST operation through this (#459).
+        $this->app->bind(AgentApiTransport::class, InternalAgentApiTransport::class);
         $this->app->singleton(McpHttpPolicy::class, static fn (): McpHttpPolicy => new McpHttpPolicy(
             allowedOrigins: static function (): array {
                 $origins = config('agent_api.mcp_allowed_origins', []);

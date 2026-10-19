@@ -1335,8 +1335,8 @@ final class AgentMcpReadOnlyTest extends TestCase
         WorkspaceMembership::query()->where('workspace_id', $workspace->id)->where('user_id', $user->id)->delete();
 
         $replay = $this->mcp(['jsonrpc' => '2.0', 'id' => 8, 'method' => 'tools/call', 'params' => ['name' => 'time_entries.log', 'arguments' => ['workspace_id' => $workspace->public_id, 'idempotency_key' => 'mcp-log-1', 'entries' => [['project_id' => $project->public_id, 'worked_on' => '2026-08-23', 'minutes' => 30, 'description' => 'MCP work']]]]], $session)->assertOk();
-        $this->assertNull($replay->json('result'));
-        $this->assertIsArray($replay->json('error'));
+        $this->assertTrue($replay->json('result.isError'));
+        $this->assertSame('The SVC API request could not be completed.', $replay->json('result.content.0.text'));
         $this->assertDatabaseCount('client_time_entries', 1);
     }
 }

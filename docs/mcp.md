@@ -235,8 +235,10 @@ response as for an inaccessible agreement.
 
 `time_entries.log`, `time_entries.update`, and `time_entries.delete` appear
 only while the time-entry write flag is enabled and the token has the needed
-scope. They and `tasks.create` / `tasks.update` use tenant-scoped application
-actions directly. For `time_entries.log`, supplying `client_visible_description`
+scope. Like every MCP write tool except the payment tools, they and
+`tasks.create` / `tasks.update` run their REST operation (see
+[Write tools run their REST operation](#write-tools-run-their-rest-operation)).
+For `time_entries.log`, supplying `client_visible_description`
 without `is_visible_to_client` makes the entry client-visible by default; set
 `is_visible_to_client: false` to stage the client text privately. The broader
 write flag also retains a legacy compatibility
@@ -245,13 +247,13 @@ registration for `time_entries.approve`. The eight invoice registrations -
 `invoices.discard_draft`, `invoices.issue`, `invoices.send`, `invoices.correct`
 and `invoices.void` - require *both* that
 flag and `AGENT_API_INVOICE_WRITES_ENABLED`, so enabling the broader flag alone
-registers `time_entries.approve` and no invoice tool. `invoices.issue` now runs
-through the tenant-scoped `IssueInvoiceAction` (see
-[Issuing an invoice](#issuing-an-invoice)); the others still enter the
-versioned Agent API through `InternalAgentApiTransport`, whose controllers are
-thin adapters: `invoices.create_draft`, `invoices.update_draft` and
-`invoices.send` are validated, authorized and carried out by
-`AgentInvoiceOperations`, one implementation for both transports.
+registers `time_entries.approve` and no invoice tool. All eight enter the
+versioned API through its REST routes, whose controllers are thin adapters:
+`invoices.issue` runs `IssueInvoiceAction` (see
+[Issuing an invoice](#issuing-an-invoice)), and `invoices.create_draft`,
+`invoices.update_draft` and `invoices.send` are validated, authorized and
+carried out by `AgentInvoiceOperations`, one implementation for both
+transports.
 
 `invoices.create_draft` takes the invoice screen form's fields (#454):
 `invoice_number` (default: the workspace's next number; a number already used
@@ -277,10 +279,34 @@ scope, and the approver role on each project - and rechecks the scope, flag
 and role before replaying a receipt. The flag is part of the request digest,
 so the same key with and without it is a conflict. When the token also holds
 `time:read` and `time_entries.list` is not switched off, the tool returns its
-rows through `AgentReadService`, exactly as `time_entries.list` presents them,
-so an agent needs no follow-up list call. That includes the list's rule that
-rates are shown to workspace owners and admins only, so a project-role manager
-who approves sees the status but not the rate.
+rows exactly as `time_entries.list` presents them, so an agent needs no
+follow-up list call: it asks the REST route for `?view=read`, which answers
+through `AgentReadService` for a caller with `time:read` and with the write
+shape otherwise. That includes the list's rule that rates are shown to
+workspace owners and admins only, so a project-role manager who approves sees
+the status but not the rate. The view is not part of the request digest.
+
+### Write tools run their REST operation
+
+An MCP write tool is an adapter over its REST operation (#459). The handler
+names the registry operation and its path parameters to `AgentMcpRestCall`,
+which takes the method and path from that operation's REST binding and sends
+the request through `InternalAgentApiTransport`, addressed to the caller's own
+scheme and host so returned links match REST's. The route then does all of the
+work - workspace visibility, scopes, cutovers, validation, version checks,
+receipts and audit - and only refusals written for the caller cross back
+(`AgentMcpApiFailure`): a 409 or 422 comes back as a tool error carrying the
+API's message, a 403 as a permission refusal, anything else as a generic
+failure, never as the SDK's internal error. The tool keeps only what is MCP's
+own: its input schema and annotations, the kill switch of a capability folded
+into it (`approve` on `time_entries.log` answers to `time_entries.approve`,
+`payment` on `invoices.issue` to `payments.record`) and, for the two writes
+that can answer in a read's shape, whether to ask for `?view=read`.
+`AgentMcpWriteToolRestDispatchTest` calls every write tool's handler against a
+recording transport and fails if one sends anything but exactly one request to
+its own operation's route. The payment tools (`payments.record`,
+`payments.correct`, `payments.set_status`, `payments.refund`) still run their
+actions directly and are its only allowlisted exceptions.
 
 Every agent operation is declared once in `AgentOperationCatalog`, on the shared
 operation registry (`bherila/mcp-laravel-bridge`, #408); `AgentMcpToolSchemas`
@@ -288,12 +314,9 @@ derives tool schemas from the checked-in OpenAPI document (spec-first
 `SchemaRef`), except for the few tools that declare theirs inline. Inputs are validated before dispatch, output is
 validated after dispatch, and failures are mapped to safe MCP errors. Read
 tools and the REST controller both use `AgentReadService`, the single
-tenant-scoped query/presentation boundary. Read tools and the direct
-task/draft-time write actions do not invoke controllers or internal HTTP
-routes, and no MCP capability exposes Eloquent models. The disabled legacy
-approval/invoice write registrations above - every one except `invoices.issue` -
-are the explicit exception pending their migration; they must not be used as a
-pattern for new MCP work.
+tenant-scoped query/presentation boundary. Read tools do not invoke
+controllers or internal HTTP routes; write tools always do, and no MCP
+capability exposes Eloquent models.
 
 `svc://context` is a bounded JSON resource equivalent to `context.get`; it is
 advertised and readable only with `identity:read`. The `agreement` resource
@@ -695,8 +718,8 @@ and void invoices are refused: void and reissue those.
 `invoices.issue` requires `billing:deliver`, a workspace owner/admin, both
 `AGENT_API_WRITES_ENABLED` and `AGENT_API_INVOICE_WRITES_ENABLED`, and the
 `invoices.issue` MCP kill switch. It takes the draft's current
-`expected_version` and `confirm: true`, and runs `IssueInvoiceAction`, the same
-tenant-scoped action the REST route now uses, inside `AgentMutationExecutor`:
+`expected_version` and `confirm: true`, and runs the REST route, which runs
+the tenant-scoped `IssueInvoiceAction` inside `AgentMutationExecutor`:
 one receipt, one transaction, a digest-bound idempotency key, and a replay
 guard that rechecks both cutovers and the role. A plain issue hashes exactly as
 the REST route always has, so receipts written before the migration replay.
@@ -734,9 +757,10 @@ and the response is the invoice.
 
 With `billing:read`, and while `invoices.get` is not switched off, the MCP
 response is the invoice exactly as `invoices.get` returns it; otherwise it is
-the plain mutation shape (`InvoiceIssueResponse`). REST returns the mutation
-shape. The REST route accepts the same `payment` object and applies the same
-gates.
+the plain mutation shape (`InvoiceIssueResponse`). The tool gets it by asking
+the REST route for `?view=read`; without the view, or without `billing:read`,
+REST returns the mutation shape. The view is not part of the request digest.
+The REST route accepts the same `payment` object and applies the same gates.
 
 ### Square links (#438)
 

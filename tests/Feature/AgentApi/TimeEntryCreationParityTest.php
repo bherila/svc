@@ -228,7 +228,9 @@ final class TimeEntryCreationParityTest extends TestCase
                 'idempotency_key' => $idempotencyKey ?? 'synthetic-'.str()->uuid(), 'entries' => [$payload]]],
         ], $headers)->assertOk()->json();
         if ($expected !== 201) {
-            $this->assertSame(-32603, $result['error']['code'] ?? null, json_encode($result, JSON_THROW_ON_ERROR));
+            // The route's refusal is a tool error the caller can read, not the SDK's generic -32603 (#459).
+            $this->assertArrayNotHasKey('error', $result, json_encode($result, JSON_THROW_ON_ERROR));
+            $this->assertTrue($result['result']['isError'] ?? false, json_encode($result, JSON_THROW_ON_ERROR));
             $audit = AgentMutationAudit::query()->where('workspace_id', $workspace->id)->latest('id')->firstOrFail();
             $this->assertSame('failed', $audit->outcome);
             $this->assertSame($expectedCategory, $audit->error_category);

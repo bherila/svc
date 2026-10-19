@@ -146,7 +146,8 @@ final class AgentMcpInvoiceIssueTest extends TestCase
         // The payment is part of the request: the same key without it is a different request.
         unset($arguments['payment']);
         $changed = $this->callTool($session, 'invoices.issue', $arguments);
-        $this->assertArrayHasKey('error', $changed);
+        $this->assertTrue($changed['result']['isError'] ?? false, json_encode($changed));
+        $this->assertStringContainsString('idempotency key was already used', $changed['result']['content'][0]['text']);
         $this->assertDatabaseCount('client_invoice_payments', 1);
         $this->assertSame($company->id, $invoice->client_company_id);
     }
@@ -413,7 +414,7 @@ final class AgentMcpInvoiceIssueTest extends TestCase
         $draft->payments()->delete();
 
         $replay = $this->callTool($session, 'invoices.issue', $arguments);
-        $this->assertArrayHasKey('error', $replay);
+        $this->assertTrue($replay['result']['isError'] ?? false, json_encode($replay));
         $this->assertDatabaseMissing('agent_mutation_audits', ['operation' => 'invoices.issue', 'outcome' => 'replay']);
     }
 
@@ -434,6 +435,27 @@ final class AgentMcpInvoiceIssueTest extends TestCase
         $replay = $this->callTool($session, 'invoices.issue', $this->issueArguments($workspace, $draft, 'issue-cross-door', [...$payment, 'reference' => null], $version));
         $this->assertSame('paid', $replay['result']['structuredContent']['data']['status'], json_encode($replay));
         $this->assertDatabaseCount('client_invoice_payments', 1);
+        $this->assertSame(1, AgentMutationReceipt::query()->where('operation', 'invoices.issue')->where('status', 'completed')->count());
+    }
+
+    /** The tool's invoices.get shape is the REST route's read view, and the view is not part of the request. */
+    public function test_the_rest_read_view_is_the_tools_response_and_needs_billing_read(): void
+    {
+        [$user, $workspace, , $draft] = $this->fixture();
+        $path = "/api/v1/workspaces/{$workspace->public_id}/invoices/{$draft->public_id}/issue";
+        $body = ['expected_version' => AgentApiVersion::for($draft), 'confirm' => true];
+        $session = $this->mcpSession($user, self::FULL_SCOPES);
+        $issued = $this->callTool($session, 'invoices.issue', $this->issueArguments($workspace, $draft, 'issue-view', null, $body['expected_version']));
+
+        $this->actingAsMcp($user, self::FULL_SCOPES);
+        $this->assertSame($issued['result']['structuredContent']['data'], $this->withHeader('Idempotency-Key', 'issue-view')->postJson("{$path}?view=read", $body)->assertOk()->json('data'));
+        $plain = $this->withHeader('Idempotency-Key', 'issue-view')->postJson($path, $body)->assertOk()->json('data');
+        $this->assertSame(['id', 'status', 'linked_time_state', 'invoice_number', 'version', 'web_url'], array_keys($plain));
+
+        $this->actingAsMcp($user, [AgentApiScopes::MCP_USE, AgentApiScopes::BILLING_DELIVER]);
+        $unread = $this->withHeader('Idempotency-Key', 'issue-view')->postJson("{$path}?view=read", $body)->assertOk()->json('data');
+        $this->assertSame(array_keys($plain), array_keys($unread), 'without billing:read the view falls back to the write shape');
+        $this->withHeader('Idempotency-Key', 'issue-view')->postJson($path, [...$body, 'view' => 'read'])->assertUnprocessable()->assertJsonValidationErrors('view');
         $this->assertSame(1, AgentMutationReceipt::query()->where('operation', 'invoices.issue')->where('status', 'completed')->count());
     }
 

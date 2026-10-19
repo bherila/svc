@@ -138,11 +138,11 @@ class ProjectAccessTest extends TestCase
         $this->getJson("/api/v1/workspaces/{$workspace->public_id}/projects/{$project->public_id}")
             ->assertNotFound();
         $this->withHeader('Idempotency-Key', 'removed-member-task-create')->postJson("/api/v1/workspaces/{$workspace->public_id}/projects/{$project->public_id}/tasks", ['title' => 'Unauthorized'])
-            ->assertForbidden();
+            ->assertNotFound();
         $this->withHeader('Idempotency-Key', 'removed-member-task-update')->patchJson("/api/v1/workspaces/{$workspace->public_id}/tasks/{$task->public_id}", [
             'expected_version' => AgentApiVersion::for($task),
             'title' => 'Unauthorized',
-        ])->assertForbidden();
+        ])->assertNotFound();
         $this->withHeader('Idempotency-Key', 'removed-member-time')->postJson("/api/v1/workspaces/{$workspace->public_id}/time-entries", [
             'entries' => [[
                 'project_id' => $project->public_id,

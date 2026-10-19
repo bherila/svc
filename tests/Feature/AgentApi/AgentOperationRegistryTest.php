@@ -162,6 +162,8 @@ final class AgentOperationRegistryTest extends TestCase
             'AGENT_API_WRITES_ENABLED' => AgentDeploymentFlags::WRITES,
             'AGENT_API_INVOICE_WRITES_ENABLED' => AgentDeploymentFlags::INVOICES,
             'AGENT_API_CLIENT_WRITES_ENABLED' => AgentDeploymentFlags::CLIENTS,
+            'AGENT_API_EXPENSE_WRITES_ENABLED' => AgentDeploymentFlags::EXPENSES,
+            'AGENT_API_TIME_ENTRY_WRITES_ENABLED' => AgentDeploymentFlags::TIME_ENTRIES,
         ];
         $checked = 0;
         foreach ($document['paths'] as $operations) {
@@ -188,7 +190,7 @@ final class AgentOperationRegistryTest extends TestCase
                 $checked++;
             }
         }
-        $this->assertSame(43, $checked);
+        $this->assertSame(52, $checked);
     }
 
     public function test_an_under_scoped_rest_call_is_refused_by_the_gate_with_its_reason(): void
