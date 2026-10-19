@@ -216,11 +216,13 @@ final class SquareBillingAuditPolicy
             // periods. Square still billing after the agreement ended is its
             // own finding.
             $allBilled = array_filter($series, static fn (SquareAuditInvoice $invoice): bool => ! in_array($invoice->status, self::UNBILLED_STATUSES, true));
-            $afterEnd = array_filter($allBilled, static fn (SquareAuditInvoice $invoice): bool => $agreement->endedBefore($invoice->date())) !== [];
+            $after = array_filter($allBilled, static fn (SquareAuditInvoice $invoice): bool => $agreement->endedBefore($invoice->date()));
+            $afterEnd = $after !== [];
             $billed = array_filter($allBilled, static fn (SquareAuditInvoice $invoice): bool => $agreement->governs($invoice->date()));
             // Square numbers invoices uniquely per location only, so one
-            // prefix in two locations is two series svc cannot tell apart.
-            $locations = array_unique(array_filter(array_map(static fn (SquareAuditInvoice $invoice): ?string => $invoice->locationId, $billed), 'is_string'));
+            // prefix in two locations is two series svc cannot tell apart -
+            // among the bills it would compare or report, not history.
+            $locations = array_unique(array_filter(array_map(static fn (SquareAuditInvoice $invoice): ?string => $invoice->locationId, [...$billed, ...$after]), 'is_string'));
             if (count($locations) > 1) {
                 $drift[] = ['agreement' => $agreement, 'codes' => [self::DRIFT_MULTIPLE_LOCATIONS], 'series_cadence' => null, 'series_currency' => null, 'series_amount' => null];
 

@@ -371,6 +371,8 @@ final class SquareBillingAuditPolicyTest extends TestCase
         $both = SquareBillingAuditPolicy::classify(new SquareBillingAuditFacts('2030-10-01', [$ended, $later], [self::invoice('inv_after', 9, '2030-07-15', 'PAID'), self::invoice('inv_later', 1, '2030-01-15', 'PAID', series: '000999')], [], [], [], true));
         $this->assertSame([[SquareBillingAuditPolicy::DRIFT_BILLED_AFTER_END], [SquareBillingAuditPolicy::DRIFT_AMOUNT]], array_column($both->seriesDrift, 'codes'), 'The next agreement is still compared.');
         $this->assertSame($ended, $both->seriesDrift[0]['agreement']);
+        $elsewhere = new SquareAuditInvoice('inv_after_elsewhere', '000123-R-0009', '000123', 9, 'cust_other', null, 'LOCFIXTURE02', 'PAID', 'USD', 12_345, 0, '2030-07-15', null, false, [], null, true);
+        $this->assertSame([[SquareBillingAuditPolicy::DRIFT_MULTIPLE_LOCATIONS]], array_column(self::classify([self::invoice('inv_inside', 1, '2030-01-15', 'PAID', linked: true), $elsewhere], agreement: $ended)->seriesDrift, 'codes'), 'A later bill in another location is ambiguity, not billing after the end.');
     }
 
     public function test_only_billed_members_in_the_agreement_count_towards_locations(): void
