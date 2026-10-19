@@ -8,6 +8,7 @@ use App\Models\ClientStripeEvent;
 use App\Models\ClientStripePaymentMethod;
 use App\Models\Workspace;
 use App\Support\Billing\InvoicePaymentStatus;
+use App\Support\Billing\StripeRefundStatus;
 use App\Support\Concurrency\Locks;
 use App\Support\WorkspaceClock;
 use Illuminate\Database\Eloquent\Builder;
@@ -233,7 +234,7 @@ final class StripeWebhookService
     private function isUndoneRefund(string $type, array $object): bool
     {
         return in_array($type, self::REFUND_UPDATES, true)
-            && in_array($object['status'] ?? null, ['failed', 'canceled'], true);
+            && ! StripeRefundStatus::stillStands(is_string($object['status'] ?? null) ? $object['status'] : null);
     }
 
     /**
@@ -256,7 +257,7 @@ final class StripeWebhookService
             if (strtoupper($refund->currency) !== $currency) {
                 throw new \DomainException('Stripe refunds on one charge disagree about its currency.');
             }
-            if (! in_array($refund->status, ['failed', 'canceled'], true)) {
+            if (StripeRefundStatus::stillStands($refund->status)) {
                 $total += max(0, $refund->amount);
             }
         }
