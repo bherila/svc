@@ -4,6 +4,8 @@ namespace App\Services\AgentApi\Operations;
 
 use App\Services\Mcp\AgentMcpAgreementSchema;
 use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
+use App\Support\Billing\PeriodRefusalReason;
+use App\Support\Billing\ScheduleDefect;
 
 /**
  * Schemas declared inline for the operations the OpenAPI document does not
@@ -247,8 +249,45 @@ final class AgentInlineSchemas
                 'capacity_at_stake_minutes' => ['type' => 'integer', 'minimum' => 0],
                 'longest_rollover_months' => ['type' => 'integer', 'minimum' => 0, 'maximum' => 120],
             ],
+            'billing.preflight_schedule_generation' => [
+                'schedules' => ['type' => 'integer', 'minimum' => 0],
+                'schedules_due' => ['type' => 'integer', 'minimum' => 0],
+                'periods_classified' => ['type' => 'integer', 'minimum' => 0],
+                'complete' => ['type' => 'boolean'],
+                'would_halt' => ['type' => 'integer', 'minimum' => 0],
+                'halted_by_a_refusal' => ['type' => 'integer', 'minimum' => 0],
+                'halted_by_a_pending_draft' => ['type' => 'integer', 'minimum' => 0],
+                'halted_by_a_schedule_defect' => ['type' => 'integer', 'minimum' => 0],
+                'schedules_truncated' => ['type' => 'integer', 'minimum' => 0],
+                'refusals_by_reason' => self::countsByCase(array_map(static fn (PeriodRefusalReason $reason): string => $reason->value, PeriodRefusalReason::cases())),
+                'defects_by_kind' => self::countsByCase(array_map(static fn (ScheduleDefect $defect): string => $defect->value, ScheduleDefect::cases())),
+            ],
+            'billing.audit_unlinked_proposal_agreements' => [
+                'proposals' => ['type' => 'integer', 'minimum' => 0],
+                'sent_without_a_linked_agreement' => ['type' => 'integer', 'minimum' => 0],
+                'with_an_unlinked_agreement_on_the_company' => ['type' => 'integer', 'minimum' => 0],
+                'with_an_active_unlinked_agreement' => ['type' => 'integer', 'minimum' => 0],
+                'accepted_without_a_linked_agreement' => ['type' => 'integer', 'minimum' => 0],
+                'unlinked_agreements' => ['type' => 'integer', 'minimum' => 0],
+            ],
             default => throw new \LogicException("Unknown billing audit: {$audit}"),
         };
+    }
+
+    /**
+     * A count for every case of an enum, keyed by its value.
+     *
+     * @param  list<string>  $cases
+     * @return array<string, mixed>
+     */
+    private static function countsByCase(array $cases): array
+    {
+        return [
+            'type' => 'object',
+            'additionalProperties' => false,
+            'required' => $cases,
+            'properties' => array_fill_keys($cases, ['type' => 'integer', 'minimum' => 0]),
+        ];
     }
 
     /**

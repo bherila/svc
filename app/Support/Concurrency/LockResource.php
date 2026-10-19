@@ -117,6 +117,10 @@ enum LockResource: string
     // Payment reminders (#438) follow the same shape: claimed and resolved
     // under the invoice lock, then the reminder row.
     case InvoiceReminderLog = 'invoice_reminder_logs';
+    // Reconciling one Square-linked invoice (#458) re-reads its link under a
+    // share lock after the invoice lock, so a re-link committed meanwhile is
+    // seen; link changes themselves lock only the invoice.
+    case InvoiceSquareLink = 'invoice_square_links';
 
     // Credentials. Revoking an agent credential (CredentialRevoker) locks its access
     // token rows, then revokes their refresh tokens and then the access tokens

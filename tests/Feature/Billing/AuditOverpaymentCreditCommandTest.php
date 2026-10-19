@@ -10,6 +10,7 @@ use App\Services\Billing\OverpaymentCreditAuditor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Tests\Concerns\WritesLegacyCrossTenantRows;
 use Tests\TestCase;
 
 /**
@@ -22,6 +23,7 @@ use Tests\TestCase;
 class AuditOverpaymentCreditCommandTest extends TestCase
 {
     use RefreshDatabase;
+    use WritesLegacyCrossTenantRows;
 
     public function test_a_pool_that_spent_its_credit_twice_is_reported_as_a_deficit(): void
     {
@@ -204,6 +206,88 @@ class AuditOverpaymentCreditCommandTest extends TestCase
     }
 
     /** @param  array<string, mixed>  $options */
+    public function test_a_workspace_option_audits_that_workspace_alone(): void
+    {
+        $short = $this->company('scoped-short');
+        $this->overpaid($short, 5000);
+        $this->spent($short, 10000, 'SYNTH-SCOPED-SHORT');
+        $other = $this->company('scoped-other');
+        $this->overpaid($other, 10000);
+        $this->spent($other, 20000, 'SYNTH-SCOPED-OTHER');
+        $workspace = Workspace::query()->findOrFail($short->workspace_id);
+
+        $report = $this->report(['--workspace' => $workspace->public_id, '--list' => true]);
+
+        $this->assertSame(1, $report['summary']['pools']);
+        $this->assertSame(['USD' => 5000], $report['summary']['deficit_minor_by_currency']);
+        $this->assertSame([$workspace->public_id], array_column($report['pools'], 'workspace'));
+        $this->assertSame([$short->public_id], array_column($report['pools'], 'company'));
+        $this->assertSame([$short->public_id, $other->public_id], array_column($this->report(['--list' => true])['pools'], 'company'));
+        $this->assertSame(2, $this->report()['summary']['in_deficit']);
+        $this->assertSame([$workspace->id], array_map(static fn ($pool): int => $pool->workspaceId, app(OverpaymentCreditAuditor::class)->partitions($workspace)));
+    }
+
+    public function test_a_scoped_listing_never_reads_a_company_of_another_workspace(): void
+    {
+        $mine = $this->company('scoped-mine');
+        $theirs = $this->company('scoped-theirs');
+        // A legacy invoice of this workspace naming the other workspace's company.
+        $this->writingLegacyCrossTenantRows(function () use ($mine, $theirs): void {
+            $invoice = $this->overpaid($mine, 5000);
+            DB::table('client_invoices')->where('id', $invoice->id)->update(['client_company_id' => $theirs->id]);
+        });
+        $workspace = Workspace::query()->findOrFail($mine->workspace_id);
+        $reads = [];
+        DB::listen(function ($query) use (&$reads): void {
+            if (str_contains($query->sql, 'client_companies')) {
+                $reads[] = $query->sql;
+            }
+        });
+
+        $pools = $this->report(['--workspace' => $workspace->public_id, '--list' => true])['pools'];
+
+        $this->assertSame(['missing'], array_column($pools, 'company'));
+        $this->assertNotEmpty($reads);
+        foreach ($reads as $sql) {
+            $this->assertStringContainsString('workspace_id', $sql);
+        }
+    }
+
+    public function test_a_scoped_audit_reads_no_payment_or_credit_line_of_another_workspace(): void
+    {
+        $mine = $this->company('scoped-child-mine');
+        $theirs = $this->company('scoped-child-theirs');
+        $invoice = $this->overpaid($mine, 5000);
+        // A legacy payment stamped to the other workspace on this invoice.
+        $this->writingLegacyCrossTenantRows(fn () => DB::table('client_invoice_payments')->insert([
+            'public_id' => (string) str()->uuid(), 'workspace_id' => $theirs->workspace_id, 'client_invoice_id' => $invoice->id, 'amount' => 70000, 'refunded_amount' => 0,
+            'currency' => 'USD', 'status' => 'succeeded', 'method' => 'manual', 'received_on' => '2024-01-31', 'created_at' => now(), 'updated_at' => now(),
+        ]));
+        $workspace = Workspace::query()->findOrFail($mine->workspace_id);
+        $reads = [];
+        DB::listen(function ($query) use (&$reads): void {
+            if (str_contains($query->sql, 'client_invoice_payments') || str_contains($query->sql, 'client_invoice_lines')) {
+                $reads[] = $query->sql;
+            }
+        });
+
+        $pool = app(OverpaymentCreditAuditor::class)->partitions($workspace)[0];
+
+        $this->assertSame([5000, []], [$pool->funded(), $pool->problems()]);
+        $this->assertNotEmpty($reads);
+        foreach ($reads as $sql) {
+            $this->assertStringContainsString('workspace_id', $sql);
+        }
+        $this->assertArrayHasKey('payment_in_another_workspace', app(OverpaymentCreditAuditor::class)->partitions()[0]->problems(), 'Unscoped, it is flagged.');
+    }
+
+    public function test_an_unknown_workspace_option_is_refused(): void
+    {
+        $this->assertSame(2, Artisan::call('svc:billing:audit-overpayment-credit', ['--workspace' => '00000000-0000-4000-8000-000000000999']));
+        $this->assertSame(2, Artisan::call('svc:billing:audit-overpayment-credit', ['--workspace' => 'not-a-uuid']));
+        $this->assertSame(2, Artisan::call('svc:billing:audit-overpayment-credit', ['--workspace' => null, '--list' => true]), 'A bare --workspace never widens to every tenant.');
+    }
+
     private function report(array $options = []): array
     {
         $this->assertSame(0, Artisan::call('svc:billing:audit-overpayment-credit', ['--format' => 'json', ...$options]));

@@ -43,6 +43,20 @@ final class SquareLinkRepository
             ->first();
     }
 
+    /**
+     * The active link as committed now, read under a share lock: a current
+     * read, so a re-link committed after this transaction's snapshot is seen.
+     * Taken after the invoice lock.
+     */
+    public function currentActiveLinkForSquareInvoice(int $workspaceId, string $squareInvoiceId): ?InvoiceSquareLink
+    {
+        return InvoiceSquareLink::query()
+            ->where('workspace_id', $workspaceId)
+            ->where('active_square_invoice_slot', $squareInvoiceId)
+            ->tap(Locks::forShare())
+            ->first();
+    }
+
     public function activeCustomer(ClientCompany $company): ?CompanySquareCustomer
     {
         return CompanySquareCustomer::query()

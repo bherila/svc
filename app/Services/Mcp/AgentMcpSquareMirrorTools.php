@@ -26,6 +26,15 @@ final class AgentMcpSquareMirrorTools
     }
 
     /** @return array<string, mixed> */
+    public function reconcileInvoice(
+        #[Schema(format: 'uuid')] string $workspace_id,
+        #[Schema(format: 'uuid')] string $invoice_id,
+        #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key,
+    ): array {
+        return $this->send('POST', "workspaces/{$workspace_id}/invoices/{$invoice_id}/square-reconcile", [], $idempotency_key);
+    }
+
+    /** @return array<string, mixed> */
     public function invoices(
         #[Schema(format: 'uuid')] string $workspace_id,
         #[Schema(minLength: 1, maxLength: 192, pattern: self::ID)] ?string $location_id = null,

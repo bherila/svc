@@ -289,6 +289,7 @@ Route::prefix('v1')
             'square.customers.unlinked' => 'unlinkedCustomers',
             'square.import_customer' => 'importCustomer',
             'square.sync' => 'sync',
+            'invoices.square_reconcile' => 'reconcileInvoice',
             'square.mirror.invoices.list' => 'invoices',
             'square.series.list' => 'series',
             'square.series.get' => 'seriesDetail',

@@ -129,7 +129,9 @@ later over a webhook. Point Brevo's transactional event webhook at
 credentials are rejected. Brevo signs nothing, so that shared secret is the
 only guard: with none configured the endpoint refuses every request. Check a
 deployment without exposing either secret with `php artisan svc:brevo:status
---format=json`.
+--format=json`. `php artisan svc:square:status --format=json` does the same for
+Square and also reports the last mirror sync; see
+[Square payment status](docs/square-status.md#status-probe).
 
 ## Private-file mirror
 
