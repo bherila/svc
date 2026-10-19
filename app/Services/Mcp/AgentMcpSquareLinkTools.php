@@ -91,8 +91,14 @@ final class AgentMcpSquareLinkTools
         #[Schema(pattern: '^[0-9]{6}$')] string $series_key,
         #[Schema] bool $confirm,
         #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key,
+        #[Schema(pattern: '^[A-Za-z0-9][A-Za-z0-9:_\\-]{0,191}$')] ?string $location_id = null,
     ): array {
-        return $this->send('PUT', "workspaces/{$workspace_id}/agreements/{$agreement_id}/square-series", compact('expected_version', 'series_key', 'confirm'), $idempotency_key);
+        $body = compact('expected_version', 'series_key', 'confirm');
+        if ($location_id !== null) {
+            $body['location_id'] = $location_id;
+        }
+
+        return $this->send('PUT', "workspaces/{$workspace_id}/agreements/{$agreement_id}/square-series", $body, $idempotency_key);
     }
 
     /** @return array<string, mixed> */

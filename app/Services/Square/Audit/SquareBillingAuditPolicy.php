@@ -30,9 +30,13 @@ use Carbon\CarbonImmutable;
  *   or latest amount, or which the mirror does not hold although the last
  *   sync listed every Square invoice. Members dated before the agreement's
  *   start are history and left out, and Square still billing after it ended
- *   is reported as `billed_after_end` rather than compared. A prefix used in more than one Square
- *   location is reported as `multiple_locations` and not compared, since
- *   Square numbers invoices uniquely per location only - none of it
+ *   is reported as `billed_after_end` rather than compared. Square numbers
+ *   invoices uniquely per location only, so a series is its prefix in the
+ *   agreement's Square location (#488): the same prefix elsewhere is another
+ *   series and none of this agreement's. A prefix that cannot be placed - a
+ *   located series with a bill naming no location, or a marker from before
+ *   markers named a location whose prefix is billed from more than one - is
+ *   reported as `multiple_locations` and not compared - none of it
  *   when the member load was bounded, since any series may then be partial,
  *   and the audit then says it is incomplete. SCHEDULED members are not
  *   billed yet and are left out. An agreement that sells no retainer fee is
@@ -65,20 +69,40 @@ final class SquareBillingAuditPolicy
      * linked, a member of a series an agreement is billed in dated within
      * that agreement, or a confirmed customer's.
      *
-     * @param  array<string, SquareAuditAgreement>  $billedSeries  keyed by series key
+     * @param  array<string, SquareAuditAgreement>  $billedSeries  keyed by {@see SquareAuditAgreement::key()}
      * @param  array<string, true>  $mappedCustomers
      */
-    public static function inPaymentReach(bool $linked, ?string $seriesKey, ?string $customerId, ?string $date, array $billedSeries, array $mappedCustomers): bool
+    public static function inPaymentReach(bool $linked, ?string $seriesKey, ?string $locationId, ?string $customerId, ?string $date, array $billedSeries, array $mappedCustomers): bool
     {
         return $linked
-            || ($seriesKey !== null && isset($billedSeries[$seriesKey]) && $billedSeries[$seriesKey]->governs($date))
+            || (self::agreementOf($billedSeries, $seriesKey, $locationId)?->governs($date) ?? false)
             || ($customerId !== null && isset($mappedCustomers[$customerId]));
     }
 
     /**
-     * The series keys whose bills, from each agreement's start on, come from
-     * more than one Square location, or from one Square did not name. Square numbers invoices uniquely per
-     * location only, so such a prefix is two series.
+     * The agreement whose series a Square invoice with this prefix and
+     * location belongs to: the one marking the prefix in that location, else
+     * one marking it in no location (from before markers named one).
+     *
+     * @param  array<string, SquareAuditAgreement>  $agreements  keyed by {@see SquareAuditAgreement::key()}
+     */
+    public static function agreementOf(array $agreements, ?string $seriesKey, ?string $locationId): ?SquareAuditAgreement
+    {
+        // @infection-ignore-all Equivalent: without it a null prefix looks up the keys "|" and "{location}|", which no agreement has, since every marker names a six-digit prefix.
+        if ($seriesKey === null) {
+            return null;
+        }
+
+        return $agreements[($locationId ?? '').'|'.$seriesKey] ?? $agreements['|'.$seriesKey] ?? null;
+    }
+
+    /**
+     * The agreements, by {@see SquareAuditAgreement::key()}, whose series
+     * cannot be told apart from another location's, from each agreement's
+     * start on. Square numbers invoices uniquely per location only. A located
+     * series is ambiguous once a bill with its prefix names no location; a
+     * marker that names none, once its prefix is billed from more than one
+     * location or by a bill that names none.
      *
      * @param  list<SquareAuditAgreement>  $agreements
      * @param  iterable<array{string|null, string, string|null, string|null}>  $members  [series key, status, date, location]
@@ -86,25 +110,34 @@ final class SquareBillingAuditPolicy
      */
     public static function ambiguousSeries(array $agreements, iterable $members): array
     {
-        $starts = [];
+        $bySeries = [];
         foreach ($agreements as $agreement) {
-            $starts[$agreement->seriesKey] = $agreement->startsOn;
+            $bySeries[$agreement->seriesKey][] = $agreement;
         }
         $locations = [];
+        $ambiguous = [];
         foreach ($members as [$seriesKey, $status, $date, $location]) {
-            if ($seriesKey === null || ! isset($starts[$seriesKey]) || in_array($status, self::UNBILLED_STATUSES, true)
-                || ($date !== null && $date < $starts[$seriesKey])) {
+            if ($seriesKey === null || in_array($status, self::UNBILLED_STATUSES, true)) {
                 continue;
             }
-            $locations[$seriesKey][] = $location;
+            foreach ($bySeries[$seriesKey] ?? [] as $agreement) {
+                if ($date !== null && $date < $agreement->startsOn) {
+                    continue;
+                }
+                if ($agreement->locationId === null) {
+                    $locations[$agreement->key()][] = $location;
+                } elseif ($location === null) {
+                    // A bill naming no location may be this series' or another location's.
+                    $ambiguous[$agreement->key()] = true;
+                }
+            }
         }
-        $ambiguous = [];
-        foreach ($locations as $seriesKey => $seen) {
+        foreach ($locations as $key => $seen) {
             // A bill with no location cannot be tied to any series, so it
             // makes the prefix as unclassifiable as a second location.
             if (in_array(null, $seen, true) || count(array_unique($seen)) > 1) {
                 // @infection-ignore-all PHP normalises array keys either way; the cast only states the string key static analysis requires.
-                $ambiguous[(string) $seriesKey] = true;
+                $ambiguous[(string) $key] = true;
             }
         }
 
@@ -121,8 +154,8 @@ final class SquareBillingAuditPolicy
         // derived from any series.
         $agreements = [];
         foreach ($facts->agreements as $agreement) {
-            if ($facts->seriesComplete && $facts->mirrorComplete && ! isset($ambiguous[$agreement->seriesKey])) {
-                $agreements[$agreement->seriesKey] = $agreement;
+            if ($facts->seriesComplete && $facts->mirrorComplete && ! isset($ambiguous[$agreement->key()])) {
+                $agreements[$agreement->key()] = $agreement;
             }
         }
 
@@ -145,7 +178,7 @@ final class SquareBillingAuditPolicy
     {
         $periods = [];
         foreach ($facts->invoices as $invoice) {
-            $agreement = $invoice->seriesKey === null ? null : ($agreements[$invoice->seriesKey] ?? null);
+            $agreement = self::agreementOf($agreements, $invoice->seriesKey, $invoice->locationId);
             if ($agreement === null || $invoice->linked !== null || in_array($invoice->status, self::UNBILLED_STATUSES, true)) {
                 continue;
             }
@@ -171,7 +204,7 @@ final class SquareBillingAuditPolicy
         $unmatched = [];
         $resolved = true;
         foreach ($facts->invoices as $invoice) {
-            if (! self::inPaymentReach($invoice->linked !== null, $invoice->seriesKey, $invoice->customerId, $invoice->date(), $agreements, $facts->mappedCustomerIds)) {
+            if (! self::inPaymentReach($invoice->linked !== null, $invoice->seriesKey, $invoice->locationId, $invoice->customerId, $invoice->date(), $agreements, $facts->mappedCustomerIds)) {
                 continue;
             }
             // Ids read for an earlier state, or by earlier rules, may name
@@ -246,7 +279,7 @@ final class SquareBillingAuditPolicy
     }
 
     /**
-     * @param  array<string, true>  $ambiguous  series keys used in more than one location
+     * @param  array<string, true>  $ambiguous  agreement keys whose series cannot be placed in one location
      * @return list<array{agreement: SquareAuditAgreement, codes: non-empty-list<string>, series_cadence: string|null, series_currency: string|null, series_amount: int|null}>
      */
     private static function drift(SquareBillingAuditFacts $facts, array $ambiguous): array
@@ -265,7 +298,13 @@ final class SquareBillingAuditPolicy
         $today = CarbonImmutable::parse($facts->today);
         $drift = [];
         foreach ($facts->agreements as $agreement) {
-            $series = $members[$agreement->seriesKey] ?? [];
+            if (isset($ambiguous[$agreement->key()])) {
+                $drift[] = ['agreement' => $agreement, 'codes' => [self::DRIFT_MULTIPLE_LOCATIONS], 'series_cadence' => null, 'series_currency' => null, 'series_amount' => null];
+
+                continue;
+            }
+            // The prefix in another location is another series (#488).
+            $series = array_filter($members[$agreement->seriesKey] ?? [], static fn (SquareAuditInvoice $invoice): bool => $agreement->bills($invoice->seriesKey, $invoice->locationId));
             if ($series === []) {
                 // Absent from a complete mirror is absent from Square - once
                 // the agreement has started, when a first bill could exist.
@@ -283,11 +322,6 @@ final class SquareBillingAuditPolicy
             $after = array_filter($allBilled, static fn (SquareAuditInvoice $invoice): bool => $agreement->endedBefore($invoice->date()));
             $afterEnd = $after !== [];
             $billed = array_filter($allBilled, static fn (SquareAuditInvoice $invoice): bool => $agreement->governs($invoice->date()));
-            if (isset($ambiguous[$agreement->seriesKey])) {
-                $drift[] = ['agreement' => $agreement, 'codes' => [self::DRIFT_MULTIPLE_LOCATIONS], 'series_cadence' => null, 'series_currency' => null, 'series_amount' => null];
-
-                continue;
-            }
             if ($billed === []) {
                 if ($afterEnd) {
                     $drift[] = ['agreement' => $agreement, 'codes' => [self::DRIFT_BILLED_AFTER_END], 'series_cadence' => null, 'series_currency' => null, 'series_amount' => null];
@@ -321,7 +355,8 @@ final class SquareBillingAuditPolicy
                 $drift[] = ['agreement' => $agreement, 'codes' => $codes, 'series_cadence' => $cadence, 'series_currency' => $currency, 'series_amount' => $amount];
             }
         }
-        usort($drift, static fn (array $a, array $b): int => $a['agreement']->seriesKey <=> $b['agreement']->seriesKey);
+        $order = static fn (SquareAuditAgreement $agreement): array => [$agreement->seriesKey, $agreement->locationId ?? ''];
+        usort($drift, static fn (array $a, array $b): int => $order($a['agreement']) <=> $order($b['agreement']));
 
         return $drift;
     }

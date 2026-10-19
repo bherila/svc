@@ -263,7 +263,7 @@ final class AgentRestDocumentation
             'agreements.square_series.set' => [
                 'method' => 'PUT',
                 'scopes' => ['billing:write', 'billing:read'],
-                'description' => 'Workspace managers only. Mark an agreement as billed in Square by its recurring series key (the six-digit prefix of the series\' NNNNNN-R-NNNN invoice numbers). SVC still generates and issues the agreement\'s invoices, but never emails, charges or offers a payment link for them. Requires the agreement\'s current expected_version and confirm: true. A series already marking another agreement is refused with 409. Nothing is sent to Square.',
+                'description' => 'Workspace managers only. Mark an agreement as billed in Square by its recurring series key (the six-digit prefix of the series\' NNNNNN-R-NNNN invoice numbers) in one Square location: Square numbers invoices uniquely per location only, so the same prefix in another location is another series. Without location_id the location is the one SVC\'s Square mirror holds the series in; a series it holds in no location or in more than one is refused with 422 until location_id names it. SVC still generates and issues the agreement\'s invoices, but never emails, charges or offers a payment link for them. Requires the agreement\'s current expected_version and confirm: true. A series already marking another agreement in that location (or in every location, from before markers named one) is refused with 409. Nothing is sent to Square.',
                 'parameters' => ['WorkspaceId', self::uuidPath('agreement'), 'IdempotencyKey'],
                 'request' => 'AgreementSquareSeriesRequest',
                 'response' => 'AgreementResponse',

@@ -301,6 +301,8 @@ if (getenv('SVC_LAYOUT_DEFERRED_BACKLOG') === '1') {
         'billing_cadence' => 'monthly', 'starts_on' => CarbonImmutable::parse($date)->subMonthsNoOverflow(8)->startOfMonth()->toDateString(),
         'retainer_minutes' => 1200, 'hourly_rate_amount' => 987_654,
     ]);
+    // Billed in Square from a location whose id has no break in it (#488).
+    $backlogAgreement->forceFill(['square_series_key' => '000999', 'square_location_id' => 'LOC'.str_repeat('SYNTHETICLAYOUT', 12)])->save();
     foreach ([3, 2, 1, 0] as $monthsAgo) {
         ClientTimeEntry::query()->create([
             'workspace_id' => $workspace->id, 'client_company_id' => $backlogCompany->id,

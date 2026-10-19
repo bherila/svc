@@ -221,20 +221,29 @@ final class SquareLinkService
     }
 
     /**
-     * Mark the agreement as billed in Square by its series.
+     * Mark the agreement as billed in Square by its series, in one Square
+     * location (#488): Square numbers invoices uniquely per location only, so
+     * the same prefix in another location is another series.
+     *
+     * Without `$locationId` the location is the one the mirror holds the
+     * series in; a series it holds in no location, in more than one, or with
+     * an invoice naming none, is refused until the caller names it.
      *
      * From then on SVC never collects the agreement's invoices - see
      * {@see SquareCollectionGuard}. A series already marking another agreement
-     * is refused with 409; the same series again is a no-op.
+     * in that location is refused with 409; the same series and location
+     * again is a no-op.
      */
-    public function markAgreement(Workspace $workspace, ClientAgreement $agreement, User $actor, string $expectedVersion, string $seriesKey): ClientAgreement
+    public function markAgreement(Workspace $workspace, ClientAgreement $agreement, User $actor, string $expectedVersion, string $seriesKey, ?string $locationId = null): ClientAgreement
     {
+        $locationId ??= $this->seriesLocation($workspace, $seriesKey);
         try {
-            return DB::transaction(function () use ($workspace, $agreement, $actor, $expectedVersion, $seriesKey): ClientAgreement {
+            return DB::transaction(function () use ($workspace, $agreement, $actor, $expectedVersion, $seriesKey, $locationId): ClientAgreement {
                 $locked = $this->lockAgreement($workspace, $agreement);
                 abort_unless(AgentApiVersion::matches($locked, $expectedVersion), 409, 'The agreement has changed; read it and retry.');
                 $previous = $locked->square_series_key;
-                if ($previous === $seriesKey) {
+                $previousLocation = $locked->square_location_id;
+                if ($previous === $seriesKey && $previousLocation === $locationId) {
                     return $locked;
                 }
                 // As for a link: no hand-off while a Stripe payment the client
@@ -250,22 +259,42 @@ final class SquareLinkService
                 if ($emailing !== null) {
                     abort(409, sprintf('An email to the client for invoice %s of this agreement is being sent. Retry once it has gone.', $emailing));
                 }
-                $holder = $this->links->agreementForSeries($workspace->id, $seriesKey);
+                $holder = $this->links->agreementForSeries($workspace->id, $seriesKey, $locationId, $locked->id);
                 if ($holder !== null) {
-                    abort(409, sprintf('Square series %s already marks agreement "%s". Clear it there first.', $seriesKey, (string) $holder->title));
+                    abort(409, sprintf('Square series %s in location %s already marks agreement "%s". Clear it there first.', $seriesKey, $locationId, (string) $holder->title));
                 }
 
-                $locked->forceFill(['square_series_key' => $seriesKey])->save();
+                $locked->forceFill(['square_series_key' => $seriesKey, 'square_location_id' => $locationId])->save();
                 $this->activities->record($workspace, $this->companyOfAgreement($workspace, $locked), 'agreement.square_series_set', $locked, [
                     'series_key' => $seriesKey,
+                    'location_id' => $locationId,
                     'replaced_series_key' => $previous,
+                    'replaced_location_id' => $previousLocation,
                 ], $actor, (string) Str::uuid());
 
                 return $locked;
             });
         } catch (UniqueConstraintViolationException) {
-            abort(409, sprintf('Square series %s already marks another agreement.', $seriesKey));
+            abort(409, sprintf('Square series %s in location %s already marks another agreement.', $seriesKey, $locationId));
         }
+    }
+
+    /**
+     * The one Square location the mirror holds this series in.
+     *
+     * @throws DomainException when that is not exactly one location
+     */
+    private function seriesLocation(Workspace $workspace, string $seriesKey): string
+    {
+        $locations = $this->links->seriesLocations($workspace->id, $seriesKey);
+        if ($locations === []) {
+            throw new DomainException(sprintf('The Square mirror holds no invoice of series %s, so its location is not known. Pass location_id, or sync first.', $seriesKey));
+        }
+        if (count($locations) > 1 || $locations[0] === null) {
+            throw new DomainException(sprintf('Square series %s is used in more than one Square location, or by an invoice naming none. Pass location_id to say which location bills this agreement.', $seriesKey));
+        }
+
+        return $locations[0];
     }
 
     public function clearAgreement(Workspace $workspace, ClientAgreement $agreement, User $actor, string $expectedVersion): ClientAgreement
@@ -276,9 +305,11 @@ final class SquareLinkService
             $previous = $locked->square_series_key;
             abort_if($previous === null, 409, 'This agreement is not marked as billed in Square.');
 
-            $locked->forceFill(['square_series_key' => null])->save();
+            $previousLocation = $locked->square_location_id;
+            $locked->forceFill(['square_series_key' => null, 'square_location_id' => null])->save();
             $this->activities->record($workspace, $this->companyOfAgreement($workspace, $locked), 'agreement.square_series_cleared', $locked, [
                 'series_key' => $previous,
+                'location_id' => $previousLocation,
             ], $actor, (string) Str::uuid());
 
             return $locked;

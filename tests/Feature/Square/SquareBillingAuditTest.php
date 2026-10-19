@@ -67,8 +67,8 @@ final class SquareBillingAuditTest extends TestCase
         $dashboard = static fn (string $id): string => 'https://squareupsandbox.com/dashboard/invoices/'.$id;
         $this->assertTrue($audit['complete']);
         $this->assertSame(['count' => 2, 'periods' => [
-            ['agreement_id' => $agreement->public_id, 'agreement_url' => $agreementUrl, 'series_key' => '000123', 'square_invoice_id' => 'inv_audit_2', 'invoice_number' => '000123-R-0002', 'status' => 'PAID', 'due_on' => '2030-02-15', 'currency' => 'USD', 'total_amount' => 12_345, 'dashboard_url' => $dashboard('inv_audit_2')],
-            ['agreement_id' => $agreement->public_id, 'agreement_url' => $agreementUrl, 'series_key' => '000123', 'square_invoice_id' => 'inv_audit_3', 'invoice_number' => '000123-R-0003', 'status' => 'UNPAID', 'due_on' => '2030-03-15', 'currency' => 'USD', 'total_amount' => 15_000, 'dashboard_url' => $dashboard('inv_audit_3')],
+            ['agreement_id' => $agreement->public_id, 'agreement_url' => $agreementUrl, 'series_key' => '000123', 'square_location_id' => null, 'square_invoice_id' => 'inv_audit_2', 'invoice_number' => '000123-R-0002', 'status' => 'PAID', 'due_on' => '2030-02-15', 'currency' => 'USD', 'total_amount' => 12_345, 'dashboard_url' => $dashboard('inv_audit_2')],
+            ['agreement_id' => $agreement->public_id, 'agreement_url' => $agreementUrl, 'series_key' => '000123', 'square_location_id' => null, 'square_invoice_id' => 'inv_audit_3', 'invoice_number' => '000123-R-0003', 'status' => 'UNPAID', 'due_on' => '2030-03-15', 'currency' => 'USD', 'total_amount' => 15_000, 'dashboard_url' => $dashboard('inv_audit_3')],
         ], 'truncated' => false], $audit['unmirrored_series_periods']);
         $this->assertSame(['count' => 2, 'payments' => [
             ['payment_id' => 'pay_audit_missing', 'reason' => 'not_recorded', 'square_invoice_id' => 'inv_audit_1', 'invoice_number' => '000123-R-0001', 'invoice_id' => $linked->public_id, 'invoice_url' => route('clients.invoice', [$workspace, $company->public_id, $linked->public_id]), 'dashboard_url' => $dashboard('inv_audit_1')],
@@ -79,7 +79,7 @@ final class SquareBillingAuditTest extends TestCase
             ['customer_id' => 'cust_audit_stranger', 'recipient_name' => 'Synthetic Stranger', 'open_invoice_count' => 1, 'currency' => 'USD', 'open_amount' => 7_000, 'explore_url' => route('square.explore', [$workspace, 'customer_id' => 'cust_audit_stranger'])],
         ], 'truncated' => false], $audit['unlinked_customer_balances']);
         $this->assertSame(['count' => 1, 'agreements' => [
-            ['agreement_id' => $agreement->public_id, 'agreement_url' => $agreementUrl, 'series_key' => '000123', 'codes' => ['amount'], 'agreement_cadence' => 'monthly', 'series_cadence' => 'monthly', 'agreement_currency' => 'USD', 'series_currency' => 'USD', 'agreement_amount' => 12_345, 'series_amount' => 15_000, 'explore_url' => route('square.explore', [$workspace, 'series_key' => '000123'])],
+            ['agreement_id' => $agreement->public_id, 'agreement_url' => $agreementUrl, 'series_key' => '000123', 'square_location_id' => null, 'codes' => ['amount'], 'agreement_cadence' => 'monthly', 'series_cadence' => 'monthly', 'agreement_currency' => 'USD', 'series_currency' => 'USD', 'agreement_amount' => 12_345, 'series_amount' => 15_000, 'explore_url' => route('square.explore', [$workspace, 'series_key' => '000123'])],
         ], 'truncated' => false], $audit['series_drift']);
         // The stranger's customer is the same set square.customers.unlinked reports with an open balance.
         $unlinked = $this->getJson('/api/v1/workspaces/'.$workspace->public_id.'/square/customers/unlinked?with_open_balance=true')->assertOk();
@@ -130,6 +130,44 @@ final class SquareBillingAuditTest extends TestCase
         // Square serves one workspace: the other reports nothing at all.
         $this->assertSame(SquareBillingAudit::empty(), app(SquareBillingAudit::class)->report($other));
         $this->assertSame($company->workspace_id, $workspace->id);
+    }
+
+    /**
+     * One prefix in two Square locations is two series (#488): each marks its
+     * own agreement and is audited on its own members, with no
+     * `multiple_locations` finding, and another workspace's agreement on the
+     * same prefix and location takes nothing from either.
+     */
+    public function test_each_location_of_a_prefix_is_audited_against_its_own_agreement(): void
+    {
+        [$workspace, , $company, $agreement] = $this->fixture();
+        $agreement->forceFill(['square_location_id' => 'LOCFIXTURE01'])->save();
+        $second = ClientAgreement::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'title' => 'Synthetic second location', 'status' => 'active', 'starts_on' => '2030-01-01', 'billing_cadence' => 'monthly', 'currency' => 'USD', 'retainer_amount' => 20_000]);
+        $second->forceFill(['square_series_key' => '000123', 'square_location_id' => 'LOCFIXTURE02'])->save();
+        $this->snapshot($workspace, 'inv_here_1', 1, '2030-01-15', 'UNPAID');
+        $this->snapshot($workspace, 'inv_here_2', 2, '2030-02-15', 'UNPAID');
+        $this->snapshot($workspace, 'inv_there_1', 1, '2030-01-20', 'UNPAID', ['square_location_id' => 'LOCFIXTURE02', 'total_amount' => 20_000]);
+        $this->snapshot($workspace, 'inv_there_2', 2, '2030-02-20', 'PAID', ['square_location_id' => 'LOCFIXTURE02', 'total_amount' => 20_000, 'paid_amount' => 20_000, 'payment_ids' => ['pay_there']]);
+        $other = Workspace::query()->create(['name' => 'Synthetic audit other location', 'slug' => 'synthetic-audit-other-location']);
+        $otherCompany = ClientCompany::query()->create(['workspace_id' => $other->id, 'name' => 'Synthetic other company', 'slug' => 'synthetic-other-company']);
+        $otherAgreement = ClientAgreement::query()->create(['workspace_id' => $other->id, 'client_company_id' => $otherCompany->id, 'title' => 'Synthetic other', 'status' => 'active', 'starts_on' => '2030-01-01', 'billing_cadence' => 'annual', 'currency' => 'USD', 'retainer_amount' => 1]);
+        $otherAgreement->forceFill(['square_series_key' => '000123', 'square_location_id' => 'LOCFIXTURE02'])->save();
+
+        $audit = app(SquareBillingAudit::class)->report($workspace);
+
+        $this->assertTrue($audit['complete']);
+        $this->assertSame([
+            [$agreement->public_id, 'inv_here_1'], [$second->public_id, 'inv_there_1'], [$agreement->public_id, 'inv_here_2'], [$second->public_id, 'inv_there_2'],
+        ], array_map(static fn (array $period): array => [$period['agreement_id'], $period['square_invoice_id']], $audit['unmirrored_series_periods']['periods']));
+        $this->assertSame(['LOCFIXTURE01', 'LOCFIXTURE02', 'LOCFIXTURE01', 'LOCFIXTURE02'], array_column($audit['unmirrored_series_periods']['periods'], 'square_location_id'));
+        $this->assertSame(['pay_there'], array_column($audit['unmatched_payments']['payments'], 'payment_id'));
+        $this->assertSame(0, $audit['series_drift']['count'], 'Each series bills its own agreement\'s amount.');
+
+        // Drift names the location and explores the series there alone.
+        $second->forceFill(['retainer_amount' => 1])->save();
+        $drift = app(SquareBillingAudit::class)->report($workspace)['series_drift']['agreements'];
+        $this->assertSame([[$second->public_id, 'LOCFIXTURE02', route('square.explore', [$workspace, 'series_key' => '000123', 'location_id' => 'LOCFIXTURE02'])]],
+            array_map(static fn (array $entry): array => [$entry['agreement_id'], $entry['square_location_id'], $entry['explore_url']], $drift));
     }
 
     public function test_nothing_is_reported_without_a_square_connection(): void

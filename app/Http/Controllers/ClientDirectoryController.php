@@ -547,6 +547,7 @@ class ClientDirectoryController extends Controller
                 'is_visible_to_client' => (bool) $clientAgreement->is_visible_to_client,
                 // Billed in Square (#438): SVC issues, Square collects.
                 'square_series_key' => $clientAgreement->square_series_key,
+                'square_location_id' => $clientAgreement->square_location_id,
             ],
             'recurring_items' => $items->map(fn (ClientAgreementRecurringItem $item): array => [
                 'id' => $item->public_id,

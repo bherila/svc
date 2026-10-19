@@ -9,6 +9,7 @@ use App\Models\ClientCompanyActivity;
 use App\Models\ClientInvoice;
 use App\Models\CompanySquareCustomer;
 use App\Models\InvoiceSquareLink;
+use App\Models\SquareInvoiceSnapshot;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Square\SquareLinkService;
@@ -243,7 +244,7 @@ final class SquareLinkApiTest extends TestCase
         [$elsewhere, $stranger] = $this->fixture('synthetic-elsewhere');
         $this->actingAsMcp($stranger, self::SCOPES);
         $this->rest('invoices.square_link', $elsewhere, ['invoice_id' => $invoice->public_id], $body, 'synthetic-cross-tenant')->assertNotFound();
-        $this->rest('agreements.square_series.set', $elsewhere, ['agreement_id' => $agreement->public_id], ['expected_version' => AgentApiVersion::for($agreement), 'series_key' => '000001', 'confirm' => true], 'synthetic-cross-agreement')->assertNotFound();
+        $this->rest('agreements.square_series.set', $elsewhere, ['agreement_id' => $agreement->public_id], ['expected_version' => AgentApiVersion::for($agreement), 'series_key' => '000001', 'location_id' => 'LOCFIXTURE01', 'confirm' => true], 'synthetic-cross-agreement')->assertNotFound();
         $this->getJson("/api/v1/workspaces/{$elsewhere->public_id}/clients/{$company->public_id}/square-customer")->assertNotFound();
 
         $this->actingAsMcp($owner, ['mcp:use', 'billing:read']);
@@ -299,12 +300,12 @@ final class SquareLinkApiTest extends TestCase
         $second = ClientAgreement::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'title' => 'Synthetic Annual', 'status' => 'active', 'starts_on' => '2026-01-01', 'billing_cadence' => 'annual', 'currency' => 'USD', 'hourly_rate_amount' => 10000]);
         $this->actingAsMcp($owner, self::SCOPES);
 
-        $marked = $this->success($transport, 'agreements.square_series.set', $workspace, ['agreement_id' => $agreement->public_id], ['expected_version' => AgentApiVersion::for($agreement), 'series_key' => '000123', 'confirm' => true], 'synthetic-mark');
+        $marked = $this->success($transport, 'agreements.square_series.set', $workspace, ['agreement_id' => $agreement->public_id], ['expected_version' => AgentApiVersion::for($agreement), 'series_key' => '000123', 'location_id' => 'LOCFIXTURE01', 'confirm' => true], 'synthetic-mark');
         $this->assertSame('000123', $marked['data']['square_series_key']);
         $this->assertSame('000123', $this->getJson("/api/v1/workspaces/{$workspace->public_id}/agreements/{$agreement->public_id}")->assertOk()->json('data.square_series_key'));
         $this->assertNull(collect((array) $this->getJson("/api/v1/workspaces/{$workspace->public_id}/agreements")->assertOk()->json('data'))->firstWhere('id', $second->public_id)['square_series_key']);
 
-        $this->refused($this->send($transport, 'agreements.square_series.set', $workspace, ['agreement_id' => $second->public_id], ['expected_version' => AgentApiVersion::for($second), 'series_key' => '000123', 'confirm' => true], 'synthetic-taken'), 409);
+        $this->refused($this->send($transport, 'agreements.square_series.set', $workspace, ['agreement_id' => $second->public_id], ['expected_version' => AgentApiVersion::for($second), 'series_key' => '000123', 'location_id' => 'LOCFIXTURE01', 'confirm' => true], 'synthetic-taken'), 409);
         $this->rest('agreements.square_series.set', $workspace, ['agreement_id' => $second->public_id], ['expected_version' => AgentApiVersion::for($second), 'series_key' => '12345', 'confirm' => true], 'synthetic-short')->assertUnprocessable();
         $this->rest('agreements.square_series.set', $workspace, ['agreement_id' => $second->public_id], ['expected_version' => AgentApiVersion::for($second), 'series_key' => '000124'], 'synthetic-unconfirmed')->assertUnprocessable();
 
@@ -313,6 +314,56 @@ final class SquareLinkApiTest extends TestCase
         $this->rest('agreements.square_series.clear', $workspace, ['agreement_id' => $agreement->public_id], ['expected_version' => $cleared['data']['version'], 'confirm' => true], 'synthetic-clear-again')->assertConflict();
         $this->assertSame(['agreement.square_series_set', 'agreement.square_series_cleared'], $this->activity($workspace));
         $this->assertNull($second->refresh()->square_series_key);
+    }
+
+    /**
+     * Square numbers invoices uniquely per location only (#488): one prefix in
+     * two locations is two series, each of which may mark its own agreement.
+     * Without location_id the marker takes the one location the mirror holds
+     * the series in, and is refused when there is not exactly one.
+     */
+    #[DataProvider('transports')]
+    public function test_a_series_is_marked_in_one_square_location(string $transport): void
+    {
+        [$workspace, $owner, $company, , $first] = $this->fixture();
+        $agreement = static fn (string $title): ClientAgreement => ClientAgreement::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'title' => $title, 'status' => 'active', 'starts_on' => '2026-01-01', 'billing_cadence' => 'monthly', 'currency' => 'USD', 'hourly_rate_amount' => 10000]);
+        $second = $agreement('Synthetic Second Location');
+        $third = $agreement('Synthetic Third');
+        // Another workspace's mirror names other locations for the same prefixes; it changes nothing here.
+        [$elsewhere] = $this->fixture('synthetic-square-elsewhere');
+        foreach ([[$workspace, 'inv_loc_a', '000123', 'LOCFIXTURE01'], [$workspace, 'inv_loc_b', '000123', 'LOCFIXTURE02'], [$workspace, 'inv_loc_c', '000456', 'LOCFIXTURE01'], [$workspace, 'inv_loc_d', '000777', null],
+            [$elsewhere, 'inv_loc_x', '000456', 'LOCFIXTURE09'], [$elsewhere, 'inv_loc_y', '000888', 'LOCFIXTURE01']] as [$tenant, $id, $series, $location]) {
+            SquareInvoiceSnapshot::query()->create(['workspace_id' => $tenant->id, 'square_invoice_id' => $id, 'invoice_number' => $series.'-R-0001', 'series_key' => $series, 'series_occurrence' => 1, 'square_location_id' => $location,
+                'status' => 'UNPAID', 'currency' => 'USD', 'total_amount' => 100, 'paid_amount' => 0, 'autopay' => false, 'payment_requests' => [], 'fingerprint' => str_repeat('a', 64), 'synced_at' => now(), 'last_seen_at' => now()]);
+        }
+        $this->actingAsMcp($owner, self::SCOPES);
+        $mark = fn (ClientAgreement $record, array $body, string $key) => $this->send($transport, 'agreements.square_series.set', $workspace, ['agreement_id' => $record->public_id], ['expected_version' => AgentApiVersion::for($record->refresh()), 'confirm' => true, ...$body], $key);
+
+        // One location in the mirror: taken without being named.
+        $inferred = $this->success($transport, 'agreements.square_series.set', $workspace, ['agreement_id' => $third->public_id], ['expected_version' => AgentApiVersion::for($third), 'series_key' => '000456', 'confirm' => true], 'synthetic-inferred');
+        $this->assertSame(['000456', 'LOCFIXTURE01'], [$inferred['data']['square_series_key'], $inferred['data']['square_location_id']]);
+        // Two locations, one naming none, or none at all: the caller must say.
+        $this->refused($mark($first, ['series_key' => '000123'], 'synthetic-two-locations'), 422);
+        $this->refused($mark($first, ['series_key' => '000777'], 'synthetic-no-location'), 422);
+        $this->refused($mark($first, ['series_key' => '000888'], 'synthetic-unmirrored'), 422);
+        $this->refused($mark($first, ['series_key' => '000123', 'location_id' => 'loc fixture'], 'synthetic-malformed'), 422);
+        $this->assertNull($first->refresh()->square_series_key);
+
+        // The prefix in each location marks its own agreement.
+        $this->success($transport, 'agreements.square_series.set', $workspace, ['agreement_id' => $first->public_id], ['expected_version' => AgentApiVersion::for($first->refresh()), 'series_key' => '000123', 'location_id' => 'LOCFIXTURE01', 'confirm' => true], 'synthetic-first-location');
+        $other = $this->success($transport, 'agreements.square_series.set', $workspace, ['agreement_id' => $second->public_id], ['expected_version' => AgentApiVersion::for($second), 'series_key' => '000123', 'location_id' => 'LOCFIXTURE02', 'confirm' => true], 'synthetic-second-location');
+        $this->assertSame(['000123', 'LOCFIXTURE02'], [$other['data']['square_series_key'], $other['data']['square_location_id']]);
+        $this->assertSame(['LOCFIXTURE01', 'LOCFIXTURE02'], [$first->refresh()->square_location_id, $second->refresh()->square_location_id]);
+        // Moving the third agreement onto a location already marked is refused.
+        $this->refused($mark($third, ['series_key' => '000123', 'location_id' => 'LOCFIXTURE02'], 'synthetic-taken-location'), 409);
+        $this->assertSame(['000456', 'LOCFIXTURE01'], [$third->refresh()->square_series_key, $third->square_location_id]);
+
+        // A marker from before markers named a location holds the prefix in every one.
+        $first->forceFill(['square_series_key' => '000999', 'square_location_id' => null])->save();
+        $this->refused($mark($third, ['series_key' => '000999', 'location_id' => 'LOCFIXTURE01'], 'synthetic-legacy-holder'), 409);
+        // Re-marking it with its location replaces the old marker on the same agreement.
+        $this->success($transport, 'agreements.square_series.set', $workspace, ['agreement_id' => $first->public_id], ['expected_version' => AgentApiVersion::for($first->refresh()), 'series_key' => '000999', 'location_id' => 'LOCFIXTURE01', 'confirm' => true], 'synthetic-relocated');
+        $this->assertSame('LOCFIXTURE01', $first->refresh()->square_location_id);
     }
 
     /**

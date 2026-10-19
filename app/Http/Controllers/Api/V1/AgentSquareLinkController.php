@@ -146,8 +146,9 @@ final class AgentSquareLinkController extends Controller
             $data = $this->validated($request, [
                 ...$this->confirmedVersion(),
                 'series_key' => ['required', 'string', 'regex:'.SquareIdentifiers::SERIES_KEY_PATTERN],
+                'location_id' => ['sometimes', 'string', 'regex:'.SquareIdentifiers::LOCATION_ID_PATTERN],
             ]);
-            $this->square->markAgreement($workspace, $record, $context->user, $data['expected_version'], $data['series_key']);
+            $this->square->markAgreement($workspace, $record, $context->user, $data['expected_version'], $data['series_key'], $data['location_id'] ?? null);
 
             return [$record->public_id];
         }, fn (array $ids) => $this->requireManager($context->user, $workspace));

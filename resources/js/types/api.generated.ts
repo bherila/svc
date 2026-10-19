@@ -79,7 +79,7 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** @description Workspace managers only. Mark an agreement as billed in Square by its recurring series key (the six-digit prefix of the series' NNNNNN-R-NNNN invoice numbers). SVC still generates and issues the agreement's invoices, but never emails, charges or offers a payment link for them. Requires the agreement's current expected_version and confirm: true. A series already marking another agreement is refused with 409. Nothing is sent to Square. */
+        /** @description Workspace managers only. Mark an agreement as billed in Square by its recurring series key (the six-digit prefix of the series' NNNNNN-R-NNNN invoice numbers) in one Square location: Square numbers invoices uniquely per location only, so the same prefix in another location is another series. Without location_id the location is the one SVC's Square mirror holds the series in; a series it holds in no location or in more than one is refused with 422 until location_id names it. SVC still generates and issues the agreement's invoices, but never emails, charges or offers a payment link for them. Requires the agreement's current expected_version and confirm: true. A series already marking another agreement in that location (or in every location, from before markers named one) is refused with 409. Nothing is sent to Square. */
         put: operations['agreements.square_series.set'];
         post?: never;
         /** @description Workspace managers only. Clear an agreement's billed-in-Square marker so SVC collects its invoices again. Requires the agreement's current expected_version and confirm: true; the change is recorded in the client history. */
@@ -1916,6 +1916,8 @@ export interface components {
             project_id: string | null;
             /** @description Billed in Square: the Square series that bills this agreement. While set, SVC issues the agreement's invoices but never emails, charges or offers a payment link for them. */
             square_series_key: string | null;
+            /** @description The Square location the series bills from: Square numbers invoices uniquely per location only, so the same prefix in another location is another series. Null with a series key for a marker set before markers named a location; it then matches the prefix in every location until the agreement is marked again. */
+            square_location_id: string | null;
         };
         AgreementListResponse: {
             data: components['schemas']['Agreement'][];
@@ -1932,6 +1934,7 @@ export interface components {
         AgreementSquareSeriesRequest: {
             expected_version: components['schemas']['Version'];
             series_key: components['schemas']['SquareSeriesKey'];
+            location_id?: components['schemas']['SquareLocationId'];
             /** @constant */
             confirm: true;
         };
@@ -3937,6 +3940,8 @@ export interface components {
             timezone: string | null;
             created_at: string | null;
         };
+        /** @description A Square location id. */
+        SquareLocationId: string;
         SquareLocationListResponse: {
             data: components['schemas']['SquareLocation'][];
         };
@@ -4199,6 +4204,8 @@ export interface components {
             /** Format: uri */
             agreement_url: string;
             series_key: components['schemas']['SquareSeriesKey'];
+            /** @description The Square location the agreement's series bills from; null for a marker set before markers named a location, which takes the prefix in every location. */
+            square_location_id: string | null;
             /** @description multiple_locations: the series prefix is used in more than one Square location among the bills since the agreement began, which Square allows; the series is not compared, and no unmirrored period or unmatched payment is derived from it. billed_after_end: Square billed a member after the agreement ended. */
             codes: (
                 | 'cadence'
@@ -4358,6 +4365,8 @@ export interface components {
             /** Format: uri */
             agreement_url: string;
             series_key: components['schemas']['SquareSeriesKey'];
+            /** @description The Square location the agreement's series bills from; null for a marker set before markers named a location, which takes the prefix in every location. */
+            square_location_id: string | null;
             square_invoice_id: string;
             invoice_number: string | null;
             status: string;

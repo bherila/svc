@@ -9,6 +9,7 @@ use App\Models\ClientInvoiceEmailDelivery;
 use App\Models\ClientInvoicePayment;
 use App\Models\CompanySquareCustomer;
 use App\Models\InvoiceSquareLink;
+use App\Models\SquareInvoiceSnapshot;
 use App\Support\Billing\InvoicePaymentStatus;
 use App\Support\Concurrency\Locks;
 use Carbon\CarbonImmutable;
@@ -189,13 +190,41 @@ final class SquareLinkRepository
                 ->orWhere(fn (Builder $unclaimed): Builder => $unclaimed->whereNull('claimed_at')->where('queued_at', '>=', $since)));
     }
 
-    /** The agreement holding this series as its billed-in-Square marker, if any. */
-    public function agreementForSeries(int $workspaceId, string $seriesKey): ?ClientAgreement
+    /**
+     * The agreement already holding this series in this location as its
+     * billed-in-Square marker, if any (#488): one marking the prefix in the
+     * same location, or a marker from before markers named a location, which
+     * still holds the prefix in every location.
+     */
+    public function agreementForSeries(int $workspaceId, string $seriesKey, string $locationId, ?int $exceptAgreementId = null): ?ClientAgreement
     {
         return ClientAgreement::query()
             ->where('workspace_id', $workspaceId)
             ->where('square_series_key', $seriesKey)
+            ->when($exceptAgreementId !== null, static fn (Builder $others): Builder => $others->whereKeyNot($exceptAgreementId))
+            ->where(static fn (Builder $location): Builder => $location->where('square_location_id', $locationId)->orWhereNull('square_location_id'))
+            ->orderBy('id')
             ->first();
+    }
+
+    /**
+     * The Square locations the mirror holds this series' live invoices in,
+     * a member naming no location as null, in a stable order.
+     *
+     * @return list<string|null>
+     */
+    public function seriesLocations(int $workspaceId, string $seriesKey): array
+    {
+        $locations = SquareInvoiceSnapshot::query()
+            ->where('workspace_id', $workspaceId)
+            ->where('series_key', $seriesKey)
+            ->distinct()
+            ->orderBy('square_location_id')
+            ->limit(10)
+            ->pluck('square_location_id')
+            ->all();
+
+        return array_values(array_map(static fn (mixed $location): ?string => is_string($location) ? $location : null, $locations));
     }
 
     /**

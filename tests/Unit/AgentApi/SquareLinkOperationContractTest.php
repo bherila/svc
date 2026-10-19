@@ -4,6 +4,8 @@ namespace Tests\Unit\AgentApi;
 
 use App\Services\AgentApi\Operations\AgentDeploymentFlags;
 use App\Services\AgentApi\Operations\AgentOperationCatalog;
+use App\Services\AgentApi\Operations\AgentRestDocumentation;
+use App\Services\Mcp\AgentMcpAgreementSchema;
 use App\Services\Mcp\AgentMcpSquareLinkTools;
 use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
 use Bherila\McpLaravelBridge\Capabilities\Effect;
@@ -33,6 +35,9 @@ final class SquareLinkOperationContractTest extends TestCase
                 'agreements.square_series.set' => ['markAgreement', Effect::LocalWrite, 'PUT', 'agreements.square-series.update', '/workspaces/{workspace}/agreements/{agreement}/square-series', $write, AgentDeploymentFlags::CLIENTS, 'mcp.write.clients', 'AgreementResponse'],
                 'agreements.square_series.clear' => ['clearAgreement', Effect::Destructive, 'DELETE', 'agreements.square-series.destroy', '/workspaces/{workspace}/agreements/{agreement}/square-series', $write, AgentDeploymentFlags::CLIENTS, 'mcp.write.clients', 'AgreementResponse'],
             ] as $id => [$handler, $effect, $method, $route, $path, $scopes, $cutover, $group, $response]) {
+                if (str_starts_with($id, 'invoices.')) {
+                    $this->assertSame(['WorkspaceId', 'InvoiceId', 'IdempotencyKey'], AgentRestDocumentation::operations()[$id]['parameters'], $id);
+                }
                 $operation = $registry->find($id);
                 $this->assertNotNull($operation, $id);
                 $this->assertSame($effect, $operation->effect, $id);
@@ -59,5 +64,17 @@ final class SquareLinkOperationContractTest extends TestCase
             AgentApiResponseSchemaCatalog::flush();
             Container::setInstance($previous);
         }
+    }
+
+    /** Every agreement read carries its billed-in-Square marker and the marker's location (#488). */
+    public function test_the_agreement_dto_declares_the_marker_and_its_location(): void
+    {
+        $dto = AgentMcpAgreementSchema::dto();
+
+        $this->assertSame(['object', false], [$dto['type'], $dto['additionalProperties']]);
+        $this->assertContains('version', $dto['required']);
+        $this->assertSame(['square_series_key', 'square_location_id'], array_slice($dto['required'], -2));
+        $this->assertSame(['type' => 'string', 'minLength' => 64, 'maxLength' => 64], $dto['properties']['version']);
+        $this->assertSame(['type' => ['string', 'null'], 'maxLength' => 192], $dto['properties']['square_location_id']);
     }
 }

@@ -309,6 +309,31 @@ final class SquareMirrorReadService
     }
 
     /**
+     * Each series as its prefix in one Square location (#488), keyed
+     * `{location}|{prefix}` - a member naming no location under `|{prefix}`:
+     * Square numbers invoices uniquely per location only, so one prefix in two
+     * locations is two series with their own cadence and amount.
+     *
+     * @param  list<string>  $keys
+     * @return array<string, array<string, mixed>>
+     */
+    public function summariesByLocation(Workspace $workspace, array $keys): array
+    {
+        $byLocation = [];
+        foreach ($this->members($workspace, $keys) as $key => $members) {
+            foreach ($members as $member) {
+                $byLocation[($member->square_location_id ?? '').'|'.$key][] = $member;
+            }
+        }
+        $summaries = [];
+        foreach ($byLocation as $series => $members) {
+            $summaries[$series] = $this->summary($workspace, (string) $members[0]->series_key, $members);
+        }
+
+        return $summaries;
+    }
+
+    /**
      * Series keys in the mirror, at most $limit, in key order.
      *
      * @return list<string>

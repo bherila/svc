@@ -922,7 +922,7 @@ final class AgentOperationCatalog
             $this->tool(
                 'agreements.square_series.set',
                 'Mark agreement billed in Square',
-                'Workspace managers only. Mark an agreement as billed in Square by its recurring series key, only after explicit confirmation. SVC keeps generating and issuing its invoices but never emails, charges or offers a payment link for them.',
+                'Workspace managers only. Mark an agreement as billed in Square by its recurring series key in one Square location, only after explicit confirmation. Omit location_id to take the one location the Square mirror holds the series in; a series in more than one location needs location_id. SVC keeps generating and issuing its invoices but never emails, charges or offers a payment link for them.',
                 [AgentMcpSquareLinkTools::class, 'markAgreement'],
                 Effect::LocalWrite,
                 true,

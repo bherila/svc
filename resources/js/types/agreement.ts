@@ -37,6 +37,12 @@ export type AgreementTerms = CompanyAgreement & {
      * or null. Operators only - absent on the client's own copy.
      */
     square_series_key?: string | null;
+    /**
+     * The Square location that series bills from (#488), or null for a
+     * marker set before markers named one: it then matches the series in
+     * every location. Operators only.
+     */
+    square_location_id?: string | null;
 };
 
 /**

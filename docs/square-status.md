@@ -112,10 +112,12 @@ invoice there; svc does not write to Square.
 `billing_audit.stale_and_missing` also carries `square_billing_audit`, read from
 svc's mirror as of its last sync and empty where Square does not serve the
 workspace. Each flag has a full `count`, at most 100 entries with finished svc and
-Square dashboard URLs, and `truncated`:
+Square dashboard URLs, and `truncated`. Periods and drift name the agreement's
+`square_location_id` (#488), and drift's explore link shows the series in that
+location only:
 
 - `unmirrored_series_periods`: a member of a series an agreement is billed in
-  (`square_series_key`), within the agreement (from its start to its end, once it
+  (`square_series_key` in its `square_location_id`), within the agreement (from its start to its end, once it
   has one), that no svc invoice is linked to. `SCHEDULED` members are not billed yet, and `DRAFT`, `CANCELED` and
   `FAILED` ones are no bill, so none of them is flagged.
 - `unmatched_payments`: a Square payment id on an invoice in svc's reach (actively
@@ -142,8 +144,11 @@ Square dashboard URLs, and `truncated`:
   `amount`, or whose series the mirror does not hold (`series_not_mirrored`).
   `SCHEDULED` members are not billed yet, and members dated before the
   agreement's start are history; both are left out. Square numbers invoices
-  uniquely per location only, so a prefix used in more than one location (or by a
-  bill with no location) is
+  uniquely per location only, so a series is its prefix in the agreement's
+  location, and the prefix in another location is another agreement's series or
+  none (#488). A series that cannot be placed - a bill with its prefix that names
+  no location, or, for a marker set before markers named a location, the prefix
+  billed from more than one - is
   reported as `multiple_locations` and nothing else is derived from it - no
   comparison, unmirrored period or unmatched payment - and Square still billing
   after the agreement ended is reported as `billed_after_end`. The agreement's amount

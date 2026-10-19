@@ -166,6 +166,20 @@ export default function ClientAgreementDetail({
                                             </span>
                                         </span>
                                     </p>
+                                    {agreement.square_location_id ? (
+                                        <p className="min-w-0">
+                                            Location{' '}
+                                            <span className="font-mono wrap-anywhere">
+                                                {agreement.square_location_id}
+                                            </span>
+                                        </p>
+                                    ) : (
+                                        <p className="text-muted-foreground">
+                                            No Square location recorded: the
+                                            series is matched in every location.
+                                            Mark it again with its location.
+                                        </p>
+                                    )}
                                     <p className="text-muted-foreground">
                                         SVC still generates and issues this
                                         agreement&apos;s invoices, but never

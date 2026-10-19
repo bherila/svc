@@ -929,8 +929,15 @@ current `expected_version`, and are recorded in the client's activity.
   must match it), and how it was found: `manual`, or `suggested` with the score
   and reasons the person confirmed. Nothing is ever linked automatically.
 - **Customer mapping.** One active mapping per client and per Square customer.
-- **Billed in Square.** An agreement's `square_series_key` marks it as billed by
-  that Square series; one agreement per series.
+- **Billed in Square.** An agreement's `square_series_key` and
+  `square_location_id` mark it as billed by that Square series. Square numbers
+  invoices uniquely per location only, so a series is its prefix in one
+  location, and one agreement per location may hold a prefix (#488). Omit
+  `location_id` to take the one location SVC's mirror holds the series in; a
+  series the mirror holds in no location, in more than one, or with an invoice
+  naming none is refused with 422 until `location_id` names it. A marker set
+  before markers named a location has `square_location_id: null` and still
+  holds the prefix in every location until the agreement is marked again.
 
 **Square collects what Square bills.** An invoice that is linked, or whose
 agreement is billed in Square, may still be generated, issued and have payments
@@ -945,7 +952,7 @@ anywhere else.
 Reads: `invoices.get` carries `square` (link, agreement series, whether Square
 collects, and the refusal text) for managers and null otherwise;
 `clients.get` and `clients.list` carry `square_customer`; agreement reads carry
-`square_series_key`. The hosted payment address comes only from the linked
+`square_series_key` and `square_location_id`. The hosted payment address comes only from the linked
 invoice's mirrored `public_url`. Managers also receive `payment_mismatch` when
 SVC is paid outside Square while Square remains open, with a finished dashboard
 link. `billing_audit.stale_and_missing` includes the same flags in
@@ -1430,7 +1437,8 @@ elsewhere are excluded. `limit` is at most 25 and a bounded pool reports truncat
 Import is explicit per customer and uses only the mirror. It creates a client,
 confirms the customer mapping and records provenance together. `series_key` may
 also create a draft agreement with the mirrored cadence, currency and amount,
-marked billed in Square. The agreement awaits human review and activation.
+marked billed in Square in the series' one location; a series billed from more
+than one location is refused with 422. The agreement awaits human review and activation.
 Already mapped customers or assigned series return 409; retries with the same
 idempotency key return the same records. Optional `company_name`, `billing_email`
 and `agreement_title` override the defaults. No existing record is edited, so

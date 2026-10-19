@@ -121,7 +121,7 @@ final class SquareCollectionHandoffTest extends TestCase
         $this->actingAsMcp($owner, self::SCOPES);
 
         $this->putJson("/api/v1/workspaces/{$workspace->public_id}/agreements/{$agreement->public_id}/square-series", [
-            'expected_version' => AgentApiVersion::for($agreement), 'series_key' => '000001', 'confirm' => true,
+            'expected_version' => AgentApiVersion::for($agreement), 'series_key' => '000001', 'location_id' => 'LOCFIXTURE01', 'confirm' => true,
         ], ['Idempotency-Key' => 'synthetic-pending-mark'])
             ->assertConflict()
             ->assertJsonPath('message', 'A Stripe payment on invoice SYN-1 of this agreement can still complete (pending, or failed and retryable). Let it succeed or cancel it in Stripe before Square collects the agreement\'s invoices.');
@@ -132,11 +132,11 @@ final class SquareCollectionHandoffTest extends TestCase
         // still in flight. Canceled in Stripe, it no longer is.
         ClientInvoicePayment::query()->where('workspace_id', $workspace->id)->update(['status' => 'failed']);
         $this->putJson("/api/v1/workspaces/{$workspace->public_id}/agreements/{$agreement->public_id}/square-series", [
-            'expected_version' => AgentApiVersion::for($agreement), 'series_key' => '000001', 'confirm' => true,
+            'expected_version' => AgentApiVersion::for($agreement), 'series_key' => '000001', 'location_id' => 'LOCFIXTURE01', 'confirm' => true,
         ], ['Idempotency-Key' => 'synthetic-failed-mark'])->assertConflict();
         ClientInvoicePayment::query()->where('workspace_id', $workspace->id)->update(['status' => 'canceled']);
         $this->putJson("/api/v1/workspaces/{$workspace->public_id}/agreements/{$agreement->public_id}/square-series", [
-            'expected_version' => AgentApiVersion::for($agreement), 'series_key' => '000001', 'confirm' => true,
+            'expected_version' => AgentApiVersion::for($agreement), 'series_key' => '000001', 'location_id' => 'LOCFIXTURE01', 'confirm' => true,
         ], ['Idempotency-Key' => 'synthetic-settled-mark'])->assertOk();
     }
 
@@ -159,7 +159,7 @@ final class SquareCollectionHandoffTest extends TestCase
             'expected_version' => AgentApiVersion::for($invoice->refresh()), 'confirm' => true, 'square_invoice_id' => 'inv:0-fixture1', 'square_invoice_number' => '000001-R-0001',
         ], ['Idempotency-Key' => $key]);
         $mark = fn (string $key) => $this->putJson("/api/v1/workspaces/{$workspace->public_id}/agreements/{$agreement->public_id}/square-series", [
-            'expected_version' => AgentApiVersion::for($agreement->refresh()), 'series_key' => '000001', 'confirm' => true,
+            'expected_version' => AgentApiVersion::for($agreement->refresh()), 'series_key' => '000001', 'location_id' => 'LOCFIXTURE01', 'confirm' => true,
         ], ['Idempotency-Key' => $key]);
 
         $link('synthetic-sending-link')->assertConflict()->assertJsonPath('message', 'An email to the client for invoice SYN-1 is being sent. Retry once it has gone.');

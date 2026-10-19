@@ -405,7 +405,7 @@
             },
             "put": {
                 "operationId": "agreements.square_series.set",
-                "description": "Workspace managers only. Mark an agreement as billed in Square by its recurring series key (the six-digit prefix of the series' NNNNNN-R-NNNN invoice numbers). SVC still generates and issues the agreement's invoices, but never emails, charges or offers a payment link for them. Requires the agreement's current expected_version and confirm: true. A series already marking another agreement is refused with 409. Nothing is sent to Square.",
+                "description": "Workspace managers only. Mark an agreement as billed in Square by its recurring series key (the six-digit prefix of the series' NNNNNN-R-NNNN invoice numbers) in one Square location: Square numbers invoices uniquely per location only, so the same prefix in another location is another series. Without location_id the location is the one SVC's Square mirror holds the series in; a series it holds in no location or in more than one is refused with 422 until location_id names it. SVC still generates and issues the agreement's invoices, but never emails, charges or offers a payment link for them. Requires the agreement's current expected_version and confirm: true. A series already marking another agreement in that location (or in every location, from before markers named one) is refused with 409. Nothing is sent to Square.",
                 "security": [
                     {
                         "oauth2": [
@@ -10333,7 +10333,8 @@
                     "client_id",
                     "client_name",
                     "project_id",
-                    "square_series_key"
+                    "square_series_key",
+                    "square_location_id"
                 ],
                 "properties": {
                     "version": {
@@ -10476,6 +10477,14 @@
                         ],
                         "pattern": "^[0-9]{6}$",
                         "description": "Billed in Square: the Square series that bills this agreement. While set, SVC issues the agreement's invoices but never emails, charges or offers a payment link for them."
+                    },
+                    "square_location_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 192,
+                        "description": "The Square location the series bills from: Square numbers invoices uniquely per location only, so the same prefix in another location is another series. Null with a series key for a marker set before markers named a location; it then matches the prefix in every location until the agreement is marked again."
                     }
                 }
             },
@@ -10541,6 +10550,9 @@
                     },
                     "series_key": {
                         "$ref": "#/components/schemas/SquareSeriesKey"
+                    },
+                    "location_id": {
+                        "$ref": "#/components/schemas/SquareLocationId"
                     },
                     "confirm": {
                         "type": "boolean",
@@ -18335,6 +18347,11 @@
                     }
                 }
             },
+            "SquareLocationId": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9:_\\-]{0,191}$",
+                "description": "A Square location id."
+            },
             "SquareLocationListResponse": {
                 "type": "object",
                 "additionalProperties": false,
@@ -19685,6 +19702,7 @@
                     "agreement_id",
                     "agreement_url",
                     "series_key",
+                    "square_location_id",
                     "codes",
                     "agreement_cadence",
                     "series_cadence",
@@ -19704,6 +19722,14 @@
                     },
                     "series_key": {
                         "$ref": "#/components/schemas/SquareSeriesKey"
+                    },
+                    "square_location_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 192,
+                        "description": "The Square location the agreement's series bills from; null for a marker set before markers named a location, which takes the prefix in every location."
                     },
                     "codes": {
                         "type": "array",
@@ -20296,6 +20322,7 @@
                     "agreement_id",
                     "agreement_url",
                     "series_key",
+                    "square_location_id",
                     "square_invoice_id",
                     "invoice_number",
                     "status",
@@ -20314,6 +20341,14 @@
                     },
                     "series_key": {
                         "$ref": "#/components/schemas/SquareSeriesKey"
+                    },
+                    "square_location_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 192,
+                        "description": "The Square location the agreement's series bills from; null for a marker set before markers named a location, which takes the prefix in every location."
                     },
                     "square_invoice_id": {
                         "type": "string",

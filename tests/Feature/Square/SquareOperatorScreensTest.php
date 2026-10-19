@@ -91,7 +91,7 @@ final class SquareOperatorScreensTest extends TestCase
     public function test_the_agreement_screen_shows_the_marker_to_operators_only(): void
     {
         [$workspace, $owner, $company, , $agreement] = $this->fixture();
-        app(SquareLinkService::class)->markAgreement($workspace, $agreement, $owner, AgentApiVersion::for($agreement), '000001');
+        app(SquareLinkService::class)->markAgreement($workspace, $agreement, $owner, AgentApiVersion::for($agreement), '000001', 'LOCFIXTURE01');
 
         $this->actingAs($owner)->get("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/agreements/{$agreement->public_id}")
             ->assertOk()->assertInertia(fn (Assert $page) => $page->where('agreement.square_series_key', '000001'));

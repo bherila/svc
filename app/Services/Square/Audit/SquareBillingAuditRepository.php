@@ -109,8 +109,8 @@ final class SquareBillingAuditRepository
         // complete generation (checked again after the loads).
         $mirrorLooksComplete = $before !== null && $before->status === SquareSyncRun::COMPLETED && ! $before->truncated;
         foreach ($seriesComplete && $mirrorLooksComplete ? $agreements : [] as $agreement) {
-            if (! isset($ambiguous[$agreement->seriesKey])) {
-                $billedSeries[$agreement->seriesKey] = $agreement;
+            if (! isset($ambiguous[$agreement->key()])) {
+                $billedSeries[$agreement->key()] = $agreement;
             }
         }
 
@@ -122,7 +122,7 @@ final class SquareBillingAuditRepository
         foreach ($snapshots as $snapshot) {
             if (SquareSnapshotMapper::mayHoldPayment($snapshot->status, $snapshot->paid_amount)
                 && SquareSnapshotMapper::paymentIdsCurrent($snapshot->status, $snapshot->paid_amount, $snapshot->square_version, $snapshot->square_order_id, $snapshot->payment_ids_basis)
-                && SquareBillingAuditPolicy::inPaymentReach(isset($links[$snapshot->square_invoice_id]), $snapshot->series_key, $snapshot->square_customer_id,
+                && SquareBillingAuditPolicy::inPaymentReach(isset($links[$snapshot->square_invoice_id]), $snapshot->series_key, $snapshot->square_location_id, $snapshot->square_customer_id,
                     $snapshot->due_on?->toDateString() ?? $snapshot->scheduled_at?->toDateString(), $billedSeries, $mappedCustomers)) {
                 $wanted[] = $snapshot->square_invoice_id;
             }
@@ -202,6 +202,7 @@ final class SquareBillingAuditRepository
         $rows = ClientAgreement::query()->where('client_agreements.workspace_id', $workspace->id)->whereNotNull('client_agreements.square_series_key')
             ->join('client_companies as c', static fn ($join) => $join->on('c.id', '=', 'client_agreements.client_company_id')->where('c.workspace_id', $workspace->id))
             ->orderBy('client_agreements.square_series_key')
+            ->orderBy('client_agreements.square_location_id')
             ->limit(self::MAX_AGREEMENTS + 1)
             ->get(['client_agreements.*', 'c.public_id as company_public_id']);
         $agreements = [];
@@ -218,6 +219,7 @@ final class SquareBillingAuditRepository
                 $amount > 0 ? $amount : null,
                 strtoupper((string) $agreement->getAttribute('currency')),
                 $agreement->ends_on?->toDateString(),
+                $agreement->square_location_id,
             );
         }
 

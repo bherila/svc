@@ -61,6 +61,9 @@ final class SquareCandidateService
             : ClientAgreement::query()->where('workspace_id', $workspace->id)->whereKey($invoice->client_agreement_id)->first();
         $customerId = $this->links->activeCustomer($company)?->square_customer_id;
         $seriesKey = $agreement?->square_series_key;
+        // The series in its own location (#488); a marker from before markers
+        // named one takes the prefix in every location, as it always did.
+        $seriesLocation = $agreement?->square_location_id;
         $current = $this->links->activeLink($invoice);
 
         $meta = [
@@ -81,12 +84,13 @@ final class SquareCandidateService
         }
 
         $pool = SquareInvoiceSnapshot::query()->where('workspace_id', $workspace->id)
-            ->where(static function (Builder $query) use ($customerId, $seriesKey): void {
+            ->where(static function (Builder $query) use ($customerId, $seriesKey, $seriesLocation): void {
                 if ($customerId !== null) {
                     $query->orWhere('square_customer_id', $customerId);
                 }
                 if ($seriesKey !== null) {
-                    $query->orWhere('series_key', $seriesKey);
+                    $query->orWhere(static fn (Builder $series): Builder => $series->where('series_key', $seriesKey)
+                        ->when($seriesLocation !== null, static fn (Builder $located): Builder => $located->where('square_location_id', $seriesLocation)));
                 }
             })
             ->orderByDesc('due_on')->orderByDesc('id')
@@ -126,11 +130,10 @@ final class SquareCandidateService
             $offered[$snapshot->square_invoice_id] = $snapshot;
         }
 
-        $cadences = [];
+        // A series is its prefix in one location (#488), so each candidate's
+        // cadence is read from the members in its own location.
         $keys = array_values(array_unique(array_filter(array_map(static fn (SquareInvoiceSnapshot $snapshot): ?string => $snapshot->series_key, array_values($offered)))));
-        foreach ($this->mirror->summaries($workspace, $keys) as $summary) {
-            $cadences[$summary['series_key']] = $summary['cadence'];
-        }
+        $cadences = array_map(static fn (array $summary): mixed => $summary['cadence'], $this->mirror->summariesByLocation($workspace, $keys));
         $ranked = SquareCandidateScorer::rank($this->facts($invoice, $agreement), $customerId, array_values(array_map(static fn (SquareInvoiceSnapshot $snapshot): array => [
             'square_invoice_id' => $snapshot->square_invoice_id,
             'status' => $snapshot->status,
@@ -141,7 +144,7 @@ final class SquareCandidateService
             'sale_or_service_date' => $snapshot->sale_or_service_date?->toDateString(),
             'square_customer_id' => $snapshot->square_customer_id,
             'series_key' => $snapshot->series_key,
-            'series_cadence' => $snapshot->series_key === null ? null : ($cadences[$snapshot->series_key] ?? null),
+            'series_cadence' => $snapshot->series_key === null ? null : ($cadences[($snapshot->square_location_id ?? '').'|'.$snapshot->series_key] ?? null),
             'invoice_number' => $snapshot->invoice_number,
         ], $offered)));
         $meta['ambiguous'] = SquareCandidateScorer::ambiguous($ranked);

@@ -30,6 +30,7 @@ use Tests\Feature\Billing\UnplaceableInvoiceAuditorTest;
 use Tests\Feature\Billing\UnpricedAgreementRefusalTest;
 use Tests\Feature\Engagement\TimeSheetTest;
 use Tests\Feature\EngagementWorkflowTest;
+use Tests\Feature\Square\SquareCandidateImportApiTest;
 use Tests\Feature\Square\SquareCollectionGuardTest;
 use Tests\TestCase;
 use Tests\Unit\Billing\InvoiceLedgerBuilderTest;
@@ -185,6 +186,7 @@ final class NullSemanticsRegistryTest extends TestCase
         'client_agreements.rollover_months => covered_by:Tests\Unit\Billing\InvoiceLedgerBuilderTest::test_an_agreement_with_no_rollover_term_carries_nothing_forward',
         'client_agreements.signed_at => covered_by:Tests\Feature\EngagementWorkflowTest::test_only_an_unsigned_agreement_can_be_signed',
         'client_agreements.source_proposal_id => covered_by:Tests\Feature\EngagementWorkflowTest::test_an_active_agreement_whose_proposal_link_is_missing_stops_acceptance',
+        'client_agreements.square_location_id => covered_by:Tests\Feature\Square\SquareCandidateImportApiTest::test_candidates_from_a_billed_series_come_from_its_location',
         'client_agreements.square_series_key => covered_by:Tests\Feature\Square\SquareCollectionGuardTest::test_an_invoice_of_an_unmarked_agreement_is_collected_by_svc',
         'client_invoice_lines.client_agreement_id => covered_by:Tests\Feature\Billing\ReplaySnapshotNullIdentityTest::test_a_line_with_no_agreement_snapshots_an_empty_agreement_identity',
         'client_invoice_lines.client_agreement_recurring_item_id => covered_by:Tests\Feature\Billing\ReplaySnapshotNullIdentityTest::test_a_line_with_no_recurring_item_snapshots_an_empty_recurring_identity',
@@ -807,6 +809,13 @@ final class NullSemanticsRegistryTest extends TestCase
             'square_series_key' => [
                 'covered_by' => SquareCollectionGuardTest::class,
                 'method' => 'test_an_invoice_of_an_unmarked_agreement_is_collected_by_svc',
+            ],
+            // Null with a series key is a marker from before markers named a
+            // location (#488): it takes the prefix in every location, as the
+            // candidate pool and the billing audit read it.
+            'square_location_id' => [
+                'covered_by' => SquareCandidateImportApiTest::class,
+                'method' => 'test_candidates_from_a_billed_series_come_from_its_location',
             ],
             // `starts_on` is gone from this registry, not demoted in it. It had
             // three entries here and seven readings in the code - the resolver
