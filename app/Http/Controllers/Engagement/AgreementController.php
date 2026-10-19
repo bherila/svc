@@ -12,7 +12,6 @@ use App\Models\Workspace;
 use App\Services\Engagement\AgreementWorkflow;
 use App\Services\Engagement\EngagementException;
 use App\Services\WorkspaceAuthorization;
-use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Gate;
 
@@ -24,7 +23,7 @@ class AgreementController extends EngagementController
         ClientCompany $clientCompany,
         WorkspaceAuthorization $workspaceAuthorization,
         AgreementWorkflow $workflow,
-    ): JsonResponse|RedirectResponse {
+    ): RedirectResponse {
         $user = $request->user();
         if (! $user instanceof User) {
             abort(401);
@@ -33,17 +32,11 @@ class AgreementController extends EngagementController
         $workspaceAuthorization->assertOwnedBy($workspace, $clientCompany);
 
         try {
-            $agreement = $workflow->create($workspace, $clientCompany, null, null, $request->validated());
+            $workflow->create($workspace, $clientCompany, null, null, $request->validated());
 
-            return $this->respond(
-                $request,
-                ['data' => $agreement],
-                'svc.engagement.agreements.store',
-                'Agreement created.',
-                201,
-            );
+            return $this->respond('Agreement created.');
         } catch (EngagementException $exception) {
-            return $this->reportFailure($request, $exception);
+            return $this->reportFailure($exception);
         }
     }
 
@@ -64,7 +57,7 @@ class AgreementController extends EngagementController
         ClientAgreement $clientAgreement,
         WorkspaceAuthorization $workspaceAuthorization,
         AgreementWorkflow $workflow,
-    ): JsonResponse|RedirectResponse {
+    ): RedirectResponse {
         $user = $request->user();
         if (! $user instanceof User) {
             abort(401);
@@ -73,14 +66,11 @@ class AgreementController extends EngagementController
         $workspaceAuthorization->assertOwnedBy($workspace, $clientAgreement);
 
         try {
-            return $this->respond(
-                $request,
-                ['data' => $workflow->update($workspace, $clientAgreement, $request->validated())],
-                'svc.engagement.agreements.store',
-                'Agreement updated.',
-            );
+            $workflow->update($workspace, $clientAgreement, $request->validated());
+
+            return $this->respond('Agreement updated.');
         } catch (EngagementException $exception) {
-            return $this->reportFailure($request, $exception);
+            return $this->reportFailure($exception);
         }
     }
 
@@ -89,7 +79,7 @@ class AgreementController extends EngagementController
         ClientAgreement $clientAgreement,
         WorkspaceAuthorization $workspaceAuthorization,
         AgreementWorkflow $workflow,
-    ): JsonResponse|RedirectResponse {
+    ): RedirectResponse {
         $request = request();
         $user = $request->user();
         abort_if($user === null, 401);
@@ -97,14 +87,11 @@ class AgreementController extends EngagementController
         $workspaceAuthorization->assertOwnedBy($workspace, $clientAgreement);
 
         try {
-            return $this->respond(
-                $request,
-                ['data' => $workflow->activate($clientAgreement)],
-                'svc.engagement.agreements.store',
-                'Agreement activated.',
-            );
+            $workflow->activate($clientAgreement);
+
+            return $this->respond('Agreement activated.');
         } catch (EngagementException $exception) {
-            return $this->reportFailure($request, $exception);
+            return $this->reportFailure($exception);
         }
     }
 
@@ -114,7 +101,7 @@ class AgreementController extends EngagementController
         ClientAgreement $clientAgreement,
         WorkspaceAuthorization $workspaceAuthorization,
         AgreementWorkflow $workflow,
-    ): JsonResponse|RedirectResponse {
+    ): RedirectResponse {
         $user = $request->user();
         if (! $user instanceof User) {
             abort(401);
@@ -123,14 +110,11 @@ class AgreementController extends EngagementController
         $workspaceAuthorization->assertOwnedBy($workspace, $clientAgreement);
 
         try {
-            return $this->respond(
-                $request,
-                ['data' => $workflow->sign($clientAgreement, $user, $request->string('signer_name')->toString(), $request->validated('signer_title'))],
-                'svc.engagement.agreements.store',
-                'Agreement signed.',
-            );
+            $workflow->sign($clientAgreement, $user, $request->string('signer_name')->toString(), $request->validated('signer_title'));
+
+            return $this->respond('Agreement signed.');
         } catch (EngagementException $exception) {
-            return $this->reportFailure($request, $exception);
+            return $this->reportFailure($exception);
         }
     }
 }

@@ -151,8 +151,12 @@ the table says once, underneath, what the marker means.
 ## Correcting a payment's date
 
 `POST /workspaces/{workspace}/invoices/{clientInvoice}/payments/{clientInvoicePayment}/received-on`,
-requiring `manage` on the workspace, and reaching
-`InvoiceLifecycleService::setPaymentReceivedOn()`.
+requiring `manage` on the workspace, a `received_on` and a `reason` (at most 500
+characters), and reaching `InvoiceLifecycleService::correctPayment()` with the
+date as its one field. The reason is required on the screen as it is by
+`payments.correct` (#454), so every payment correction records the same audited
+`invoice.payment_corrected` - before, after and reason - whichever door it came
+through.
 
 This is **not** a payment-edit path and does not open one. The request names one
 field and the service writes one column: amount, currency, method, status and
@@ -204,15 +208,96 @@ credit pool or a reconciliation - so correcting one rewrites no financial fact.
   excerpt on each side, because the activity payload is capped at 10,000 bytes
   and a note may be that long by itself.
 
-`setPaymentReceivedOn()` is now this operation with one field and no reason:
-the date-only **Correct date** control on the invoice screen never asked for
-one. It keeps recording `invoice.payment_date_corrected` with its
-`previous_received_on`/`received_on` payload, so the activity feed and every
-earlier entry keep their meaning.
+`setPaymentReceivedOn()` is this operation with one field and no reason. The
+invoice screen's **Correct date** control used it before it asked for a reason;
+it now asks, and calls `correctPayment()`. `setPaymentReceivedOn()` still records
+`invoice.payment_date_corrected` with its `previous_received_on`/`received_on`
+payload, so the activity feed and every earlier entry keep their meaning.
 
-The console door is `svc:billing:correct-payment` and the agent door is the
-`payments.correct` MCP tool (see [the MCP guide](../mcp.md)); the agent door does
-not offer `notes`, which agents cannot read.
+The console door is `svc:billing:correct-payment` and the API door is
+`payments.correct`, over REST and MCP (see [the MCP guide](../mcp.md)); both
+take the same four fields, and `payments.list` returns the note to the managers
+who may write it.
+
+## Withdrawing, failing or refunding a payment recorded by hand
+
+A cheque that bounces, a transfer that is reversed, a payment entered twice and
+money handed back to the client are each a change to what a recorded payment is
+worth. They are made by transitioning the payment, never by editing it, so the
+history says what happened (#455). `ManualPaymentChange` is the whole rule and
+is unit tested without a database; `InvoiceLifecycleService::changeManualPayment()`
+applies it under the payment and invoice locks, through the same write a
+processor's events take (`setPaymentStatus()` / `setRefundedAmount()`).
+
+**Only a payment recorded by hand.** A Stripe or Square payment follows its
+processor, which reports its own failures, disputes and refunds; a change made
+here would contradict the next event, so it is refused. `payments.list` marks a
+hand-recorded payment `manual: true`.
+
+**Status changes** (`payments.set_status`, `svc:billing:payment-status`) move a
+payment to one of three statuses:
+
+| from | → `succeeded` (it cleared) | → `failed` (it bounced or was reversed) | → `canceled` (recorded in error, withdrawn) |
+| --- | --- | --- | --- |
+| `pending` | yes | yes | yes |
+| `succeeded`, nothing refunded | no change | yes | yes |
+| `succeeded`, partly refunded | no change | no - refund the rest | no - refund the rest |
+| `failed`, `canceled`, `refunded`, `disputed` | no | no (or no change) | no (or no change) |
+
+`failed`, `canceled`, `refunded` and `disputed` are final for a hand-recorded
+payment: money that arrives after all is recorded as a new payment, so both
+facts stay in the history. `refunded` is reached only by refunding the whole
+amount, `disputed` is a processor's word, and nothing returns to `pending`.
+Setting the status a payment already has writes and records nothing.
+
+**Refunds** (`payments.refund`, `svc:billing:refund-payment`) record money
+already returned to the client outside SVC - SVC never sends money. `amount` is
+what was returned now, in minor units, and the refunds of a payment may not
+exceed its amount. Only a succeeded payment can be refunded; refunding all of it
+makes it `refunded`, otherwise it stays `succeeded` with its `refunded_amount`
+raised. A refund cannot be reduced: a refund entered in error is corrected by an
+operator, not by this operation.
+
+**Balances and issued invoices.** The invoice's paid amount, balance and status
+are recomputed as for any payment change, so a paid invoice reopens: to
+`partially_paid` or `issued` by the amount that stopped counting. The invoice
+document is not changed, a void invoice stays void, and automatic delivery is
+not rescheduled. If the client no longer owes the reopened balance, correct or
+void the invoice separately - voiding still requires that nothing is paid and
+nothing is pending. Moving a payment to `succeeded` is refused if successful
+payments would exceed the invoice total, or on a void invoice. Leaving
+`succeeded` changes the money the overpayment credit pool is derived from, so
+the pool change is recorded under the company lock as a processor's refund is.
+
+**Corrections and reconciliation.** Descriptive fields (method, reference, note,
+date) stay correctable in every status, through `payments.correct`. Money that
+stops counting cannot stay allocated to a finance transaction: failing,
+withdrawing or refunding a payment beyond what its active reconciliation
+allocations leave is refused, and the allocation is deactivated in the finance
+system first.
+
+**Reason and audit.** A reason (at most 500 characters) is required and kept in
+the activity the transition records - `invoice.payment_received`,
+`invoice.payment_failed`, `invoice.payment_canceled` or
+`invoice.payment_refunded` - with the status it replaced (and, for a refund, the
+previous refunded amount). The API requires the payment's `version` from
+`payments.list` as `expected_version`, explicit confirmation and an idempotency
+key; a payment that moved since it was read is refused with a conflict, and so
+is a change whose transaction began from an older view of the invoice than the
+one it locked (a payment recorded or changed on that invoice in the meantime).
+The reconciliation capacity is read with a share lock, so an allocation
+committed while the change waited is counted. The
+console commands take `--expected-version`, and `--dry-run` runs the whole
+change in a transaction that is always rolled back:
+
+```
+php artisan svc:billing:payment-status <payment> --workspace=<workspace> \
+    --status=succeeded|failed|canceled --reason=<text> \
+    [--expected-version=<version>] [--dry-run] [--format=json]
+php artisan svc:billing:refund-payment <payment> --workspace=<workspace> \
+    --amount=<minor-units> --reason=<text> \
+    [--expected-version=<version>] [--dry-run] [--format=json]
+```
 
 ## Payment Workflow
 
@@ -226,19 +311,40 @@ boundary and surfaced as above. An `Idempotency-Key` header, or an
 Recording a payment is a five-field form: amount, method, reference, the date
 the money arrived, and the invoice's own currency, which is not asked for.
 
+`ReceivedPaymentData` is the one rule set for recording by hand: the browser
+form, `payments.record` over REST and MCP, and a payment folded into
+`invoices.issue` all parse through it, so a value one door refuses the others
+refuse (#454). Its optional bookkeeping fields - `notes`, `status` and
+`external_finance_transaction_uuid` - are accepted by the form and by
+`payments.record` alike. `status` may be `succeeded` (the default) or `pending`:
+`failed`, `canceled`, `refunded` and `disputed` are where a recorded payment
+ends up, reached by transitioning it, so a row never appears already failed or
+refunded with nothing in its history saying how.
+
 There is no edit or delete of money. A payment's value is corrected by
 transitioning its status or its refunded amount through
 `InvoiceLifecycleService`, which recomputes the invoice and records the
-corresponding activity — history is preserved rather than rewritten. Its
+corresponding activity — history is preserved rather than rewritten. A payment
+recorded by hand is transitioned as described above. Its
 descriptive fields are bookkeeping rather than money and have their own audited
 correction, above. The console equivalent of recording one is:
 
 ```
 php artisan svc:billing:payment <invoice> <minor-units> <currency> <method> \
-    --workspace=<workspace> [--status=succeeded] [--idempotency-key=<key>]
+    --workspace=<workspace> [--received-on=YYYY-MM-DD] [--reference=<text>] \
+    [--notes=<text>] [--status=succeeded|pending] \
+    [--external-finance-transaction=<uuid>] [--idempotency-key=<key>]
 ```
 
-`--status` accepts only the six values above; anything else is refused rather
-than stored, and `--received-on` is bounded by the same rule the screens are:
-`YYYY-MM-DD`, not in the future, not more than two years back, on the
-workspace's calendar.
+It parses through the same `ReceivedPaymentData` rules and records through the
+same `RecordReceivedPayment` operation as the screen and `payments.record`, so
+the three accept exactly the same payments (`PaymentRecordingStatusParityTest`).
+`--status` is `succeeded` or `pending`: anything else is refused, and the refusal
+points at `svc:billing:payment-status` (to mark a recorded payment failed or
+canceled) and `svc:billing:refund-payment` (to record a refund), because those
+states are reached by changing the payment, never by recording a new row.
+A retry with the same idempotency key must name the same amount, currency,
+method, status, finance transaction and (when given) date; anything else is a
+different payment and is refused. `--received-on` is bounded by the same rule
+the screens are: `YYYY-MM-DD`, not
+in the future, not more than two years back, on the workspace's calendar.

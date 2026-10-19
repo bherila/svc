@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Billing;
 
+use App\Support\Billing\InvoiceEmailDraft;
 use Illuminate\Foundation\Http\FormRequest;
 
 /**
@@ -12,10 +13,9 @@ use Illuminate\Foundation\Http\FormRequest;
  * back to the client's billing address, the subject to the invoice number, and
  * the note to the template's own words.
  *
- * `bcc_self` is a flag rather than an address. The only blind copy this screen
- * offers is the sender's own, and taking an address here would let a request
- * blind-copy anyone - which is the one thing about a blind copy that would not
- * be visible to the recipient or on the record.
+ * `bcc_self` is a flag rather than an address; see
+ * {@see InvoiceEmailDraft::composed()}, which this screen and `invoices.send`
+ * share.
  */
 class SendInvoiceRequest extends FormRequest
 {
@@ -39,10 +39,8 @@ class SendInvoiceRequest extends FormRequest
         return [
             'recipients' => ['nullable', 'array', 'min:1', 'max:20'],
             'recipients.*' => ['email', 'max:255'],
-            'subject' => ['nullable', 'string', 'max:255'],
-            // Long enough for a real covering note and short enough that the
-            // body of an invoice email cannot become a file transfer.
-            'message' => ['nullable', 'string', 'max:5000'],
+            'subject' => ['nullable', 'string', 'max:'.InvoiceEmailDraft::SUBJECT_MAX_LENGTH],
+            'message' => ['nullable', 'string', 'max:'.InvoiceEmailDraft::MESSAGE_MAX_LENGTH],
             'bcc_self' => ['sometimes', 'boolean'],
             'idempotency_key' => ['nullable', 'string', 'max:255'],
         ];

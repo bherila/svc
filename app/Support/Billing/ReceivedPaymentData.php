@@ -8,9 +8,27 @@ use DomainException;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 
-/** Validated money already received; no processor interaction or persistence. */
+/**
+ * Validated money already received; no processor interaction or persistence.
+ *
+ * The one rule set for recording a payment by hand: the browser form, the
+ * `payments.record` operation (REST and MCP) and a payment folded into
+ * `invoices.issue` all parse through here, so a value one door refuses the
+ * others refuse too (#454).
+ */
 final readonly class ReceivedPaymentData
 {
+    /**
+     * What a payment may be recorded as. A cheque that has not cleared is
+     * `pending` and money that has is `succeeded`; every other status is where
+     * a recorded payment ends up, and is reached by transitioning it
+     * (`payments.set_status`, `payments.refund`) so the history says what
+     * happened rather than a row appearing already failed or refunded.
+     */
+    public const array RECORDABLE_STATUSES = [InvoicePaymentStatus::Pending, InvoicePaymentStatus::Succeeded];
+
+    public const int NOTES_MAX_LENGTH = PaymentCorrection::NOTES_MAX_LENGTH;
+
     private function __construct(
         public int $amount,
         public string $currency,
@@ -23,10 +41,14 @@ final readonly class ReceivedPaymentData
         public ?string $idempotencyKey,
     ) {}
 
-    /** @param array<string, mixed> $input */
-    public static function from(array $input, bool $requireDate = true, bool $includeBookkeeping = false, ?string $errorPrefix = null): self
+    /**
+     * @param  array<string, mixed>  $input
+     * @param  bool  $includeBookkeeping  accept the optional `notes`, `status` and `external_finance_transaction_uuid`
+     * @param  bool  $acceptsBodyKey  accept an `idempotency_key` field; API callers send theirs as a header instead
+     */
+    public static function from(array $input, bool $requireDate = true, bool $includeBookkeeping = false, ?string $errorPrefix = null, bool $acceptsBodyKey = false): self
     {
-        $rules = self::rules($requireDate, $includeBookkeeping);
+        $rules = self::rules($requireDate, $includeBookkeeping, $acceptsBodyKey);
         if ($errorPrefix === null) {
             $data = Validator::make($input, $rules)->validate();
         } else {
@@ -47,7 +69,7 @@ final readonly class ReceivedPaymentData
     }
 
     /** @return array<string, list<mixed>> */
-    public static function rules(bool $requireDate = true, bool $includeBookkeeping = false): array
+    public static function rules(bool $requireDate = true, bool $includeBookkeeping = false, bool $acceptsBodyKey = false): array
     {
         $rules = [
             'amount' => ['required', 'integer', 'min:1'],
@@ -58,14 +80,22 @@ final readonly class ReceivedPaymentData
         ];
         if ($includeBookkeeping) {
             $rules += [
-                'notes' => ['nullable', 'string', 'max:10000'],
-                'status' => ['nullable', Rule::in(InvoicePaymentStatus::all())],
+                'notes' => ['nullable', 'string', 'max:'.self::NOTES_MAX_LENGTH],
+                'status' => ['nullable', Rule::in(self::recordableStatusValues())],
                 'external_finance_transaction_uuid' => ['nullable', 'uuid'],
-                'idempotency_key' => ['nullable', 'string', 'max:255'],
             ];
+        }
+        if ($acceptsBodyKey) {
+            $rules['idempotency_key'] = ['nullable', 'string', 'max:255'];
         }
 
         return $rules;
+    }
+
+    /** @return list<string> */
+    public static function recordableStatusValues(): array
+    {
+        return array_map(static fn (InvoicePaymentStatus $status): string => $status->value, self::RECORDABLE_STATUSES);
     }
 
     /** @return array<string, mixed> */

@@ -33,6 +33,8 @@ use App\Services\WorkspaceAuthorization;
 use App\Support\Access\PortalAccessScope;
 use App\Support\Access\PortalInvitationStatus;
 use App\Support\AgentApi\AgentApiVersion;
+use App\Support\AgentApi\Presenters\AgentInvoicePresenter;
+use App\Support\AgentApi\Presenters\AgentPaymentPresenter;
 use App\Support\AgentApi\Presenters\AgreementReadPresenter;
 use App\Support\AgentApi\Presenters\PaymentReminderPresenter;
 use App\Support\AgentApi\Presenters\SquareLinkPresenter;
@@ -231,6 +233,8 @@ class ClientDirectoryController extends Controller
         BillingRecordAccess $billing,
         InvoiceEmailService $emails,
         InvoiceCorrectionService $corrections,
+        AgentInvoicePresenter $invoices,
+        AgentPaymentPresenter $payments,
     ): Response {
         Gate::authorize('view', $workspace);
 
@@ -253,6 +257,7 @@ class ClientDirectoryController extends Controller
                 ->where('workspace_id', $workspace->id)
                 ->orderBy('sort_order')
                 ->orderBy('id'),
+            'lines.project' => fn ($query) => $query->where('workspace_id', $workspace->id),
             'payments' => fn ($query) => $query
                 ->where('workspace_id', $workspace->id)
                 ->orderByDesc('received_on')
@@ -389,24 +394,17 @@ class ClientDirectoryController extends Controller
             // it, so a client reading "Deferred work items applied to retainer
             // (12.50 hrs)" had no way to ask which work.
             'line_detail' => InvoiceLineDetail::forInvoice($clientInvoice, InvoiceLineDetail::OPERATOR),
-            'lines' => $clientInvoice->lines->map(fn (ClientInvoiceLine $line): array => [
-                'id' => $line->public_id,
-                'type' => $line->type,
-                'description' => $line->description,
-                'quantity' => (float) $line->quantity,
+            // Each line and payment exactly as the API presents it (#454): the
+            // same presenter, so the screen and invoices.get / payments.list
+            // cannot drift. The screen only adds what is its own - the hours
+            // and day a line carries for the appendix, and the finished URLs
+            // of what this viewer may do.
+            'lines' => $clientInvoice->lines->map(fn (ClientInvoiceLine $line): array => ['id' => $line->public_id] + $invoices->line($line) + [
                 'hours' => $line->hours === null ? null : (float) $line->hours,
                 'line_date' => $line->line_date?->toDateString(),
-                'unit_amount' => (int) $line->unit_amount,
-                'tax_amount' => (int) $line->tax_amount,
-                'total_amount' => (int) $line->total_amount,
                 'money_correctable' => in_array($line->public_id, $moneyCorrectable, true),
             ])->values()->all(),
-            'payments' => $clientInvoice->payments->map(fn (ClientInvoicePayment $payment): array => [
-                'id' => $payment->public_id,
-                'status' => $payment->status,
-                'method' => $payment->method,
-                'reference' => $payment->reference,
-                'received_on' => $payment->received_on?->toDateString(),
+            'payments' => $clientInvoice->payments->map(fn (ClientInvoicePayment $payment): array => $payments->present($payment, $clientInvoice, $manages) + [
                 // A finished URL, and null for a viewer who cannot manage the
                 // workspace - the browser assembles nothing and interprets no
                 // boolean. It corrects the date and only the date; what a
@@ -415,9 +413,6 @@ class ClientDirectoryController extends Controller
                 'correct_date_href' => $manages
                     ? $base.'/payments/'.$payment->public_id.'/received-on'
                     : null,
-                'amount' => (int) $payment->amount,
-                'refunded_amount' => (int) $payment->refunded_amount,
-                'currency' => $payment->currency,
             ])->values()->all(),
         ]);
     }

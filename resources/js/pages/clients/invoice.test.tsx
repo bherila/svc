@@ -247,11 +247,27 @@ describe('correcting a recorded payment date', () => {
         expect(field).toHaveValue('2026-08-20');
 
         fireEvent.change(field, { target: { value: '2026-08-18' } });
-        fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+        // A reason is required, as payments.correct requires it: Save waits
+        // for one, and a blank one is not a reason.
+        const save = screen.getByRole('button', { name: 'Save' });
+        expect(save).toBeDisabled();
+        fireEvent.change(screen.getByLabelText('Reason for the correction'), {
+            target: { value: '   ' },
+        });
+        expect(save).toBeDisabled();
+        fireEvent.change(screen.getByLabelText('Reason for the correction'), {
+            target: { value: ' Bank statement shows the 18th ' },
+        });
+        expect(save).toBeEnabled();
+        fireEvent.click(save);
 
         expect(inertia.post).toHaveBeenCalledWith(
             '/workspaces/w-1/invoices/invoice-1/payments/payment-1/received-on',
-            { received_on: '2026-08-18' },
+            {
+                received_on: '2026-08-18',
+                reason: 'Bank statement shows the 18th',
+            },
             expect.anything(),
         );
     });
@@ -301,12 +317,19 @@ describe('correcting a recorded payment date', () => {
             screen.getByLabelText('Corrected date for the $40.00 payment'),
             { target: { value: '2026-08-18' } },
         );
+        fireEvent.change(screen.getByLabelText('Reason for the correction'), {
+            target: { value: 'Synthetic statement' },
+        });
         fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 
         open(1);
         expect(
             screen.getByLabelText('Corrected date for the $25.00 payment'),
         ).toHaveValue('2026-08-05');
+        // And the reason given for the first row does not carry over.
+        expect(screen.getByLabelText('Reason for the correction')).toHaveValue(
+            '',
+        );
 
         // Abandoned on the second row, which is the sharper case: nothing was
         // submitted, so nothing else had a reason to clear the field.
@@ -340,6 +363,40 @@ describe('correcting a recorded payment date', () => {
     });
 });
 
+describe('voiding an invoice', () => {
+    it('requires a reason and sends it with the void', () => {
+        render(
+            <ClientInvoiceDetail
+                {...props({
+                    actions: {
+                        ...props().actions,
+                        void: '/workspaces/w-1/invoices/invoice-1/void',
+                    },
+                })}
+            />,
+        );
+
+        fireEvent.click(screen.getByRole('button', { name: 'Void' }));
+        const confirm = within(screen.getByRole('alertdialog')).getByRole(
+            'button',
+            { name: 'Void' },
+        );
+        expect(confirm).toBeDisabled();
+
+        fireEvent.change(screen.getByLabelText('Reason'), {
+            target: { value: ' Issued to the wrong client ' },
+        });
+        expect(confirm).toBeEnabled();
+        fireEvent.click(confirm);
+
+        expect(inertia.post).toHaveBeenCalledWith(
+            '/workspaces/w-1/invoices/invoice-1/void',
+            { reason: 'Issued to the wrong client' },
+            expect.anything(),
+        );
+    });
+});
+
 describe('reviewing and correcting an issued invoice', () => {
     it('uses server-supplied correction capabilities and posts a revisioned audit request', () => {
         render(
@@ -361,7 +418,7 @@ describe('reviewing and correcting an issued invoice', () => {
                             id: 'line-1',
                             type: 'retainer',
                             description: 'Original wording',
-                            quantity: 1,
+                            quantity: '1.0000',
                             hours: null,
                             line_date: null,
                             unit_amount: 10000,
@@ -424,7 +481,7 @@ describe('reviewing and correcting an issued invoice', () => {
                             id: 'line-1',
                             type: 'adjustment',
                             description: 'First revision',
-                            quantity: 1,
+                            quantity: '1.0000',
                             hours: null,
                             line_date: null,
                             unit_amount: 10000,
@@ -458,7 +515,7 @@ describe('reviewing and correcting an issued invoice', () => {
                             id: 'line-1',
                             type: 'adjustment',
                             description: 'Committed second revision',
-                            quantity: 2,
+                            quantity: '2.0000',
                             hours: null,
                             line_date: null,
                             unit_amount: 12500,

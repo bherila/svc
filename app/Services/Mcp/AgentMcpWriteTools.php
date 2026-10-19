@@ -12,6 +12,7 @@ use App\Services\AgentApi\AgentExpenseReadService;
 use App\Services\AgentApi\AgentPaymentReadService;
 use App\Services\AgentApi\AgentReadService;
 use App\Services\AgentApi\AgentTaskMutationAction;
+use App\Services\AgentApi\ChangeManualPaymentAction;
 use App\Services\AgentApi\CorrectPaymentAction;
 use App\Services\AgentApi\DeleteTimeEntryAction;
 use App\Services\AgentApi\IssueInvoiceAction;
@@ -23,6 +24,8 @@ use App\Services\Mcp\Context\McpRequestContext;
 use App\Support\AgentApi\Presenters\AgentInvoicePresenter;
 use App\Support\AgentApi\Presenters\AgentTaskPresenter;
 use App\Support\AgentApi\Presenters\AgentTimeEntryPresenter;
+use App\Support\Billing\InvoiceEmailDraft;
+use App\Support\Billing\ReceivedPaymentData;
 use Bherila\McpLaravelBridge\Http\InternalAgentApiTransport;
 use Bherila\McpLaravelBridge\Mcp\RequestArguments;
 use Mcp\Capability\Attribute\Schema;
@@ -119,35 +122,40 @@ final class AgentMcpWriteTools
         return $this->send('DELETE', "workspaces/{$workspace_id}/attachments/{$attachment_id}", compact('expected_version', 'confirm'), $idempotency_key);
     }
 
-    /** @return array<string, mixed> */
+    /**
+     * Record money already received. Omitted optional fields mean what the
+     * browser form means by them: today, no reference or note, succeeded.
+     *
+     * @return array<string, mixed>
+     */
     public function paymentsRecord(
         #[Schema(format: 'uuid')] string $workspace_id,
         #[Schema(format: 'uuid')] string $invoice_id,
         #[Schema(minimum: 1)] int $amount,
         #[Schema(pattern: '^[A-Z]{3}$')] string $currency,
-        #[Schema(format: 'date')] string $received_on,
         #[Schema(minLength: 1, maxLength: ClientInvoicePayment::METHOD_MAX_LENGTH)] string $method,
         #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key,
         #[Schema(minLength: 64, maxLength: 64)] string $expected_version,
         #[Schema] bool $confirm,
+        #[Schema(format: 'date')] ?string $received_on = null,
         #[Schema(maxLength: 255)] ?string $reference = null,
+        #[Schema(maxLength: ReceivedPaymentData::NOTES_MAX_LENGTH)] ?string $notes = null,
+        #[Schema(enum: ['pending', 'succeeded'])] ?string $status = null,
+        #[Schema(format: 'uuid')] ?string $external_finance_transaction_uuid = null,
     ): array {
         $context = $this->accounts->resolve($this->context('payments:record'), $workspace_id);
-        $workspace = $context->workspace;
-        if (! $workspace instanceof Workspace) {
-            throw new \LogicException('MCP payment recording requires a workspace context.');
-        }
+        $workspace = $this->workspace($context);
         $actor = User::query()->findOrFail($context->principal->subject->id);
         $ids = app(RecordPaymentAction::class)->run($actor, $workspace,
             $context->principal->clientId, $idempotency_key,
-            compact('invoice_id', 'amount', 'currency', 'received_on', 'method', 'reference', 'expected_version', 'confirm'));
+            compact('invoice_id', 'amount', 'currency', 'received_on', 'method', 'reference', 'notes', 'status', 'external_finance_transaction_uuid', 'expected_version', 'confirm'));
 
         return app(AgentPaymentReadService::class)->result($actor, $workspace, $ids);
     }
 
     /**
-     * Correct a received payment's method, reference or date. Omitted fields
-     * are left alone; an explicit null reference clears it.
+     * Correct a received payment's method, reference, note or date. Omitted
+     * fields are left alone; an explicit null reference or note clears it.
      *
      * @return array<string, mixed>
      */
@@ -162,9 +170,10 @@ final class AgentMcpWriteTools
         #[Schema(minLength: 1, maxLength: ClientInvoicePayment::METHOD_MAX_LENGTH)] ?string $method = null,
         #[Schema(maxLength: 255)] ?string $reference = null,
         #[Schema(format: 'date')] ?string $received_on = null,
+        #[Schema(maxLength: ReceivedPaymentData::NOTES_MAX_LENGTH)] ?string $notes = null,
     ): array {
         $body = compact('expected_version', 'reason', 'confirm');
-        foreach (compact('method', 'reference', 'received_on') as $name => $value) {
+        foreach (compact('method', 'reference', 'notes', 'received_on') as $name => $value) {
             if ($this->requestArguments->has($request, $name)) {
                 $body[$name] = $value;
             }
@@ -175,6 +184,55 @@ final class AgentMcpWriteTools
         $ids = app(CorrectPaymentAction::class)->run($actor, $workspace, $context->principal->clientId, $idempotency_key, $payment_id, $body);
 
         return ['data' => app(AgentPaymentReadService::class)->result($actor, $workspace, $ids)['data'][0]];
+    }
+
+    /**
+     * Move a payment recorded by hand to succeeded, failed or canceled.
+     *
+     * @return array<string, mixed>
+     */
+    public function paymentsSetStatus(
+        #[Schema(format: 'uuid')] string $workspace_id,
+        #[Schema(format: 'uuid')] string $payment_id,
+        #[Schema(enum: ['succeeded', 'failed', 'canceled'])] string $status,
+        #[Schema(minLength: 64, maxLength: 64)] string $expected_version,
+        #[Schema(minLength: 1, maxLength: 500)] string $reason,
+        #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key,
+        #[Schema] bool $confirm,
+    ): array {
+        [$actor, $workspace, $client] = $this->paymentWriter($workspace_id);
+        $ids = app(ChangeManualPaymentAction::class)->setStatus($actor, $workspace, $client, $idempotency_key, $payment_id, compact('status', 'expected_version', 'reason', 'confirm'));
+
+        return ['data' => app(AgentPaymentReadService::class)->result($actor, $workspace, $ids)['data'][0]];
+    }
+
+    /**
+     * Record money returned to the client against a payment recorded by hand.
+     *
+     * @return array<string, mixed>
+     */
+    public function paymentsRefund(
+        #[Schema(format: 'uuid')] string $workspace_id,
+        #[Schema(format: 'uuid')] string $payment_id,
+        #[Schema(minimum: 1)] int $amount,
+        #[Schema(minLength: 64, maxLength: 64)] string $expected_version,
+        #[Schema(minLength: 1, maxLength: 500)] string $reason,
+        #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key,
+        #[Schema] bool $confirm,
+    ): array {
+        [$actor, $workspace, $client] = $this->paymentWriter($workspace_id);
+        $ids = app(ChangeManualPaymentAction::class)->refund($actor, $workspace, $client, $idempotency_key, $payment_id, compact('amount', 'expected_version', 'reason', 'confirm'));
+
+        return ['data' => app(AgentPaymentReadService::class)->result($actor, $workspace, $ids)['data'][0]];
+    }
+
+    /** @return array{User, Workspace, string} */
+    private function paymentWriter(string $workspaceId): array
+    {
+        $context = $this->accounts->resolve($this->context('payments:record'), $workspaceId);
+        $workspace = $this->workspace($context);
+
+        return [User::query()->findOrFail($context->principal->subject->id), $workspace, $context->principal->clientId];
     }
 
     public function forContext(McpRequestContext $context): self
@@ -500,9 +558,25 @@ final class AgentMcpWriteTools
     /** @param list<string> $time_entry_ids
      * @param list<array<string, mixed>> $manual_lines
      * @return array<string, mixed> */
-    public function invoicesCreateDraft(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $company_id, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key, #[Schema(maxItems: 100)] array $time_entry_ids = [], #[Schema(maxItems: 100)] array $manual_lines = [], ?string $currency = null, ?string $due_date = null, ?string $notes = null, ?string $scheduled_issue_date = null): array
-    {
-        return $this->send('POST', "workspaces/{$workspace_id}/invoices", array_filter(compact('company_id', 'time_entry_ids', 'manual_lines', 'currency', 'due_date', 'scheduled_issue_date', 'notes'), static fn (mixed $value): bool => $value !== null), $idempotency_key);
+    public function invoicesCreateDraft(
+        #[Schema(format: 'uuid')] string $workspace_id,
+        #[Schema(format: 'uuid')] string $company_id,
+        #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key,
+        #[Schema(maxItems: 100)] array $time_entry_ids = [],
+        #[Schema(maxItems: 100)] array $manual_lines = [],
+        ?string $currency = null,
+        ?string $due_date = null,
+        ?string $notes = null,
+        ?string $scheduled_issue_date = null,
+        #[Schema(maxLength: 80)] ?string $invoice_number = null,
+        #[Schema(format: 'date')] ?string $issue_date = null,
+        #[Schema(format: 'date')] ?string $service_period_start = null,
+        #[Schema(format: 'date')] ?string $service_period_end = null,
+        ?bool $is_visible_to_client = null,
+    ): array {
+        // Only what was sent joins the body, so a request hashes as it would
+        // over REST and a draft created before these fields existed replays.
+        return $this->send('POST', "workspaces/{$workspace_id}/invoices", array_filter(compact('company_id', 'time_entry_ids', 'manual_lines', 'currency', 'due_date', 'scheduled_issue_date', 'notes', 'invoice_number', 'issue_date', 'service_period_start', 'service_period_end', 'is_visible_to_client'), static fn (mixed $value): bool => $value !== null), $idempotency_key);
     }
 
     /** @param list<string> $time_entry_ids
@@ -632,9 +706,28 @@ final class AgentMcpWriteTools
 
     /** @param list<string> $recipients
      * @return array<string, mixed> */
-    public function invoicesSend(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $invoice_id, #[Schema] bool $confirm, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, #[Schema(minItems: 1, maxItems: 10)] array $recipients, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
-    {
-        return $this->send('POST', "workspaces/{$workspace_id}/invoices/{$invoice_id}/send", compact('expected_version', 'recipients', 'confirm'), $idempotency_key);
+    public function invoicesSend(
+        #[Schema(format: 'uuid')] string $workspace_id,
+        #[Schema(format: 'uuid')] string $invoice_id,
+        #[Schema] bool $confirm,
+        #[Schema(minLength: 64, maxLength: 64)] string $expected_version,
+        #[Schema(minItems: 1, maxItems: 10)] array $recipients,
+        #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key,
+        RequestContext $context,
+        #[Schema(maxLength: InvoiceEmailDraft::SUBJECT_MAX_LENGTH)] ?string $subject = null,
+        #[Schema(maxLength: InvoiceEmailDraft::MESSAGE_MAX_LENGTH)] ?string $message = null,
+        ?bool $bcc_self = null,
+    ): array {
+        // The compose fields join the body only when sent, so a plain send
+        // hashes exactly as it did before they existed.
+        $body = compact('expected_version', 'recipients', 'confirm');
+        foreach (compact('subject', 'message', 'bcc_self') as $name => $value) {
+            if ($this->requestArguments->has($context, $name)) {
+                $body[$name] = $value;
+            }
+        }
+
+        return $this->send('POST', "workspaces/{$workspace_id}/invoices/{$invoice_id}/send", $body, $idempotency_key);
     }
 
     /** @return array<string, mixed> */

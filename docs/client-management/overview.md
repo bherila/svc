@@ -783,12 +783,12 @@ Recording a payment is the one write the invoice screen offers
 path anywhere.
 
 Correcting one means transitioning its status or its refunded amount through
-`InvoiceLifecycleService::setPaymentStatus()` / `setRefundedAmount()`, so history
-is preserved rather than rewritten — but note that **`StripeWebhookService` was
-their only caller** when this was written, so a hand-entered payment could be
-recorded and not corrected in place. Check with
-`rg -n 'setPaymentStatus|setRefundedAmount' app/` rather than taking that as
-current.
+`InvoiceLifecycleService`, so history is preserved rather than rewritten. A
+processor's events reach `setPaymentStatus()` / `setRefundedAmount()`; a
+payment recorded by hand is withdrawn, failed, cleared or refunded through
+`changeManualPayment()` - `payments.set_status`, `payments.refund` and their
+console twins - with a reason and the rules in
+[payments.md](payments.md#withdrawing-failing-or-refunding-a-payment-recorded-by-hand).
 
 Paid and balance amounts are **derived**. `InvoiceLifecycleService::refreshStatus()`
 sums each `succeeded` payment's amount less its `refunded_amount`, floors each

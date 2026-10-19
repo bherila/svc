@@ -9235,6 +9235,44 @@
                                 ],
                                 "format": "date",
                                 "description": "The day you plan to issue this draft; null clears it. Nothing issues or sends on it: billing_audit.stale_and_missing flags the draft once the day has passed."
+                            },
+                            "invoice_number": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "minLength": 1,
+                                "maxLength": 80,
+                                "description": "The invoice's number. Omitted or null takes the workspace's next number; a number already used in the workspace is refused."
+                            },
+                            "issue_date": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "format": "date",
+                                "description": "The date the invoice will be issued as. Omitted or null means the day invoices.issue runs; issuing refuses a date still in the future."
+                            },
+                            "service_period_start": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "format": "date",
+                                "description": "First day of the work this invoice bills. Either end may be given alone."
+                            },
+                            "service_period_end": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "format": "date",
+                                "description": "Last day of the work this invoice bills; on or after service_period_start when both are given."
+                            },
+                            "is_visible_to_client": {
+                                "type": "boolean",
+                                "default": false,
+                                "description": "Whether the client portal shows the draft. Issuing always makes the invoice visible."
                             }
                         },
                         "required": [
@@ -9297,7 +9335,7 @@
                             }
                         }
                     },
-                    "description": "Create a draft from explicit manual lines and/or explicit approved time.",
+                    "description": "Create a draft from explicit manual lines and/or explicit approved time. Optionally set the invoice number, issue date, service period and client visibility as the invoice screen does; omitted, the next number is used and the draft stays hidden until issued.",
                     "annotations": {
                         "readOnlyHint": false,
                         "destructiveHint": false,
@@ -12231,6 +12269,27 @@
                                 "type": "string",
                                 "minLength": 1,
                                 "maxLength": 255
+                            },
+                            "subject": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "maxLength": 255,
+                                "description": "Omitted or null uses the invoice's default subject."
+                            },
+                            "message": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "maxLength": 5000,
+                                "description": "A covering note shown above the invoice. Omitted or null uses the template's own words."
+                            },
+                            "bcc_self": {
+                                "type": "boolean",
+                                "default": false,
+                                "description": "Send a blind copy to the signed-in user's own address. No other blind copy can be named."
                             }
                         },
                         "required": [
@@ -12249,7 +12308,7 @@
                             }
                         }
                     },
-                    "description": "Queue delivery to explicit recipients only after confirmation.",
+                    "description": "Email the invoice to explicit recipients only after confirmation, optionally with a subject, a covering message and a blind copy to your own address (bcc_self).",
                     "annotations": {
                         "readOnlyHint": false,
                         "destructiveHint": false,
@@ -14444,6 +14503,14 @@
                             "received_on": {
                                 "type": "string",
                                 "format": "date"
+                            },
+                            "notes": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "maxLength": 10000,
+                                "description": "The operator's private note; null or blank clears it."
                             }
                         },
                         "required": [
@@ -14474,12 +14541,17 @@
                             },
                             {
                                 "required": [
+                                    "notes"
+                                ]
+                            },
+                            {
+                                "required": [
                                     "received_on"
                                 ]
                             }
                         ]
                     },
-                    "description": "Correct the method, reference or received date of a payment already recorded, using the version from payments.list and a reason that is kept in the client history. Omitted fields are unchanged; a null reference clears it. Amount, currency, status and refunds cannot be changed here. Explicit user confirmation and idempotency key required. Owner/admin only. Never charges a customer or issues a refund.",
+                    "description": "Correct the method, reference, notes or received date of a payment already recorded, using the version from payments.list and a reason that is kept in the client history. Omitted fields are unchanged; a null reference or note clears it. Amount, currency, status and refunds cannot be changed here; use payments.set_status or payments.refund. Explicit user confirmation and idempotency key required. Owner/admin only. Never charges a customer or issues a refund.",
                     "annotations": {
                         "readOnlyHint": false,
                         "destructiveHint": false,
@@ -14509,7 +14581,10 @@
                                     "received_on",
                                     "method",
                                     "reference",
+                                    "notes",
+                                    "external_finance_transaction_uuid",
                                     "status",
+                                    "manual",
                                     "refunded_amount",
                                     "version"
                                 ],
@@ -14548,10 +14623,19 @@
                                             "string",
                                             "null"
                                         ],
-                                        "maxLength": 255
+                                        "maxLength": 255,
+                                        "description": "Null unless the reader is a workspace owner/admin."
                                     },
                                     "status": {
-                                        "type": "string"
+                                        "type": "string",
+                                        "enum": [
+                                            "pending",
+                                            "succeeded",
+                                            "failed",
+                                            "refunded",
+                                            "disputed",
+                                            "canceled"
+                                        ]
                                     },
                                     "refunded_amount": {
                                         "type": "integer",
@@ -14559,6 +14643,26 @@
                                     },
                                     "version": {
                                         "$ref": "#/$defs/Version"
+                                    },
+                                    "notes": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 10000,
+                                        "description": "The operator's private note. Null unless the reader is a workspace owner/admin."
+                                    },
+                                    "external_finance_transaction_uuid": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "uuid",
+                                        "description": "The finance system's transaction the payment was recorded against. Null unless the reader is a workspace owner/admin."
+                                    },
+                                    "manual": {
+                                        "type": "boolean",
+                                        "description": "Recorded by hand rather than by a payment processor. Only a manual payment can be moved by payments.set_status or payments.refund."
                                     }
                                 }
                             },
@@ -14655,7 +14759,10 @@
                                     "received_on",
                                     "method",
                                     "reference",
+                                    "notes",
+                                    "external_finance_transaction_uuid",
                                     "status",
+                                    "manual",
                                     "refunded_amount",
                                     "version"
                                 ],
@@ -14694,10 +14801,19 @@
                                             "string",
                                             "null"
                                         ],
-                                        "maxLength": 255
+                                        "maxLength": 255,
+                                        "description": "Null unless the reader is a workspace owner/admin."
                                     },
                                     "status": {
-                                        "type": "string"
+                                        "type": "string",
+                                        "enum": [
+                                            "pending",
+                                            "succeeded",
+                                            "failed",
+                                            "refunded",
+                                            "disputed",
+                                            "canceled"
+                                        ]
                                     },
                                     "refunded_amount": {
                                         "type": "integer",
@@ -14705,6 +14821,26 @@
                                     },
                                     "version": {
                                         "$ref": "#/$defs/Version"
+                                    },
+                                    "notes": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 10000,
+                                        "description": "The operator's private note. Null unless the reader is a workspace owner/admin."
+                                    },
+                                    "external_finance_transaction_uuid": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "uuid",
+                                        "description": "The finance system's transaction the payment was recorded against. Null unless the reader is a workspace owner/admin."
+                                    },
+                                    "manual": {
+                                        "type": "boolean",
+                                        "description": "Recorded by hand rather than by a payment processor. Only a manual payment can be moved by payments.set_status or payments.refund."
                                     }
                                 }
                             },
@@ -14737,10 +14873,6 @@
                                 "type": "string",
                                 "pattern": "^[A-Z]{3}$"
                             },
-                            "received_on": {
-                                "type": "string",
-                                "format": "date"
-                            },
                             "method": {
                                 "type": "string",
                                 "minLength": 1,
@@ -14762,12 +14894,42 @@
                                 "const": true,
                                 "description": "Explicit user confirmation is required."
                             },
+                            "received_on": {
+                                "type": "string",
+                                "format": "date",
+                                "description": "The day the money arrived (YYYY-MM-DD), not in the future and at most two years back on the workspace's calendar. Omitted means today on that calendar."
+                            },
                             "reference": {
                                 "type": [
                                     "string",
                                     "null"
                                 ],
                                 "maxLength": 255
+                            },
+                            "notes": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "maxLength": 10000,
+                                "description": "The operator's private note."
+                            },
+                            "status": {
+                                "type": "string",
+                                "enum": [
+                                    "pending",
+                                    "succeeded"
+                                ],
+                                "default": "succeeded",
+                                "description": "succeeded for money that has arrived; pending for money not yet cleared, such as an uncleared cheque. Move it later with payments.set_status."
+                            },
+                            "external_finance_transaction_uuid": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "format": "uuid",
+                                "description": "The finance system's transaction this payment was received as."
                             }
                         },
                         "required": [
@@ -14775,7 +14937,6 @@
                             "invoice_id",
                             "amount",
                             "currency",
-                            "received_on",
                             "method",
                             "idempotency_key",
                             "expected_version",
@@ -14783,7 +14944,7 @@
                         ],
                         "additionalProperties": false
                     },
-                    "description": "Record money already received using an explicit invoice, amount in minor units, currency, payment date and method. Current invoice version, explicit user confirmation and idempotency key required. Owner/admin only; overpayments refused. Never charges a customer or issues a refund.",
+                    "description": "Record money already received using an explicit invoice, amount in minor units, currency and method. Give the actual payment date as received_on (it defaults to today, never the invoice date); reference, notes and the finance transaction id are optional; status is succeeded, or pending for money that has not cleared. Current invoice version, explicit user confirmation and idempotency key required. Owner/admin only; overpayments refused. Never charges a customer or issues a refund.",
                     "annotations": {
                         "readOnlyHint": false,
                         "destructiveHint": false,
@@ -14816,7 +14977,10 @@
                                     "received_on",
                                     "method",
                                     "reference",
+                                    "notes",
+                                    "external_finance_transaction_uuid",
                                     "status",
+                                    "manual",
                                     "refunded_amount",
                                     "version"
                                 ],
@@ -14855,10 +15019,19 @@
                                             "string",
                                             "null"
                                         ],
-                                        "maxLength": 255
+                                        "maxLength": 255,
+                                        "description": "Null unless the reader is a workspace owner/admin."
                                     },
                                     "status": {
-                                        "type": "string"
+                                        "type": "string",
+                                        "enum": [
+                                            "pending",
+                                            "succeeded",
+                                            "failed",
+                                            "refunded",
+                                            "disputed",
+                                            "canceled"
+                                        ]
                                     },
                                     "refunded_amount": {
                                         "type": "integer",
@@ -14866,6 +15039,386 @@
                                     },
                                     "version": {
                                         "$ref": "#/$defs/Version"
+                                    },
+                                    "notes": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 10000,
+                                        "description": "The operator's private note. Null unless the reader is a workspace owner/admin."
+                                    },
+                                    "external_finance_transaction_uuid": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "uuid",
+                                        "description": "The finance system's transaction the payment was recorded against. Null unless the reader is a workspace owner/admin."
+                                    },
+                                    "manual": {
+                                        "type": "boolean",
+                                        "description": "Recorded by hand rather than by a payment processor. Only a manual payment can be moved by payments.set_status or payments.refund."
+                                    }
+                                }
+                            },
+                            "Version": {
+                                "type": "string",
+                                "pattern": "^[a-f0-9]{64}$"
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "payments.refund",
+                    "title": "Record a refund of a hand-recorded payment",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "workspace_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "payment_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "amount": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "description": "What was returned to the client now, in minor units; at most what is left unrefunded."
+                            },
+                            "expected_version": {
+                                "$ref": "#/$defs/Version"
+                            },
+                            "reason": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 500,
+                                "description": "Why, kept in the client history."
+                            },
+                            "idempotency_key": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 255
+                            },
+                            "confirm": {
+                                "type": "boolean",
+                                "const": true,
+                                "description": "Explicit user confirmation is required."
+                            }
+                        },
+                        "required": [
+                            "workspace_id",
+                            "payment_id",
+                            "amount",
+                            "expected_version",
+                            "reason",
+                            "idempotency_key",
+                            "confirm"
+                        ],
+                        "additionalProperties": false,
+                        "$defs": {
+                            "Version": {
+                                "type": "string",
+                                "pattern": "^[a-f0-9]{64}$"
+                            }
+                        }
+                    },
+                    "description": "Record that part or all of a succeeded payment recorded by hand was returned to the client outside SVC: amount is what was returned now, in minor units, at most what is left. A full refund makes the payment refunded; the invoice balance reopens by the amount. A reason kept in the client history and the version from payments.list are required. Processor (Stripe, Square) payments are refused. Explicit user confirmation and idempotency key required. Owner/admin only. SVC never sends the money.",
+                    "annotations": {
+                        "readOnlyHint": false,
+                        "destructiveHint": true,
+                        "idempotentHint": true,
+                        "openWorldHint": false
+                    },
+                    "outputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "data"
+                        ],
+                        "properties": {
+                            "data": {
+                                "$ref": "#/$defs/ReceivedPayment"
+                            }
+                        },
+                        "$defs": {
+                            "ReceivedPayment": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "id",
+                                    "invoice_id",
+                                    "amount",
+                                    "currency",
+                                    "received_on",
+                                    "method",
+                                    "reference",
+                                    "notes",
+                                    "external_finance_transaction_uuid",
+                                    "status",
+                                    "manual",
+                                    "refunded_amount",
+                                    "version"
+                                ],
+                                "properties": {
+                                    "id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "invoice_id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "amount": {
+                                        "type": "integer",
+                                        "minimum": 1
+                                    },
+                                    "currency": {
+                                        "type": "string",
+                                        "pattern": "^[A-Z]{3}$"
+                                    },
+                                    "received_on": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date"
+                                    },
+                                    "method": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ]
+                                    },
+                                    "reference": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 255,
+                                        "description": "Null unless the reader is a workspace owner/admin."
+                                    },
+                                    "status": {
+                                        "type": "string",
+                                        "enum": [
+                                            "pending",
+                                            "succeeded",
+                                            "failed",
+                                            "refunded",
+                                            "disputed",
+                                            "canceled"
+                                        ]
+                                    },
+                                    "refunded_amount": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                    },
+                                    "version": {
+                                        "$ref": "#/$defs/Version"
+                                    },
+                                    "notes": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 10000,
+                                        "description": "The operator's private note. Null unless the reader is a workspace owner/admin."
+                                    },
+                                    "external_finance_transaction_uuid": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "uuid",
+                                        "description": "The finance system's transaction the payment was recorded against. Null unless the reader is a workspace owner/admin."
+                                    },
+                                    "manual": {
+                                        "type": "boolean",
+                                        "description": "Recorded by hand rather than by a payment processor. Only a manual payment can be moved by payments.set_status or payments.refund."
+                                    }
+                                }
+                            },
+                            "Version": {
+                                "type": "string",
+                                "pattern": "^[a-f0-9]{64}$"
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "payments.set_status",
+                    "title": "Set a hand-recorded payment's status",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "workspace_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "payment_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "status": {
+                                "type": "string",
+                                "enum": [
+                                    "succeeded",
+                                    "failed",
+                                    "canceled"
+                                ],
+                                "description": "succeeded: money recorded as pending cleared. failed: it bounced or was reversed. canceled: it was recorded in error and is withdrawn."
+                            },
+                            "expected_version": {
+                                "$ref": "#/$defs/Version"
+                            },
+                            "reason": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 500,
+                                "description": "Why, kept in the client history."
+                            },
+                            "idempotency_key": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 255
+                            },
+                            "confirm": {
+                                "type": "boolean",
+                                "const": true,
+                                "description": "Explicit user confirmation is required."
+                            }
+                        },
+                        "required": [
+                            "workspace_id",
+                            "payment_id",
+                            "status",
+                            "expected_version",
+                            "reason",
+                            "idempotency_key",
+                            "confirm"
+                        ],
+                        "additionalProperties": false,
+                        "$defs": {
+                            "Version": {
+                                "type": "string",
+                                "pattern": "^[a-f0-9]{64}$"
+                            }
+                        }
+                    },
+                    "description": "Mark a payment recorded by hand succeeded (it cleared), failed (it bounced or was reversed) or canceled (it was recorded in error and is withdrawn), with a reason kept in the client history and the version from payments.list. Only pending payments may succeed; pending or unrefunded succeeded payments may fail or be canceled; failed, canceled, refunded and disputed are final, so money arriving later is a new payment. The invoice balance and status are recomputed. Processor (Stripe, Square) payments are refused. Explicit user confirmation and idempotency key required. Owner/admin only. Never charges a customer or issues a refund.",
+                    "annotations": {
+                        "readOnlyHint": false,
+                        "destructiveHint": true,
+                        "idempotentHint": true,
+                        "openWorldHint": false
+                    },
+                    "outputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "data"
+                        ],
+                        "properties": {
+                            "data": {
+                                "$ref": "#/$defs/ReceivedPayment"
+                            }
+                        },
+                        "$defs": {
+                            "ReceivedPayment": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "id",
+                                    "invoice_id",
+                                    "amount",
+                                    "currency",
+                                    "received_on",
+                                    "method",
+                                    "reference",
+                                    "notes",
+                                    "external_finance_transaction_uuid",
+                                    "status",
+                                    "manual",
+                                    "refunded_amount",
+                                    "version"
+                                ],
+                                "properties": {
+                                    "id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "invoice_id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "amount": {
+                                        "type": "integer",
+                                        "minimum": 1
+                                    },
+                                    "currency": {
+                                        "type": "string",
+                                        "pattern": "^[A-Z]{3}$"
+                                    },
+                                    "received_on": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date"
+                                    },
+                                    "method": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ]
+                                    },
+                                    "reference": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 255,
+                                        "description": "Null unless the reader is a workspace owner/admin."
+                                    },
+                                    "status": {
+                                        "type": "string",
+                                        "enum": [
+                                            "pending",
+                                            "succeeded",
+                                            "failed",
+                                            "refunded",
+                                            "disputed",
+                                            "canceled"
+                                        ]
+                                    },
+                                    "refunded_amount": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                    },
+                                    "version": {
+                                        "$ref": "#/$defs/Version"
+                                    },
+                                    "notes": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 10000,
+                                        "description": "The operator's private note. Null unless the reader is a workspace owner/admin."
+                                    },
+                                    "external_finance_transaction_uuid": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "uuid",
+                                        "description": "The finance system's transaction the payment was recorded against. Null unless the reader is a workspace owner/admin."
+                                    },
+                                    "manual": {
+                                        "type": "boolean",
+                                        "description": "Recorded by hand rather than by a payment processor. Only a manual payment can be moved by payments.set_status or payments.refund."
                                     }
                                 }
                             },
@@ -24570,7 +25123,7 @@
                 "invoices.add_time": "ee27431f3eebdb38",
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.corrections.get": "aa93da895756b80b",
-                "invoices.create_draft": "7f23d0f35560fb05",
+                "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.generate_period": "a736a25f33ed9607",
                 "invoices.get": "790ff02f4ec45336",
@@ -24581,7 +25134,7 @@
                 "invoices.preview_period": "588e53821f4472ec",
                 "invoices.release_delivery": "f703c8eb40f1ed80",
                 "invoices.reminders.list": "86e53f8c46db44c6",
-                "invoices.send": "3b2bc9ef256c4d18",
+                "invoices.send": "7eade4913e162ab2",
                 "invoices.send_reminder": "8f62ca2de82c197b",
                 "invoices.square_candidates": "09693c77227c6c63",
                 "invoices.square_link": "9346fefe8d8337f7",
@@ -24590,9 +25143,11 @@
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.correct": "c4baf2959b7ae710",
-                "payments.list": "5f9d6942bc64d245",
-                "payments.record": "96e4995b7c1dc5ba",
+                "payments.correct": "675e27f39a47eaea",
+                "payments.list": "a9d6e9267ef8ee1a",
+                "payments.record": "075c031df6c51737",
+                "payments.refund": "986a230dbe853fc7",
+                "payments.set_status": "948272fe2204aa9b",
                 "projects.archive": "9693f87cf68157c0",
                 "projects.create": "652afb7cd8be7462",
                 "projects.get": "c7ffe7930b196d4b",
@@ -24715,6 +25270,8 @@
                     "invoices.square_unlink role",
                     "payments.correct role",
                     "payments.record role",
+                    "payments.refund role",
+                    "payments.set_status role",
                     "projects.archive role",
                     "projects.create role",
                     "projects.members.list role",
@@ -24758,18 +25315,18 @@
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
                 "invoices.correct": "51b0c12ec9b5d762",
-                "invoices.create_draft": "7f23d0f35560fb05",
+                "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.get": "790ff02f4ec45336",
                 "invoices.issue": "e8284c71f5ed3751",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
-                "invoices.send": "3b2bc9ef256c4d18",
+                "invoices.send": "7eade4913e162ab2",
                 "invoices.update_details": "9c25cf205acf1a39",
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.accept": "6f660c7d4c51f10e",
@@ -24866,6 +25423,8 @@
                     "invoices.square_unlink role",
                     "payments.correct role",
                     "payments.record role",
+                    "payments.refund role",
+                    "payments.set_status role",
                     "projects.archive role",
                     "projects.create role",
                     "projects.members.list role",
@@ -24909,18 +25468,18 @@
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
                 "invoices.correct": "51b0c12ec9b5d762",
-                "invoices.create_draft": "7f23d0f35560fb05",
+                "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.get": "790ff02f4ec45336",
                 "invoices.issue": "e8284c71f5ed3751",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
-                "invoices.send": "3b2bc9ef256c4d18",
+                "invoices.send": "7eade4913e162ab2",
                 "invoices.update_details": "9c25cf205acf1a39",
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.accept": "6f660c7d4c51f10e",
@@ -25017,6 +25576,8 @@
                     "invoices.square_unlink role",
                     "payments.correct role",
                     "payments.record role",
+                    "payments.refund role",
+                    "payments.set_status role",
                     "projects.archive role",
                     "projects.create role",
                     "projects.members.list role",
@@ -25060,18 +25621,18 @@
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
                 "invoices.correct": "51b0c12ec9b5d762",
-                "invoices.create_draft": "7f23d0f35560fb05",
+                "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.get": "790ff02f4ec45336",
                 "invoices.issue": "e8284c71f5ed3751",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
-                "invoices.send": "3b2bc9ef256c4d18",
+                "invoices.send": "7eade4913e162ab2",
                 "invoices.update_details": "9c25cf205acf1a39",
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.accept": "6f660c7d4c51f10e",
@@ -25168,6 +25729,8 @@
                     "invoices.square_unlink role",
                     "payments.correct role",
                     "payments.record role",
+                    "payments.refund role",
+                    "payments.set_status role",
                     "projects.archive role",
                     "projects.create role",
                     "projects.members.list role",
@@ -25211,18 +25774,18 @@
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
                 "invoices.correct": "51b0c12ec9b5d762",
-                "invoices.create_draft": "7f23d0f35560fb05",
+                "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.get": "790ff02f4ec45336",
                 "invoices.issue": "e8284c71f5ed3751",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
-                "invoices.send": "3b2bc9ef256c4d18",
+                "invoices.send": "7eade4913e162ab2",
                 "invoices.update_details": "9c25cf205acf1a39",
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.accept": "6f660c7d4c51f10e",
@@ -25301,6 +25864,8 @@
                     "invoices.void scope_not_granted billing:deliver",
                     "payments.correct scope_not_granted payments:record",
                     "payments.record scope_not_granted payments:record",
+                    "payments.refund scope_not_granted payments:record",
+                    "payments.set_status scope_not_granted payments:record",
                     "projects.archive scope_not_granted projects:write",
                     "projects.create scope_not_granted projects:write",
                     "projects.members.update scope_not_granted projects:write",
@@ -25366,7 +25931,7 @@
                 "invoices.reminders.list": "86e53f8c46db44c6",
                 "invoices.square_candidates": "09693c77227c6c63",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "projects.members.list": "4d479cecdb3a8834",
@@ -25459,7 +26024,7 @@
                 "companies.square_customer.set": "a9409bef2f9474ef",
                 "invoices.add_time": "ee27431f3eebdb38",
                 "invoices.corrections.get": "aa93da895756b80b",
-                "invoices.create_draft": "7f23d0f35560fb05",
+                "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.generate_period": "a736a25f33ed9607",
                 "invoices.get": "790ff02f4ec45336",
@@ -25575,6 +26140,8 @@
                     "invoices.void scope_not_granted billing:deliver",
                     "payments.correct scope_not_granted payments:record",
                     "payments.record scope_not_granted payments:record",
+                    "payments.refund scope_not_granted payments:record",
+                    "payments.set_status scope_not_granted payments:record",
                     "projects.archive scope_not_granted projects:write",
                     "projects.create scope_not_granted projects:write",
                     "projects.members.list role",
@@ -25629,7 +26196,7 @@
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.get": "f2602fc26e943e89",
@@ -25685,7 +26252,7 @@
             },
             "instructions": "Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
-                "invoices.create_draft": "7f23d0f35560fb05",
+                "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.get": "790ff02f4ec45336",
                 "invoices.list": "07979ef323922adf",
@@ -25775,6 +26342,8 @@
                     "invoices.void scope_not_granted billing:deliver",
                     "payments.correct scope_not_granted payments:record",
                     "payments.record scope_not_granted payments:record",
+                    "payments.refund scope_not_granted payments:record",
+                    "payments.set_status scope_not_granted payments:record",
                     "projects.archive scope_not_granted projects:write",
                     "projects.create scope_not_granted projects:write",
                     "projects.members.list role",
@@ -25829,7 +26398,7 @@
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.get": "f2602fc26e943e89",
@@ -25885,7 +26454,7 @@
             },
             "instructions": "Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
-                "invoices.create_draft": "7f23d0f35560fb05",
+                "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.get": "790ff02f4ec45336",
                 "invoices.list": "07979ef323922adf",
@@ -25953,6 +26522,8 @@
                     "invoices.void deployment_disabled",
                     "payments.correct deployment_disabled",
                     "payments.record deployment_disabled",
+                    "payments.refund deployment_disabled",
+                    "payments.set_status deployment_disabled",
                     "projects.archive deployment_disabled",
                     "projects.create deployment_disabled",
                     "projects.members.update deployment_disabled",
@@ -26027,7 +26598,7 @@
                 "invoices.preview_period": "588e53821f4472ec",
                 "invoices.reminders.list": "86e53f8c46db44c6",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "projects.members.list": "4d479cecdb3a8834",
@@ -26105,6 +26676,8 @@
                     "invoices.void deployment_disabled",
                     "payments.correct deployment_disabled",
                     "payments.record deployment_disabled",
+                    "payments.refund deployment_disabled",
+                    "payments.set_status deployment_disabled",
                     "projects.archive deployment_disabled",
                     "projects.create deployment_disabled",
                     "projects.members.update deployment_disabled",
@@ -26179,7 +26752,7 @@
                 "invoices.preview_period": "588e53821f4472ec",
                 "invoices.reminders.list": "86e53f8c46db44c6",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "projects.members.list": "4d479cecdb3a8834",
@@ -26281,6 +26854,8 @@
                     "invoices.void deployment_disabled",
                     "payments.correct deployment_disabled",
                     "payments.record deployment_disabled",
+                    "payments.refund deployment_disabled",
+                    "payments.set_status deployment_disabled",
                     "projects.archive deployment_disabled",
                     "projects.create deployment_disabled",
                     "projects.members.list role",
@@ -26332,7 +26907,7 @@
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.get": "f2602fc26e943e89",
@@ -26431,6 +27006,8 @@
                     "invoices.void deployment_disabled",
                     "payments.correct deployment_disabled",
                     "payments.record deployment_disabled",
+                    "payments.refund deployment_disabled",
+                    "payments.set_status deployment_disabled",
                     "projects.archive deployment_disabled",
                     "projects.create deployment_disabled",
                     "projects.members.list role",
@@ -26482,7 +27059,7 @@
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.get": "f2602fc26e943e89",
@@ -26581,6 +27158,8 @@
                     "invoices.void deployment_disabled",
                     "payments.correct deployment_disabled",
                     "payments.record deployment_disabled",
+                    "payments.refund deployment_disabled",
+                    "payments.set_status deployment_disabled",
                     "projects.archive deployment_disabled",
                     "projects.create deployment_disabled",
                     "projects.members.list role",
@@ -26632,7 +27211,7 @@
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.get": "f2602fc26e943e89",
@@ -26731,6 +27310,8 @@
                     "invoices.void deployment_disabled",
                     "payments.correct deployment_disabled",
                     "payments.record deployment_disabled",
+                    "payments.refund deployment_disabled",
+                    "payments.set_status deployment_disabled",
                     "projects.archive deployment_disabled",
                     "projects.create deployment_disabled",
                     "projects.members.list role",
@@ -26782,7 +27363,7 @@
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.get": "f2602fc26e943e89",
@@ -26857,6 +27438,8 @@
                     "invoices.void deployment_disabled",
                     "payments.correct deployment_disabled",
                     "payments.record deployment_disabled",
+                    "payments.refund deployment_disabled",
+                    "payments.set_status deployment_disabled",
                     "projects.archive deployment_disabled",
                     "projects.create deployment_disabled",
                     "projects.members.update deployment_disabled",
@@ -26922,7 +27505,7 @@
                 "invoices.reminders.list": "86e53f8c46db44c6",
                 "invoices.square_candidates": "09693c77227c6c63",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "projects.members.list": "4d479cecdb3a8834",
@@ -27007,6 +27590,8 @@
                     "invoices.void deployment_disabled",
                     "payments.correct deployment_disabled",
                     "payments.record deployment_disabled",
+                    "payments.refund deployment_disabled",
+                    "payments.set_status deployment_disabled",
                     "projects.archive deployment_disabled",
                     "projects.create deployment_disabled",
                     "projects.members.update deployment_disabled",
@@ -27072,7 +27657,7 @@
                 "invoices.reminders.list": "86e53f8c46db44c6",
                 "invoices.square_candidates": "09693c77227c6c63",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "projects.members.list": "4d479cecdb3a8834",
@@ -27183,6 +27768,8 @@
                     "invoices.void deployment_disabled",
                     "payments.correct deployment_disabled",
                     "payments.record deployment_disabled",
+                    "payments.refund deployment_disabled",
+                    "payments.set_status deployment_disabled",
                     "projects.archive deployment_disabled",
                     "projects.create deployment_disabled",
                     "projects.members.list role",
@@ -27237,7 +27824,7 @@
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.get": "f2602fc26e943e89",
@@ -27331,6 +27918,8 @@
                     "invoices.void deployment_disabled",
                     "payments.correct deployment_disabled",
                     "payments.record deployment_disabled",
+                    "payments.refund deployment_disabled",
+                    "payments.set_status deployment_disabled",
                     "projects.archive deployment_disabled",
                     "projects.create deployment_disabled",
                     "projects.members.list role",
@@ -27385,7 +27974,7 @@
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.get": "f2602fc26e943e89",
@@ -27479,6 +28068,8 @@
                     "invoices.void deployment_disabled",
                     "payments.correct deployment_disabled",
                     "payments.record deployment_disabled",
+                    "payments.refund deployment_disabled",
+                    "payments.set_status deployment_disabled",
                     "projects.archive deployment_disabled",
                     "projects.create deployment_disabled",
                     "projects.members.list role",
@@ -27533,7 +28124,7 @@
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.get": "f2602fc26e943e89",
@@ -27627,6 +28218,8 @@
                     "invoices.void deployment_disabled",
                     "payments.correct deployment_disabled",
                     "payments.record deployment_disabled",
+                    "payments.refund deployment_disabled",
+                    "payments.set_status deployment_disabled",
                     "projects.archive deployment_disabled",
                     "projects.create deployment_disabled",
                     "projects.members.list role",
@@ -27681,7 +28274,7 @@
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.get": "f2602fc26e943e89",
@@ -27751,6 +28344,8 @@
                     "invoices.void deployment_disabled",
                     "payments.correct deployment_disabled",
                     "payments.record deployment_disabled",
+                    "payments.refund deployment_disabled",
+                    "payments.set_status deployment_disabled",
                     "projects.archive deployment_disabled",
                     "projects.create deployment_disabled",
                     "projects.members.update deployment_disabled",
@@ -27813,7 +28408,7 @@
                 "invoices.reminders.list": "86e53f8c46db44c6",
                 "invoices.square_candidates": "09693c77227c6c63",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "projects.members.list": "4d479cecdb3a8834",
@@ -27903,6 +28498,8 @@
                     "invoices.void deployment_disabled",
                     "payments.correct deployment_disabled",
                     "payments.record deployment_disabled",
+                    "payments.refund deployment_disabled",
+                    "payments.set_status deployment_disabled",
                     "projects.archive deployment_disabled",
                     "projects.create deployment_disabled",
                     "projects.members.update deployment_disabled",
@@ -27965,7 +28562,7 @@
                 "invoices.reminders.list": "86e53f8c46db44c6",
                 "invoices.square_candidates": "09693c77227c6c63",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "projects.members.list": "4d479cecdb3a8834",
@@ -28081,6 +28678,8 @@
                     "invoices.void deployment_disabled",
                     "payments.correct deployment_disabled",
                     "payments.record deployment_disabled",
+                    "payments.refund deployment_disabled",
+                    "payments.set_status deployment_disabled",
                     "projects.archive deployment_disabled",
                     "projects.create deployment_disabled",
                     "projects.members.list role",
@@ -28132,7 +28731,7 @@
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.get": "f2602fc26e943e89",
@@ -28231,6 +28830,8 @@
                     "invoices.void deployment_disabled",
                     "payments.correct deployment_disabled",
                     "payments.record deployment_disabled",
+                    "payments.refund deployment_disabled",
+                    "payments.set_status deployment_disabled",
                     "projects.archive deployment_disabled",
                     "projects.create deployment_disabled",
                     "projects.members.list role",
@@ -28282,7 +28883,7 @@
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.get": "f2602fc26e943e89",
@@ -28381,6 +28982,8 @@
                     "invoices.void deployment_disabled",
                     "payments.correct deployment_disabled",
                     "payments.record deployment_disabled",
+                    "payments.refund deployment_disabled",
+                    "payments.set_status deployment_disabled",
                     "projects.archive deployment_disabled",
                     "projects.create deployment_disabled",
                     "projects.members.list role",
@@ -28432,7 +29035,7 @@
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.get": "f2602fc26e943e89",
@@ -28531,6 +29134,8 @@
                     "invoices.void deployment_disabled",
                     "payments.correct deployment_disabled",
                     "payments.record deployment_disabled",
+                    "payments.refund deployment_disabled",
+                    "payments.set_status deployment_disabled",
                     "projects.archive deployment_disabled",
                     "projects.create deployment_disabled",
                     "projects.members.list role",
@@ -28582,7 +29187,7 @@
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.get": "f2602fc26e943e89",
@@ -28703,9 +29308,11 @@
                 "invoices.reminders.list": "86e53f8c46db44c6",
                 "invoices.square_candidates": "09693c77227c6c63",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.correct": "c4baf2959b7ae710",
-                "payments.list": "5f9d6942bc64d245",
-                "payments.record": "96e4995b7c1dc5ba",
+                "payments.correct": "675e27f39a47eaea",
+                "payments.list": "a9d6e9267ef8ee1a",
+                "payments.record": "075c031df6c51737",
+                "payments.refund": "986a230dbe853fc7",
+                "payments.set_status": "948272fe2204aa9b",
                 "projects.archive": "9693f87cf68157c0",
                 "projects.create": "652afb7cd8be7462",
                 "projects.get": "c7ffe7930b196d4b",
@@ -28855,9 +29462,11 @@
                 "invoices.reminders.list": "86e53f8c46db44c6",
                 "invoices.square_candidates": "09693c77227c6c63",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.correct": "c4baf2959b7ae710",
-                "payments.list": "5f9d6942bc64d245",
-                "payments.record": "96e4995b7c1dc5ba",
+                "payments.correct": "675e27f39a47eaea",
+                "payments.list": "a9d6e9267ef8ee1a",
+                "payments.record": "075c031df6c51737",
+                "payments.refund": "986a230dbe853fc7",
+                "payments.set_status": "948272fe2204aa9b",
                 "projects.archive": "9693f87cf68157c0",
                 "projects.create": "652afb7cd8be7462",
                 "projects.get": "c7ffe7930b196d4b",
@@ -28987,6 +29596,8 @@
                     "invoices.void deployment_disabled",
                     "payments.correct role",
                     "payments.record role",
+                    "payments.refund role",
+                    "payments.set_status role",
                     "projects.archive role",
                     "projects.create role",
                     "projects.members.list role",
@@ -29033,7 +29644,7 @@
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.accept": "6f660c7d4c51f10e",
@@ -29137,6 +29748,8 @@
                     "invoices.void deployment_disabled",
                     "payments.correct role",
                     "payments.record role",
+                    "payments.refund role",
+                    "payments.set_status role",
                     "projects.archive role",
                     "projects.create role",
                     "projects.members.list role",
@@ -29183,7 +29796,7 @@
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.accept": "6f660c7d4c51f10e",
@@ -29287,6 +29900,8 @@
                     "invoices.void deployment_disabled",
                     "payments.correct role",
                     "payments.record role",
+                    "payments.refund role",
+                    "payments.set_status role",
                     "projects.archive role",
                     "projects.create role",
                     "projects.members.list role",
@@ -29333,7 +29948,7 @@
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.accept": "6f660c7d4c51f10e",
@@ -29437,6 +30052,8 @@
                     "invoices.void deployment_disabled",
                     "payments.correct role",
                     "payments.record role",
+                    "payments.refund role",
+                    "payments.set_status role",
                     "projects.archive role",
                     "projects.create role",
                     "projects.members.list role",
@@ -29483,7 +30100,7 @@
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.accept": "6f660c7d4c51f10e",
@@ -29544,6 +30161,8 @@
                     "invoices.void deployment_disabled",
                     "payments.correct deployment_disabled",
                     "payments.record deployment_disabled",
+                    "payments.refund deployment_disabled",
+                    "payments.set_status deployment_disabled",
                     "projects.archive deployment_disabled",
                     "projects.create deployment_disabled",
                     "projects.members.update deployment_disabled",
@@ -29628,7 +30247,7 @@
                 "invoices.reminders.list": "86e53f8c46db44c6",
                 "invoices.square_candidates": "09693c77227c6c63",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "projects.members.list": "4d479cecdb3a8834",
@@ -29694,6 +30313,8 @@
                     "invoices.void deployment_disabled",
                     "payments.correct deployment_disabled",
                     "payments.record deployment_disabled",
+                    "payments.refund deployment_disabled",
+                    "payments.set_status deployment_disabled",
                     "projects.archive deployment_disabled",
                     "projects.create deployment_disabled",
                     "projects.members.update deployment_disabled",
@@ -29778,7 +30399,7 @@
                 "invoices.reminders.list": "86e53f8c46db44c6",
                 "invoices.square_candidates": "09693c77227c6c63",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "projects.members.list": "4d479cecdb3a8834",
@@ -29889,6 +30510,8 @@
                     "invoices.void deployment_disabled",
                     "payments.correct deployment_disabled",
                     "payments.record deployment_disabled",
+                    "payments.refund deployment_disabled",
+                    "payments.set_status deployment_disabled",
                     "projects.archive deployment_disabled",
                     "projects.create deployment_disabled",
                     "projects.members.list role",
@@ -29943,7 +30566,7 @@
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.get": "f2602fc26e943e89",
@@ -30037,6 +30660,8 @@
                     "invoices.void deployment_disabled",
                     "payments.correct deployment_disabled",
                     "payments.record deployment_disabled",
+                    "payments.refund deployment_disabled",
+                    "payments.set_status deployment_disabled",
                     "projects.archive deployment_disabled",
                     "projects.create deployment_disabled",
                     "projects.members.list role",
@@ -30091,7 +30716,7 @@
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.get": "f2602fc26e943e89",
@@ -30185,6 +30810,8 @@
                     "invoices.void deployment_disabled",
                     "payments.correct deployment_disabled",
                     "payments.record deployment_disabled",
+                    "payments.refund deployment_disabled",
+                    "payments.set_status deployment_disabled",
                     "projects.archive deployment_disabled",
                     "projects.create deployment_disabled",
                     "projects.members.list role",
@@ -30239,7 +30866,7 @@
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.get": "f2602fc26e943e89",
@@ -30333,6 +30960,8 @@
                     "invoices.void deployment_disabled",
                     "payments.correct deployment_disabled",
                     "payments.record deployment_disabled",
+                    "payments.refund deployment_disabled",
+                    "payments.set_status deployment_disabled",
                     "projects.archive deployment_disabled",
                     "projects.create deployment_disabled",
                     "projects.members.list role",
@@ -30387,7 +31016,7 @@
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.get": "f2602fc26e943e89",
@@ -30483,7 +31112,7 @@
                 "invoices.add_time": "ee27431f3eebdb38",
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.corrections.get": "aa93da895756b80b",
-                "invoices.create_draft": "7f23d0f35560fb05",
+                "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.generate_period": "a736a25f33ed9607",
                 "invoices.get": "790ff02f4ec45336",
@@ -30494,7 +31123,7 @@
                 "invoices.preview_period": "588e53821f4472ec",
                 "invoices.release_delivery": "f703c8eb40f1ed80",
                 "invoices.reminders.list": "86e53f8c46db44c6",
-                "invoices.send": "3b2bc9ef256c4d18",
+                "invoices.send": "7eade4913e162ab2",
                 "invoices.send_reminder": "8f62ca2de82c197b",
                 "invoices.square_candidates": "09693c77227c6c63",
                 "invoices.square_link": "9346fefe8d8337f7",
@@ -30503,9 +31132,11 @@
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.correct": "c4baf2959b7ae710",
-                "payments.list": "5f9d6942bc64d245",
-                "payments.record": "96e4995b7c1dc5ba",
+                "payments.correct": "675e27f39a47eaea",
+                "payments.list": "a9d6e9267ef8ee1a",
+                "payments.record": "075c031df6c51737",
+                "payments.refund": "986a230dbe853fc7",
+                "payments.set_status": "948272fe2204aa9b",
                 "projects.archive": "9693f87cf68157c0",
                 "projects.create": "652afb7cd8be7462",
                 "projects.get": "c7ffe7930b196d4b",
@@ -30634,7 +31265,7 @@
                 "invoices.add_time": "ee27431f3eebdb38",
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.corrections.get": "aa93da895756b80b",
-                "invoices.create_draft": "7f23d0f35560fb05",
+                "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.generate_period": "a736a25f33ed9607",
                 "invoices.get": "790ff02f4ec45336",
@@ -30645,7 +31276,7 @@
                 "invoices.preview_period": "588e53821f4472ec",
                 "invoices.release_delivery": "f703c8eb40f1ed80",
                 "invoices.reminders.list": "86e53f8c46db44c6",
-                "invoices.send": "3b2bc9ef256c4d18",
+                "invoices.send": "7eade4913e162ab2",
                 "invoices.send_reminder": "8f62ca2de82c197b",
                 "invoices.square_candidates": "09693c77227c6c63",
                 "invoices.square_link": "9346fefe8d8337f7",
@@ -30654,9 +31285,11 @@
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.correct": "c4baf2959b7ae710",
-                "payments.list": "5f9d6942bc64d245",
-                "payments.record": "96e4995b7c1dc5ba",
+                "payments.correct": "675e27f39a47eaea",
+                "payments.list": "a9d6e9267ef8ee1a",
+                "payments.record": "075c031df6c51737",
+                "payments.refund": "986a230dbe853fc7",
+                "payments.set_status": "948272fe2204aa9b",
                 "projects.archive": "9693f87cf68157c0",
                 "projects.create": "652afb7cd8be7462",
                 "projects.get": "c7ffe7930b196d4b",
@@ -30777,6 +31410,8 @@
                     "invoices.square_unlink role",
                     "payments.correct role",
                     "payments.record role",
+                    "payments.refund role",
+                    "payments.set_status role",
                     "projects.archive role",
                     "projects.create role",
                     "projects.members.list role",
@@ -30820,18 +31455,18 @@
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
                 "invoices.correct": "51b0c12ec9b5d762",
-                "invoices.create_draft": "7f23d0f35560fb05",
+                "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.get": "790ff02f4ec45336",
                 "invoices.issue": "e8284c71f5ed3751",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
-                "invoices.send": "3b2bc9ef256c4d18",
+                "invoices.send": "7eade4913e162ab2",
                 "invoices.update_details": "9c25cf205acf1a39",
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.accept": "6f660c7d4c51f10e",
@@ -30928,6 +31563,8 @@
                     "invoices.square_unlink role",
                     "payments.correct role",
                     "payments.record role",
+                    "payments.refund role",
+                    "payments.set_status role",
                     "projects.archive role",
                     "projects.create role",
                     "projects.members.list role",
@@ -30971,18 +31608,18 @@
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
                 "invoices.correct": "51b0c12ec9b5d762",
-                "invoices.create_draft": "7f23d0f35560fb05",
+                "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.get": "790ff02f4ec45336",
                 "invoices.issue": "e8284c71f5ed3751",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
-                "invoices.send": "3b2bc9ef256c4d18",
+                "invoices.send": "7eade4913e162ab2",
                 "invoices.update_details": "9c25cf205acf1a39",
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.accept": "6f660c7d4c51f10e",
@@ -31079,6 +31716,8 @@
                     "invoices.square_unlink role",
                     "payments.correct role",
                     "payments.record role",
+                    "payments.refund role",
+                    "payments.set_status role",
                     "projects.archive role",
                     "projects.create role",
                     "projects.members.list role",
@@ -31122,18 +31761,18 @@
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
                 "invoices.correct": "51b0c12ec9b5d762",
-                "invoices.create_draft": "7f23d0f35560fb05",
+                "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.get": "790ff02f4ec45336",
                 "invoices.issue": "e8284c71f5ed3751",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
-                "invoices.send": "3b2bc9ef256c4d18",
+                "invoices.send": "7eade4913e162ab2",
                 "invoices.update_details": "9c25cf205acf1a39",
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.accept": "6f660c7d4c51f10e",
@@ -31230,6 +31869,8 @@
                     "invoices.square_unlink role",
                     "payments.correct role",
                     "payments.record role",
+                    "payments.refund role",
+                    "payments.set_status role",
                     "projects.archive role",
                     "projects.create role",
                     "projects.members.list role",
@@ -31273,18 +31914,18 @@
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
                 "invoices.correct": "51b0c12ec9b5d762",
-                "invoices.create_draft": "7f23d0f35560fb05",
+                "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.get": "790ff02f4ec45336",
                 "invoices.issue": "e8284c71f5ed3751",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
-                "invoices.send": "3b2bc9ef256c4d18",
+                "invoices.send": "7eade4913e162ab2",
                 "invoices.update_details": "9c25cf205acf1a39",
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.accept": "6f660c7d4c51f10e",
@@ -31393,7 +32034,7 @@
                 "invoices.add_time": "ee27431f3eebdb38",
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.corrections.get": "aa93da895756b80b",
-                "invoices.create_draft": "7f23d0f35560fb05",
+                "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.generate_period": "a736a25f33ed9607",
                 "invoices.hold_delivery": "5d5d70aa02fac988",
@@ -31403,7 +32044,7 @@
                 "invoices.preview_period": "588e53821f4472ec",
                 "invoices.release_delivery": "f703c8eb40f1ed80",
                 "invoices.reminders.list": "86e53f8c46db44c6",
-                "invoices.send": "3b2bc9ef256c4d18",
+                "invoices.send": "7eade4913e162ab2",
                 "invoices.send_reminder": "8f62ca2de82c197b",
                 "invoices.square_candidates": "09693c77227c6c63",
                 "invoices.square_link": "9346fefe8d8337f7",
@@ -31412,9 +32053,11 @@
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.correct": "c4baf2959b7ae710",
-                "payments.list": "5f9d6942bc64d245",
-                "payments.record": "96e4995b7c1dc5ba",
+                "payments.correct": "675e27f39a47eaea",
+                "payments.list": "a9d6e9267ef8ee1a",
+                "payments.record": "075c031df6c51737",
+                "payments.refund": "986a230dbe853fc7",
+                "payments.set_status": "948272fe2204aa9b",
                 "projects.archive": "9693f87cf68157c0",
                 "projects.create": "652afb7cd8be7462",
                 "projects.get": "c7ffe7930b196d4b",
@@ -31543,7 +32186,7 @@
                 "invoices.add_time": "ee27431f3eebdb38",
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.corrections.get": "aa93da895756b80b",
-                "invoices.create_draft": "7f23d0f35560fb05",
+                "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.generate_period": "a736a25f33ed9607",
                 "invoices.hold_delivery": "5d5d70aa02fac988",
@@ -31553,7 +32196,7 @@
                 "invoices.preview_period": "588e53821f4472ec",
                 "invoices.release_delivery": "f703c8eb40f1ed80",
                 "invoices.reminders.list": "86e53f8c46db44c6",
-                "invoices.send": "3b2bc9ef256c4d18",
+                "invoices.send": "7eade4913e162ab2",
                 "invoices.send_reminder": "8f62ca2de82c197b",
                 "invoices.square_candidates": "09693c77227c6c63",
                 "invoices.square_link": "9346fefe8d8337f7",
@@ -31562,9 +32205,11 @@
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.correct": "c4baf2959b7ae710",
-                "payments.list": "5f9d6942bc64d245",
-                "payments.record": "96e4995b7c1dc5ba",
+                "payments.correct": "675e27f39a47eaea",
+                "payments.list": "a9d6e9267ef8ee1a",
+                "payments.record": "075c031df6c51737",
+                "payments.refund": "986a230dbe853fc7",
+                "payments.set_status": "948272fe2204aa9b",
                 "projects.archive": "9693f87cf68157c0",
                 "projects.create": "652afb7cd8be7462",
                 "projects.get": "c7ffe7930b196d4b",
@@ -31685,6 +32330,8 @@
                     "invoices.square_unlink role",
                     "payments.correct role",
                     "payments.record role",
+                    "payments.refund role",
+                    "payments.set_status role",
                     "projects.archive role",
                     "projects.create role",
                     "projects.members.list role",
@@ -31728,17 +32375,17 @@
             "tools": {
                 "expenses.list": "444aff51ddc70e0d",
                 "invoices.correct": "51b0c12ec9b5d762",
-                "invoices.create_draft": "7f23d0f35560fb05",
+                "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.issue": "e8284c71f5ed3751",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
-                "invoices.send": "3b2bc9ef256c4d18",
+                "invoices.send": "7eade4913e162ab2",
                 "invoices.update_details": "9c25cf205acf1a39",
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.accept": "6f660c7d4c51f10e",
@@ -31833,6 +32480,8 @@
                     "invoices.square_unlink role",
                     "payments.correct role",
                     "payments.record role",
+                    "payments.refund role",
+                    "payments.set_status role",
                     "projects.archive role",
                     "projects.create role",
                     "projects.members.list role",
@@ -31876,17 +32525,17 @@
             "tools": {
                 "expenses.list": "444aff51ddc70e0d",
                 "invoices.correct": "51b0c12ec9b5d762",
-                "invoices.create_draft": "7f23d0f35560fb05",
+                "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.issue": "e8284c71f5ed3751",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
-                "invoices.send": "3b2bc9ef256c4d18",
+                "invoices.send": "7eade4913e162ab2",
                 "invoices.update_details": "9c25cf205acf1a39",
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.accept": "6f660c7d4c51f10e",
@@ -31981,6 +32630,8 @@
                     "invoices.square_unlink role",
                     "payments.correct role",
                     "payments.record role",
+                    "payments.refund role",
+                    "payments.set_status role",
                     "projects.archive role",
                     "projects.create role",
                     "projects.members.list role",
@@ -32024,17 +32675,17 @@
             "tools": {
                 "expenses.list": "444aff51ddc70e0d",
                 "invoices.correct": "51b0c12ec9b5d762",
-                "invoices.create_draft": "7f23d0f35560fb05",
+                "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.issue": "e8284c71f5ed3751",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
-                "invoices.send": "3b2bc9ef256c4d18",
+                "invoices.send": "7eade4913e162ab2",
                 "invoices.update_details": "9c25cf205acf1a39",
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.accept": "6f660c7d4c51f10e",
@@ -32129,6 +32780,8 @@
                     "invoices.square_unlink role",
                     "payments.correct role",
                     "payments.record role",
+                    "payments.refund role",
+                    "payments.set_status role",
                     "projects.archive role",
                     "projects.create role",
                     "projects.members.list role",
@@ -32172,17 +32825,17 @@
             "tools": {
                 "expenses.list": "444aff51ddc70e0d",
                 "invoices.correct": "51b0c12ec9b5d762",
-                "invoices.create_draft": "7f23d0f35560fb05",
+                "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.issue": "e8284c71f5ed3751",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
-                "invoices.send": "3b2bc9ef256c4d18",
+                "invoices.send": "7eade4913e162ab2",
                 "invoices.update_details": "9c25cf205acf1a39",
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.accept": "6f660c7d4c51f10e",
@@ -32292,6 +32945,8 @@
                     "payments.correct deployment_disabled",
                     "payments.list deployment_disabled",
                     "payments.record deployment_disabled",
+                    "payments.refund deployment_disabled",
+                    "payments.set_status deployment_disabled",
                     "projects.archive deployment_disabled",
                     "projects.create deployment_disabled",
                     "projects.get deployment_disabled",
@@ -32421,6 +33076,8 @@
                     "payments.correct deployment_disabled",
                     "payments.list deployment_disabled",
                     "payments.record deployment_disabled",
+                    "payments.refund deployment_disabled",
+                    "payments.set_status deployment_disabled",
                     "projects.archive deployment_disabled",
                     "projects.create deployment_disabled",
                     "projects.get deployment_disabled",
@@ -32550,6 +33207,8 @@
                     "payments.correct deployment_disabled",
                     "payments.list deployment_disabled",
                     "payments.record deployment_disabled",
+                    "payments.refund deployment_disabled",
+                    "payments.set_status deployment_disabled",
                     "projects.archive deployment_disabled",
                     "projects.create deployment_disabled",
                     "projects.get deployment_disabled",
@@ -32679,6 +33338,8 @@
                     "payments.correct deployment_disabled",
                     "payments.list deployment_disabled",
                     "payments.record deployment_disabled",
+                    "payments.refund deployment_disabled",
+                    "payments.set_status deployment_disabled",
                     "projects.archive deployment_disabled",
                     "projects.create deployment_disabled",
                     "projects.get deployment_disabled",
@@ -32808,6 +33469,8 @@
                     "payments.correct deployment_disabled",
                     "payments.list deployment_disabled",
                     "payments.record deployment_disabled",
+                    "payments.refund deployment_disabled",
+                    "payments.set_status deployment_disabled",
                     "projects.archive deployment_disabled",
                     "projects.create deployment_disabled",
                     "projects.get deployment_disabled",
@@ -32937,6 +33600,8 @@
                     "payments.correct deployment_disabled",
                     "payments.list deployment_disabled",
                     "payments.record deployment_disabled",
+                    "payments.refund deployment_disabled",
+                    "payments.set_status deployment_disabled",
                     "projects.archive deployment_disabled",
                     "projects.create deployment_disabled",
                     "projects.get deployment_disabled",
@@ -33061,7 +33726,7 @@
                 "invoices.add_time": "ee27431f3eebdb38",
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.corrections.get": "aa93da895756b80b",
-                "invoices.create_draft": "7f23d0f35560fb05",
+                "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.generate_period": "a736a25f33ed9607",
                 "invoices.get": "790ff02f4ec45336",
@@ -33072,7 +33737,7 @@
                 "invoices.preview_period": "588e53821f4472ec",
                 "invoices.release_delivery": "f703c8eb40f1ed80",
                 "invoices.reminders.list": "86e53f8c46db44c6",
-                "invoices.send": "3b2bc9ef256c4d18",
+                "invoices.send": "7eade4913e162ab2",
                 "invoices.send_reminder": "8f62ca2de82c197b",
                 "invoices.square_candidates": "09693c77227c6c63",
                 "invoices.square_link": "9346fefe8d8337f7",
@@ -33081,9 +33746,11 @@
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.correct": "c4baf2959b7ae710",
-                "payments.list": "5f9d6942bc64d245",
-                "payments.record": "96e4995b7c1dc5ba",
+                "payments.correct": "675e27f39a47eaea",
+                "payments.list": "a9d6e9267ef8ee1a",
+                "payments.record": "075c031df6c51737",
+                "payments.refund": "986a230dbe853fc7",
+                "payments.set_status": "948272fe2204aa9b",
                 "projects.archive": "9693f87cf68157c0",
                 "projects.create": "652afb7cd8be7462",
                 "projects.get": "c7ffe7930b196d4b",
@@ -33214,7 +33881,7 @@
                 "invoices.add_time": "ee27431f3eebdb38",
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.corrections.get": "aa93da895756b80b",
-                "invoices.create_draft": "7f23d0f35560fb05",
+                "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.generate_period": "a736a25f33ed9607",
                 "invoices.get": "790ff02f4ec45336",
@@ -33225,7 +33892,7 @@
                 "invoices.preview_period": "588e53821f4472ec",
                 "invoices.release_delivery": "f703c8eb40f1ed80",
                 "invoices.reminders.list": "86e53f8c46db44c6",
-                "invoices.send": "3b2bc9ef256c4d18",
+                "invoices.send": "7eade4913e162ab2",
                 "invoices.send_reminder": "8f62ca2de82c197b",
                 "invoices.square_candidates": "09693c77227c6c63",
                 "invoices.square_link": "9346fefe8d8337f7",
@@ -33234,9 +33901,11 @@
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.correct": "c4baf2959b7ae710",
-                "payments.list": "5f9d6942bc64d245",
-                "payments.record": "96e4995b7c1dc5ba",
+                "payments.correct": "675e27f39a47eaea",
+                "payments.list": "a9d6e9267ef8ee1a",
+                "payments.record": "075c031df6c51737",
+                "payments.refund": "986a230dbe853fc7",
+                "payments.set_status": "948272fe2204aa9b",
                 "projects.archive": "9693f87cf68157c0",
                 "projects.create": "652afb7cd8be7462",
                 "projects.get": "c7ffe7930b196d4b",
@@ -33359,6 +34028,8 @@
                     "invoices.square_unlink role",
                     "payments.correct role",
                     "payments.record role",
+                    "payments.refund role",
+                    "payments.set_status role",
                     "projects.archive role",
                     "projects.create role",
                     "projects.members.list role",
@@ -33402,18 +34073,18 @@
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
                 "invoices.correct": "51b0c12ec9b5d762",
-                "invoices.create_draft": "7f23d0f35560fb05",
+                "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.get": "790ff02f4ec45336",
                 "invoices.issue": "e8284c71f5ed3751",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
-                "invoices.send": "3b2bc9ef256c4d18",
+                "invoices.send": "7eade4913e162ab2",
                 "invoices.update_details": "9c25cf205acf1a39",
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.accept": "6f660c7d4c51f10e",
@@ -33510,6 +34181,8 @@
                     "invoices.square_unlink role",
                     "payments.correct role",
                     "payments.record role",
+                    "payments.refund role",
+                    "payments.set_status role",
                     "projects.archive role",
                     "projects.create role",
                     "projects.members.list role",
@@ -33553,18 +34226,18 @@
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
                 "invoices.correct": "51b0c12ec9b5d762",
-                "invoices.create_draft": "7f23d0f35560fb05",
+                "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.get": "790ff02f4ec45336",
                 "invoices.issue": "e8284c71f5ed3751",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
-                "invoices.send": "3b2bc9ef256c4d18",
+                "invoices.send": "7eade4913e162ab2",
                 "invoices.update_details": "9c25cf205acf1a39",
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.accept": "6f660c7d4c51f10e",
@@ -33661,6 +34334,8 @@
                     "invoices.square_unlink role",
                     "payments.correct role",
                     "payments.record role",
+                    "payments.refund role",
+                    "payments.set_status role",
                     "projects.archive role",
                     "projects.create role",
                     "projects.members.list role",
@@ -33704,18 +34379,18 @@
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
                 "invoices.correct": "51b0c12ec9b5d762",
-                "invoices.create_draft": "7f23d0f35560fb05",
+                "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.get": "790ff02f4ec45336",
                 "invoices.issue": "e8284c71f5ed3751",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
-                "invoices.send": "3b2bc9ef256c4d18",
+                "invoices.send": "7eade4913e162ab2",
                 "invoices.update_details": "9c25cf205acf1a39",
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.accept": "6f660c7d4c51f10e",
@@ -33812,6 +34487,8 @@
                     "invoices.square_unlink role",
                     "payments.correct role",
                     "payments.record role",
+                    "payments.refund role",
+                    "payments.set_status role",
                     "projects.archive role",
                     "projects.create role",
                     "projects.members.list role",
@@ -33855,18 +34532,18 @@
                 "context.get": "dc46b79ea530a869",
                 "expenses.list": "444aff51ddc70e0d",
                 "invoices.correct": "51b0c12ec9b5d762",
-                "invoices.create_draft": "7f23d0f35560fb05",
+                "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.get": "790ff02f4ec45336",
                 "invoices.issue": "e8284c71f5ed3751",
                 "invoices.list": "07979ef323922adf",
                 "invoices.pdf": "8c5fa3116a39fcc4",
-                "invoices.send": "3b2bc9ef256c4d18",
+                "invoices.send": "7eade4913e162ab2",
                 "invoices.update_details": "9c25cf205acf1a39",
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "22771b7e7015c53f",
-                "payments.list": "5f9d6942bc64d245",
+                "payments.list": "a9d6e9267ef8ee1a",
                 "projects.get": "c7ffe7930b196d4b",
                 "projects.list": "1f44e98350cd47a0",
                 "proposals.accept": "6f660c7d4c51f10e",

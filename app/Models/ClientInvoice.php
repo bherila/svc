@@ -75,6 +75,9 @@ class ClientInvoice extends Model implements WorkspaceOwned
 {
     use BelongsToWorkspace, HasPublicId, IncrementsAgentRevision;
 
+    /** How long a void reason may be, on the screen and through `invoices.void` alike. */
+    public const int VOID_REASON_MAX_LENGTH = 1000;
+
     protected function casts(): array
     {
         return [

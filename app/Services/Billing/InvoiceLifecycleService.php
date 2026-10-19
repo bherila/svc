@@ -15,11 +15,14 @@ use App\Services\Activity\ClientActivityRecorder;
 use App\Services\Square\SquareCollectionGuard;
 use App\Services\WorkspaceAuthorization;
 use App\Support\AgentApi\AgentApiVersion;
+use App\Support\Billing\InvoiceChangedDuringPaymentChange;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceLineDetail;
 use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\InvoicePaymentStatus;
 use App\Support\Billing\InvoiceStatus;
+use App\Support\Billing\ManualPaymentChange;
+use App\Support\Billing\ManualPaymentOutcome;
 use App\Support\Billing\PaymentCorrection;
 use App\Support\Billing\PaymentCorrectionOutcome;
 use App\Support\Billing\PaymentDateBounds;
@@ -32,6 +35,7 @@ use Carbon\CarbonImmutable;
 use DomainException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use LogicException;
 use RuntimeException;
 
 final class InvoiceLifecycleService
@@ -1025,6 +1029,10 @@ final class InvoiceLifecycleService
                         || $existing->currency !== $currency
                         || $existing->method !== ($data['method'] ?? null)
                         || $existing->status !== $status->value
+                        // The finance transaction it was recorded against is
+                        // part of what the payment is: no correction can change
+                        // it later, so a retry naming another is another payment.
+                        || $existing->external_finance_transaction_uuid !== ($data['external_finance_transaction_uuid'] ?? null)
                         || ($claimsDate && $existing->received_on?->toDateString() !== $receivedOn)) {
                         throw new DomainException('The idempotency key is already bound to a different payment.');
                     }
@@ -1186,20 +1194,117 @@ final class InvoiceLifecycleService
 
     public function setPaymentStatus(ClientInvoicePayment $payment, string $status, ?Workspace $workspace = null): ClientInvoicePayment
     {
-        $next = $this->paymentStatus($status);
+        return $this->writePaymentStatus($payment, $this->paymentStatus($status), $workspace);
+    }
 
-        return DB::transaction(function () use ($payment, $next, $workspace): ClientInvoicePayment {
+    /**
+     * Change what a payment recorded by hand is worth, saying why (#455).
+     *
+     * The operation behind `payments.set_status`, `payments.refund` and
+     * `svc:billing:payment-status` / `svc:billing:refund-payment`.
+     * {@see ManualPaymentChange} decides, on the locked row, whether the change
+     * may happen at all - only a hand-recorded payment, only the transitions
+     * its table allows. The write itself is the same one a processor's events
+     * take ({@see self::setPaymentStatus()}, {@see self::setRefundedAmount()}):
+     * the same locks, the same overpayment and reconciliation checks, the same
+     * credit-pool change and invoice recomputation, the same activity - which
+     * here also carries the reason and the status it replaced.
+     *
+     * Leaving `succeeded` also has to fit the payment's active finance
+     * reconciliation allocations, which a processor's own failure does not
+     * ask: a reconciled payment is deallocated in the finance system first.
+     *
+     * `$expectedVersion` is checked on the locked row; a payment that moved
+     * since the caller read it is refused with {@see PaymentVersionChanged}.
+     * A change that leaves the payment as it is writes and records nothing.
+     */
+    public function changeManualPayment(ClientInvoicePayment $payment, ManualPaymentChange $change, ?string $expectedVersion = null, ?Workspace $workspace = null): ManualPaymentOutcome
+    {
+        return DB::transaction(function () use ($payment, $change, $expectedVersion, $workspace): ManualPaymentOutcome {
+            /** @var array{status: InvoicePaymentStatus, refunded_amount: int}|null $decision */
+            $decision = null;
+            $observed = null;
+            $guard = static function (ClientInvoicePayment $locked) use ($change, $expectedVersion, &$decision, &$observed): bool {
+                if ($expectedVersion !== null && ! AgentApiVersion::matches($locked, $expectedVersion)) {
+                    throw new PaymentVersionChanged;
+                }
+                $observed = ['status' => (string) $locked->status, 'refunded_amount' => (int) $locked->refunded_amount, 'version' => AgentApiVersion::for($locked)];
+                $decision = $change->decide((string) $locked->status, (int) $locked->amount, (int) $locked->refunded_amount, $locked->provider);
+
+                return $decision !== null;
+            };
+            // Closures by reference rather than arrow functions: both are read
+            // after the guard has run, and an arrow function would capture the
+            // values from before it.
+            $extra = static function () use ($change, &$observed): array {
+                return ['reason' => $change->reason, 'previous_status' => $observed['status'] ?? null];
+            };
+            $total = static function () use (&$decision): int {
+                return $decision['refunded_amount'] ?? throw new LogicException('A refund is written only after it is decided.');
+            };
+
+            $written = $change->isRefund()
+                ? $this->writeRefundedAmount($payment, $total, $workspace, $guard, $extra)
+                : $this->writePaymentStatus($payment, $change->status ?? throw new LogicException('A status change names its status.'), $workspace, $guard, $extra, manual: true);
+
+            if ($observed === null) {
+                throw new LogicException('The manual payment guard did not run.');
+            }
+
+            return new ManualPaymentOutcome(
+                $written,
+                $observed['status'],
+                $observed['refunded_amount'],
+                $observed['version'],
+                $decision !== null,
+            );
+        });
+    }
+
+    /**
+     * The one write of a payment's status, for a processor's event and a
+     * hand-recorded change alike.
+     *
+     * @param  (callable(ClientInvoicePayment): bool)|null  $guard  asked of the locked payment before anything else; false means leave it as it is
+     * @param  (callable(): array<string, string|null>)|null  $extra  more for the activity, read after the guard
+     * @param  bool  $manual  a hand-recorded change: leaving `succeeded` must fit the reconciliations, and the invoice must be read current
+     */
+    private function writePaymentStatus(
+        ClientInvoicePayment $payment,
+        InvoicePaymentStatus $next,
+        ?Workspace $workspace,
+        ?callable $guard = null,
+        ?callable $extra = null,
+        bool $manual = false,
+    ): ClientInvoicePayment {
+        return DB::transaction(function () use ($payment, $next, $workspace, $guard, $extra, $manual): ClientInvoicePayment {
             BillingMaintenance::share($workspace->id ?? $payment->workspace_id);
             $query = ClientInvoicePayment::query()->where('workspace_id', $payment->workspace_id)->whereKey($payment->id)->tap(Locks::forUpdate());
             if ($workspace !== null) {
                 $query->where('workspace_id', $workspace->id);
             }
             $lockedPayment = $query->firstOrFail();
+            if ($guard !== null && ! $guard($lockedPayment)) {
+                return $lockedPayment;
+            }
+            if ($lockedPayment->status !== $next->value && ($next === InvoicePaymentStatus::Refunded
+                || ($manual && $lockedPayment->status === InvoicePaymentStatus::Succeeded->value && $next !== InvoicePaymentStatus::Succeeded))) {
+                // Money that stops counting cannot stay allocated to a
+                // finance transaction. Refunded always asked this; a
+                // hand-recorded failure or withdrawal asks it too. Asked after
+                // the payment lock and before the invoice's, in the order
+                // LockResource declares, with a current read of the
+                // allocations.
+                $this->assertReconciliationCapacity($lockedPayment, $lockedPayment->amount);
+            }
             $invoice = ClientInvoice::query()
                 ->where('workspace_id', $lockedPayment->workspace_id)
                 ->whereKey($lockedPayment->client_invoice_id)
                 ->tap(Locks::forUpdate())
                 ->firstOrFail();
+            if ($manual) {
+                $this->assertCurrentInvoiceSnapshot($invoice);
+            }
             if ($lockedPayment->status === $next->value) {
                 return $lockedPayment;
             }
@@ -1221,13 +1326,10 @@ final class InvoiceLifecycleService
                     throw new DomainException('Successful payments cannot exceed the invoice total.');
                 }
             }
-            if ($next === InvoicePaymentStatus::Refunded) {
-                $this->assertReconciliationCapacity($lockedPayment, $lockedPayment->amount);
-            }
             // Leaving or entering `succeeded` changes the settled money the
             // credit pool is derived from - a failure, dispute or refund can
             // shrink it. Recorded under the company lock, after the payment,
-            // the invoice and the reconciliations above, so an issue spending
+            // the reconciliations and the invoice above, so an issue spending
             // credit concurrently either waits for this or refuses on the moved
             // revision.
             $this->overpaymentCreditService->recordPoolChange((int) $invoice->workspace_id, (int) $invoice->client_company_id);
@@ -1257,7 +1359,7 @@ final class InvoiceLifecycleService
                 InvoicePaymentStatus::Pending => null,
             };
             if ($action !== null) {
-                $this->recordPaymentActivity($invoice, $lockedPayment, $action, (string) Str::uuid());
+                $this->recordPaymentActivity($invoice, $lockedPayment, $action, (string) Str::uuid(), $extra === null ? [] : $extra());
             }
             if ($next === InvoicePaymentStatus::Succeeded) {
                 $this->recordMarkedPaid($invoice, $previousInvoiceStatus, (string) Str::uuid());
@@ -1474,7 +1576,19 @@ final class InvoiceLifecycleService
 
     public function setRefundedAmount(ClientInvoicePayment $payment, int $amount, ?Workspace $workspace = null): ClientInvoicePayment
     {
-        return DB::transaction(function () use ($payment, $amount, $workspace): ClientInvoicePayment {
+        return $this->writeRefundedAmount($payment, static fn (): int => $amount, $workspace);
+    }
+
+    /**
+     * The one write of a payment's refunded amount.
+     *
+     * @param  callable(): int  $total  the new refunded total, read after the guard
+     * @param  (callable(ClientInvoicePayment): bool)|null  $guard  asked of the locked payment first; false means leave it as it is
+     * @param  (callable(): array<string, string|null>)|null  $extra  more for the activity
+     */
+    private function writeRefundedAmount(ClientInvoicePayment $payment, callable $total, ?Workspace $workspace, ?callable $guard = null, ?callable $extra = null): ClientInvoicePayment
+    {
+        return DB::transaction(function () use ($payment, $total, $workspace, $guard, $extra): ClientInvoicePayment {
             BillingMaintenance::share($workspace->id ?? $payment->workspace_id);
             $query = ClientInvoicePayment::query()->where('workspace_id', $payment->workspace_id)->whereKey($payment->id)->tap(Locks::forUpdate());
             if ($workspace !== null) {
@@ -1482,6 +1596,10 @@ final class InvoiceLifecycleService
             }
 
             $lockedPayment = $query->firstOrFail();
+            if ($guard !== null && ! $guard($lockedPayment)) {
+                return $lockedPayment;
+            }
+            $amount = $total();
             // Fail-closed already: an unreadable status matches neither case
             // and is refused, which is the right answer - a row nobody can read
             // cannot be shown to hold money there is anything to refund.
@@ -1506,6 +1624,9 @@ final class InvoiceLifecycleService
                 ->whereKey($lockedPayment->client_invoice_id)
                 ->tap(Locks::forUpdate())
                 ->firstOrFail();
+            if ($guard !== null) {
+                $this->assertCurrentInvoiceSnapshot($invoice);
+            }
             // A refund changes the settled money the credit pool is derived
             // from. Recorded under the company lock, after the payment and the
             // invoice, so an issue spending credit concurrently either waits
@@ -1524,7 +1645,7 @@ final class InvoiceLifecycleService
                 $lockedPayment,
                 'invoice.payment_refunded',
                 (string) Str::uuid(),
-                ['previous_refunded_amount' => $previousAmount],
+                ['previous_refunded_amount' => $previousAmount, ...($extra === null ? [] : $extra())],
             );
 
             return ClientInvoicePayment::query()->where('workspace_id', $lockedPayment->workspace_id)->whereKey($lockedPayment->id)->firstOrFail();
@@ -1882,11 +2003,44 @@ final class InvoiceLifecycleService
         throw new DomainException('sort_order must be a non-negative integer.');
     }
 
+    /**
+     * Whether the payment's active finance allocations still fit the money it
+     * would hold.
+     *
+     * A share-locked read, so it is a current one: under MariaDB's REPEATABLE
+     * READ a plain sum answers from the caller's transaction snapshot, which
+     * can predate an allocation committed while this request waited for the
+     * payment lock. Every caller holds the payment lock and has not yet taken
+     * the invoice's, which is the order LockResource declares.
+     */
+    /**
+     * Refuse a hand-recorded change made from a stale view of the invoice.
+     *
+     * The invoice was just read with a lock, which is a current read; the
+     * sibling payments the overpayment guard and `refreshStatus()` total are
+     * read plainly, which under MariaDB's REPEATABLE READ answers from the
+     * transaction's snapshot. A caller that read anything earlier in the same
+     * transaction - an agent mutation authorizes and loads the payment first -
+     * holds a snapshot that can predate a payment recorded or changed on this
+     * invoice while it waited for the lock, and every such write moves the
+     * invoice's revision. So the plain read of that revision is compared with
+     * the locked one, and a difference is a conflict to retry rather than a
+     * total computed over money that is no longer there.
+     */
+    private function assertCurrentInvoiceSnapshot(ClientInvoice $locked): void
+    {
+        $seen = ClientInvoice::query()->where('workspace_id', $locked->workspace_id)->whereKey($locked->id)->firstOrFail(['id', 'workspace_id', 'lock_version']);
+        if (! AgentApiVersion::matches($seen, AgentApiVersion::for($locked))) {
+            throw new InvoiceChangedDuringPaymentChange;
+        }
+    }
+
     private function assertReconciliationCapacity(ClientInvoicePayment $payment, int $refundedAmount): void
     {
         $activeAllocated = (int) $payment->reconciliations()
             ->where('workspace_id', $payment->workspace_id)
             ->where('is_active', true)
+            ->tap(Locks::forShare())
             ->sum('allocated_amount');
         $netAmount = max(0, $payment->amount - $refundedAmount);
 

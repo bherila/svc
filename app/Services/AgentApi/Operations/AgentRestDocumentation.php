@@ -698,7 +698,7 @@ final class AgentRestDocumentation
             'invoices.create_draft' => [
                 'method' => 'POST',
                 'scopes' => ['billing:write'],
-                'description' => false,
+                'description' => 'Create an ad-hoc draft invoice for a client from explicit manual lines and/or explicit approved time, with the fields of the invoice screen\'s form: invoice_number (default: the workspace\'s next number; a number already used is refused), issue_date (default: the day it is issued), a service period (either end may be given alone), is_visible_to_client (default false; issuing makes it visible), currency, due and scheduled issue dates and notes. Nothing is issued or sent.',
                 'parameters' => ['WorkspaceId', 'IdempotencyKey'],
                 'request' => 'InvoiceCreateRequest',
                 'response' => 'InvoiceMutationResponse',
@@ -841,7 +841,7 @@ final class AgentRestDocumentation
             'invoices.send' => [
                 'method' => 'POST',
                 'scopes' => ['billing:deliver'],
-                'description' => false,
+                'description' => 'Email an issued invoice to explicit recipients, only with confirm: true and the current expected_version, with the invoice screen\'s compose fields: an optional subject (default: the invoice\'s own), an optional covering message, and bcc_self to blind-copy the signed-in user\'s own address - no other blind copy can be named. The delivery is registered with this request\'s receipt and sent once it commits; repeating the same idempotency key sends nothing more.',
                 'parameters' => ['WorkspaceId', 'InvoiceId', 'IdempotencyKey'],
                 'request' => 'InvoiceSendRequest',
                 'response' => 'InvoiceMutationResponse',
@@ -924,7 +924,7 @@ final class AgentRestDocumentation
             'payments.correct' => [
                 'method' => 'PATCH',
                 'scopes' => ['payments:record'],
-                'description' => 'Owner/admin correction of a received payment\'s descriptive fields: method, reference and received_on, at least one of which must be given. Requires confirm: true, the version from payments.list and a reason, which is kept in the client history. Omitted fields are unchanged; an explicit null reference clears it. A stale version is refused with 409 and a correction that changes nothing records nothing. Amount, currency, status, refunds, the invoice and processor fields cannot be changed. Never initiates a charge or a refund. Requires both outer workflow and payment write flags.',
+                'description' => 'Owner/admin correction of a received payment\'s descriptive fields: method, reference, notes and received_on, at least one of which must be given. Requires confirm: true, the version from payments.list and a reason, which is kept in the client history. Omitted fields are unchanged; an explicit null reference or note clears it. A stale version is refused with 409 and a correction that changes nothing records nothing. Amount, currency, status, refunds, the invoice and processor fields cannot be changed. Never initiates a charge or a refund. Requires both outer workflow and payment write flags.',
                 'parameters' => ['WorkspaceId', 'PaymentId', 'IdempotencyKey'],
                 'request' => 'ReceivedPaymentCorrectionRequest',
                 'response' => 'ReceivedPaymentResponse',
@@ -947,11 +947,29 @@ final class AgentRestDocumentation
             'payments.record' => [
                 'method' => 'POST',
                 'scopes' => ['payments:record', 'billing:read'],
-                'description' => 'Owner/admin bookkeeping for money already received. Never initiates a charge. Explicit invoice, minor-unit amount, currency, payment date and method required; reference is optional. Read invoices.get with billing:read for the current invoice expected_version; confirm: true is required. Overpayment refused. Requires both outer workflow and payment write flags.',
+                'description' => 'Owner/admin bookkeeping for money already received, with the same fields as the invoice screen\'s payment form. Never initiates a charge. Explicit invoice, minor-unit amount, currency and method required. received_on is the day the money arrived and defaults to today on the workspace calendar; reference, notes and the finance system\'s transaction id are optional; status is succeeded (the default) or pending for money not yet cleared, which payments.set_status later settles. Read invoices.get with billing:read for the current invoice expected_version; confirm: true is required. A succeeded payment over the balance is refused. Requires both outer workflow and payment write flags.',
                 'parameters' => ['WorkspaceId', 'IdempotencyKey'],
                 'request' => 'ReceivedPaymentRecordRequest',
                 'response' => 'ReceivedPaymentBatchResponse',
                 'response_description' => 'Authorized received payments',
+            ],
+            'payments.refund' => [
+                'method' => 'POST',
+                'scopes' => ['payments:record', 'payments:read'],
+                'description' => 'Owner/admin record of money already returned to the client outside SVC, against a succeeded payment that was recorded by hand. amount is what was returned now, in minor units, at most what is left unrefunded; refunding the whole amount makes the payment refunded, otherwise it stays succeeded with its refunded_amount raised. The invoice\'s paid amount, balance and status are recomputed, so a paid invoice reopens by the amount; correct or void the invoice separately if the client no longer owes it. Requires confirm: true, the version from payments.list and a reason, which is kept in the client history. A stale version is refused with 409. Refused with 422: a payment recorded by a processor (Stripe, Square), which reports its own refunds; a pending, failed, canceled, disputed or fully refunded payment; more than is left; or a refund that would exceed the payment\'s active finance reconciliation allocations. SVC never sends money. Requires both outer workflow and payment write flags.',
+                'parameters' => ['WorkspaceId', 'PaymentId', 'IdempotencyKey'],
+                'request' => 'ReceivedPaymentRefundRequest',
+                'response' => 'ReceivedPaymentResponse',
+                'response_description' => 'Payment with the refund recorded',
+            ],
+            'payments.set_status' => [
+                'method' => 'POST',
+                'scopes' => ['payments:record', 'payments:read'],
+                'description' => 'Owner/admin change of the status of a payment that was recorded by hand: succeeded when money recorded as pending cleared; failed when it bounced or was reversed; canceled when it was recorded in error and is withdrawn. Allowed from pending to any of the three, and from succeeded with nothing refunded to failed or canceled. failed, canceled, refunded and disputed are final - money that arrives later is recorded as a new payment - and a partly refunded payment is refunded in full instead. Setting the status it already has changes nothing. The invoice\'s paid amount, balance and status are recomputed, so withdrawing a succeeded payment reopens the balance; a succeeded payment cannot exceed the invoice total and cannot succeed on a void invoice. Requires confirm: true, the version from payments.list and a reason, which is kept in the client history. A stale version is refused with 409. Refused with 422: a payment recorded by a processor (Stripe, Square), which reports its own status; a transition outside these; or leaving succeeded while the payment holds active finance reconciliation allocations. Never initiates a charge or a refund. Requires both outer workflow and payment write flags.',
+                'parameters' => ['WorkspaceId', 'PaymentId', 'IdempotencyKey'],
+                'request' => 'ReceivedPaymentStatusRequest',
+                'response' => 'ReceivedPaymentResponse',
+                'response_description' => 'Payment with its new status',
             ],
             'projects.archive' => [
                 'method' => 'POST',

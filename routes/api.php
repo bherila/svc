@@ -173,6 +173,10 @@ Route::prefix('v1')
         $operation('payments.record', [AgentPaymentController::class, 'store']);
         $operation('payments.correct', [AgentPaymentController::class, 'update'])
             ->whereUuid('payment');
+        $operation('payments.set_status', [AgentPaymentController::class, 'setStatus'])
+            ->whereUuid('payment');
+        $operation('payments.refund', [AgentPaymentController::class, 'refund'])
+            ->whereUuid('payment');
         $operation('invoices.list', [AgentReadController::class, 'invoices']);
         $operation('invoices.get', [AgentReadController::class, 'invoice'])
             ->whereUuid('invoice');

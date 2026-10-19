@@ -7,6 +7,7 @@ use App\Models\AgentPrincipal;
 use App\Models\Workspace;
 use App\Services\AgentApi\AgentMutationContextFactory;
 use App\Services\AgentApi\AgentPaymentReadService;
+use App\Services\AgentApi\ChangeManualPaymentAction;
 use App\Services\AgentApi\CorrectPaymentAction;
 use App\Services\AgentApi\RecordPaymentAction;
 use Illuminate\Http\JsonResponse;
@@ -40,6 +41,22 @@ final class AgentPaymentController extends Controller
     {
         $context = $contexts->fromAuthenticatedClient($request);
         $ids = $action->run($context->user, $workspace, $context->oauthClientId, $context->idempotencyKey, $payment, $request->all());
+
+        return response()->json(['data' => $reads->result($context->user, $workspace, $ids)['data'][0]]);
+    }
+
+    public function setStatus(Request $request, Workspace $workspace, string $payment, AgentMutationContextFactory $contexts, ChangeManualPaymentAction $action, AgentPaymentReadService $reads): JsonResponse
+    {
+        $context = $contexts->fromAuthenticatedClient($request);
+        $ids = $action->setStatus($context->user, $workspace, $context->oauthClientId, $context->idempotencyKey, $payment, $request->all());
+
+        return response()->json(['data' => $reads->result($context->user, $workspace, $ids)['data'][0]]);
+    }
+
+    public function refund(Request $request, Workspace $workspace, string $payment, AgentMutationContextFactory $contexts, ChangeManualPaymentAction $action, AgentPaymentReadService $reads): JsonResponse
+    {
+        $context = $contexts->fromAuthenticatedClient($request);
+        $ids = $action->refund($context->user, $workspace, $context->oauthClientId, $context->idempotencyKey, $payment, $request->all());
 
         return response()->json(['data' => $reads->result($context->user, $workspace, $ids)['data'][0]]);
     }

@@ -226,7 +226,7 @@ final class AgentInvoiceDetailsAndCorrectionTest extends TestCase
             ->postJson(route('svc.billing.invoices.store', [$this->workspace, $this->company]), [
                 'invoice_number' => 'INV-SYN-SCHEDULED', 'currency' => 'USD', 'scheduled_issue_date' => '2026-11-01',
                 'lines' => [['type' => 'fee', 'description' => 'Synthetic fee', 'quantity' => '1', 'unit_amount' => 5000]],
-            ])->assertCreated();
+            ])->assertRedirect()->assertSessionHasNoErrors();
 
         $this->assertSame('2026-11-01', ClientInvoice::query()->where('invoice_number', 'INV-SYN-SCHEDULED')->sole()->scheduled_issue_date?->toDateString());
     }

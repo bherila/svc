@@ -119,26 +119,21 @@ final class PaymentStatusVocabularyTest extends TestCase
      * The console path, which is where this was actually exposed.
      *
      * `svc:billing:payment --status=paid` passed the option straight through.
-     * The service now parses it, so this pins the application route rather
-     * than only the service that closed it.
+     * The command now parses through the same rules as payments.record, so
+     * this pins the application route rather than only the service.
      */
     public function test_the_console_command_cannot_record_a_payment_of_an_unknown_status(): void
     {
         $invoice = $this->issuedInvoice();
 
-        try {
-            $this->artisan('svc:billing:payment', [
-                'invoice' => $invoice->public_id,
-                'amount' => '10000',
-                'currency' => 'USD',
-                'method' => 'ach',
-                '--workspace' => $this->workspace->public_id,
-                '--status' => 'paid',
-            ])->run();
-            $this->fail('The command must not record a payment of an unknown status.');
-        } catch (DomainException $refusal) {
-            $this->assertStringContainsString('Unsupported payment status', $refusal->getMessage());
-        }
+        $this->artisan('svc:billing:payment', [
+            'invoice' => $invoice->public_id,
+            'amount' => '10000',
+            'currency' => 'USD',
+            'method' => 'ach',
+            '--workspace' => $this->workspace->public_id,
+            '--status' => 'paid',
+        ])->expectsOutputToContain('svc:billing:payment-status')->assertExitCode(2);
 
         $this->assertSame(0, $invoice->payments()->count());
         $this->assertSame('issued', $invoice->refresh()->status);

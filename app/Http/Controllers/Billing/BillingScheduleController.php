@@ -12,24 +12,22 @@ use App\Services\Billing\CreateBillingScheduleAction;
 use App\Services\WorkspaceAuthorization;
 use App\Support\WorkspaceClock;
 use Illuminate\Contracts\View\View;
-use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Gate;
 
 class BillingScheduleController extends Controller
 {
-    public function store(StoreBillingScheduleRequest $request, Workspace $workspace, ClientCompany $clientCompany, WorkspaceAuthorization $authorization, CreateBillingScheduleAction $create): JsonResponse|RedirectResponse
+    public function store(StoreBillingScheduleRequest $request, Workspace $workspace, ClientCompany $clientCompany, WorkspaceAuthorization $authorization, CreateBillingScheduleAction $create): RedirectResponse
     {
         Gate::authorize('manage', $workspace);
         $authorization->assertOwnedBy($workspace, $clientCompany);
-        $schedule = $create->create($workspace, $clientCompany, $request->validated());
+        $create->create($workspace, $clientCompany, $request->validated());
 
-        return $request->expectsJson()
-            ? response()->json(['data' => $schedule], 201)
-            : redirect()->back()->with('status', 'Billing schedule created.');
+        // No JSON shape of its own (#454): a program uses billing_schedules.create.
+        return redirect()->back()->with('status', 'Billing schedule created.');
     }
 
-    public function generate(Workspace $workspace, ClientBillingSchedule $schedule, BillingScheduleService $service, WorkspaceAuthorization $authorization, WorkspaceClock $clock): JsonResponse|RedirectResponse
+    public function generate(Workspace $workspace, ClientBillingSchedule $schedule, BillingScheduleService $service, WorkspaceAuthorization $authorization, WorkspaceClock $clock): RedirectResponse
     {
         Gate::authorize('manage', $workspace);
         $authorization->assertOwnedBy($workspace, $schedule);
@@ -37,11 +35,9 @@ class BillingScheduleController extends Controller
         // UTC's "today" runs ahead of a workspace west of Greenwich every
         // evening, and a period starting on that UTC date would be billed and
         // then refused as issued before its own issue date.
-        $invoices = $service->generateDue($schedule, $clock->today($workspace));
+        $service->generateDue($schedule, $clock->today($workspace));
 
-        return request()->expectsJson()
-            ? response()->json(['data' => $invoices])
-            : redirect()->back()->with('status', 'Due invoices generated.');
+        return redirect()->back()->with('status', 'Due invoices generated.');
     }
 
     public function show(Workspace $workspace, ClientBillingSchedule $schedule, WorkspaceAuthorization $authorization): View
