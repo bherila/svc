@@ -253,6 +253,34 @@ class AuditOverpaymentCreditCommandTest extends TestCase
         }
     }
 
+    public function test_a_scoped_audit_reads_no_payment_or_credit_line_of_another_workspace(): void
+    {
+        $mine = $this->company('scoped-child-mine');
+        $theirs = $this->company('scoped-child-theirs');
+        $invoice = $this->overpaid($mine, 5000);
+        // A legacy payment stamped to the other workspace on this invoice.
+        $this->writingLegacyCrossTenantRows(fn () => DB::table('client_invoice_payments')->insert([
+            'public_id' => (string) str()->uuid(), 'workspace_id' => $theirs->workspace_id, 'client_invoice_id' => $invoice->id, 'amount' => 70000, 'refunded_amount' => 0,
+            'currency' => 'USD', 'status' => 'succeeded', 'method' => 'manual', 'received_on' => '2024-01-31', 'created_at' => now(), 'updated_at' => now(),
+        ]));
+        $workspace = Workspace::query()->findOrFail($mine->workspace_id);
+        $reads = [];
+        DB::listen(function ($query) use (&$reads): void {
+            if (str_contains($query->sql, 'client_invoice_payments') || str_contains($query->sql, 'client_invoice_lines')) {
+                $reads[] = $query->sql;
+            }
+        });
+
+        $pool = app(OverpaymentCreditAuditor::class)->partitions($workspace)[0];
+
+        $this->assertSame([5000, []], [$pool->funded(), $pool->problems()]);
+        $this->assertNotEmpty($reads);
+        foreach ($reads as $sql) {
+            $this->assertStringContainsString('workspace_id', $sql);
+        }
+        $this->assertArrayHasKey('payment_in_another_workspace', app(OverpaymentCreditAuditor::class)->partitions()[0]->problems(), 'Unscoped, it is flagged.');
+    }
+
     public function test_an_unknown_workspace_option_is_refused(): void
     {
         $this->assertSame(2, Artisan::call('svc:billing:audit-overpayment-credit', ['--workspace' => '00000000-0000-4000-8000-000000000999']));

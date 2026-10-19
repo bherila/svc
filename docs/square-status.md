@@ -161,7 +161,7 @@ the latest sync run (status, trigger, counts and error code), plus
 30-minute abandonment threshold) and `sync_overdue` (no completed sync within an
 hour). It never prints a credential and never calls Square. It exits 0 when Square
 is configured, its workspace exists, a sync completed within the hour and the
-latest run neither failed nor was abandoned, and 1 otherwise - so a stopped
+latest run neither failed, was truncated nor was abandoned, and 1 otherwise - so a stopped
 scheduler shows up even though nothing else marks its runs while it is down. The
 post-deploy probe runs it beside `svc:stripe:status` and `svc:brevo:status`, and,
 as for those, treats exit 1 as a report rather than a deploy failure - but only

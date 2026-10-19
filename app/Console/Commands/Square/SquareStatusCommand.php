@@ -16,8 +16,8 @@ use Illuminate\Console\Command;
  * probe runs it beside the Stripe and Brevo probes.
  *
  * Exits 0 when Square is configured, its workspace exists, a sync completed
- * within the hour and the latest run neither failed nor was abandoned; 1
- * otherwise, which the probe reports without failing a deploy. The last run is read from svc's
+ * within the hour and the latest run neither failed, was truncated nor was
+ * abandoned; 1 otherwise, which the probe reports without failing a deploy. The last run is read from svc's
  * own records, through the same freshness the mirror reads report.
  */
 final class SquareStatusCommand extends Command
@@ -62,7 +62,9 @@ final class SquareStatusCommand extends Command
         $overdue = $workspace !== null && ($freshness['last_synced_at'] === null || CarbonImmutable::parse((string) $freshness['last_synced_at'])->lt($now->subMinutes(self::OVERDUE_AFTER_MINUTES)));
         $status['last_run_abandoned'] = $abandoned;
         $status['sync_overdue'] = $overdue;
-        $healthy = $workspace !== null && ! $abandoned && ! $overdue && ($lastRun === null || $lastRun['status'] !== SquareSyncRun::FAILED);
+        // A truncated run completed but left the mirror short of Square.
+        $healthy = $workspace !== null && ! $abandoned && ! $overdue
+            && ($lastRun === null || ($lastRun['status'] !== SquareSyncRun::FAILED && $lastRun['truncated'] !== true));
 
         if ($format === 'json') {
             $this->line((string) json_encode($status, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));

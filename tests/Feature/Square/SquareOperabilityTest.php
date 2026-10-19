@@ -260,6 +260,9 @@ final class SquareOperabilityTest extends TestCase
         $this->assertSame(1, Artisan::call('svc:square:status', ['--format' => 'json']));
         $this->assertSame([true, false], array_values(array_intersect_key(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR), array_flip(['last_run_abandoned', 'sync_overdue']))));
         $this->artisan('svc:square:status')->expectsOutputToContain('running (schedule), abandoned')->assertFailed();
+        $stuck->forceFill(['status' => SquareSyncRun::COMPLETED, 'finished_at' => now(), 'truncated' => true])->save();
+        $this->assertSame(1, Artisan::call('svc:square:status', ['--format' => 'json']), 'Completed, but short of Square.');
+        $this->assertTrue(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['last_run']['truncated']);
         $stuck->delete();
         $this->travel(30)->minutes();
         $this->assertSame(1, Artisan::call('svc:square:status', ['--format' => 'json']), 'No completed sync for over an hour.');

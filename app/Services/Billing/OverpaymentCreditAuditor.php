@@ -42,9 +42,10 @@ final class OverpaymentCreditAuditor
      * REPEATABLE READ fixes a snapshot at the first read and every batch reads
      * the same state. Nothing is written, so it commits nothing.
      *
-     * With a workspace, only that workspace's invoices and companies are
-     * read; their payments and credit lines are still found by invoice, so a
-     * row stamped to another workspace is flagged rather than missed.
+     * With a workspace, only that workspace's invoices, companies, payments
+     * and credit lines are read: a child row stamped to another workspace is
+     * another tenant's and is left alone. Unscoped, such a row is read and
+     * flagged.
      *
      * @return list<CreditPoolPartition>
      */
@@ -83,12 +84,16 @@ final class OverpaymentCreditAuditor
             ->chunk(self::BATCH);
         foreach ($batches as $batch) {
             $ids = $batch->pluck('id')->all();
+            // Scoped, a child row stamped to another workspace is not read at
+            // all; unscoped, it is read and flagged.
             $paymentsByInvoice = DB::table('client_invoice_payments')
                 ->whereIn('client_invoice_id', $ids)
+                ->when($workspace !== null, static fn ($payments) => $payments->where('workspace_id', $workspace?->id))
                 ->get(['client_invoice_id', 'workspace_id', 'status', 'amount', 'refunded_amount', 'currency'])
                 ->groupBy('client_invoice_id');
             $creditsByInvoice = DB::table('client_invoice_lines')
                 ->whereIn('client_invoice_id', $ids)
+                ->when($workspace !== null, static fn ($lines) => $lines->where('workspace_id', $workspace?->id))
                 ->where('type', 'credit')
                 ->get(['client_invoice_id', 'workspace_id', 'total_amount'])
                 ->groupBy('client_invoice_id');
