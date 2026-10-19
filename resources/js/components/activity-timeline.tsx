@@ -43,6 +43,7 @@ const actionTitles: Record<string, string> = {
     'invoice.payment_canceled': 'Payment canceled',
     'invoice.payment_disputed': 'Payment disputed',
     'invoice.payment_refunded': 'Payment refunded',
+    'invoice.payment_refund_reversed': 'Refund reversed',
     'invoice.payment_date_corrected': 'Payment date corrected',
     'invoice.payment_corrected': 'Payment corrected',
     'payment_method.added': 'Payment method added',
@@ -70,6 +71,9 @@ const meaningfulActions = new Set([
     'invoice.payment_canceled',
     'invoice.payment_disputed',
     'invoice.payment_refunded',
+    // A refund the processor reported as failed or canceled: money back on
+    // the payment, which a reader of the history must not take for a refund.
+    'invoice.payment_refund_reversed',
     // A correction, not noise. The whole reason a date-only edit is allowed at
     // all is that the change is recorded, and an audit record hidden behind
     // "show system activity" is not one.
