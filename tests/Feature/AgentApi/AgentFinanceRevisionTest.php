@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Support\AgentApi\AgentApiScopes;
+use App\Support\Finance\ReconciliationReviewReason;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
@@ -58,6 +59,57 @@ final class AgentFinanceRevisionTest extends TestCase
         $afterRepeatedWithdrawal = $this->paymentVersion($workspace);
         $this->putJson($path, [...$body, 'allocated_amount' => 2000, 'is_active' => false])->assertOk();
         $this->assertSame([$withdrawn, $withdrawn], [$afterRepeatedWithdrawal, $this->paymentVersion($workspace)]);
+    }
+
+    public function test_a_processor_flagging_allocations_advances_the_payment_version_and_change_time(): void
+    {
+        CarbonImmutable::setTestNow('2026-10-01 12:00:00');
+        [$owner, $workspace, $payment] = $this->payment('Processor flags');
+        $this->actingAsMcp($owner, [AgentApiScopes::FINANCE_READ, AgentApiScopes::FINANCE_RECONCILE]);
+        $this->putJson($this->allocationPath($workspace, $payment, (string) Str::uuid()), ['allocated_amount' => 2000, 'currency' => 'USD', 'is_active' => true])->assertCreated();
+        $lifecycle = app(InvoiceLifecycleService::class);
+
+        // Each processor report flags the allocation, and the payment's
+        // version and change time move with the flag, so the feed carries it.
+        foreach ([
+            '2026-10-01 13:00:00' => fn (ClientInvoicePayment $current) => $lifecycle->setRefundedAmount($current, 1000, $workspace),
+            '2026-10-01 14:00:00' => fn (ClientInvoicePayment $current) => $lifecycle->setPaymentDisputed($current, 3000, $workspace),
+            '2026-10-01 15:00:00' => fn (ClientInvoicePayment $current) => $lifecycle->setPaymentDisputed($current, 4000, $workspace),
+        ] as $at => $report) {
+            $before = $this->paymentVersion($workspace);
+            CarbonImmutable::setTestNow($at);
+            $report(ClientInvoicePayment::query()->whereKey($payment->id)->firstOrFail());
+            $feed = $this->getJson($this->listPath($workspace, ['status' => 'any', 'updated_since' => CarbonImmutable::parse($at, 'UTC')->toIso8601String()]))->assertOk();
+            $this->assertSame([$payment->public_id], array_column($feed->json('data'), 'id'), $at);
+            $this->assertTrue($feed->json('data.0.reconciliations.0.needs_review'), $at);
+            $this->assertNotSame($before, $feed->json('data.0.version'), $at);
+        }
+    }
+
+    /**
+     * Flagging carries its own revision rather than relying on each caller to
+     * write the payment afterwards (today every caller does), so a future
+     * caller that only flags is still seen. Nothing flagged, nothing moved.
+     */
+    public function test_flagging_allocations_advances_the_revision_by_itself_and_only_when_it_flags_one(): void
+    {
+        CarbonImmutable::setTestNow('2026-10-01 12:00:00');
+        [$owner, $workspace, $payment] = $this->payment('Flag alone');
+        $flag = new \ReflectionMethod(InvoiceLifecycleService::class, 'flagActiveReconciliations');
+        $lifecycle = app(InvoiceLifecycleService::class);
+        $revision = fn (): int => (int) ClientInvoicePayment::query()->whereKey($payment->id)->value('lock_version');
+
+        $unflagged = $revision();
+        $flag->invoke($lifecycle, ClientInvoicePayment::query()->whereKey($payment->id)->firstOrFail(), ReconciliationReviewReason::ProcessorRefund);
+        $this->assertSame($unflagged, $revision(), 'no active allocation, nothing flagged');
+
+        $this->actingAsMcp($owner, [AgentApiScopes::FINANCE_RECONCILE]);
+        $this->putJson($this->allocationPath($workspace, $payment, (string) Str::uuid()), ['allocated_amount' => 2000, 'currency' => 'USD', 'is_active' => true])->assertCreated();
+        $allocated = $revision();
+        CarbonImmutable::setTestNow('2026-10-01 13:00:00');
+        $flag->invoke($lifecycle, ClientInvoicePayment::query()->whereKey($payment->id)->firstOrFail(), ReconciliationReviewReason::ProcessorRefund);
+        $this->assertSame($allocated + 1, $revision());
+        $this->assertSame('2026-10-01 13:00:00', ClientInvoicePayment::query()->whereKey($payment->id)->firstOrFail()->updated_at?->format('Y-m-d H:i:s'));
     }
 
     public function test_an_upsert_over_oauth_states_whether_the_allocation_counts_through_the_real_flow(): void
