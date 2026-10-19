@@ -209,7 +209,7 @@ final class AgentOperationCatalog
     {
         $this->registry();
 
-        return isset($this->managerOnly[$operationId]);
+        return ($this->managerOnly[$operationId] ?? false) === true;
     }
 
     /** Whether the operation reads a system outside SVC (an MCP open-world tool). */

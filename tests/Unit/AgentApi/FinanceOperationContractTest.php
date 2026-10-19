@@ -66,6 +66,9 @@ final class FinanceOperationContractTest extends TestCase
             $this->assertEquals(SchemaRef::responseOf($id), $operation->output, $id);
             $this->assertEquals($id === 'finance.reconciliations.upsert' ? SchemaRef::requestOf($id) : null, $operation->input, $id);
         }
+        // Only what is declared manager-only is withheld from non-managers.
+        $this->assertFalse($catalog->isManagerOnly('context.get'));
+        $this->assertFalse($catalog->isManagerOnly('finance.unknown'));
     }
 
     /** Parameters, prose, refusals, scopes and extensions are the document's, field for field. */
