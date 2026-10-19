@@ -233,6 +233,10 @@ which admits the hosted agents' browser origins.
 Dynamic public-client registrations are marked at creation, updated when used, and
 pruned after 30 inactive days by the scheduled
 `svc:oauth:prune-dynamic-clients` command (the retention is configurable).
+Expired Passport tokens and authorization codes are purged daily, 31 days past
+their expiry, by a scheduled `passport:purge --expired --hours=744`; see
+[Token retention](docs/mcp-operations.md#token-retention) for why revoked rows
+are not purged sooner.
 
 ## Agent skills
 
