@@ -2,10 +2,12 @@
 
 namespace Tests\Feature;
 
+use App\Models\User;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 use Tests\Concerns\UsesAProbeDatabase;
 use Tests\Support\OwnTables;
 use Tests\TestCase;
@@ -46,5 +48,32 @@ final class ProbeDatabaseIsolationTest extends TestCase
         $this->assertContains('workspaces', $own);
         $this->assertSame([], array_values(array_filter($own, static fn (string $name): bool => str_contains($name, '.'))));
         $this->assertSame([], array_values(array_filter($own, static fn (string $name): bool => str_starts_with($name, 'sqlite_'))));
+    }
+
+    public function test_creating_and_dropping_a_probe_never_commits_the_test_transaction(): void
+    {
+        if (DB::connection()->getDriverName() === 'sqlite') {
+            $this->markTestSkipped('A SQLite probe is a file; creating it runs no DDL on the test connection.');
+        }
+
+        $email = 'probe-commit-'.Str::lower(Str::random(10)).'@example.test';
+        User::factory()->create(['email' => $email]);
+
+        config(['database.connections.probe_observer' => (array) config('database.connections.'.config('database.default'))]);
+        $committed = static fn (): bool => DB::connection('probe_observer')->table('users')->where('email', $email)->exists();
+
+        try {
+            $this->assertFalse($committed(), 'The row is still inside the test transaction before any probe exists.');
+
+            $this->bootProbeDatabase('commit_probe');
+            $this->assertFalse($committed(), 'Creating the probe schema committed the test transaction.');
+
+            $this->dropProbeDatabase();
+            $this->assertFalse($committed(), 'Dropping the probe schema committed the test transaction.');
+
+            $this->assertTrue(User::query()->where('email', $email)->exists(), 'The test still sees its own uncommitted row.');
+        } finally {
+            DB::purge('probe_observer');
+        }
     }
 }

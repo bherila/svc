@@ -21,6 +21,12 @@ use SplFileInfo;
  *
  * So these tests get their own: a temp file on SQLite, a scratch schema on
  * MariaDB, dropped again in `tearDown()`.
+ *
+ * `create database` and `drop database` are DDL too, so they go through a
+ * session of their own rather than the default connection. On the default
+ * connection they would commit the `RefreshDatabase` transaction the test is
+ * running in - at boot, everything the test had written so far; at teardown,
+ * everything it wrote at all - and leave the rest of the test in autocommit.
  */
 trait UsesAProbeDatabase
 {
@@ -30,6 +36,9 @@ trait UsesAProbeDatabase
 
     /** Whether the probe is a file to unlink or a schema to drop. */
     private bool $probeIsFile = false;
+
+    /** The session that creates and drops probe schemas, never the test's own. */
+    private const PROBE_ADMIN_CONNECTION = 'svc_probe_admin';
 
     protected function bootProbeDatabase(string $connection): void
     {
@@ -62,7 +71,9 @@ trait UsesAProbeDatabase
 
         $this->probeDatabase = 'svc_probe_'.Str::lower(Str::random(12));
         $this->probeIsFile = false;
-        DB::statement('create database `'.$this->probeDatabase.'`');
+        config(['database.connections.'.self::PROBE_ADMIN_CONNECTION => $default]);
+        DB::purge(self::PROBE_ADMIN_CONNECTION);
+        DB::connection(self::PROBE_ADMIN_CONNECTION)->statement('create database `'.$this->probeDatabase.'`');
         config(['database.connections.'.$connection => ['database' => $this->probeDatabase] + $default]);
     }
 
@@ -124,7 +135,8 @@ trait UsesAProbeDatabase
         if ($this->probeIsFile) {
             @unlink($this->probeDatabase);
         } else {
-            DB::statement('drop database if exists `'.$this->probeDatabase.'`');
+            DB::connection(self::PROBE_ADMIN_CONNECTION)->statement('drop database if exists `'.$this->probeDatabase.'`');
+            DB::purge(self::PROBE_ADMIN_CONNECTION);
         }
 
         $this->probeDatabase = null;
