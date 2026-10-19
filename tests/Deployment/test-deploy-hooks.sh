@@ -95,7 +95,8 @@ case "$*" in
             grep -Fq fixture-manifest "$ASSET_MANIFEST_PATH" || exit 1
         fi
         ;;
-    *verify-oauth-redirect.mjs*) printf '%s\n' redirect >>"$FIXTURE_NODE_LOG" ;;
+    # Drain the piped redirect: an unread pipe can fail the writer under pipefail.
+    *verify-oauth-redirect.mjs*) cat >/dev/null; printf '%s\n' redirect >>"$FIXTURE_NODE_LOG" ;;
     *) printf '%s\n' smoke >>"$FIXTURE_NODE_LOG" ;;
 esac
 MOCK
@@ -161,6 +162,7 @@ for cron in '' "$canonical_cron"$'\n'"$canonical_cron" \
     if run_live_verify '200 text/html' >"$temporary/output" 2>&1; then
         fail 'verification accepted a crontab without exactly one canonical scheduler line'
     fi
+    grep -Fq 'bash -s -- svc-laravel /fixture/php' "$temporary/ssh.log" || fail 'verification failed before the cron audit ran'
     grep -Fq -- '--ttl=15' "$temporary/ssh.log" && fail 'credentials were issued after the cron audit failed'
     grep -qx smoke "$temporary/node.log" && fail 'API smoke ran after the cron audit failed'
     grep -Fq 'artisan' "$temporary/output" && fail 'cron audit failure relayed a crontab line'
