@@ -6537,7 +6537,7 @@ export interface operations {
                     'application/json': components['schemas']['Error'];
                 };
             };
-            /** @description The workspace does not exist. */
+            /** @description The workspace does not exist or the caller is not in it. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -6623,7 +6623,7 @@ export interface operations {
                     'application/json': components['schemas']['Error'];
                 };
             };
-            /** @description The workspace or payment does not exist in this workspace, or the system or transaction is not a slug and a UUID. */
+            /** @description The workspace does not exist or the caller is not in it; the payment does not exist in this workspace; or the system or transaction is not a slug and a UUID. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -6696,7 +6696,7 @@ export interface operations {
                     'application/json': components['schemas']['Error'];
                 };
             };
-            /** @description The workspace, payment or allocation does not exist in this workspace, or the system or transaction is not a slug and a UUID. */
+            /** @description The workspace does not exist or the caller is not in it; the payment or allocation does not exist in this workspace; or the system or transaction is not a slug and a UUID. */
             404: {
                 headers: {
                     [name: string]: unknown;

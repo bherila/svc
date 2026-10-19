@@ -125,6 +125,28 @@ final class FinanceReconciliationOperationsTest extends TestCase
         $this->assertSame(['forbidden'], AgentMutationAudit::query()->pluck('error_category')->unique()->values()->all());
     }
 
+    /** Someone outside the workspace is told nothing about it and leaves nothing in it, not even a failed write's audit. */
+    public function test_a_workspace_the_caller_is_not_in_is_concealed_before_anything_is_written(): void
+    {
+        [, $workspace, $payment] = $this->payment('Concealed');
+        $path = $this->allocationPath($workspace, $payment, 'synthetic-ledger', (string) Str::uuid());
+        $outsider = User::factory()->create();
+
+        $this->actingAsMcp($outsider, ['finance:read', 'finance:reconcile']);
+        $this->getJson($this->listPath($workspace))->assertNotFound();
+        $this->putJson($path, ['allocated_amount' => 100, 'currency' => 'USD'])->assertNotFound();
+        $this->deleteJson($path)->assertNotFound();
+
+        Auth::forgetGuards();
+        $token = $outsider->createToken('outsider', ['finance.read', 'finance.reconcile'], now()->addHour())->plainTextToken;
+        $this->withToken($token)->putJson($path, ['allocated_amount' => 100, 'currency' => 'USD'])->assertNotFound();
+        Auth::forgetGuards();
+        $this->withToken($token)->deleteJson($path)->assertNotFound();
+
+        $this->assertDatabaseCount('agent_mutation_audits', 0);
+        $this->assertDatabaseCount('payment_reconciliations', 0);
+    }
+
     /** A finance token opens these operations and nothing else, whatever route it is shown to. */
     public function test_a_finance_token_opens_only_the_finance_operations(): void
     {

@@ -1671,7 +1671,7 @@ final class AgentRestDocumentation
                 'errors' => [
                     401 => 'Not signed in, or the token is missing, expired or revoked.',
                     403 => 'The caller may not read this workspace\'s payments, or the token lacks finance:read (the finance token, finance.read).',
-                    404 => 'The workspace does not exist.',
+                    404 => 'The workspace does not exist or the caller is not in it.',
                     422 => 'A filter is invalid (`errors` names it): an unknown status, a malformed invoice id or date, received_to before received_from, or per_page out of range.',
                     429 => 'Too many requests (retry after Retry-After).',
                 ],
@@ -1685,7 +1685,7 @@ final class AgentRestDocumentation
                 'response' => 'FinanceReconciliationResponse',
                 'response_description' => 'The allocation, no longer active',
                 'errors' => $writeErrors(
-                    'The workspace, payment or allocation does not exist in this workspace, or the system or transaction is not a slug and a UUID.',
+                    'The workspace does not exist or the caller is not in it; the payment or allocation does not exist in this workspace; or the system or transaction is not a slug and a UUID.',
                     'external_system is longer than 80 characters (`errors` names external_system_slug).',
                 ),
                 'extensions' => ['x-mcp-tool' => 'finance.reconciliations.deactivate'],
@@ -1699,7 +1699,7 @@ final class AgentRestDocumentation
                 'response' => 'FinanceReconciliationResponse',
                 'response_description' => 'The allocation, updated (201 when this created it)',
                 'errors' => $writeErrors(
-                    'The workspace or payment does not exist in this workspace, or the system or transaction is not a slug and a UUID.',
+                    'The workspace does not exist or the caller is not in it; the payment does not exist in this workspace; or the system or transaction is not a slug and a UUID.',
                     'A field is invalid (`errors` names it, or external_system_slug for the path), or the payment is not succeeded, its currency differs, or the active allocations would exceed its amount net of refunds.',
                 ),
                 'extensions' => ['x-mcp-tool' => 'finance.reconciliations.upsert'],

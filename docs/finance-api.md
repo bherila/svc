@@ -131,7 +131,9 @@ allocation again with an amount that fits the net (`PUT`), or deactivate it
 longer `succeeded` (fully refunded or disputed), so there `DELETE` is the way to
 resolve the review. An inactive allocation never reports `needs_review`.
 
-Cross-workspace resource combinations return `404`. Missing or expired tokens
+A workspace the caller is not a member of, and cross-workspace resource
+combinations, return `404`: the workspace is concealed before anything is read
+or written. Missing or expired tokens
 return `401`; missing scopes or abilities and insufficient workspace roles return
 `403` (a missing scope is answered by the route gate with the operation, reason
 and an `insufficient_scope` challenge); invalid input and domain preconditions

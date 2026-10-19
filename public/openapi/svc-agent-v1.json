@@ -4316,7 +4316,7 @@
                         }
                     },
                     "404": {
-                        "description": "The workspace does not exist.",
+                        "description": "The workspace does not exist or the caller is not in it.",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -4430,7 +4430,7 @@
                         }
                     },
                     "404": {
-                        "description": "The workspace, payment or allocation does not exist in this workspace, or the system or transaction is not a slug and a UUID.",
+                        "description": "The workspace does not exist or the caller is not in it; the payment or allocation does not exist in this workspace; or the system or transaction is not a slug and a UUID.",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -4565,7 +4565,7 @@
                         }
                     },
                     "404": {
-                        "description": "The workspace or payment does not exist in this workspace, or the system or transaction is not a slug and a UUID.",
+                        "description": "The workspace does not exist or the caller is not in it; the payment does not exist in this workspace; or the system or transaction is not a slug and a UUID.",
                         "content": {
                             "application/json": {
                                 "schema": {

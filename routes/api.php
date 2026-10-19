@@ -389,9 +389,14 @@ Route::prefix('v1')
     ->name('agent-api.v1.')
     ->middleware([ExpectOAuthResource::class.':rest', 'auth:sanctum,api', 'throttle:60,1', NoStoreAgentResponse::class])
     ->group(function () use ($operation): void {
-        $operation('finance.invoice_payments.list', [FinanceReconciliationController::class, 'index']);
+        // A workspace the caller cannot see answers 404 before anything else,
+        // as on every other workspace route: nothing - not even a failed
+        // write's audit - reaches a tenant the caller is not in.
+        $operation('finance.invoice_payments.list', [FinanceReconciliationController::class, 'index'])
+            ->middleware(EnsureAgentWorkspaceVisible::class)->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']));
         foreach (['finance.reconciliations.upsert' => 'upsert', 'finance.reconciliations.deactivate' => 'destroy'] as $operationId => $action) {
             $operation($operationId, [FinanceReconciliationController::class, $action])
+                ->middleware(EnsureAgentWorkspaceVisible::class)->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']))
                 ->whereUuid('payment')
                 ->where('external_system', ReconciliationTarget::SYSTEM_PATTERN)
                 ->whereUuid('transaction');
