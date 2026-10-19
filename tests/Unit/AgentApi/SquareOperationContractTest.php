@@ -65,6 +65,7 @@ final class SquareOperationContractTest extends TestCase
             'square.import_customer' => [[AgentDeploymentFlags::CLIENTS], [AgentDeploymentFlags::SQUARE]],
             'square.sync' => [[AgentDeploymentFlags::WRITES], [AgentDeploymentFlags::SQUARE]],
             'invoices.square_link' => [[AgentDeploymentFlags::INVOICES], []],
+            'invoices.square_reconcile' => [[AgentDeploymentFlags::WRITES], [AgentDeploymentFlags::SQUARE]],
             'invoices.square_unlink' => [[AgentDeploymentFlags::INVOICES], []],
             'companies.square_customer.get' => [[], []],
             'companies.square_customer.set' => [[AgentDeploymentFlags::CLIENTS], []],
@@ -199,7 +200,7 @@ final class SquareOperationContractTest extends TestCase
                 } else {
                     // The sync reads Square, writes only svc's mirror, and the
                     // outer agent write switch withholds it.
-                    $this->assertSame($id === 'square.sync', $catalog->readsExternalSystem($id), $id);
+                    $this->assertSame(in_array($id, ['square.sync', 'invoices.square_reconcile'], true), $catalog->readsExternalSystem($id), $id);
                     $this->assertSame([$id === 'square.import_customer' ? AgentDeploymentFlags::CLIENTS : AgentDeploymentFlags::WRITES, AgentDeploymentFlags::SQUARE, 'mcp', 'mcp.switch:mcp.write', 'mcp.switch:'.$id], $operation->requirement->flags, $id);
                     $this->assertSame(IdempotencyKey::HeaderAndArgument, $operation->safety->idempotencyKey, $id);
                     $this->assertStringContainsString('nothing is created, changed or paid in Square', $operation->description, $id);

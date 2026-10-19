@@ -194,6 +194,16 @@
             "mcp.switch:billing.audit_undated_collectible_invoices"
         ]
     },
+    "billing.audit_unlinked_proposal_agreements": {
+        "scopes": [
+            "billing:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read.billing.audit_unlinked_proposal_agreements",
+            "mcp.switch:billing.audit_unlinked_proposal_agreements"
+        ]
+    },
     "billing.audit_unplaceable_invoices": {
         "scopes": [
             "billing:read"
@@ -202,6 +212,16 @@
             "mcp",
             "mcp.switch:mcp.read.billing.audit_unplaceable_invoices",
             "mcp.switch:billing.audit_unplaceable_invoices"
+        ]
+    },
+    "billing.preflight_schedule_generation": {
+        "scopes": [
+            "billing:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read.billing.preflight_schedule_generation",
+            "mcp.switch:billing.preflight_schedule_generation"
         ]
     },
     "billing_audit.stale_and_missing": {
@@ -911,6 +931,20 @@
             "mcp",
             "mcp.switch:mcp.write",
             "mcp.switch:invoices.square_link"
+        ]
+    },
+    "invoices.square_reconcile": {
+        "scopes": [
+            "billing:write",
+            "billing:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes",
+            "square.connected",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:invoices.square_reconcile"
         ]
     },
     "invoices.square_unlink": {

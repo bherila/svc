@@ -37,7 +37,9 @@ final class AgentMcpInventoryTest extends TestCase
         'billing.audit_missing_billed_overage',
         'billing.audit_opening_rollover',
         'billing.audit_undated_collectible_invoices',
+        'billing.audit_unlinked_proposal_agreements',
         'billing.audit_unplaceable_invoices',
+        'billing.preflight_schedule_generation',
         'billing_audit.stale_and_missing',
         'billing_schedules.create',
         'billing_schedules.generate',
@@ -98,6 +100,7 @@ final class AgentMcpInventoryTest extends TestCase
         'invoices.send_reminder',
         'invoices.square_candidates',
         'invoices.square_link',
+        'invoices.square_reconcile',
         'invoices.square_unlink',
         'invoices.update_details',
         'invoices.update_draft',
@@ -173,7 +176,7 @@ final class AgentMcpInventoryTest extends TestCase
         foreach (self::gatedTools() as $flag => $names) {
             yield $flag => [$flag, $names];
         }
-        $outer = ['time_entries.approve', 'time_entries.unapprove', 'tasks.create', 'tasks.update', 'square.sync'];
+        $outer = ['time_entries.approve', 'time_entries.unapprove', 'tasks.create', 'tasks.update', 'square.sync', 'invoices.square_reconcile'];
         foreach (self::gatedTools() as $flag => $names) {
             if ($flag !== 'time_entry_writes_enabled') {
                 $outer = [...$outer, ...$names];
@@ -198,10 +201,10 @@ final class AgentMcpInventoryTest extends TestCase
             app(AgentWithheldTools::class)->for(fn (string $scope): bool => true, true));
     }
 
-    public function test_inventory_retains_all_127_tools_when_every_cutover_is_disabled(): void
+    public function test_inventory_retains_all_130_tools_when_every_cutover_is_disabled(): void
     {
         $this->enableAll();
-        $disabled = ['time_entries.approve', 'tasks.create', 'tasks.update', 'square.sync'];
+        $disabled = ['time_entries.approve', 'tasks.create', 'tasks.update', 'square.sync', 'invoices.square_reconcile'];
         foreach (self::gatedTools() as $flag => $names) {
             config(['agent_api.'.$flag => false]);
             $disabled = [...$disabled, ...$names];
@@ -209,14 +212,14 @@ final class AgentMcpInventoryTest extends TestCase
         config(['agent_api.writes_enabled' => false]);
         $disabled = array_values(array_unique($disabled));
         sort($disabled);
-        $this->assertCount(127, self::TOOLS);
+        $this->assertCount(130, self::TOOLS);
         $this->assertSame(self::TOOLS, $this->inventory());
         $this->assertSame(array_values(array_diff(self::TOOLS, $disabled)), $this->deployed());
         $this->assertSame(array_map(fn (string $name): array => ['name' => $name, 'reason' => 'deployment_disabled'], $disabled),
             app(AgentWithheldTools::class)->for(fn (string $scope): bool => true, true));
     }
 
-    public function test_actual_mcp_discovery_and_context_partition_all_127_tools_after_every_cutover_is_disabled(): void
+    public function test_actual_mcp_discovery_and_context_partition_all_130_tools_after_every_cutover_is_disabled(): void
     {
         $this->enableAll();
         $owner = User::factory()->create();
@@ -280,7 +283,7 @@ final class AgentMcpInventoryTest extends TestCase
         $this->enableAll();
         // These historical read tools predate REST parity and are outside the
         // remaining operations named in #386. Every added tool is mapped.
-        $legacy = ['billing.audit_unplaceable_invoices', 'billing.audit_undated_collectible_invoices', 'billing.audit_missing_billed_overage', 'billing.audit_opening_rollover'];
+        $legacy = ['billing.audit_unplaceable_invoices', 'billing.audit_undated_collectible_invoices', 'billing.audit_missing_billed_overage', 'billing.audit_opening_rollover', 'billing.audit_unlinked_proposal_agreements', 'billing.preflight_schedule_generation'];
         $spec = json_decode((string) file_get_contents(public_path('openapi/svc-agent-v1.json')), true, flags: JSON_THROW_ON_ERROR);
         $mapped = [];
         $definitions = collect($this->mcpTools())->keyBy(fn (Operation $operation): string => (string) $operation->mcpName());

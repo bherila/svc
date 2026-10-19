@@ -11,7 +11,7 @@
 > imported from history. The ledger below still derives and spends it, and how spending is
 > serialised — including the `credit_revision` check at issue — is in
 > [concurrency.md](concurrency.md#spending-overpayment-credit). A paid invoice
-> cannot be voided. `svc:billing:audit-overpayment-credit` compares credit funded
+> cannot be voided. `svc:billing:audit-overpayment-credit` (optionally `--workspace=PUBLIC_ID`) compares credit funded
 > with credit consumed.
 
 ## What it does

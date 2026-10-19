@@ -259,6 +259,7 @@ final class AgentMcpContractTest extends TestCase
             'invoices.send_reminder' => ['billing:write', 'billing:read'],
             'invoices.square_candidates' => ['billing:read'],
             'invoices.square_link' => ['billing:write', 'billing:read'],
+            'invoices.square_reconcile' => ['billing:write', 'billing:read'],
             'invoices.square_unlink' => ['billing:write', 'billing:read'],
             'invoices.update_details' => ['billing:write'],
             'invoices.update_draft' => ['billing:write'],
