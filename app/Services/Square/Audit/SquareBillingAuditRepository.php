@@ -31,6 +31,9 @@ final class SquareBillingAuditRepository
     /** Square payment ids checked against svc's ledger at most: 20 lookups. */
     public const int MAX_PAYMENT_IDS = 10_000;
 
+    /** Invoices whose payment ids are read per query: at most 20,000 ids. */
+    private const int PAYMENT_ID_BATCH = 200;
+
     /** Members of billed-in-Square series read at most. */
     public const int MAX_SERIES_MEMBERS = 5000;
 
@@ -48,7 +51,7 @@ final class SquareBillingAuditRepository
         $seriesKeys = array_map(static fn (SquareAuditAgreement $agreement): string => $agreement->seriesKey, $agreements);
 
         $columns = ['id', 'square_invoice_id', 'invoice_number', 'series_key', 'series_occurrence', 'square_customer_id', 'recipient_name', 'square_location_id',
-            'status', 'currency', 'total_amount', 'paid_amount', 'due_on', 'scheduled_at', 'autopay', 'payment_ids', 'square_order_id', 'payment_ids_basis'];
+            'status', 'currency', 'total_amount', 'paid_amount', 'due_on', 'scheduled_at', 'autopay', 'square_order_id', 'payment_ids_basis'];
         // Series members first, under their own bound and newest first, so a
         // large mirror never hides a billed-in-Square series: drift reads the
         // latest members, and absence is only claimed of a complete load.
@@ -94,23 +97,35 @@ final class SquareBillingAuditRepository
         $mappedCustomers = $this->mappedCustomers($workspace, $customerIds);
         $billedSeries = array_fill_keys($seriesKeys, true);
 
-        // Only invoices whose payments the audit checks spend the bound;
-        // past it, an invoice's payments are left unchecked - and say so -
-        // rather than looked up in ever more queries.
-        $paymentIds = [];
-        $deferred = [];
+        // Payment ids are read only for invoices whose payments the audit
+        // checks and whose ids are current, a batch at a time, and only up to
+        // the bound; past it an invoice's payments are left unchecked - and
+        // say so - rather than read and looked up without end.
+        $wanted = [];
         foreach ($snapshots as $snapshot) {
-            if (! SquareBillingAuditPolicy::inPaymentReach(isset($links[$snapshot->square_invoice_id]), $snapshot->series_key, $snapshot->square_customer_id, $billedSeries, $mappedCustomers)) {
-                continue;
+            if (SquareSnapshotMapper::mayHoldPayment($snapshot->status, $snapshot->paid_amount)
+                && SquareSnapshotMapper::paymentIdsCurrent($snapshot->status, $snapshot->paid_amount, $snapshot->square_order_id, $snapshot->payment_ids_basis)
+                && SquareBillingAuditPolicy::inPaymentReach(isset($links[$snapshot->square_invoice_id]), $snapshot->series_key, $snapshot->square_customer_id, $billedSeries, $mappedCustomers)) {
+                $wanted[] = $snapshot->square_invoice_id;
             }
-            $ids = $snapshot->payment_ids ?? [];
-            if (count($paymentIds) + count($ids) > self::MAX_PAYMENT_IDS) {
-                $deferred[$snapshot->square_invoice_id] = true;
+        }
+        $paymentIds = [];
+        $idsByInvoice = [];
+        $deferred = [];
+        foreach (array_chunk($wanted, self::PAYMENT_ID_BATCH) as $chunk) {
+            $stored = count($paymentIds) >= self::MAX_PAYMENT_IDS ? [] : SquareInvoiceSnapshot::query()->where('workspace_id', $workspace->id)
+                ->whereIn('square_invoice_id', $chunk)->get(['square_invoice_id', 'payment_ids'])->keyBy('square_invoice_id');
+            foreach ($chunk as $squareInvoiceId) {
+                $ids = array_values(array_filter($stored[$squareInvoiceId]->payment_ids ?? [], 'is_string'));
+                if ($stored === [] || count($paymentIds) + count($ids) > self::MAX_PAYMENT_IDS) {
+                    $deferred[$squareInvoiceId] = true;
 
-                continue;
-            }
-            foreach ($ids as $paymentId) {
-                $paymentIds[$paymentId] = true;
+                    continue;
+                }
+                $idsByInvoice[$squareInvoiceId] = $ids;
+                foreach ($ids as $paymentId) {
+                    $paymentIds[$paymentId] = true;
+                }
             }
         }
 
@@ -131,7 +146,7 @@ final class SquareBillingAuditRepository
                 $snapshot->due_on?->toDateString(),
                 $snapshot->scheduled_at?->toDateString(),
                 $snapshot->autopay,
-                array_values(array_filter($snapshot->payment_ids ?? [], 'is_string')),
+                $idsByInvoice[$snapshot->square_invoice_id] ?? [],
                 $links[$snapshot->square_invoice_id] ?? null,
                 ! isset($deferred[$snapshot->square_invoice_id])
                     && SquareSnapshotMapper::paymentIdsCurrent($snapshot->status, $snapshot->paid_amount, $snapshot->square_order_id, $snapshot->payment_ids_basis),

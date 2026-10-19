@@ -335,6 +335,30 @@ final class SquareBillingAuditTest extends TestCase
         $this->assertSame(1500, $report['unlinked_customer_balances']['count']);
     }
 
+    public function test_an_invoice_that_cannot_hold_a_payment_reports_none_whatever_was_cached(): void
+    {
+        [$workspace] = $this->fixture();
+        $this->snapshot($workspace, 'inv_audit_1', 1, '2030-01-15', 'CANCELED', ['paid_amount' => 0, 'square_order_id' => 'order_audit_1', 'payment_ids' => ['pay_voided_under_old_rules'], 'payment_ids_basis' => 'CANCELED|0']);
+
+        $report = app(SquareBillingAudit::class)->report($workspace);
+
+        $this->assertSame(0, $report['unmatched_payments']['count']);
+        $this->assertTrue($report['complete']);
+    }
+
+    public function test_an_order_awaiting_an_authorization_is_retried_after_invoices_never_read(): void
+    {
+        [$workspace] = $this->fixture();
+        $this->snapshot($workspace, 'inv_pending', null, '2030-01-15', 'PAID', ['series_key' => null, 'invoice_number' => '000501', 'paid_amount' => null, 'square_order_id' => 'order_pending', 'synced_at' => '2030-01-01 00:00:00']);
+        $this->snapshot($workspace, 'inv_unread', null, '2030-01-15', 'PAID', ['series_key' => null, 'invoice_number' => '000502', 'paid_amount' => 12_345, 'square_order_id' => 'order_unread', 'synced_at' => '2030-02-01 00:00:00']);
+        $repository = app(SquareMirrorRepository::class);
+        $this->assertTrue($repository->markPaymentIdsUnresolvable($workspace, 'inv_pending', 'PAID||t2', retry: true));
+
+        $this->assertSame(['inv_unread'], array_column($repository->invoicesNeedingPaymentIds($workspace, 1), 'square_invoice_id'));
+        $this->assertSame(['inv_unread', 'inv_pending'], array_column($repository->invoicesNeedingPaymentIds($workspace, 10), 'square_invoice_id'));
+        $this->assertFalse(app(SquareBillingAudit::class)->report($workspace)['complete']);
+    }
+
     public function test_an_imported_annual_series_mirrors_its_amount_once_per_cycle(): void
     {
         [$workspace, $owner] = $this->fixture();

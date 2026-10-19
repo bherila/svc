@@ -39,7 +39,11 @@ final class SquareSnapshotPaymentIdsTest extends TestCase
 
         $this->assertSame(['pay_captured'], $mapper->paymentIds($order), 'A known amount shows the capture when it comes.');
         $this->assertNull($mapper->paymentIds($order, amountKnown: false));
+        $this->assertTrue($mapper->holdsAuthorization($order));
+        $this->assertFalse($mapper->holdsAuthorization(['tenders' => 'none']));
+        $this->assertFalse($mapper->holdsAuthorization([]));
         $order['tenders'][1]['card_details']['status'] = 'VOIDED';
+        $this->assertFalse($mapper->holdsAuthorization($order));
         $this->assertSame(['pay_captured'], $mapper->paymentIds($order, amountKnown: false), 'A voided authorization is final.');
     }
 
@@ -73,6 +77,12 @@ final class SquareSnapshotPaymentIdsTest extends TestCase
         $basis = SquareSnapshotMapper::paymentIdsBasis('PAID', 12_345);
 
         $this->assertSame('PAID|12345|t2', $basis);
+        $this->assertSame('PAID||t2|p', SquareSnapshotMapper::pendingBasis('PAID', null));
+        $this->assertFalse(SquareSnapshotMapper::paymentIdsCurrent('PAID', null, 'order_fixture_1', 'PAID||t2|p'), 'Pending is not current.');
+        $this->assertTrue(SquareSnapshotMapper::mayHoldPayment('PAID', 1));
+        $this->assertFalse(SquareSnapshotMapper::mayHoldPayment('PAID', 0));
+        $this->assertTrue(SquareSnapshotMapper::mayHoldPayment('PARTIALLY_REFUNDED', null));
+        $this->assertFalse(SquareSnapshotMapper::mayHoldPayment('CANCELED', null));
         $this->assertSame('UNPAID||t2', SquareSnapshotMapper::paymentIdsBasis('UNPAID', null));
         $this->assertTrue(SquareSnapshotMapper::paymentIdsCurrent('PAID', 12_345, 'order_fixture_1', $basis));
         $this->assertFalse(SquareSnapshotMapper::paymentIdsCurrent('PAID', 12_345, 'order_fixture_1', 'PAID|12345'), 'Read by older tender rules.');

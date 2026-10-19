@@ -220,7 +220,7 @@ final class SquareMirrorSync
             // The basis is STATUS|PAID|rules; an empty PAID is an unknown amount.
             $ids = $this->mapper->paymentIds($order, explode('|', $invoice['basis'], 3)[1] !== '');
             if ($ids === null) {
-                $this->mirror->markPaymentIdsUnresolvable($workspace, $invoice['square_invoice_id'], $invoice['basis']);
+                $this->mirror->markPaymentIdsUnresolvable($workspace, $invoice['square_invoice_id'], $invoice['basis'], retry: $this->mapper->holdsAuthorization($order));
             } elseif ($this->mirror->storePaymentIds($workspace, $invoice['square_invoice_id'], $invoice['basis'], $ids)) {
                 $tally->paymentsResolved++;
             }

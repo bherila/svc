@@ -71,6 +71,8 @@ final class SquareMirrorRepository
             // the read is bounded by the limit, not by the paid history.
             ->where(static fn (Builder $due) => $due->whereNull('payment_ids_basis')
                 ->orWhereRaw('payment_ids_basis not in ('.self::basisSql().', '.self::basisSql("'|x'").')'))
+            // Orders awaiting an authorization go after everything else.
+            ->orderByRaw('case when payment_ids_basis = '.self::basisSql("'|p'").' then 1 else 0 end')
             ->orderBy('synced_at')
             ->orderBy('id')
             ->limit(min($limit, 100))
@@ -132,10 +134,12 @@ final class SquareMirrorRepository
 
     /**
      * Stamps an invoice whose order could not be read into payment ids for
-     * the state named by `$basis`, so the lookup queue moves past it until
-     * the invoice changes. Its payment ids stay unresolved.
+     * the state named by `$basis`. Its payment ids stay unresolved. An
+     * oversized order is skipped until the invoice changes; with `$retry`
+     * (an authorization that may yet settle) it is retried after the
+     * invoices never read.
      */
-    public function markPaymentIdsUnresolvable(Workspace $workspace, string $invoiceId, string $basis): bool
+    public function markPaymentIdsUnresolvable(Workspace $workspace, string $invoiceId, string $basis, bool $retry = false): bool
     {
         [$status, $paid] = explode('|', $basis, 3);
 
@@ -149,7 +153,7 @@ final class SquareMirrorRepository
             ->where(static fn (Builder $query) => $query->whereNull('payment_ids_basis')->orWhere('payment_ids_basis', '!=', $basis))
             ->update([
                 'payment_ids' => null,
-                'payment_ids_basis' => $basis.'|x',
+                'payment_ids_basis' => $basis.($retry ? '|p' : '|x'),
             ]) > 0;
     }
 

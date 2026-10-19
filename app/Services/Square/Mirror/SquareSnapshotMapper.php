@@ -171,11 +171,47 @@ final class SquareSnapshotMapper
      */
     public static function paymentIdsCurrent(string $status, ?int $paidAmount, ?string $orderId, ?string $basis): bool
     {
-        $mayHoldPayment = $paidAmount === null ? in_array($status, self::PAYMENT_STATUSES, true) : $paidAmount > 0;
-
         // Without an order there is nothing to read the payments from, so one
         // that may hold a payment stays unresolved rather than counted empty.
-        return ! $mayHoldPayment || ($orderId !== null && $basis === self::paymentIdsBasis($status, $paidAmount));
+        return ! self::mayHoldPayment($status, $paidAmount) || ($orderId !== null && $basis === self::paymentIdsBasis($status, $paidAmount));
+    }
+
+    /**
+     * Whether Square may hold a payment for an invoice in this state: a paid
+     * amount above zero, or an unknown amount under a payment-bearing status.
+     * One that cannot has no payments, whatever ids an older read cached.
+     */
+    public static function mayHoldPayment(string $status, ?int $paidAmount): bool
+    {
+        return $paidAmount === null ? in_array($status, self::PAYMENT_STATUSES, true) : $paidAmount > 0;
+    }
+
+    /**
+     * The basis an invoice is stamped with when its order holds an open
+     * authorization and its paid amount is unknown: not current, and retried
+     * after invoices never read, since the authorization may yet settle
+     * without the invoice changing.
+     */
+    public static function pendingBasis(string $status, ?int $paidAmount): string
+    {
+        return self::paymentIdsBasis($status, $paidAmount).'|p';
+    }
+
+    /**
+     * Whether an order holds a card tender that is still only authorized.
+     *
+     * @param  array<mixed>  $order
+     */
+    public function holdsAuthorization(array $order): bool
+    {
+        foreach (is_array($order['tenders'] ?? null) ? $order['tenders'] : [] as $tender) {
+            $card = is_array($tender) ? ($tender['card_details'] ?? null) : null;
+            if (is_array($card) && ($card['status'] ?? null) === self::AUTHORIZED) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
