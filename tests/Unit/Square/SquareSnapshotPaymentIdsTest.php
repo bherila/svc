@@ -82,6 +82,7 @@ final class SquareSnapshotPaymentIdsTest extends TestCase
             ['id' => 'pay_bank_failed', 'bank_account_details' => ['status' => 'FAILED']],
             ['id' => 'pay_bnpl_voided', 'buy_now_pay_later_details' => ['status' => 'VOIDED']],
             ['id' => 'pay_account_captured', 'square_account_details' => ['status' => 'CAPTURED']],
+            ['id' => 'tender_no_sale', 'type' => 'NO_SALE'],
         ]];
         $mapper = new SquareSnapshotMapper(new SquarePresenter);
 

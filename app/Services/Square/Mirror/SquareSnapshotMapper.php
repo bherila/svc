@@ -40,6 +40,9 @@ final class SquareSnapshotMapper
     /** The default state of a tender whose type carries none. */
     private const string CAPTURED = 'CAPTURED';
 
+    /** The tender type that records opening the register, not a payment. */
+    private const string NO_SALE = 'NO_SALE';
+
     /** Tender details that carry a status, by tender type. */
     private const array TENDER_DETAILS = ['card_details', 'bank_account_details', 'buy_now_pay_later_details', 'square_account_details'];
 
@@ -254,6 +257,10 @@ final class SquareSnapshotMapper
      */
     private static function tenderState(array $tender): string
     {
+        // A no-sale tender opened the register; it took no money.
+        if (($tender['type'] ?? null) === self::NO_SALE) {
+            return self::NO_SALE;
+        }
         foreach (self::TENDER_DETAILS as $details) {
             if (! array_key_exists($details, $tender)) {
                 continue;
