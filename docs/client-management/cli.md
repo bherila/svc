@@ -42,6 +42,60 @@ php artisan client-management:create-time-entry acme-inc "Deferred implementatio
 
 If `--project` is omitted, the command uses the client's only project. When a client has zero or multiple projects, pass `--project=<id|slug|exact name>`. Defaults are billable `true`, deferred billing `false`, and category `Software Development`.
 
+## Log Time
+
+The console twin of `time_entries.log`. It validates with the same rules and
+creates through the same `TimeEntryMutationService::create()` as REST, MCP and
+the time sheet, so it accepts and refuses exactly what they do
+(`TimeEntryCreationParityTest` runs every case through all four).
+
+```bash
+php artisan svc:engagement:log-time <workspace> <project> 45 "Synthetic work" --user=worker@example.test
+php artisan svc:engagement:log-time <workspace> <project> 90 "Synthetic work" --user=7 --no-billable \
+  --worked-on=2026-10-01 --client-description="Release preparation" --format=json
+```
+
+`<workspace>` is a public id or slug and `<project>` a public id or slugified
+name. The worker named by `--user` must hold a project role that may log time
+there. Only someone who may approve the time may pass `--rate`: a project owner
+or manager, or a workspace owner or admin. The currency defaults to the
+workspace's. `--worked-on` defaults to today on the workspace calendar and
+must fall inside the time sheet's window. Time is billable unless `--no-billable`
+is given, as an API entry without `is_billable` is. Client-facing text makes the entry
+client-visible unless `--internal` is given. It exits `0` when the entry is
+logged, `2` when the input is refused (the API's 422) and `1` when the
+workspace, project, task or worker is not found or may not log the time (the
+API's 404 and 403). `engagement:log-time` and `svc:log-time` remain aliases.
+
+## Replay — the billing regression gate
+
+`svc:billing:replay` is kept on purpose, as the regression gate for the billing
+engine. It regenerates a workspace's invoice history inside one transaction that
+is always rolled back and compares every regenerated line and total with what
+was billed. Money is exact: an unexplained difference of one minor unit fails
+the run. Hours differences are reported for a human read and do not fail it.
+
+```bash
+php artisan svc:billing:replay --workspace=<workspace public id>
+php artisan svc:billing:replay --workspace=<workspace public id> --company=<company public id> --as-of=2026-09-30
+php artisan svc:billing:replay --workspace=<workspace public id> --report=storage/app/replay-report.json
+```
+
+Run it:
+
+- before merging any change to invoice generation, the ledger, rate resolution,
+  rollover or overage arithmetic;
+- after an import, before the imported history is relied on;
+- before and after an engine fix for a divergence it reported, to show the
+  divergence gone and nothing else moved.
+
+It never writes, so it is safe against real data, but it holds one long
+transaction across periods: do not run it while the workspace is generating
+invoices (see [concurrency.md](concurrency.md#the-known-inversions)). Stdout is
+aggregate; `--report` writes per-invoice detail with keyed description digests,
+which stays on the host and is never pasted into an issue. Do not add a
+`--commit` option: if a divergence needs fixing, fix the engine and replay again.
+
 ## Rehearse Generation
 
 Runs `generateAllInvoices()` for every client of a workspace inside a transaction that is always rolled back, and fails if any issued, paid or void invoice would change. Nothing is written.

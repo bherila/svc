@@ -474,7 +474,7 @@ class InvoiceLineComposer
             // client was billed for minutes this invoice could not show the
             // work for. Failing to attribute revenue must not silently keep it.
             //
-            // `svc:billing:audit-tenant-foreign-keys` is still where such rows
+            // `svc:schema:audit-tenant-fks` is still where such rows
             // are meant to surface in bulk; this is the guard for the one that
             // reaches a charge anyway.
             if (! $entry) {
