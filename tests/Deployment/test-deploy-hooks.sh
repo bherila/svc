@@ -184,4 +184,108 @@ printf '%s\n' "$canonical_cron" "$canonical_cron" >"$crontab_file"
 run_post_finalize >/dev/null 2>&1 && fail 'post-finalizer accepted a duplicate scheduler line'
 printf '%s\n' "$canonical_cron" >"$crontab_file"
 
+# Standalone read-only diagnostic. The pinned runtime audit is a fixture that records its
+# arguments and answers with the outcome under test.
+commit=0123456789abcdef0123456789abcdef01234567
+release=0123456789ab-42-1
+diagnostic_cron=${canonical_cron/\/fixture\/php//opt/cpanel/ea-php85/root/usr/bin/php}
+printf '%s\n' "$diagnostic_cron" >"$crontab_file"
+cat >"$temporary/audit.sh" <<'MOCK'
+printf '%s\n' "$*" >"$FIXTURE_AUDIT_ARGS"
+case $FIXTURE_AUDIT in
+    exact)
+        echo 'runtime-audit identity=exact paths=canonical writable=yes database=persistent phase=finalized'
+        echo 'operational-audit pending_migrations=0 queue_driver=database queue_applicability=database pending_total=0 failed_applicability=database failed_total=0' ;;
+    superseded) echo 'runtime-audit generation=superseded' ;;
+    pending)
+        echo 'runtime-audit identity=exact paths=canonical writable=yes database=persistent phase=finalized'
+        echo 'operational-audit pending_migrations=3 queue_driver=database' ;;
+    stale)
+        echo 'runtime-audit key=view.compiled root=stable type=directory reason=stale-release' >&2
+        echo 'DB_PASSWORD=SYNTHETIC_AUDIT_SECRET_DO_NOT_PRINT' >&2
+        echo 'SYNTHETIC_AUDIT_SECRET_DO_NOT_PRINT'
+        exit 1 ;;
+esac
+MOCK
+run_diagnose() {
+    PATH="$temporary/bin:$PATH" \
+        DIAG_SSH_TARGET=fixture-host DIAG_RELEASE_ID="${DIAG_RELEASE_ID:-$release}" \
+        DIAG_COMMIT="${DIAG_COMMIT:-$commit}" DIAG_AUDIT_SCRIPT="$temporary/audit.sh" \
+        FIXTURE_AUDIT="${FIXTURE_AUDIT:-exact}" FIXTURE_AUDIT_ARGS="$temporary/audit-args" \
+        FIXTURE_SSH_LOG="$temporary/ssh.log" FIXTURE_NODE_LOG="$temporary/node.log" \
+        bash -c 'cd "$1" && bash scripts/deploy/diagnose-live.sh' _ "$repository"
+}
+expect_diagnose_failure() {
+    local label=$1 forbidden
+    if run_diagnose >"$temporary/output" 2>&1; then
+        fail "diagnostic accepted $label"
+    fi
+    for forbidden in SYNTHETIC_AUDIT_SECRET_DO_NOT_PRINT fixture-manifest artisan "$remote_home"; do
+        if grep -Fq -- "$forbidden" "$temporary/output"; then
+            fail "diagnostic output for $label relayed host content"
+        fi
+    done
+    [ ! -e "$temporary/crontab-writes" ] || fail "diagnostic for $label wrote the crontab"
+    if grep -Fq -- '--ttl=15' "$temporary/ssh.log" 2>/dev/null; then
+        fail "diagnostic for $label issued credentials"
+    fi
+}
+
+rm -f "$temporary/ssh.log" "$temporary/node.log"
+run_diagnose >"$temporary/output" 2>&1 || { cat "$temporary/output" >&2; fail 'diagnostic rejected a healthy reviewed release'; }
+grep -Fqx "svc-laravel /opt/cpanel/ea-php85/root/usr/bin/php 1G $release $commit storage finalized" "$temporary/audit-args" \
+    || fail 'diagnostic did not run the finalized runtime audit for the reviewed identity'
+grep -Fq 'exactly one canonical SVC scheduler cron line' "$temporary/output" || fail 'diagnostic skipped the cron audit'
+grep -qx assets "$temporary/node.log" || fail 'diagnostic skipped the hashed asset audit'
+grep -Fq -e '--ttl=15' -e '--revoke' -e 'storage:status' "$temporary/ssh.log" && fail 'diagnostic ran a credential or storage write command'
+grep -qx smoke "$temporary/node.log" && fail 'diagnostic ran the MCP smoke'
+
+# Identity input is exact and reviewed: never a short SHA, a mismatched release or a branch.
+for identity in "$release:${commit:0:12}" "fedcba987654-42-1:$commit" "$release:main" "latest:$commit" \
+    "$release:${commit^^}" "0123456789ab-0-1:$commit" "$release:$commit;id"; do
+    rm -f "$temporary/ssh.log"
+    DIAG_RELEASE_ID=${identity%%:*} DIAG_COMMIT=${identity#*:} expect_diagnose_failure "identity '$identity'"
+    [ ! -e "$temporary/ssh.log" ] || fail "diagnostic contacted the host for rejected identity '$identity'"
+done
+
+# Identity drift, a failed runtime audit and pending migrations each fail, and every check still runs.
+for outcome in superseded stale pending; do
+    rm -f "$temporary/ssh.log" "$temporary/node.log"
+    FIXTURE_AUDIT=$outcome expect_diagnose_failure "runtime audit outcome '$outcome'"
+    grep -qx assets "$temporary/node.log" || fail "a failed runtime audit ($outcome) skipped the remaining checks"
+done
+FIXTURE_AUDIT=superseded run_diagnose >"$temporary/output" 2>&1 || true
+grep -Fq 'the live deployment is not the reviewed release' "$temporary/output" \
+    || fail 'diagnostic did not name identity drift'
+FIXTURE_AUDIT=stale run_diagnose >"$temporary/output" 2>&1 || true
+grep -Fqx 'runtime-audit key=view.compiled root=stable type=directory reason=stale-release' "$temporary/output" \
+    || fail 'diagnostic dropped the fixed runtime audit failure label'
+
+# Cron: zero lines, duplicates and a legacy line.
+for cron in '' "$diagnostic_cron"$'\n'"$diagnostic_cron" '* * * * * cd ~/svc-laravel && php artisan schedule:run'; do
+    printf '%s\n' "$cron" >"$crontab_file"
+    expect_diagnose_failure 'a crontab without exactly one canonical scheduler line'
+done
+printf '%s\n' "$diagnostic_cron" >"$crontab_file"
+
+# Assets: a failing audit, and a deployed manifest that is missing, oversized or reached through a
+# symlink.
+FIXTURE_ASSET_FAIL=1 expect_diagnose_failure 'a failing hashed asset audit'
+manifest=$remote_home/svc-laravel/public/build/manifest.json
+mv "$manifest" "$temporary/manifest.json"
+ln -s "$temporary/manifest.json" "$manifest"
+expect_diagnose_failure 'a symlinked build manifest'
+rm "$manifest"
+expect_diagnose_failure 'a missing build manifest'
+cp "$temporary/manifest.json" "$manifest"
+mv "$remote_home/svc-laravel/public/build" "$temporary/build"
+ln -s "$temporary/build" "$remote_home/svc-laravel/public/build"
+expect_diagnose_failure 'a symlinked build directory'
+rm "$remote_home/svc-laravel/public/build"
+mv "$temporary/build" "$remote_home/svc-laravel/public/build"
+{ cat "$temporary/manifest.json"; head -c 1048577 /dev/zero | tr '\0' ' '; } >"$manifest"
+expect_diagnose_failure 'an oversized build manifest'
+mv "$temporary/manifest.json" "$manifest"
+run_diagnose >/dev/null 2>&1 || fail 'diagnostic did not recover once the manifest was restored'
+
 echo 'Deployment hook tests passed.'

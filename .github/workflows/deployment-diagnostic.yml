@@ -1,0 +1,75 @@
+# Read-only diagnostic of the live web1 deployment against a reviewed, exact release identity
+# (#327). It reuses the deploy job's protected environment and the pinned shared action's SSH
+# setup and runtime audit, but deploys nothing: no upload, migration, maintenance, crontab write,
+# `svc:storage:status --write` or OAuth/MCP credential. Output is fixed labels only.
+#
+# Dispatch it only with identity copied from a reviewed deploy run: the release id the action
+# reported (live-release) and the full commit it recorded (live-commit).
+name: deployment-diagnostic
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_id:
+        description: Reviewed release id from the deploy run (<first 12 of the commit>-<run id>-<attempt>)
+        required: true
+        type: string
+      commit:
+        description: Reviewed full 40-character source commit recorded for that release
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    name: Diagnose the live web1 deployment (read-only)
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-24.04-arm
+    environment: web1
+    timeout-minutes: 10
+    # Its own group: sharing the deploy's would let a queued diagnostic displace a pending deploy.
+    # A deploy that starts mid-run supersedes the reviewed release, which the audit reports.
+    concurrency:
+      group: svc-production-web1-diagnostic
+      cancel-in-progress: false
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The same pinned commit as the deploy job's `uses:`; DeploymentSafetyTest keeps them equal.
+      - name: Checkout the pinned shared deployment action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: bherila/shared-cpanel-deployment
+          ref: 76e914604ae1e7d07d045f5412371b6634178e47
+          path: .shared-cpanel-deployment
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+
+      - name: Configure SSH
+        env:
+          SSH_ALIAS: svc-diagnostic
+          SSH_HOST_NAME: ${{ secrets.SSH_HOST }}
+          SSH_USER_NAME: ${{ secrets.SSH_USERNAME }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: bash .shared-cpanel-deployment/scripts/configure-ssh.sh
+
+      - name: Run read-only runtime, cron and asset audits
+        env:
+          DIAG_SSH_TARGET: svc-diagnostic
+          DIAG_RELEASE_ID: ${{ inputs.release_id }}
+          DIAG_COMMIT: ${{ inputs.commit }}
+          DIAG_AUDIT_SCRIPT: .shared-cpanel-deployment/scripts/operational-audit.sh
+        run: bash scripts/deploy/diagnose-live.sh

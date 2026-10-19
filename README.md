@@ -97,6 +97,13 @@ refuses an SVC line spelled any other way (`~/svc-laravel`, a release path, a ba
 because the action could neither pause nor replace it. Live verification and the post-finalize
 diagnostic then require exactly one SVC line, the canonical one, and report fixed labels only.
 
+The `deployment-diagnostic` workflow (manual dispatch from `main`, behind the `web1`
+environment) re-checks a live deployment without changing it. Give it the release id and
+full commit from a reviewed deploy run; it runs the pinned action's finalized runtime audit
+(identity, canonical paths, serving, no `deploy.lock`, no open transactions, zero pending
+migrations, persistent database), the cron proof and the hashed asset audit. It issues no
+credentials and runs no storage write probe.
+
 ### There is no queue worker
 
 Nothing on the shared account runs `queue:work`, so anything dispatched to the

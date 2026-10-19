@@ -162,6 +162,66 @@ class DeploymentSafetyTest extends TestCase
         $this->assertStringContainsString('SHARED_DEPLOY_ACTION_PATH: .shared-cpanel-deployment', $workflow);
     }
 
+    #[Test]
+    public function the_live_diagnostic_is_read_only_dispatch_only_and_takes_a_reviewed_identity(): void
+    {
+        $deploy = $this->read('.github/workflows/tests.yml');
+        $workflow = $this->read('.github/workflows/deployment-diagnostic.yml');
+        $diagnose = $this->read('scripts/deploy/diagnose-live.sh');
+
+        // Every checkout of the shared action, here and in CI, is the deploy job's exact pin.
+        $this->assertSame(1, preg_match('~uses: bherila/shared-cpanel-deployment@([0-9a-f]{40})\b~', $deploy, $pin));
+        $pinnedCommit = $pin[1] ?? null;
+        $this->assertIsString($pinnedCommit);
+        foreach ([$deploy, $workflow] as $file) {
+            preg_match_all('~repository: bherila/shared-cpanel-deployment\s+ref: (\S+)~', $file, $refs);
+            $this->assertNotEmpty($refs[1]);
+            foreach ($refs[1] as $ref) {
+                $this->assertSame($pinnedCommit, $ref);
+            }
+        }
+        $this->assertStringNotContainsString('uses: bherila/shared-cpanel-deployment', $workflow);
+
+        // Manually dispatched only, from main, behind the deploy's protected environment, and never
+        // in the deploy's concurrency group, where a queued run could displace a pending deploy.
+        $this->assertMatchesRegularExpression('~^on:\n  workflow_dispatch:\n~m', $workflow);
+        foreach (['push:', 'pull_request', 'schedule:', 'workflow_run', 'repository_dispatch'] as $trigger) {
+            $this->assertStringNotContainsString($trigger, $workflow);
+        }
+        $this->assertStringContainsString('environment: web1', $workflow);
+        $this->assertStringContainsString("if: \${{ github.ref == 'refs/heads/main' }}", $workflow);
+        $this->assertStringContainsString("permissions:\n  contents: read", $workflow);
+        $this->assertStringContainsString('group: svc-production-web1-diagnostic', $workflow);
+        $this->assertStringNotContainsString("group: svc-production-web1\n", $workflow);
+
+        // The identity is an input, never a hardcoded SHA, and reaches the shell only through env.
+        $this->assertSame(1, preg_match_all('~(?<!@)\b[0-9a-f]{40}\b~', $workflow), 'Only the shared action ref may be a literal SHA.');
+        foreach (['release_id', 'commit'] as $input) {
+            $this->assertMatchesRegularExpression("~^      {$input}:\n(?:        .+\n)*?        required: true\n~m", $workflow);
+        }
+        $this->assertStringContainsString('DIAG_RELEASE_ID: ${{ inputs.release_id }}', $workflow);
+        $this->assertStringContainsString('DIAG_COMMIT: ${{ inputs.commit }}', $workflow);
+        $this->assertDoesNotMatchRegularExpression('~run:[^\n]*\$\{\{~', $workflow);
+        $this->assertStringContainsString('[[ $commit =~ ^[0-9a-f]{40}$ ]]', $diagnose);
+        $this->assertStringContainsString('[ "${BASH_REMATCH[1]}" = "${commit:0:12}" ]', $diagnose);
+
+        // It runs the pinned finalized runtime audit, the cron proof and the hashed asset audit, and
+        // nothing that writes, provisions or issues credentials.
+        $this->assertStringContainsString('DIAG_AUDIT_SCRIPT: .shared-cpanel-deployment/scripts/operational-audit.sh', $workflow);
+        $this->assertStringContainsString('"$persistent" finalized', $diagnose);
+        $this->assertStringContainsString('phase=finalized', $diagnose);
+        $this->assertStringContainsString("= 'runtime-audit generation=superseded'", $diagnose);
+        $this->assertStringContainsString('<scripts/deploy/cron-audit.sh', $diagnose);
+        $this->assertStringContainsString('node scripts/deploy/verify-hashed-assets.mjs', $diagnose);
+        foreach ([$workflow, $diagnose] as $file) {
+            // Comments may name what the diagnostic avoids; only executable lines are checked.
+            $file = (string) preg_replace('~^\s*#.*$~m', '', $file);
+            foreach (['storage:status', '--write', 'deploy-smoke-credentials', 'passport', 'verify-live.sh', 'mcp-smoke', 'migrate', 'artisan up', 'artisan down', 'rsync'] as $forbidden) {
+                $this->assertStringNotContainsString($forbidden, $file);
+            }
+        }
+    }
+
     private function read(string $path): string
     {
         $contents = file_get_contents(__DIR__.'/../../'.$path);
