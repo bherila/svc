@@ -10,6 +10,7 @@ use App\Services\Billing\BillingMaintenance;
 use App\Support\Concurrency\Locks;
 use App\Support\Finance\PaymentSettlement;
 use App\Support\Finance\PayoutFacts;
+use App\Support\Finance\PayoutRecordOutcome;
 use App\Support\Finance\PayoutStatus;
 use App\Support\WorkspaceClock;
 use Illuminate\Support\Facades\DB;
@@ -41,13 +42,17 @@ final class ProcessorSettlementRecorder
 
     /**
      * Store the workspace's row for this payout, or bring it up to date.
-     * A report older than the stored one changes nothing.
+     * A report older than the stored one changes nothing and is answered
+     * {@see PayoutRecordOutcome::Stale}, so the caller applies nothing else it
+     * says either. A newer report that changes nothing a reader sees still
+     * moves the stored report time, so a report older than it is recognised
+     * as stale, but not the row's version or `updated_at`.
      *
      * No row lock: the row is created by an insert that ignores a duplicate,
-     * and changed by an update conditioned on the report time it read, so of
-     * two concurrent reports the newer one is the one that sticks.
+     * and changed by an update conditioned on the report time and revision it
+     * read, so of two concurrent reports the newer one is the one that sticks.
      */
-    public function recordPayout(Workspace $workspace, PayoutFacts $facts, bool $apply = true): bool
+    public function recordPayout(Workspace $workspace, PayoutFacts $facts, bool $apply = true): PayoutRecordOutcome
     {
         for ($attempt = 1; $attempt <= self::PAYOUT_ATTEMPTS; $attempt++) {
             $stored = ProcessorPayout::query()
@@ -57,7 +62,7 @@ final class ProcessorSettlementRecorder
                 ->first();
             if ($stored === null) {
                 if (! $apply) {
-                    return true;
+                    return PayoutRecordOutcome::Recorded;
                 }
                 $now = $this->clock->now()->utc();
                 $inserted = DB::table('processor_payouts')->insertOrIgnore([
@@ -71,14 +76,14 @@ final class ProcessorSettlementRecorder
                     'updated_at' => $now,
                 ]);
                 if ($inserted === 1) {
-                    return true;
+                    return PayoutRecordOutcome::Recorded;
                 }
 
                 // Another report created it first: compare with that one.
                 continue;
             }
             if (! $facts->supersedes($stored->provider_updated_at_ms, PayoutStatus::tryFrom((string) $stored->status))) {
-                return false;
+                return PayoutRecordOutcome::Stale;
             }
             $columns = $this->payoutColumns($facts);
             $changed = (int) $stored->amount !== $facts->amount
@@ -86,26 +91,30 @@ final class ProcessorSettlementRecorder
                 || $stored->arrival_date?->toDateString() !== $facts->arrivalDate
                 || $stored->type !== $columns['type']
                 || $stored->status !== $columns['status'];
-            if (! $changed) {
-                // Nothing a reader sees moved, so the version stays where it is;
-                // the newer report time is kept only alongside a real change.
-                return false;
-            }
             if (! $apply) {
-                return true;
+                return $changed ? PayoutRecordOutcome::Recorded : PayoutRecordOutcome::Unchanged;
+            }
+            if (! $changed && $facts->observedAtMs === $stored->provider_updated_at_ms) {
+                return PayoutRecordOutcome::Unchanged;
             }
             $updated = ProcessorPayout::query()
                 ->where('workspace_id', $workspace->id)
                 ->whereKey($stored->id)
                 ->where('provider_updated_at_ms', $stored->provider_updated_at_ms)
                 ->where('lock_version', $stored->lock_version)
-                ->update([
-                    ...$columns,
-                    'lock_version' => DB::raw('lock_version + 1'),
-                    'updated_at' => $this->clock->now()->utc(),
-                ]);
+                ->update($changed
+                    ? [
+                        ...$columns,
+                        'lock_version' => DB::raw('lock_version + 1'),
+                        'updated_at' => $this->clock->now()->utc(),
+                    ]
+                    // Nothing a reader sees moved: the newer report time is
+                    // kept, so an older report is still refused after it, but
+                    // the version and updated_at - what a change feed follows -
+                    // stay where they are.
+                    : ['provider_updated_at_ms' => $facts->observedAtMs, 'updated_at' => $stored->updated_at]);
             if ($updated === 1) {
-                return true;
+                return $changed ? PayoutRecordOutcome::Recorded : PayoutRecordOutcome::Unchanged;
             }
         }
 

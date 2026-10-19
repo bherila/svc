@@ -157,12 +157,31 @@ final class SquarePayoutSyncTest extends TestCase
     public function test_a_processing_fee_svc_cannot_read_leaves_the_fee_unknown(): void
     {
         [$workspace, $payment] = $this->fixture();
-        $this->payments['pay_fixture_1']['processing_fee'] = [['amount_money' => ['amount' => 388, 'currency' => 'EUR']]];
+        $this->payments['pay_fixture_1']['processing_fee'] = [['type' => 'INITIAL', 'amount_money' => ['amount' => -388, 'currency' => 'EUR']]];
 
         app(SquarePaymentReconciler::class)->payment($workspace, 'pay_fixture_1');
 
         $this->assertNull($payment->fresh()?->provider_fee_amount);
         $this->assertNotNull($payment->fresh()?->provider_charged_at);
+    }
+
+    public function test_an_older_read_changes_none_of_its_payments(): void
+    {
+        [$workspace, $payment] = $this->fixture();
+        // The newer read: Square moved the arrival to the 5th.
+        $this->payouts['po_fixture_1'] = [...$this->payouts['po_fixture_1'], 'arrival_date' => '2030-02-05', 'updated_at' => '2030-02-04T09:00:00Z'];
+        $this->deliver($this->hint('evt_fixture_newer', 'payout.paid', 'po_fixture_1'))->assertOk();
+        $settled = $payment->fresh();
+        $this->assertSame(['2030-02-05', 388], [$settled?->provider_payout_arrival_date?->toDateString(), $settled?->provider_fee_amount]);
+
+        // A read Square answered earlier, arriving after it, with other entries.
+        $this->payouts['po_fixture_1'] = [...$this->payouts['po_fixture_1'], 'arrival_date' => '2030-02-03', 'updated_at' => '2030-02-02T09:00:00Z'];
+        $this->entries['po_fixture_1'] = [[$this->charge('po_fixture_1', 'pay_fixture_1', 300)]];
+        $this->deliver($this->hint('evt_fixture_older', 'payout.paid', 'po_fixture_1'))->assertOk();
+
+        $after = $payment->fresh();
+        $this->assertSame(['2030-02-05', 388, $settled?->lock_version], [$after?->provider_payout_arrival_date?->toDateString(), $after?->provider_fee_amount, $after?->lock_version]);
+        $this->assertSame('2030-02-05', ProcessorPayout::query()->sole()->arrival_date?->toDateString());
     }
 
     public function test_a_payout_already_stored_with_a_newer_report_is_left_alone(): void
@@ -191,7 +210,9 @@ final class SquarePayoutSyncTest extends TestCase
             ['id' => 'poe_fixture_fee', 'payout_id' => 'po_fixture_1', 'type' => 'FEE', 'gross_amount_money' => ['amount' => -10, 'currency' => 'USD']],
         ]];
         foreach (['pay_fixture_1', 'pay_fixture_2'] as $id) {
-            $this->payments[$id] = [...self::squarePayment($id), 'card_details' => [...self::squarePayment($id)['card_details'], 'card_payment_timeline' => ['captured_at' => '2030-02-01T16:00:00Z']]];
+            $this->payments[$id] = [...self::squarePayment($id), 'card_details' => [...self::squarePayment($id)['card_details'], 'card_payment_timeline' => ['captured_at' => '2030-02-01T16:00:00Z']],
+                // As Square's payments guide shows it: money deducted is negative.
+                'processing_fee' => [['effective_at' => '2030-02-01T18:00:00Z', 'type' => 'INITIAL', 'amount_money' => ['amount' => -388, 'currency' => 'USD']]]];
         }
         Http::fake(function (Request $request) {
             $path = rawurldecode((string) parse_url($request->url(), PHP_URL_PATH));

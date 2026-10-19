@@ -139,6 +139,29 @@ final class StripePayoutWebhookTest extends TestCase
         $this->assertSame(PayoutStatus::Canceled->value, ProcessorPayout::query()->where('workspace_id', $workspace->id)->where('provider_payout_identifier', 'po_synthetic_canceled')->value('status'));
     }
 
+    public function test_an_older_payout_report_changes_none_of_its_payments(): void
+    {
+        [$workspace, $company] = $this->tenant('stale');
+        $payment = $this->stripePayment($workspace, $company, 'pi_synthetic_stale');
+        $fee = 59;
+        $this->fakeStripeApi(function (string $method, string $path) use (&$fee): array {
+            return [self::stripeList($path, [self::stripeChargeEntry('ch_synthetic_stale', 'pi_synthetic_stale', 1000, $fee)])];
+        });
+        // The newer report: Stripe moved the arrival to the 21st.
+        $this->webhook($this->event('evt_stale_new', 'payout.paid', self::stripePayout('po_synthetic_stale', 941, arrival: 1_761_004_800), 2000))->assertOk();
+        $settled = $payment->fresh();
+        $this->assertSame(['2025-10-21', 59], [$settled?->provider_payout_arrival_date?->toDateString(), $settled?->provider_fee_amount]);
+
+        // An older report, with the earlier arrival, delivered after it.
+        $fee = 70;
+        $this->webhook($this->event('evt_stale_old', 'payout.paid', self::stripePayout('po_synthetic_stale', 941, arrival: 1_760_918_400), 1000))->assertOk();
+
+        $after = $payment->fresh();
+        $this->assertSame(['2025-10-21', 59, $settled?->lock_version], [$after?->provider_payout_arrival_date?->toDateString(), $after?->provider_fee_amount, $after?->lock_version]);
+        $this->assertSame('2025-10-21', ProcessorPayout::query()->where('workspace_id', $workspace->id)->sole()->arrival_date?->toDateString());
+        $this->assertDatabaseHas('client_stripe_events', ['stripe_event_id' => 'evt_stale_old', 'status' => 'processed']);
+    }
+
     public function test_a_manual_payout_reads_no_members_and_reaches_only_a_row_already_stored(): void
     {
         [$workspace] = $this->tenant('manual');

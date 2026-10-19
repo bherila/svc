@@ -116,8 +116,15 @@ final class StripeSettlementSync
         $rows = 0;
         $payments = 0;
         foreach (Workspace::query()->whereIn('id', $workspaceIds)->orderBy('id')->get() as $workspace) {
-            if ($this->recorder->recordPayout($workspace, $payout, $apply)) {
+            $outcome = $this->recorder->recordPayout($workspace, $payout, $apply);
+            if ($outcome->changed()) {
                 $rows++;
+            }
+            // An older report than the one stored says nothing current about
+            // the payout's payments either: an arrival date it carries may be
+            // one the newer report already moved.
+            if (! $outcome->current()) {
+                continue;
             }
             foreach ($members as $member) {
                 if (! $member->isCharge || ! $this->belongsTo($member, $owners, $workspace->id)) {

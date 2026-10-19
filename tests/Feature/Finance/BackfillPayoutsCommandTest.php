@@ -153,6 +153,7 @@ final class BackfillPayoutsCommandTest extends TestCase
                 str_starts_with($path, '/v2/payments/') => Http::response(['payment' => [
                     ...self::squarePayment(substr($path, strlen('/v2/payments/'))),
                     'card_details' => ['card_payment_timeline' => ['captured_at' => '2030-01-15T16:00:00Z']],
+                    'processing_fee' => [['type' => 'INITIAL', 'amount_money' => ['amount' => -388, 'currency' => 'USD']]],
                 ]]),
                 default => Http::response([], 404),
             };

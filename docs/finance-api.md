@@ -190,7 +190,9 @@ payouts themselves, for the same callers as the payment listing:
   payment feed. A payout's status and arrival date can change, so the feed takes
   only `provider` and refuses the others (`422`). Payouts are never deleted.
 - A report never overwrites a newer one: a payout reported `failed` after it
-  was reported `paid` stays `failed`, however the reports arrive.
+  was reported `paid` stays `failed`, however the reports arrive. An older
+  report changes none of the payout's payments either, so an arrival date it
+  carries cannot undo a newer one.
 
 **Matching is net-only.** A payout's `amount` is what reached the bank. Refunds,
 disputes and fee adjustments that land in a different payout than their

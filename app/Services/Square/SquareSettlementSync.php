@@ -116,9 +116,12 @@ final class SquareSettlementSync
             $cursor = is_string($page['cursor'] ?? null) && $page['cursor'] !== '' ? $page['cursor'] : null;
         } while ($cursor !== null);
 
-        $rows = $this->recorder->recordPayout($workspace, $payout, $apply) ? 1 : 0;
+        $outcome = $this->recorder->recordPayout($workspace, $payout, $apply);
         $payments = 0;
-        foreach ($entries as $entry) {
+        // An older read than the one stored says nothing current about the
+        // payout's payments either: an arrival date it carries may be one the
+        // newer read already moved.
+        foreach ($outcome->current() ? $entries : [] as $entry) {
             if ($entry->paymentId === null) {
                 continue;
             }
@@ -128,7 +131,7 @@ final class SquareSettlementSync
             }
         }
 
-        return new PayoutSyncResult([$workspace->id], $rows, $payments);
+        return new PayoutSyncResult([$workspace->id], $outcome->changed() ? 1 : 0, $payments);
     }
 
     /** @throws SquareRequestFailed */
