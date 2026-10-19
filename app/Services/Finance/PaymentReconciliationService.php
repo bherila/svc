@@ -108,6 +108,11 @@ final class PaymentReconciliationService
                     'currency' => $currency,
                     'reconciled_on' => $reconciledOn,
                     'is_active' => $isActive,
+                    // The finance system has written this allocation again,
+                    // against the payment as it now stands - after any refund
+                    // or dispute that flagged it - and it fits.
+                    'review_reason' => null,
+                    'review_flagged_at' => null,
                 ])->save();
 
                 return $existing->fresh();

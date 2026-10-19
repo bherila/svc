@@ -7,6 +7,7 @@ use App\Models\ClientCompany;
 use App\Models\ClientCompanyMembership;
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceEmailDelivery;
+use App\Models\PaymentReconciliation;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -54,6 +55,10 @@ final class FillableCoverageTest extends TestCase
     private const MODEL_EXEMPT = [
         ClientCompany::class => [
             'credit_revision' => 'The credit pool\'s revision. Advanced only by OverpaymentCreditService::recordPoolChange(), under the company lock, in the transaction that changed the pool; a value assigned through the model would let a stale snapshot pass issue()\'s credit check.',
+        ],
+        PaymentReconciliation::class => [
+            'review_reason' => 'Set only by InvoiceLifecycleService when a payment processor refunds or disputes the payment, and cleared by PaymentReconciliationService::upsert(); a caller-assigned value would hide a refund from review.',
+            'review_flagged_at' => 'Written with review_reason, by the same two operations.',
         ],
         User::class => [
             'email_verified_at' => 'Set by the verification flow, never by user input.',

@@ -65,11 +65,33 @@ no provider binding are unaffected.
 - Allows one external transaction to cover multiple SVC payments and one payment
   to have multiple external transactions, while active allocations may not
   exceed the successful payment amount net of refunds.
+- A write that succeeds clears the allocation's review flag (below).
 
 `DELETE /api/v1/workspaces/{workspace}/invoice-payments/{payment}/reconciliations/{external-system}/{transaction-uuid}`
 
 - Requires `finance.reconcile` and workspace owner/admin access.
 - Deactivates the allocation for auditability; it does not delete its history.
+
+## Processor refunds and disputes
+
+A refund or dispute reported by a payment processor (Stripe, Square) is always
+recorded, whatever the payment's allocations: it is money that has already
+moved. The allocations are not shrunk or deactivated. Each active one is kept
+exactly as written and flagged instead:
+
+- `needs_review`: `true` while the flag is set.
+- `review_reason`: `processor_refund` (the refunded amount changed, up or down -
+  a failed or canceled refund lowers it again) or `processor_dispute` (the
+  payment was disputed). The latest event's reason is kept.
+- `review_flagged_at`: when it was last flagged (ISO 8601).
+
+A full refund leaves the payment `refunded`; a partial one leaves it `succeeded`
+with `refunded_amount` raised, so key on amounts rather than status. A disputed
+payment is `disputed` until the dispute is won (in part or in full), when it is
+`succeeded` again; the flag stays until reviewed. An allocation may therefore
+exceed `net_amount` while it is flagged. To clear the flag, write the
+allocation again with an amount that fits the net (`PUT`), or deactivate it
+(`DELETE`); a `PUT` is refused on a payment that is no longer `succeeded`.
 
 Cross-workspace resource combinations return `404`. Missing or expired tokens
 return `401`; missing abilities or insufficient workspace roles return `403`;

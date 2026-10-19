@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Services\Finance\PaymentReconciliationService;
+use App\Support\Finance\ReconciliationReviewReason;
 use DomainException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -95,19 +96,120 @@ class PaymentReconciliationTest extends TestCase
         ]);
     }
 
-    public function test_a_later_refund_cannot_reduce_net_payment_below_active_allocations(): void
+    public function test_a_processor_refund_after_reconciliation_is_recorded_and_flags_the_allocation(): void
     {
         [$creator, $workspace, $payment] = $this->payment('Later refund', 10000);
-        app(PaymentReconciliationService::class)->upsert(
+        $allocation = app(PaymentReconciliationService::class)->upsert(
             $workspace,
             $payment,
             $creator,
             $this->attributes(9000, 'USD'),
         );
 
-        $this->expectException(DomainException::class);
-        $this->expectExceptionMessage('active finance reconciliation allocations');
-        app(InvoiceLifecycleService::class)->setRefundedAmount($payment, 1001, $workspace);
+        // The refund leaves 7500 of net against a 9000 allocation. The
+        // processor's fact is recorded anyway; the allocation is kept as it
+        // was and flagged for the finance system to review.
+        $refunded = app(InvoiceLifecycleService::class)->setRefundedAmount($payment, 2500, $workspace);
+
+        $this->assertSame(2500, $refunded->refunded_amount);
+        $this->assertSame('succeeded', $refunded->status);
+        $kept = $allocation->fresh();
+        $this->assertTrue($kept->is_active);
+        $this->assertSame(9000, $kept->allocated_amount);
+        $this->assertSame(ReconciliationReviewReason::ProcessorRefund, $kept->review_reason);
+        $this->assertNotNull($kept->review_flagged_at);
+    }
+
+    public function test_a_processor_refund_that_still_fits_flags_the_allocation_too(): void
+    {
+        [$creator, $workspace, $payment] = $this->payment('Fitting refund', 10000);
+        $allocation = app(PaymentReconciliationService::class)->upsert($workspace, $payment, $creator, $this->attributes(5000, 'USD'));
+
+        app(InvoiceLifecycleService::class)->setRefundedAmount($payment, 1000, $workspace);
+
+        $this->assertSame(ReconciliationReviewReason::ProcessorRefund, $allocation->fresh()->review_reason);
+    }
+
+    public function test_a_full_processor_refund_marks_the_payment_refunded_and_keeps_its_allocations(): void
+    {
+        $lifecycle = app(InvoiceLifecycleService::class);
+        $service = app(PaymentReconciliationService::class);
+
+        [$creator, $workspace, $byAmount] = $this->payment('Full refund by amount', 10000);
+        $first = $service->upsert($workspace, $byAmount, $creator, $this->attributes(10000, 'USD'));
+        $refunded = $lifecycle->setRefundedAmount($byAmount, 10000, $workspace);
+        $this->assertSame('refunded', $refunded->status);
+        $this->assertSame(10000, $refunded->refunded_amount);
+        $this->assertTrue($first->fresh()->is_active);
+        $this->assertSame(10000, $first->fresh()->allocated_amount);
+        $this->assertSame(ReconciliationReviewReason::ProcessorRefund, $first->fresh()->review_reason);
+
+        [, , $byStatus] = $this->payment('Full refund by status', 4000, $workspace, $creator);
+        $second = $service->upsert($workspace, $byStatus, $creator, $this->attributes(4000, 'USD'));
+        $refunded = $lifecycle->setPaymentStatus($byStatus, 'refunded', $workspace);
+        $this->assertSame('refunded', $refunded->status);
+        $this->assertSame(4000, $refunded->refunded_amount);
+        $this->assertTrue($second->fresh()->is_active);
+        $this->assertSame(ReconciliationReviewReason::ProcessorRefund, $second->fresh()->review_reason);
+    }
+
+    public function test_a_processor_dispute_flags_only_active_allocations(): void
+    {
+        [$creator, $workspace, $payment] = $this->payment('Disputed payment', 10000);
+        $service = app(PaymentReconciliationService::class);
+        $active = $service->upsert($workspace, $payment, $creator, $this->attributes(6000, 'USD'));
+        $inactive = $service->upsert($workspace, $payment, $creator, [...$this->attributes(4000, 'USD'), 'is_active' => false]);
+
+        app(InvoiceLifecycleService::class)->setPaymentStatus($payment, 'disputed', $workspace);
+
+        $this->assertSame('disputed', $payment->fresh()->status);
+        $this->assertTrue($active->fresh()->is_active);
+        $this->assertSame(ReconciliationReviewReason::ProcessorDispute, $active->fresh()->review_reason);
+        $this->assertNull($inactive->fresh()->review_reason);
+
+        // Winning the dispute restores the payment and leaves the flag for review.
+        app(InvoiceLifecycleService::class)->setPaymentStatus($payment, 'succeeded', $workspace);
+        $this->assertSame('succeeded', $payment->fresh()->status);
+        $this->assertSame(ReconciliationReviewReason::ProcessorDispute, $active->fresh()->review_reason);
+    }
+
+    public function test_a_processor_can_lower_the_refund_on_a_disputed_payment(): void
+    {
+        [, $workspace, $payment] = $this->payment('Refund failed under dispute', 10000);
+        $lifecycle = app(InvoiceLifecycleService::class);
+        $lifecycle->setRefundedAmount($payment, 4000, $workspace);
+        $lifecycle->setPaymentStatus($payment, 'disputed', $workspace);
+
+        // The pending refund fails because the charge was disputed; the
+        // processor's lower total is recorded and the dispute is kept.
+        $lowered = $lifecycle->setRefundedAmount($payment, 0, $workspace);
+
+        $this->assertSame(0, $lowered->refunded_amount);
+        $this->assertSame('disputed', $lowered->status);
+    }
+
+    public function test_the_finance_put_still_refuses_more_than_the_net_and_a_fitting_put_clears_the_flag(): void
+    {
+        [$creator, $workspace, $payment] = $this->payment('Review cleared', 10000);
+        $service = app(PaymentReconciliationService::class);
+        $attributes = $this->attributes(9000, 'USD');
+        $allocation = $service->upsert($workspace, $payment, $creator, $attributes);
+        app(InvoiceLifecycleService::class)->setRefundedAmount($payment, 2500, $workspace);
+
+        try {
+            $service->upsert($workspace, $payment->fresh(), $creator, $attributes);
+            $this->fail('A finance write above the net of refunds must be refused.');
+        } catch (DomainException $exception) {
+            $this->assertStringContainsString('net of refunds', $exception->getMessage());
+        }
+        $this->assertSame(ReconciliationReviewReason::ProcessorRefund, $allocation->fresh()->review_reason);
+
+        $reviewed = $service->upsert($workspace, $payment->fresh(), $creator, [...$attributes, 'allocated_amount' => 7500]);
+
+        $this->assertSame($allocation->id, $reviewed->id);
+        $this->assertSame(7500, $reviewed->allocated_amount);
+        $this->assertNull($reviewed->review_reason);
+        $this->assertNull($reviewed->review_flagged_at);
     }
 
     public function test_reconciliation_date_must_be_a_real_calendar_date(): void
