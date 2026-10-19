@@ -4,6 +4,7 @@ namespace App\Services\AgentApi;
 
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoicePayment;
+use App\Models\PaymentReconciliation;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\AgentAccess;
@@ -73,7 +74,7 @@ final class RecordPaymentAction
         }
         $reconciling = array_key_exists('finance_reconciliation', $payload);
 
-        return $this->mutations->run($user, $workspace, $clientId, 'payments.record', $key, $payload,
+        $ids = $this->mutations->run($user, $workspace, $clientId, 'payments.record', $key, $payload,
             function () use ($user, $workspace, $clientId, $key, $payload, $reconciling, $allowsReconcileScope): array {
                 $this->authorize($user, $workspace, $reconciling, $allowsReconcileScope);
                 $data = Validator::make(['payment' => $payload], [
@@ -105,7 +106,7 @@ final class RecordPaymentAction
                         $this->collection->assertMayRecord($locked, $agreement);
                     });
                 if ($allocation !== null) {
-                    $this->reconciliations->upsert($workspace, $payment, $user, [
+                    $reconciliation = $this->reconciliations->upsert($workspace, $payment, $user, [
                         'external_system_slug' => $allocation['external_system_slug'],
                         'external_transaction_uuid' => strtolower($allocation['external_transaction_uuid']),
                         'allocated_amount' => (int) $allocation['allocated_amount'],
@@ -113,16 +114,28 @@ final class RecordPaymentAction
                         'reconciled_on' => null,
                         'is_active' => true,
                     ]);
+
+                    // The payment, then the allocation: each audit row names its own.
+                    return [$payment->public_id, (string) $reconciliation->public_id];
                 }
 
                 return [$payment->public_id];
             },
             function (array $ids) use ($user, $workspace, $reconciling, $allowsReconcileScope): void {
                 $this->authorize($user, $workspace, $reconciling, $allowsReconcileScope);
-                abort_unless(ClientInvoicePayment::query()->where('workspace_id', $workspace->id)
-                    ->whereIn('public_id', $ids)->count() === count($ids), 404);
+                $payment = ClientInvoicePayment::query()->where('workspace_id', $workspace->id)
+                    ->where('public_id', $ids[0] ?? '')->first(['id']);
+                abort_unless($payment !== null && count($ids) === ($reconciling ? 2 : 1), 404);
+                abort_unless(! $reconciling || PaymentReconciliation::query()->where('workspace_id', $workspace->id)
+                    ->where('client_invoice_payment_id', $payment->id)->where('public_id', $ids[1])->exists(), 404);
             },
-            $reconciling ? FinanceReconciliationOperations::UPSERT : null);
+            $reconciling ? FinanceReconciliationOperations::UPSERT : null,
+            auditIds: static fn (string $operation, array $ids): array => $operation === FinanceReconciliationOperations::UPSERT
+                ? array_slice($ids, 1, 1)
+                : array_slice($ids, 0, 1));
+
+        // The payment is the result; the allocation is reached through it.
+        return array_slice($ids, 0, 1);
     }
 
     private function authorize(User $user, Workspace $workspace, bool $reconciling, bool $allowsReconcileScope): void

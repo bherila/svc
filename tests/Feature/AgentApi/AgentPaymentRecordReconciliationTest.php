@@ -102,6 +102,41 @@ final class AgentPaymentRecordReconciliationTest extends TestCase
     }
 
     /**
+     * Each audit row names what its operation wrote: payments.record the
+     * payment, finance.reconciliations.upsert the allocation - on the first
+     * write and on every replay - while the response stays the payment.
+     */
+    #[DataProvider('transports')]
+    public function test_each_audit_row_names_its_own_record(string $transport): void
+    {
+        [$owner, $workspace, $invoice] = $this->fixture();
+        $payload = $this->payload($invoice, 4000, $this->allocation(4000));
+        $first = $this->record($transport, $owner, $workspace, $payload, 'synthetic-audit');
+        $this->assertSame($first, $this->record($transport, $owner, $workspace, $payload, 'synthetic-audit'));
+        $this->assertCount(1, $first);
+
+        $payment = ClientInvoicePayment::query()->where('workspace_id', $workspace->id)->sole();
+        $allocation = PaymentReconciliation::query()->where('workspace_id', $workspace->id)->sole();
+        $this->assertSame($payment->public_id, $first[0]['id']);
+        foreach (['success', 'replay'] as $outcome) {
+            $rows = AgentMutationAudit::query()->where('workspace_id', $workspace->id)->where('outcome', $outcome)->get();
+            $this->assertSame([[$payment->public_id]], $rows->where('operation', 'payments.record')->pluck('affected_public_ids')->values()->all(), $outcome);
+            $this->assertSame([[$allocation->public_id]], $rows->where('operation', 'finance.reconciliations.upsert')->pluck('affected_public_ids')->values()->all(), $outcome);
+        }
+        $this->assertSame([$payment->public_id, $allocation->public_id], json_decode((string) DB::table('agent_mutation_receipts')->where('workspace_id', $workspace->id)->value('result_public_ids'), true));
+    }
+
+    /** Without an allocation the receipt and its audit name the payment alone, as before. */
+    public function test_a_plain_record_audits_the_payment_alone(): void
+    {
+        [$owner, $workspace, $invoice] = $this->fixture();
+        $this->record('rest', $owner, $workspace, $this->payload($invoice, 4000), 'synthetic-plain-audit');
+        $payment = ClientInvoicePayment::query()->where('workspace_id', $workspace->id)->sole();
+        $this->assertSame([$payment->public_id], AgentMutationAudit::query()->where('workspace_id', $workspace->id)->where('operation', 'payments.record')->sole()->affected_public_ids);
+        $this->assertSame([$payment->public_id], json_decode((string) DB::table('agent_mutation_receipts')->where('workspace_id', $workspace->id)->value('result_public_ids'), true));
+    }
+
+    /**
      * Omitted and null mean no allocation, and hash alike, so a receipt
      * written before the field existed still replays.
      */
