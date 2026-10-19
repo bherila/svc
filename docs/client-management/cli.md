@@ -184,6 +184,21 @@ Balances are reported per currency, never summed across them. It reports counts
 and balances only, so it is safe to run against real billing data and to paste
 into an issue. It always exits zero.
 
+## Backfill Invoice Due Dates — retired
+
+`svc:billing:backfill-invoice-due-dates` and `UndatedCollectibleInvoiceRepairer`
+were removed by #460. They dated the imported collectible invoices #149 found;
+that repair is done, and `InvoiceLifecycleService::issue()` dates every invoice
+it issues. The read-only audit above stays: run it after an import, and date
+any row it reports from the invoice itself.
+
+## Derive Time Rates — retired
+
+`svc:billing:derive-time-rates` was removed by #460. It priced time imported by
+the importer that #196 removed, so it had no rows left to reach. Approval
+resolves an entry's agreement rate through `AgreementBillingRateResolver`, which
+`AgreementBillingRateResolverTest` pins.
+
 ## Audit Missing Billed Overage
 
 Read-only. Counts charged invoices carrying no `hours_billed_at_rate` at all, and

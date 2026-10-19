@@ -10,10 +10,10 @@ use ReflectionClass;
 use Tests\Feature\AgentApi\AgentInvoiceOperationsParityTest;
 use Tests\Feature\AgentApi\AgentReadApiTest;
 use Tests\Feature\AgentApi\AgentTimeBillingWorkflowTest;
+use Tests\Feature\Billing\AgreementBillingRateResolverTest;
 use Tests\Feature\Billing\AllocationServiceTest;
 use Tests\Feature\Billing\BillingWorkflowTest;
 use Tests\Feature\Billing\CapacityAndScopeGuardsTest;
-use Tests\Feature\Billing\DeriveTimeEntryRatesTest;
 use Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest;
 use Tests\Feature\Billing\EarlierDraftCatchUpTest;
 use Tests\Feature\Billing\InvoiceFromTimeServiceTest;
@@ -171,10 +171,10 @@ final class NullSemanticsRegistryTest extends TestCase
         'client_agreements.bill_overage_interim => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_an_agreement_with_no_interim_policy_bills_no_interim_overage',
         'client_agreements.catch_up_threshold_minutes => covered_by:Tests\Feature\Billing\InvoicingExamplesTest::test_an_unset_threshold_defaults_to_one_hour',
         'client_agreements.catch_up_threshold_minutes => covered_by:Tests\Feature\Billing\InvoicingExamplesTest::test_an_unset_threshold_is_capped_by_a_small_period_retainer_override',
-        'client_agreements.client_project_id => covered_by:Tests\Feature\Billing\DeriveTimeEntryRatesTest::test_an_agreement_with_no_project_covers_work_on_any_project',
-        'client_agreements.ends_on => covered_by:Tests\Feature\Billing\DeriveTimeEntryRatesTest::test_an_agreement_with_no_end_date_is_still_in_force',
+        'client_agreements.client_project_id => covered_by:Tests\Feature\Billing\AgreementBillingRateResolverTest::test_an_agreement_with_no_project_covers_work_on_any_project',
+        'client_agreements.ends_on => covered_by:Tests\Feature\Billing\AgreementBillingRateResolverTest::test_an_agreement_with_no_end_date_is_still_in_force',
         'client_agreements.first_cycle_proration => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_an_agreement_with_no_stated_first_cycle_policy_prorates_its_opening_month',
-        'client_agreements.hourly_rate_amount => covered_by:Tests\Feature\Billing\DeriveTimeEntryRatesTest::test_an_agreement_with_no_rate_prices_nothing',
+        'client_agreements.hourly_rate_amount => covered_by:Tests\Feature\Billing\AgreementBillingRateResolverTest::test_an_agreement_with_no_rate_prices_nothing',
         'client_agreements.hourly_rate_amount => covered_by:Tests\Feature\Billing\UnpricedAgreementRefusalTest::test_a_termination_line_is_refused_when_the_agreement_states_no_rate',
         'client_agreements.hourly_rate_amount => covered_by:Tests\Feature\Billing\UnpricedAgreementRefusalTest::test_an_interim_overage_is_refused_when_the_agreement_states_no_rate',
         'client_agreements.hourly_rate_amount => covered_by:Tests\Feature\Billing\UnpricedAgreementRefusalTest::test_cadence_overage_is_refused_when_the_agreement_states_no_rate',
@@ -198,12 +198,12 @@ final class NullSemanticsRegistryTest extends TestCase
         'client_invoices.automatic_delivery_held_at => covered_by:Tests\Feature\Billing\InvoiceReviewDeliveryTest::test_settings_are_manager_only_and_affect_only_new_issuance_without_releasing_cancelled_work',
         'client_invoices.automatic_delivery_note => covered_by:Tests\Feature\Billing\InvoiceReviewDeliveryTest::test_settings_are_manager_only_and_affect_only_new_issuance_without_releasing_cancelled_work',
         'client_invoices.automatic_delivery_status => covered_by:Tests\Feature\Billing\InvoiceReviewDeliveryTest::test_settings_are_manager_only_and_affect_only_new_issuance_without_releasing_cancelled_work',
+        'client_invoices.catch_up_basis => covered_by:Tests\Feature\Billing\EarlierDraftCatchUpTest::test_an_invoice_with_no_recorded_basis_is_treated_as_before',
         'client_invoices.client_agreement_id => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_an_unattributed_invoice_is_refused_when_a_rival_schedule_could_own_it',
         'client_invoices.client_agreement_id => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_an_unattributed_invoice_is_refused_when_a_scheduleless_agreement_could_own_it',
         'client_invoices.client_agreement_id => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_another_agreements_unlinked_invoice_does_not_block_this_schedule',
         'client_invoices.client_agreement_id => covered_by:Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest::test_a_companion_draft_with_no_agreement_is_not_rebuilt_for_a_moved_entry',
         'client_invoices.client_agreement_id => covered_by:Tests\Feature\Billing\DraftInvoiceTimeRegenerationTest::test_a_generated_draft_without_an_agreement_fails_closed',
-        'client_invoices.catch_up_basis => covered_by:Tests\Feature\Billing\EarlierDraftCatchUpTest::test_an_invoice_with_no_recorded_basis_is_treated_as_before',
         'client_invoices.client_agreement_id => covered_by:Tests\Feature\Billing\ScheduleGenerationPreflightTest::test_a_halting_shape_is_predicted_and_actually_halts',
         'client_invoices.client_billing_schedule_id => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_a_draft_without_a_billing_schedule_is_classified_ad_hoc',
         'client_invoices.client_billing_schedule_id => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_an_invoice_owned_by_another_schedule_does_not_block_this_one',
@@ -790,7 +790,7 @@ final class NullSemanticsRegistryTest extends TestCase
             // The specificity ordering - a project-specific agreement
             // outranking a company-wide one - is still unpinned.
             'client_project_id' => [
-                'covered_by' => DeriveTimeEntryRatesTest::class,
+                'covered_by' => AgreementBillingRateResolverTest::class,
                 'method' => 'test_an_agreement_with_no_project_covers_work_on_any_project',
             ],
             // Proposal acceptance reads this column to find an agreement already
@@ -839,7 +839,7 @@ final class NullSemanticsRegistryTest extends TestCase
             // expired before the work and starts later, so the column has to be
             // read for the open-ended one to win.
             'ends_on' => [
-                'covered_by' => DeriveTimeEntryRatesTest::class,
+                'covered_by' => AgreementBillingRateResolverTest::class,
                 'method' => 'test_an_agreement_with_no_end_date_is_still_in_force',
             ],
             'agreement_text' => 'PENDING-AUDIT',
@@ -860,7 +860,7 @@ final class NullSemanticsRegistryTest extends TestCase
             // treats a non-positive rate as "cannot prove this line".
             'hourly_rate_amount' => [
                 [
-                    'covered_by' => DeriveTimeEntryRatesTest::class,
+                    'covered_by' => AgreementBillingRateResolverTest::class,
                     'method' => 'test_an_agreement_with_no_rate_prices_nothing',
                 ],
                 [
