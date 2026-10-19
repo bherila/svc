@@ -670,8 +670,10 @@ audited under both operations. Null means none. See
 [the finance API](finance-api.md#recording-a-deposit-and-its-allocation-in-one-call).
 
 Whatever it carries, `payments.record` refuses a new payment, under the
-invoice lock, while another payment on the invoice is `pending` (or carries a
-status SVC cannot read), and while Square collects the invoice. `invoices.get`
+invoice lock, while another payment on the invoice is `pending`, is a Stripe
+payment stored as `failed` (whose intent can still be confirmed), or carries a
+status SVC cannot read exactly, and while Square collects the invoice. Recording
+any payment, even a pending one, advances the invoice's version. `invoices.get`
 shows owners and admins `pending_payments` and `collection_owner` (`svc` or
 `square`) for exactly these two checks; both are null for other readers. A
 completed receipt replays before either check, so a retry of a payment already

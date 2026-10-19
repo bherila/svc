@@ -1176,7 +1176,7 @@ final class AgentRestDocumentation
                     401 => 'Not signed in, or the token is missing, expired or revoked.',
                     403 => 'The caller is not a workspace owner or admin, or the token lacks payments:record or billing:read; with finance_reconciliation, also without finance:reconcile. Each is checked again on a replay.',
                     404 => 'The workspace or invoice does not exist, or an agent write cutover is switched off.',
-                    409 => 'expected_version is no longer current (read the invoice again), or the Idempotency-Key was already used with a different request or is still being processed.',
+                    409 => 'expected_version is no longer current (read the invoice again), the invoice changed while the request waited for it, or the Idempotency-Key was already used with a different request or is still being processed.',
                     422 => 'The Idempotency-Key header is missing, the body has an unknown field (finance_reconciliation is a closed object too), confirm is not true, or a field is invalid (`errors` names it). Also, checked under the invoice lock: the invoice is a draft or void, a succeeded payment exceeds the balance, another payment on the invoice may still be in flight - pending, or a failed Stripe payment that can be retried (pending_payments on invoices.get), or Square collects the invoice (collection_owner square); and with finance_reconciliation, a pending payment or an allocated_amount over the payment amount.',
                     429 => 'Too many requests (retry after Retry-After).',
                 ],

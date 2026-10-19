@@ -1129,6 +1129,7 @@ final class InvoiceLifecycleService
             ]);
 
             $previousInvoiceStatus = $locked->status;
+            $revision = (int) $locked->lock_version;
             $this->refreshStatus($locked);
             if (in_array($locked->automatic_delivery_status, ['scheduled', 'held', 'failed'], true)) {
                 // Automatic delivery is an issuance notice, not a payment
@@ -1138,6 +1139,15 @@ final class InvoiceLifecycleService
                     'automatic_delivery_status' => 'cancelled',
                     'automatic_delivery_note' => 'A payment was recorded; automatic delivery does not send payment reminders.',
                 ])->save();
+            }
+            // A new payment is a change to the invoice even when it moves no
+            // amount - a pending one leaves paid and balance alone - so its
+            // revision always advances. A writer that read the invoice before
+            // the payment existed, or whose transaction snapshot predates it,
+            // is then refused as stale rather than counting the invoice's
+            // payments without it (`PaymentCollectionGuard`, G6).
+            if ((int) $locked->lock_version === $revision) {
+                $locked->advanceAgentRevision();
             }
             if ($status === InvoicePaymentStatus::Succeeded) {
                 $this->recordPaymentActivity($locked, $payment, 'invoice.payment_received');

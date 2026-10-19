@@ -8077,7 +8077,7 @@ export interface operations {
                     'application/json': components['schemas']['Error'];
                 };
             };
-            /** @description expected_version is no longer current (read the invoice again), or the Idempotency-Key was already used with a different request or is still being processed. */
+            /** @description expected_version is no longer current (read the invoice again), the invoice changed while the request waited for it, or the Idempotency-Key was already used with a different request or is still being processed. */
             409: {
                 headers: {
                     [name: string]: unknown;

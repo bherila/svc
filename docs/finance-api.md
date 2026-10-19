@@ -277,9 +277,12 @@ definitive - nothing was written - and a later attempt takes a new key.
 
 `payments.record` refuses (`422`, checked under the invoice lock, so a read
 taken before the other payment or link arrived does not let it through) while
-another payment on the invoice may still be in flight - `pending`, or a status
-SVC cannot read - and while Square collects the invoice, whose payments
-Square's own sync records. `invoices.get` reports both to an owner/admin as
+another payment on the invoice may still be in flight - `pending`, a Stripe
+payment stored as `failed` (its intent can still be confirmed), or a status SVC
+cannot read exactly, in any spelling or case - and while Square collects the
+invoice, whose payments Square's own sync records. Recording any payment
+advances the invoice's `version`, so a request whose view of the invoice
+predates one is refused with `409` (read the invoice again and retry). `invoices.get` reports both to an owner/admin as
 `pending_payments` and `collection_owner` (`svc` or `square`), so a caller can
 tell beforehand why a record would be refused. Stripe and Square payments are
 recorded by their processors; reconcile those with

@@ -19,6 +19,7 @@ use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\TestCase;
 
 /**
@@ -114,6 +115,44 @@ final class AgentPaymentCollectionGuardTest extends TestCase
         $this->assertSame(1, app(PaymentCollectionGuard::class)->summary($invoice->refresh())['pending_payments']);
         $this->record('rest', $owner, $workspace, $this->payload($invoice, 1000), 'synthetic-uppercase', 422);
         $this->assertSame(1, ClientInvoicePayment::query()->where('workspace_id', $workspace->id)->count());
+    }
+
+    /**
+     * Every new payment advances the invoice's revision, even a pending one
+     * that moves no amount, so a caller - or a transaction snapshot - that
+     * predates it is refused as stale instead of counting without it.
+     */
+    public function test_a_pending_payment_recorded_elsewhere_advances_the_invoice_revision(): void
+    {
+        [$owner, $workspace, $invoice] = $this->fixture();
+        $before = AgentApiVersion::for($invoice);
+        app(InvoiceLifecycleService::class)->applyPayment($invoice, ['amount' => 1000, 'currency' => 'USD', 'method' => 'cheque', 'status' => 'pending'], $workspace);
+        $this->assertNotSame($before, AgentApiVersion::for($invoice->refresh()));
+        $this->assertSame('issued', $invoice->status, 'A pending payment moves no amount');
+
+        $this->record('rest', $owner, $workspace, [...$this->payload($invoice, 1000), 'expected_version' => $before], 'synthetic-stale-reader', 409);
+        $this->assertSame(1, ClientInvoicePayment::query()->where('workspace_id', $workspace->id)->count());
+    }
+
+    /**
+     * The payment rows are read plainly - a share lock after the invoice's
+     * would invert the lock order - so the guard first checks that the
+     * transaction's view of the invoice is the locked one. A locked row newer
+     * than the snapshot is a 409 to retry.
+     */
+    public function test_a_snapshot_older_than_the_locked_invoice_is_a_conflict(): void
+    {
+        [, , $invoice] = $this->fixture();
+        $locked = $invoice->refresh();
+        $locked->setAttribute('lock_version', (int) $locked->lock_version + 1);
+
+        try {
+            app(PaymentCollectionGuard::class)->assertMayRecord($locked);
+            $this->fail('A stale snapshot should be refused.');
+        } catch (HttpException $exception) {
+            $this->assertSame(409, $exception->getStatusCode());
+        }
+        app(PaymentCollectionGuard::class)->assertMayRecord($invoice->refresh());
     }
 
     /** @return iterable<string, array{string, string}> */

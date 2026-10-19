@@ -4,10 +4,14 @@ namespace App\Services\AgentApi;
 
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoicePayment;
+use App\Services\Billing\InvoiceLifecycleService;
 use App\Services\Square\SquareCollectionGuard;
 use App\Services\Square\SquareLinkRepository;
+use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Billing\InvoicePaymentStatus;
+use App\Support\Concurrency\LockResource;
 use DomainException;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 /**
  * Whether `payments.record` may record money against an invoice (G6).
@@ -30,12 +34,19 @@ use DomainException;
  * than in SQL: under MariaDB's case-insensitive collation `NOT IN` would read
  * an unreadable `SUCCEEDED` as `succeeded` and let it through.
  *
- * The refusal is asked while `payments.record` holds the invoice row locked,
- * so a payment or a Square link committed after the caller's read is seen:
- * every payment and every invoice-to-Square link is written under that same
- * lock. An agreement's billed-in-Square marker is written under the
- * agreement's lock instead, and is read as it stands once the invoice is
- * held.
+ * The refusal is asked while `payments.record` holds the invoice row locked.
+ * The payment and Square-link rows are read plainly - a share lock on them
+ * would take the payment rows after the invoice, against the order
+ * {@see LockResource} declares (a payment's status change locks the payment,
+ * then its invoice), and could deadlock with it. Under MariaDB's REPEATABLE
+ * READ a plain read answers from the transaction's snapshot, which can
+ * predate a payment or link committed while this request waited for the
+ * lock. Every such write advances the invoice's revision (recording any
+ * payment, {@see InvoiceLifecycleService::applyPayment()}; linking to Square),
+ * so the snapshot's revision is compared with the locked row's first, and a
+ * difference is a 409 to retry rather than a count taken over a stale view.
+ * An agreement's billed-in-Square marker is written under the agreement's
+ * lock instead, and is read as it stands once the invoice is held.
  *
  * A completed receipt replays before any of this is asked, so a retry of a
  * payment recorded earlier still answers with that payment.
@@ -56,9 +67,15 @@ final class PaymentCollectionGuard
 
     public function __construct(private readonly SquareCollectionGuard $square) {}
 
-    /** @throws DomainException when a payment may not be recorded by hand */
+    /**
+     * @throws HttpException 409 when the invoice moved after this transaction's snapshot
+     * @throws DomainException when a payment may not be recorded by hand
+     */
     public function assertMayRecord(ClientInvoice $locked): void
     {
+        $seen = ClientInvoice::query()->where('workspace_id', $locked->workspace_id)->whereKey($locked->id)->firstOrFail(['id', 'workspace_id', 'lock_version']);
+        abort_unless(AgentApiVersion::matches($seen, AgentApiVersion::for($locked)), 409, 'The invoice changed while this payment waited for it; read it and retry.');
+
         $pending = $this->inFlightPayments($locked);
         if ($pending > 0) {
             throw new DomainException(sprintf(
