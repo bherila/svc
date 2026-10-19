@@ -110,6 +110,67 @@ class DeploymentSafetyTest extends TestCase
     }
 
     #[Test]
+    public function the_action_manages_exactly_one_canonical_scheduler_line(): void
+    {
+        $workflow = $this->read('.github/workflows/tests.yml');
+        $cronAudit = $this->read('scripts/deploy/cron-audit.sh');
+        $verifyLive = $this->read('scripts/deploy/verify-live.sh');
+        $postFinalize = $this->read('scripts/deploy/post-finalize.sh');
+        $preflight = $this->read('scripts/deploy/preflight.sh');
+
+        // Owner decision on #327: the shared action installs SVC's scheduler line. The scheduler is
+        // the only background runner, so there are no replacement or extra (worker) lines, and the
+        // line uses the same 1G limit as the deploy's Artisan commands.
+        $this->assertStringContainsString("install-cron: 'true'", $workflow);
+        $this->assertMatchesRegularExpression('~^\s*cron-memory-limit: 1G\s*$~m', $workflow);
+        $this->assertMatchesRegularExpression('~^\s*artisan-memory-limit: 1G\s*$~m', $workflow);
+        foreach (['cron-lines:', 'extra-cron-lines:', 'scheduler-log:'] as $override) {
+            $this->assertDoesNotMatchRegularExpression('~^\s*'.preg_quote($override, '~').'~m', $workflow);
+        }
+
+        // The audit accepts exactly the line the pinned action renders for those inputs (the hook
+        // test runs the pinned installer to prove it) and never writes the crontab.
+        $this->assertStringContainsString(
+            '\'* * * * * cd "$HOME/\'"$stable_dir"\'" && \'"$php"\' -d memory_limit=1G artisan schedule:run > /dev/null 2>&1 # JOB:\'"$stable_dir"\'-scheduler\'',
+            $cronAudit,
+        );
+        $this->assertStringContainsString('test "$stable_dir" = svc-laravel', $cronAudit);
+        $this->assertStringContainsString('crontab -l >"$work/current"', $cronAudit);
+        foreach ([$cronAudit, $preflight] as $readOnly) {
+            $this->assertDoesNotMatchRegularExpression('~\bcrontab\s+(?!-l\b)["$/-]~', $readOnly);
+            $this->assertStringNotContainsString('cat "$work/current"', $readOnly);
+            $this->assertStringNotContainsString('cat "$cron_work/current"', $readOnly);
+        }
+        $this->assertStringContainsString('1:1) echo \'SVC scheduler cron: exactly one canonical line.\' ;;', $cronAudit);
+        $this->assertStringContainsString('cannot pause or replace it', $preflight);
+
+        // The release is not healthy, and no smoke credential is issued, until the line is proven;
+        // the read-only post-finalizer proves it again once the release is committed.
+        $this->assertStringContainsString('<scripts/deploy/cron-audit.sh', $verifyLive);
+        $this->assertLessThan(
+            strpos($verifyLive, 'credentials=$(ssh'),
+            strpos($verifyLive, '<scripts/deploy/cron-audit.sh'),
+            'The scheduler cron proof must pass before smoke credential issuance.',
+        );
+        $this->assertStringContainsString('post-finalize-script: scripts/deploy/post-finalize.sh', $workflow);
+        $this->assertStringContainsString('<scripts/deploy/cron-audit.sh', $postFinalize);
+        $this->assertStringContainsString('test "$DEPLOY_LIVE_COMMIT" = "$DEPLOY_SOURCE_COMMIT"', $postFinalize);
+        $this->assertStringContainsString('test "$DEPLOY_LIVE_STATE" = serving', $postFinalize);
+        $this->assertStringNotContainsString('artisan', $postFinalize);
+
+        $this->assertStringContainsString('bash tests/Deployment/test-cron-audit.sh', $workflow);
+        $this->assertStringContainsString('SHARED_DEPLOY_ACTION_PATH: .shared-cpanel-deployment', $workflow);
+    }
+
+    private function read(string $path): string
+    {
+        $contents = file_get_contents(__DIR__.'/../../'.$path);
+        $this->assertIsString($contents);
+
+        return $contents;
+    }
+
+    #[Test]
     public function blob_mirror_has_fixed_authoritative_and_local_roots(): void
     {
         $script = file_get_contents(__DIR__.'/../../scripts/blobs.sh');

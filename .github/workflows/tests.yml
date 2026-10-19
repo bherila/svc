@@ -244,11 +244,25 @@ jobs:
       - name: Test Codex setup decisions
         run: bash codex/setup.test.sh
 
+      # The deploy job's pinned action, so the cron tests prove its installer's output is the
+      # line cron-audit.sh accepts. DeploymentSafetyTest keeps this ref equal to the `uses:` pin.
+      - name: Checkout the pinned shared deployment action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: bherila/shared-cpanel-deployment
+          ref: 76e914604ae1e7d07d045f5412371b6634178e47
+          path: .shared-cpanel-deployment
+          persist-credentials: false
+
       - name: Test deployment hooks
+        env:
+          SHARED_DEPLOY_ACTION_PATH: .shared-cpanel-deployment
         run: |
           for hook in scripts/deploy/*.sh tests/Deployment/*.sh; do bash -n "$hook"; done
           tests/Deployment/test-deploy-hooks.sh
           bash tests/Deployment/test-preflight.sh
+          bash tests/Deployment/test-cron-audit.sh
+          rm -rf .shared-cpanel-deployment
           node --test tests/Deployment/verify-oauth-redirect.test.mjs tests/Deployment/verify-hashed-assets.test.mjs
 
       - name: Run CI Checks
@@ -583,8 +597,15 @@ jobs:
           artisan-memory-limit: 1G
           operational-audit: 'true'
           runtime-audit: 'true'
+          # The action owns SVC's one scheduler line (owner decision on #327): it pauses it before
+          # maintenance, replaces any legacy `cd "$HOME/svc-laravel"` line and installs the canonical
+          # 1G `schedule:run` line once serving is proven. There is no queue worker, so no extra lines.
+          # verify-live.sh then requires exactly one canonical line before the release is healthy.
+          install-cron: 'true'
+          cron-memory-limit: 1G
           preflight-script: scripts/deploy/preflight.sh
           quiesce-script: scripts/deploy/quiesce.sh
           pre-migrate-script: scripts/deploy/pre-migrate.sh
           post-deploy-script: scripts/deploy/post-deploy.sh
           verification-script: scripts/deploy/verify-live.sh
+          post-finalize-script: scripts/deploy/post-finalize.sh

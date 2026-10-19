@@ -135,7 +135,8 @@ test('live verification rejects an invalid contract before credential issuance',
         );
         writeFileSync(
             path.join(fixture, 'ssh'),
-            '#!/usr/bin/env bash\nprintf "ssh-called\\n" >>"$FIXTURE_EVENTS"\nexit 91\n',
+            // The scheduler cron proof (a script fed to `bash -s`) passes; the credential call fails.
+            '#!/usr/bin/env bash\nif [[ "$2" == "bash -s -- "* ]]; then\n  cat >/dev/null\n  printf "cron-checked\\n" >>"$FIXTURE_EVENTS"\n  exit 0\nfi\nprintf "ssh-called\\n" >>"$FIXTURE_EVENTS"\nexit 91\n',
             { mode: 0o700 },
         );
         writeFileSync(eventLog, '');
@@ -186,7 +187,7 @@ test('live verification rejects an invalid contract before credential issuance',
         assert.equal(accepted.status, 91);
         assert.equal(
             readFileSync(eventLog, 'utf8'),
-            'ssh-called\nssh-called\n',
+            'cron-checked\nssh-called\nssh-called\n',
         );
         assert.equal(
             readFileSync(assetLog, 'utf8'),

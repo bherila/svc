@@ -14,8 +14,21 @@ files=("$config_root/deployment.env" "$config_root/database.env" \
 touch "${files[@]}"
 chmod 600 "${files[@]}"
 
+# A fake, read-only crontab: the fixture's lines, no crontab, or a failed read. A write fails.
+mkdir -p "$fixture/bin"
+crontab_file="$fixture/crontab"
+cat >"$fixture/bin/crontab" <<'MOCK'
+#!/usr/bin/env bash
+[ "${1:-}" = -l ] || { echo 'preflight wrote the crontab' >&2; exit 97; }
+[ "${FIXTURE_CRONTAB_MODE:-}" != broken ] || { echo 'crontab: Permission denied' >&2; exit 1; }
+[ -f "$FIXTURE_CRONTAB" ] || { echo 'no crontab for fixture' >&2; exit 1; }
+cat "$FIXTURE_CRONTAB"
+MOCK
+chmod +x "$fixture/bin/crontab"
+
 run_preflight() {
-    HOME="$fixture_home" bash "$repository/scripts/deploy/preflight.sh" \
+    HOME="$fixture_home" PATH="$fixture/bin:$PATH" FIXTURE_CRONTAB="$crontab_file" \
+        bash "$repository/scripts/deploy/preflight.sh" \
         .deployments/svc-laravel/releases/fixture /fixture/php svc-laravel
 }
 reject() {
@@ -51,7 +64,7 @@ printf '%s\n' 'SYNTHETIC_PREREQUISITE_CONTENT_DO_NOT_PRINT' >"${files[0]}"
 chmod 644 "${files[0]}"
 reject 'world-readable configuration'
 test "$(stat -c %a "${files[0]}")" = 644
-if rg -q SYNTHETIC_PREREQUISITE_CONTENT_DO_NOT_PRINT "$fixture/output"; then
+if grep -Fq SYNTHETIC_PREREQUISITE_CONTENT_DO_NOT_PRINT "$fixture/output"; then
     echo 'FAIL: prerequisite content appeared in diagnostics.' >&2
     exit 1
 fi
@@ -82,5 +95,69 @@ reject 'unmanaged storage alias'
 rm "$fixture_home/svc-laravel"
 ln -s .config "$fixture_home/svc-laravel"
 reject 'unmanaged selected application alias'
+
+# Restore a valid layout, then exercise the cron precondition: every SVC line must be one the
+# shared action can pause before maintenance and replace after serving.
+rm "$fixture_home/svc-laravel"
+ln -s .deployments/svc-laravel/releases/legacy "$fixture_home/svc-laravel"
+rm "$fixture_home/.deployments/svc-laravel/releases/legacy/storage"
+ln -s ../../shared/storage "$fixture_home/.deployments/svc-laravel/releases/legacy/storage"
+run_preflight >/dev/null
+
+cron_secret=SYNTHETIC_CRON_SECRET_DO_NOT_PRINT
+# shellcheck disable=SC2016 # $HOME is literal in a crontab.
+canonical='* * * * * cd "$HOME/svc-laravel" && /fixture/php -d memory_limit=1G artisan schedule:run > /dev/null 2>&1 # JOB:svc-laravel-scheduler'
+# shellcheck disable=SC2016
+unrelated=(
+    'MAILTO=""'
+    '# svc-laravel notes'
+    '* * * * * cd ~/phr-laravel && php artisan schedule:run # JOB:phr-laravel-scheduler'
+    '* * * * * cd ~/svc-laravel-two && php artisan schedule:run # JOB:svc-laravel-two-scheduler'
+    "*/5 * * * * curl -fsS https://example.test/?token=$cron_secret"
+)
+# shellcheck disable=SC2016
+managed=(
+    "$canonical"
+    '* * * * * cd "$HOME/svc-laravel" && php artisan schedule:run'
+    '* * * * * cd $HOME/svc-laravel && php artisan schedule:run'
+    "* * * * * cd \"$fixture_home/svc-laravel\" && php artisan schedule:run"
+    "* * * * * cd $fixture_home/svc-laravel && php artisan schedule:run"
+)
+# shellcheck disable=SC2016
+unmanaged=(
+    "* * * * * cd ~/svc-laravel && php artisan schedule:run token=$cron_secret"
+    '* * * * * cd "$HOME/svc-laravel"&& php artisan schedule:run'
+    '* * * * * cd $HOME/.deployments/svc-laravel/releases/old && php artisan schedule:run'
+    "* * * * * php $fixture_home/svc-laravel/artisan schedule:run"
+    '* * * * * php artisan schedule:run # JOB:svc-laravel-scheduler'
+)
+
+rm -f "$crontab_file"
+run_preflight >/dev/null || { echo 'FAIL: no crontab was rejected.' >&2; exit 1; }
+printf '%s\n' "${unrelated[@]}" >"$crontab_file"
+run_preflight >/dev/null || { echo 'FAIL: unrelated cron lines were rejected.' >&2; exit 1; }
+for line in "${managed[@]}"; do
+    # Legacy and duplicate lines the action owns are fine here: it pauses and replaces them.
+    printf '%s\n' "${unrelated[@]}" "$line" "$line" >"$crontab_file"
+    run_preflight >/dev/null || { echo "FAIL: a manageable SVC line was rejected: $line" >&2; exit 1; }
+done
+for line in "${unmanaged[@]}"; do
+    printf '%s\n' "${unrelated[@]}" "$canonical" "$line" >"$crontab_file"
+    reject "an unmanageable SVC cron line ($line)"
+    grep -Fq 'cannot pause or replace it' "$fixture/output" || { echo 'FAIL: unmanaged cron label missing.' >&2; exit 1; }
+    if grep -Fq -e "$cron_secret" -e 'artisan' -e "$fixture_home" "$fixture/output"; then
+        echo 'FAIL: crontab content appeared in preflight diagnostics.' >&2
+        exit 1
+    fi
+done
+printf '%s\n' "$canonical" >"$crontab_file"
+if FIXTURE_CRONTAB_MODE=broken run_preflight >"$fixture/output" 2>&1; then
+    echo 'FAIL: an unreadable crontab was accepted.' >&2
+    exit 1
+fi
+if grep -Fq 'Permission denied' "$fixture/output"; then
+    echo 'FAIL: crontab errors were relayed.' >&2
+    exit 1
+fi
 
 echo 'SVC deployment preflight tests passed.'

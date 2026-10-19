@@ -89,6 +89,14 @@ endpoint, callback and `identity:read` scope, authorization-code response type,
 nonempty client/state and a valid S256 challenge, with one value per required
 parameter. Redirect query values never appear in arguments or verification logs.
 
+The deploy action owns SVC's one cron line, the every-minute `schedule:run` from
+`cd "$HOME/svc-laravel"` with a 1G memory limit and `# JOB:svc-laravel-scheduler`. It pauses
+the line before maintenance, replaces any legacy line run from that directory and installs the
+canonical line once the release serves; other applications' lines are left alone. Preflight
+refuses an SVC line spelled any other way (`~/svc-laravel`, a release path, a bare job id),
+because the action could neither pause nor replace it. Live verification and the post-finalize
+diagnostic then require exactly one SVC line, the canonical one, and report fixed labels only.
+
 ### There is no queue worker
 
 Nothing on the shared account runs `queue:work`, so anything dispatched to the
