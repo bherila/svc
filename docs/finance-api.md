@@ -243,6 +243,48 @@ Where the facts come from:
   It also clears a processor review flag (below). Upserting it again with
   `is_active: true` reactivates it. Idempotent for the same tuple.
 
+## Recording a deposit and its allocation in one call
+
+A finance system that sees money arrive for an invoice SVC has not recorded -
+a bank transfer, a cheque - records the payment with `payments.record` and
+passes `finance_reconciliation`:
+
+```json
+{
+  "invoice_id": "…", "amount": 7000, "currency": "USD", "method": "ach",
+  "received_on": "2026-10-15", "expected_version": "…", "confirm": true,
+  "finance_reconciliation": {
+    "external_system_slug": "synthetic-ledger",
+    "external_transaction_uuid": "…",
+    "allocated_amount": 7000
+  }
+}
+```
+
+The payment and its allocation are written in one transaction under the call's
+`Idempotency-Key`: either both exist or neither does. The allocation is what
+`finance.reconciliations.upsert` would write for the new payment - active, in
+the payment's currency, with no `reconciled_on` - and the write is audited under
+both `payments.record` and `finance.reconciliations.upsert`. The object is
+closed (exactly those three fields), needs `finance:reconcile` on top of
+`payments.record`'s own scopes and write cutovers, needs `status: succeeded`
+(the default), and `allocated_amount` may not exceed `amount`. It does not set
+the legacy `external_finance_transaction_uuid`, which it supersedes.
+
+A retry with the same key and body answers with the original payment and
+writes nothing; the same key with any other body is a `409`. A `422` is
+definitive - nothing was written - and a later attempt takes a new key.
+
+`payments.record` refuses (`422`, checked under the invoice lock, so a read
+taken before the other payment or link arrived does not let it through) while
+another payment on the invoice may still be in flight - `pending`, or a status
+SVC cannot read - and while Square collects the invoice, whose payments
+Square's own sync records. `invoices.get` reports both to an owner/admin as
+`pending_payments` and `collection_owner` (`svc` or `square`), so a caller can
+tell beforehand why a record would be refused. Stripe and Square payments are
+recorded by their processors; reconcile those with
+`finance.reconciliations.upsert` rather than recording them again.
+
 ## Processor refunds and disputes
 
 A refund or dispute reported by a payment processor (Stripe, Square) is always

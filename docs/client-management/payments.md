@@ -413,6 +413,12 @@ refuse (#454). Its optional bookkeeping fields - `notes`, `status` and
 ends up, reached by transitioning it, so a row never appears already failed or
 refunded with nothing in its history saying how.
 
+`payments.record` alone adds two things the other doors do not: an optional
+`finance_reconciliation` that writes the payment's finance allocation in the
+same transaction, and a refusal while another payment on the invoice is
+pending or while Square collects the invoice (`PaymentCollectionGuard`, under
+the invoice lock). See [the MCP guide](../mcp.md#received-payment-bookkeeping).
+
 There is no edit or delete of money. A payment's value is corrected by
 transitioning its status or its refunded amount through
 `InvoiceLifecycleService`, which recomputes the invoice and records the
