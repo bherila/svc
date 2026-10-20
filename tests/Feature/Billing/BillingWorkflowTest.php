@@ -1978,7 +1978,7 @@ class BillingWorkflowTest extends TestCase
         return ClientAgreement::query()->create([
             'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'title' => $title.' agreement',
             'client_project_id' => ClientProject::query()->create(['workspace_id' => $workspace->id,
-                'client_company_id' => $company->id, 'name' => $title.' project'])->id,
+                'client_company_id' => $company->id, 'name' => $title.' agreement scope '.Str::uuid()])->id,
             'currency' => 'USD', 'billing_cadence' => 'monthly', 'status' => 'active', 'starts_on' => '2026-01-01',
         ]);
     }
