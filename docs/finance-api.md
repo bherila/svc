@@ -9,7 +9,7 @@ role.
 ## Contract baseline
 
 Authenticated `context.get` (`GET /api/v1/context`, `identity:read`) publishes
-required integer `data.contract_version: 1`. This is the first explicit baseline
+required integer `data.contract_version: 2`. This is the first explicit baseline
 of the published agent API contract. A finance consumer should check it when
 connecting and before syncing, accepting only the exact integer baseline it
 supports. Missing values, wrong types and unsupported integers are not version

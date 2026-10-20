@@ -8,9 +8,9 @@ general-availability work tracked by
 ## Agent API contract baseline
 
 The authenticated `context.get` tool returns required integer
-`data.contract_version: 1`, the same field as `GET /api/v1/context`.
-`AgentApiContract::VERSION` names this first explicit published agent API
-baseline. Consumers must explicitly support the exact integer; missing,
+`data.contract_version: 2`, the same field as `GET /api/v1/context`.
+`AgentApiContract::VERSION` names the published agent API baseline. Version 2 adds handover refusals and
+the required handover audit fields; consumers must explicitly support version 2. Consumers must explicitly support the exact integer; missing,
 non-integer or unsupported values are not a supported baseline. Check the
 runtime context when connecting and before syncing rather than assuming the
 `/api/v1` path or OpenAPI `info.version: 1.0.0` establishes compatibility.
