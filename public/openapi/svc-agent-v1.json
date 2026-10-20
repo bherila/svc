@@ -6750,11 +6750,11 @@
                     "confirm": true
                 },
                 "x-agent-mcp-tool": "invoices.square_cover",
-                "x-mcp-tool": "invoices.square_cover",
                 "x-svc-flags": [
                     "AGENT_API_WRITES_ENABLED",
                     "AGENT_API_INVOICE_WRITES_ENABLED"
-                ]
+                ],
+                "x-mcp-tool": "invoices.square_cover"
             },
             "delete": {
                 "operationId": "invoices.square_uncover",
@@ -6814,11 +6814,11 @@
                     "confirm": true
                 },
                 "x-agent-mcp-tool": "invoices.square_uncover",
-                "x-mcp-tool": "invoices.square_uncover",
                 "x-svc-flags": [
                     "AGENT_API_WRITES_ENABLED",
                     "AGENT_API_INVOICE_WRITES_ENABLED"
-                ]
+                ],
+                "x-mcp-tool": "invoices.square_uncover"
             }
         },
         "/workspaces/{workspace}/invoices/{invoice}/square-link": {

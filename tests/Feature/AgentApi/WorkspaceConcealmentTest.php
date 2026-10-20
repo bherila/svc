@@ -63,6 +63,18 @@ final class WorkspaceConcealmentTest extends TestCase
     }
 
     /**
+     * Workspace routes added since, through the same helper (#497's Square
+     * coverage), held to the same answer.
+     *
+     * @return iterable<string, array{string, string}>
+     */
+    public static function addedSince(): iterable
+    {
+        yield 'POST square coverage' => ['POST', 'invoices/'.self::ID.'/square-coverage'];
+        yield 'DELETE square coverage' => ['DELETE', 'invoices/'.self::ID.'/square-coverage'];
+    }
+
+    /**
      * These routes found an unseen workspace in their own services: reads
      * answered 404, but writes answered 403 (and approving time 422) for a
      * workspace that exists and 404 for one that does not. Now another
@@ -70,6 +82,7 @@ final class WorkspaceConcealmentTest extends TestCase
      * is reserved or audited for either.
      */
     #[DataProvider('previouslyUnconcealed')]
+    #[DataProvider('addedSince')]
     public function test_another_tenants_workspace_answers_as_an_unknown_one_and_writes_nothing(string $method, string $path): void
     {
         config(['agent_api.writes_enabled' => true, 'agent_api.invoice_writes_enabled' => true, 'agent_api.payment_writes_enabled' => true, 'agent_api.expense_writes_enabled' => true]);

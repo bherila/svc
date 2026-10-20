@@ -100,7 +100,8 @@
                                     "client_id",
                                     "client_name",
                                     "project_id",
-                                    "square_series_key"
+                                    "square_series_key",
+                                    "square_location_id"
                                 ],
                                 "properties": {
                                     "version": {
@@ -243,6 +244,14 @@
                                         ],
                                         "pattern": "^[0-9]{6}$",
                                         "description": "Billed in Square: the Square series that bills this agreement. While set, SVC issues the agreement's invoices but never emails, charges or offers a payment link for them."
+                                    },
+                                    "square_location_id": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 192,
+                                        "description": "The Square location the series bills from: Square numbers invoices uniquely per location only, so the same prefix in another location is another series. Null with a series key for a marker set before markers named a location; it then matches the prefix in every location until the agreement is marked again."
                                     }
                                 }
                             }
@@ -390,7 +399,8 @@
                                     "client_id",
                                     "client_name",
                                     "project_id",
-                                    "square_series_key"
+                                    "square_series_key",
+                                    "square_location_id"
                                 ],
                                 "properties": {
                                     "version": {
@@ -533,6 +543,14 @@
                                         ],
                                         "pattern": "^[0-9]{6}$",
                                         "description": "Billed in Square: the Square series that bills this agreement. While set, SVC issues the agreement's invoices but never emails, charges or offers a payment link for them."
+                                    },
+                                    "square_location_id": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 192,
+                                        "description": "The Square location the series bills from: Square numbers invoices uniquely per location only, so the same prefix in another location is another series. Null with a series key for a marker set before markers named a location; it then matches the prefix in every location until the agreement is marked again."
                                     }
                                 }
                             }
@@ -604,7 +622,8 @@
                                     "client_id",
                                     "client_name",
                                     "project_id",
-                                    "square_series_key"
+                                    "square_series_key",
+                                    "square_location_id"
                                 ],
                                 "properties": {
                                     "version": {
@@ -747,6 +766,14 @@
                                         ],
                                         "pattern": "^[0-9]{6}$",
                                         "description": "Billed in Square: the Square series that bills this agreement. While set, SVC issues the agreement's invoices but never emails, charges or offers a payment link for them."
+                                    },
+                                    "square_location_id": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 192,
+                                        "description": "The Square location the series bills from: Square numbers invoices uniquely per location only, so the same prefix in another location is another series. Null with a series key for a marker set before markers named a location; it then matches the prefix in every location until the agreement is marked again."
                                     }
                                 }
                             }
@@ -848,7 +875,8 @@
                                     "client_id",
                                     "client_name",
                                     "project_id",
-                                    "square_series_key"
+                                    "square_series_key",
+                                    "square_location_id"
                                 ],
                                 "properties": {
                                     "version": {
@@ -991,6 +1019,14 @@
                                         ],
                                         "pattern": "^[0-9]{6}$",
                                         "description": "Billed in Square: the Square series that bills this agreement. While set, SVC issues the agreement's invoices but never emails, charges or offers a payment link for them."
+                                    },
+                                    "square_location_id": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 192,
+                                        "description": "The Square location the series bills from: Square numbers invoices uniquely per location only, so the same prefix in another location is another series. Null with a series key for a marker set before markers named a location; it then matches the prefix in every location until the agreement is marked again."
                                     }
                                 }
                             },
@@ -1098,7 +1134,8 @@
                                     "client_id",
                                     "client_name",
                                     "project_id",
-                                    "square_series_key"
+                                    "square_series_key",
+                                    "square_location_id"
                                 ],
                                 "properties": {
                                     "version": {
@@ -1241,6 +1278,14 @@
                                         ],
                                         "pattern": "^[0-9]{6}$",
                                         "description": "Billed in Square: the Square series that bills this agreement. While set, SVC issues the agreement's invoices but never emails, charges or offers a payment link for them."
+                                    },
+                                    "square_location_id": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 192,
+                                        "description": "The Square location the series bills from: Square numbers invoices uniquely per location only, so the same prefix in another location is another series. Null with a series key for a marker set before markers named a location; it then matches the prefix in every location until the agreement is marked again."
                                     }
                                 }
                             }
@@ -1275,6 +1320,9 @@
                                 "type": "string",
                                 "minLength": 1,
                                 "maxLength": 255
+                            },
+                            "location_id": {
+                                "$ref": "#/$defs/SquareLocationId"
                             }
                         },
                         "required": [
@@ -1287,6 +1335,11 @@
                         ],
                         "additionalProperties": false,
                         "$defs": {
+                            "SquareLocationId": {
+                                "type": "string",
+                                "pattern": "^[A-Za-z0-9][A-Za-z0-9:_\\-]{0,191}$",
+                                "description": "A Square location id."
+                            },
                             "SquareSeriesKey": {
                                 "type": "string",
                                 "pattern": "^[0-9]{6}$",
@@ -1298,7 +1351,7 @@
                             }
                         }
                     },
-                    "description": "Workspace managers only. Mark an agreement as billed in Square by its recurring series key, only after explicit confirmation. SVC keeps generating and issuing its invoices but never emails, charges or offers a payment link for them.",
+                    "description": "Workspace managers only. Mark an agreement as billed in Square by its recurring series key in one Square location, only after explicit confirmation. Omit location_id to take the one location the Square mirror holds the series in; a series in more than one location needs location_id. SVC keeps generating and issuing its invoices but never emails, charges or offers a payment link for them.",
                     "annotations": {
                         "readOnlyHint": false,
                         "destructiveHint": false,
@@ -1342,7 +1395,8 @@
                                     "client_id",
                                     "client_name",
                                     "project_id",
-                                    "square_series_key"
+                                    "square_series_key",
+                                    "square_location_id"
                                 ],
                                 "properties": {
                                     "version": {
@@ -1485,6 +1539,14 @@
                                         ],
                                         "pattern": "^[0-9]{6}$",
                                         "description": "Billed in Square: the Square series that bills this agreement. While set, SVC issues the agreement's invoices but never emails, charges or offers a payment link for them."
+                                    },
+                                    "square_location_id": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 192,
+                                        "description": "The Square location the series bills from: Square numbers invoices uniquely per location only, so the same prefix in another location is another series. Null with a series key for a marker set before markers named a location; it then matches the prefix in every location until the agreement is marked again."
                                     }
                                 }
                             }
@@ -1580,7 +1642,8 @@
                                     "client_id",
                                     "client_name",
                                     "project_id",
-                                    "square_series_key"
+                                    "square_series_key",
+                                    "square_location_id"
                                 ],
                                 "properties": {
                                     "version": {
@@ -1723,6 +1786,14 @@
                                         ],
                                         "pattern": "^[0-9]{6}$",
                                         "description": "Billed in Square: the Square series that bills this agreement. While set, SVC issues the agreement's invoices but never emails, charges or offers a payment link for them."
+                                    },
+                                    "square_location_id": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 192,
+                                        "description": "The Square location the series bills from: Square numbers invoices uniquely per location only, so the same prefix in another location is another series. Null with a series key for a marker set before markers named a location; it then matches the prefix in every location until the agreement is marked again."
                                     }
                                 }
                             }
@@ -1921,7 +1992,8 @@
                                     "client_id",
                                     "client_name",
                                     "project_id",
-                                    "square_series_key"
+                                    "square_series_key",
+                                    "square_location_id"
                                 ],
                                 "properties": {
                                     "version": {
@@ -2064,6 +2136,14 @@
                                         ],
                                         "pattern": "^[0-9]{6}$",
                                         "description": "Billed in Square: the Square series that bills this agreement. While set, SVC issues the agreement's invoices but never emails, charges or offers a payment link for them."
+                                    },
+                                    "square_location_id": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 192,
+                                        "description": "The Square location the series bills from: Square numbers invoices uniquely per location only, so the same prefix in another location is another series. Null with a series key for a marker set before markers named a location; it then matches the prefix in every location until the agreement is marked again."
                                     }
                                 }
                             }
@@ -3445,6 +3525,7 @@
                                     "agreement_id",
                                     "agreement_url",
                                     "series_key",
+                                    "square_location_id",
                                     "codes",
                                     "agreement_cadence",
                                     "series_cadence",
@@ -3464,6 +3545,14 @@
                                     },
                                     "series_key": {
                                         "$ref": "#/$defs/SquareSeriesKey"
+                                    },
+                                    "square_location_id": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 192,
+                                        "description": "The Square location the agreement's series bills from; null for a marker set before markers named a location, which takes the prefix in every location."
                                     },
                                     "codes": {
                                         "type": "array",
@@ -3672,6 +3761,7 @@
                                     "agreement_id",
                                     "agreement_url",
                                     "series_key",
+                                    "square_location_id",
                                     "square_invoice_id",
                                     "invoice_number",
                                     "status",
@@ -3690,6 +3780,14 @@
                                     },
                                     "series_key": {
                                         "$ref": "#/$defs/SquareSeriesKey"
+                                    },
+                                    "square_location_id": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 192,
+                                        "description": "The Square location the agreement's series bills from; null for a marker set before markers named a location, which takes the prefix in every location."
                                     },
                                     "square_invoice_id": {
                                         "type": "string",
@@ -12324,6 +12422,7 @@
                                     "invoice_id",
                                     "invoice_version",
                                     "link",
+                                    "covers",
                                     "agreement_series_key",
                                     "square_collects",
                                     "collection_refusal",
@@ -12346,6 +12445,14 @@
                                             }
                                         ],
                                         "description": "The active link to a Square invoice, or null."
+                                    },
+                                    "covers": {
+                                        "type": "array",
+                                        "maxItems": 50,
+                                        "items": {
+                                            "$ref": "#/$defs/SquareInvoiceCoverage"
+                                        },
+                                        "description": "Square invoices this invoice is recorded as covering besides its linked one (#487), oldest first."
                                     },
                                     "agreement_series_key": {
                                         "type": [
@@ -12395,6 +12502,36 @@
                                     "consumed",
                                     "released"
                                 ]
+                            },
+                            "SquareInvoiceCoverage": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "square_invoice_id",
+                                    "square_invoice_number",
+                                    "covered_at",
+                                    "covered_by"
+                                ],
+                                "description": "A Square invoice this invoice covers besides its linked one: not a link, so SVC collects and records nothing through it.",
+                                "properties": {
+                                    "square_invoice_id": {
+                                        "$ref": "#/$defs/SquareInvoiceId"
+                                    },
+                                    "square_invoice_number": {
+                                        "$ref": "#/$defs/SquareInvoiceNumber"
+                                    },
+                                    "covered_at": {
+                                        "type": "string",
+                                        "format": "date-time"
+                                    },
+                                    "covered_by": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "description": "Who recorded it, when known."
+                                    }
+                                }
                             },
                             "SquareInvoiceId": {
                                 "type": "string",
@@ -13110,6 +13247,7 @@
                                     "invoice_id",
                                     "invoice_version",
                                     "link",
+                                    "covers",
                                     "agreement_series_key",
                                     "square_collects",
                                     "collection_refusal",
@@ -13132,6 +13270,14 @@
                                             }
                                         ],
                                         "description": "The active link to a Square invoice, or null."
+                                    },
+                                    "covers": {
+                                        "type": "array",
+                                        "maxItems": 50,
+                                        "items": {
+                                            "$ref": "#/$defs/SquareInvoiceCoverage"
+                                        },
+                                        "description": "Square invoices this invoice is recorded as covering besides its linked one (#487), oldest first."
                                     },
                                     "agreement_series_key": {
                                         "type": [
@@ -13181,6 +13327,36 @@
                                     "consumed",
                                     "released"
                                 ]
+                            },
+                            "SquareInvoiceCoverage": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "square_invoice_id",
+                                    "square_invoice_number",
+                                    "covered_at",
+                                    "covered_by"
+                                ],
+                                "description": "A Square invoice this invoice covers besides its linked one: not a link, so SVC collects and records nothing through it.",
+                                "properties": {
+                                    "square_invoice_id": {
+                                        "$ref": "#/$defs/SquareInvoiceId"
+                                    },
+                                    "square_invoice_number": {
+                                        "$ref": "#/$defs/SquareInvoiceNumber"
+                                    },
+                                    "covered_at": {
+                                        "type": "string",
+                                        "format": "date-time"
+                                    },
+                                    "covered_by": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "description": "Who recorded it, when known."
+                                    }
+                                }
                             },
                             "SquareInvoiceId": {
                                 "type": "string",
@@ -15484,6 +15660,315 @@
                     }
                 },
                 {
+                    "name": "invoices.square_cover",
+                    "title": "Record Square invoice as covered",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "workspace_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "invoice_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "expected_version": {
+                                "$ref": "#/$defs/Version"
+                            },
+                            "square_invoice_id": {
+                                "$ref": "#/$defs/SquareInvoiceId"
+                            },
+                            "square_invoice_number": {
+                                "$ref": "#/$defs/SquareInvoiceNumber"
+                            },
+                            "confirm": {
+                                "type": "boolean",
+                                "const": true,
+                                "description": "Explicit user confirmation is required."
+                            },
+                            "idempotency_key": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 255
+                            },
+                            "currency": {
+                                "type": "string",
+                                "pattern": "^[A-Z]{3}$",
+                                "description": "The Square invoice's currency. When given it must equal the SVC invoice's."
+                            }
+                        },
+                        "required": [
+                            "workspace_id",
+                            "invoice_id",
+                            "expected_version",
+                            "square_invoice_id",
+                            "square_invoice_number",
+                            "confirm",
+                            "idempotency_key"
+                        ],
+                        "additionalProperties": false,
+                        "$defs": {
+                            "SquareInvoiceId": {
+                                "type": "string",
+                                "maxLength": 191,
+                                "pattern": "^[A-Za-z0-9_][A-Za-z0-9:_=\\-]{0,190}$",
+                                "description": "A Square invoice id, held as an opaque string. SVC checks its shape only; it never resolves it against Square."
+                            },
+                            "SquareInvoiceNumber": {
+                                "type": "string",
+                                "maxLength": 191,
+                                "pattern": "^[!-~](?:[ -~]{0,189}[!-~])?$",
+                                "description": "The Square invoice number as Square shows it. A recurring series occurrence is NNNNNN-R-NNNN, whose six-digit prefix is the series key."
+                            },
+                            "Version": {
+                                "type": "string",
+                                "pattern": "^[a-f0-9]{64}$"
+                            }
+                        }
+                    },
+                    "description": "Workspace managers only. When one invoice covers what Square split into several, record another Square invoice as covered by this one, after the person confirms it. The invoice must already be linked to its primary Square invoice; a Square invoice linked or covered anywhere is refused. Not a link: SVC collects, reconciles and records nothing through it, and the billing audit stops reporting it as an unmirrored period. Nothing is sent to Square.",
+                    "annotations": {
+                        "readOnlyHint": false,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": false
+                    },
+                    "outputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "data"
+                        ],
+                        "properties": {
+                            "data": {
+                                "$ref": "#/$defs/InvoiceSquare"
+                            }
+                        },
+                        "$defs": {
+                            "Currency": {
+                                "type": "string",
+                                "pattern": "^[A-Z]{3}$"
+                            },
+                            "InvoiceSquare": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "invoice_id",
+                                    "invoice_version",
+                                    "link",
+                                    "covers",
+                                    "agreement_series_key",
+                                    "square_collects",
+                                    "collection_refusal",
+                                    "payment_mismatch"
+                                ],
+                                "properties": {
+                                    "invoice_id": {
+                                        "$ref": "#/$defs/Uuid"
+                                    },
+                                    "invoice_version": {
+                                        "$ref": "#/$defs/Version"
+                                    },
+                                    "link": {
+                                        "oneOf": [
+                                            {
+                                                "$ref": "#/$defs/SquareInvoiceLink"
+                                            },
+                                            {
+                                                "type": "null"
+                                            }
+                                        ],
+                                        "description": "The active link to a Square invoice, or null."
+                                    },
+                                    "covers": {
+                                        "type": "array",
+                                        "maxItems": 50,
+                                        "items": {
+                                            "$ref": "#/$defs/SquareInvoiceCoverage"
+                                        },
+                                        "description": "Square invoices this invoice is recorded as covering besides its linked one (#487), oldest first."
+                                    },
+                                    "agreement_series_key": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "pattern": "^[0-9]{6}$",
+                                        "description": "The Square series of the agreement this invoice was generated under, when that agreement is billed in Square."
+                                    },
+                                    "square_collects": {
+                                        "type": "boolean",
+                                        "description": "True when the invoice is linked or its agreement is billed in Square. SVC then never emails it to the client, charges it or offers a payment link; issuing stays open, and so does recording a payment on the website, but payments.record refuses."
+                                    },
+                                    "collection_refusal": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "description": "Why SVC will not collect this invoice, as the collection paths report it; null when SVC collects."
+                                    },
+                                    "payment_mismatch": {
+                                        "oneOf": [
+                                            {
+                                                "$ref": "#/$defs/SquarePaymentMismatch"
+                                            },
+                                            {
+                                                "type": "null"
+                                            }
+                                        ]
+                                    }
+                                }
+                            },
+                            "SquareInvoiceCoverage": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "square_invoice_id",
+                                    "square_invoice_number",
+                                    "covered_at",
+                                    "covered_by"
+                                ],
+                                "description": "A Square invoice this invoice covers besides its linked one: not a link, so SVC collects and records nothing through it.",
+                                "properties": {
+                                    "square_invoice_id": {
+                                        "$ref": "#/$defs/SquareInvoiceId"
+                                    },
+                                    "square_invoice_number": {
+                                        "$ref": "#/$defs/SquareInvoiceNumber"
+                                    },
+                                    "covered_at": {
+                                        "type": "string",
+                                        "format": "date-time"
+                                    },
+                                    "covered_by": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "description": "Who recorded it, when known."
+                                    }
+                                }
+                            },
+                            "SquareInvoiceId": {
+                                "type": "string",
+                                "maxLength": 191,
+                                "pattern": "^[A-Za-z0-9_][A-Za-z0-9:_=\\-]{0,190}$",
+                                "description": "A Square invoice id, held as an opaque string. SVC checks its shape only; it never resolves it against Square."
+                            },
+                            "SquareInvoiceLink": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "id",
+                                    "square_invoice_id",
+                                    "square_invoice_number",
+                                    "series_key",
+                                    "currency",
+                                    "match_method",
+                                    "score",
+                                    "reasons",
+                                    "linked_at",
+                                    "linked_by"
+                                ],
+                                "properties": {
+                                    "id": {
+                                        "$ref": "#/$defs/Uuid"
+                                    },
+                                    "square_invoice_id": {
+                                        "$ref": "#/$defs/SquareInvoiceId"
+                                    },
+                                    "square_invoice_number": {
+                                        "$ref": "#/$defs/SquareInvoiceNumber"
+                                    },
+                                    "series_key": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "pattern": "^[0-9]{6}$",
+                                        "description": "Derived from the number at link time; null for a one-off."
+                                    },
+                                    "currency": {
+                                        "$ref": "#/$defs/Currency"
+                                    },
+                                    "match_method": {
+                                        "type": "string",
+                                        "enum": [
+                                            "manual",
+                                            "suggested"
+                                        ]
+                                    },
+                                    "score": {
+                                        "type": [
+                                            "integer",
+                                            "null"
+                                        ],
+                                        "minimum": 0,
+                                        "maximum": 100,
+                                        "description": "The suggestion score the person confirmed; null for a manual link."
+                                    },
+                                    "reasons": {
+                                        "type": [
+                                            "array",
+                                            "null"
+                                        ],
+                                        "items": {
+                                            "type": "string"
+                                        },
+                                        "description": "The suggestion reasons the person confirmed; null for a manual link."
+                                    },
+                                    "linked_at": {
+                                        "type": "string",
+                                        "format": "date-time"
+                                    },
+                                    "linked_by": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "description": "Who confirmed the link, by name."
+                                    }
+                                }
+                            },
+                            "SquareInvoiceNumber": {
+                                "type": "string",
+                                "maxLength": 191,
+                                "pattern": "^[!-~](?:[ -~]{0,189}[!-~])?$",
+                                "description": "The Square invoice number as Square shows it. A recurring series occurrence is NNNNNN-R-NNNN, whose six-digit prefix is the series key."
+                            },
+                            "SquarePaymentMismatch": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "code",
+                                    "dashboard_url"
+                                ],
+                                "properties": {
+                                    "code": {
+                                        "type": "string",
+                                        "enum": [
+                                            "paid_outside_square"
+                                        ]
+                                    },
+                                    "dashboard_url": {
+                                        "type": "string",
+                                        "format": "uri"
+                                    }
+                                }
+                            },
+                            "Uuid": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "Version": {
+                                "type": "string",
+                                "pattern": "^[a-f0-9]{64}$"
+                            }
+                        }
+                    }
+                },
+                {
                     "name": "invoices.square_link",
                     "title": "Link invoice to Square",
                     "inputSchema": {
@@ -15616,6 +16101,7 @@
                                     "invoice_id",
                                     "invoice_version",
                                     "link",
+                                    "covers",
                                     "agreement_series_key",
                                     "square_collects",
                                     "collection_refusal",
@@ -15638,6 +16124,14 @@
                                             }
                                         ],
                                         "description": "The active link to a Square invoice, or null."
+                                    },
+                                    "covers": {
+                                        "type": "array",
+                                        "maxItems": 50,
+                                        "items": {
+                                            "$ref": "#/$defs/SquareInvoiceCoverage"
+                                        },
+                                        "description": "Square invoices this invoice is recorded as covering besides its linked one (#487), oldest first."
                                     },
                                     "agreement_series_key": {
                                         "type": [
@@ -15667,6 +16161,36 @@
                                                 "type": "null"
                                             }
                                         ]
+                                    }
+                                }
+                            },
+                            "SquareInvoiceCoverage": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "square_invoice_id",
+                                    "square_invoice_number",
+                                    "covered_at",
+                                    "covered_by"
+                                ],
+                                "description": "A Square invoice this invoice covers besides its linked one: not a link, so SVC collects and records nothing through it.",
+                                "properties": {
+                                    "square_invoice_id": {
+                                        "$ref": "#/$defs/SquareInvoiceId"
+                                    },
+                                    "square_invoice_number": {
+                                        "$ref": "#/$defs/SquareInvoiceNumber"
+                                    },
+                                    "covered_at": {
+                                        "type": "string",
+                                        "format": "date-time"
+                                    },
+                                    "covered_by": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "description": "Who recorded it, when known."
                                     }
                                 }
                             },
@@ -15846,6 +16370,7 @@
                                     "invoice_id",
                                     "invoice_version",
                                     "link",
+                                    "covers",
                                     "agreement_series_key",
                                     "square_collects",
                                     "collection_refusal",
@@ -15868,6 +16393,14 @@
                                             }
                                         ],
                                         "description": "The active link to a Square invoice, or null."
+                                    },
+                                    "covers": {
+                                        "type": "array",
+                                        "maxItems": 50,
+                                        "items": {
+                                            "$ref": "#/$defs/SquareInvoiceCoverage"
+                                        },
+                                        "description": "Square invoices this invoice is recorded as covering besides its linked one (#487), oldest first."
                                     },
                                     "agreement_series_key": {
                                         "type": [
@@ -15897,6 +16430,330 @@
                                                 "type": "null"
                                             }
                                         ]
+                                    }
+                                }
+                            },
+                            "SquareInvoiceCoverage": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "square_invoice_id",
+                                    "square_invoice_number",
+                                    "covered_at",
+                                    "covered_by"
+                                ],
+                                "description": "A Square invoice this invoice covers besides its linked one: not a link, so SVC collects and records nothing through it.",
+                                "properties": {
+                                    "square_invoice_id": {
+                                        "$ref": "#/$defs/SquareInvoiceId"
+                                    },
+                                    "square_invoice_number": {
+                                        "$ref": "#/$defs/SquareInvoiceNumber"
+                                    },
+                                    "covered_at": {
+                                        "type": "string",
+                                        "format": "date-time"
+                                    },
+                                    "covered_by": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "description": "Who recorded it, when known."
+                                    }
+                                }
+                            },
+                            "SquareInvoiceId": {
+                                "type": "string",
+                                "maxLength": 191,
+                                "pattern": "^[A-Za-z0-9_][A-Za-z0-9:_=\\-]{0,190}$",
+                                "description": "A Square invoice id, held as an opaque string. SVC checks its shape only; it never resolves it against Square."
+                            },
+                            "SquareInvoiceLink": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "id",
+                                    "square_invoice_id",
+                                    "square_invoice_number",
+                                    "series_key",
+                                    "currency",
+                                    "match_method",
+                                    "score",
+                                    "reasons",
+                                    "linked_at",
+                                    "linked_by"
+                                ],
+                                "properties": {
+                                    "id": {
+                                        "$ref": "#/$defs/Uuid"
+                                    },
+                                    "square_invoice_id": {
+                                        "$ref": "#/$defs/SquareInvoiceId"
+                                    },
+                                    "square_invoice_number": {
+                                        "$ref": "#/$defs/SquareInvoiceNumber"
+                                    },
+                                    "series_key": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "pattern": "^[0-9]{6}$",
+                                        "description": "Derived from the number at link time; null for a one-off."
+                                    },
+                                    "currency": {
+                                        "$ref": "#/$defs/Currency"
+                                    },
+                                    "match_method": {
+                                        "type": "string",
+                                        "enum": [
+                                            "manual",
+                                            "suggested"
+                                        ]
+                                    },
+                                    "score": {
+                                        "type": [
+                                            "integer",
+                                            "null"
+                                        ],
+                                        "minimum": 0,
+                                        "maximum": 100,
+                                        "description": "The suggestion score the person confirmed; null for a manual link."
+                                    },
+                                    "reasons": {
+                                        "type": [
+                                            "array",
+                                            "null"
+                                        ],
+                                        "items": {
+                                            "type": "string"
+                                        },
+                                        "description": "The suggestion reasons the person confirmed; null for a manual link."
+                                    },
+                                    "linked_at": {
+                                        "type": "string",
+                                        "format": "date-time"
+                                    },
+                                    "linked_by": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "description": "Who confirmed the link, by name."
+                                    }
+                                }
+                            },
+                            "SquareInvoiceNumber": {
+                                "type": "string",
+                                "maxLength": 191,
+                                "pattern": "^[!-~](?:[ -~]{0,189}[!-~])?$",
+                                "description": "The Square invoice number as Square shows it. A recurring series occurrence is NNNNNN-R-NNNN, whose six-digit prefix is the series key."
+                            },
+                            "SquarePaymentMismatch": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "code",
+                                    "dashboard_url"
+                                ],
+                                "properties": {
+                                    "code": {
+                                        "type": "string",
+                                        "enum": [
+                                            "paid_outside_square"
+                                        ]
+                                    },
+                                    "dashboard_url": {
+                                        "type": "string",
+                                        "format": "uri"
+                                    }
+                                }
+                            },
+                            "Uuid": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "Version": {
+                                "type": "string",
+                                "pattern": "^[a-f0-9]{64}$"
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "invoices.square_uncover",
+                    "title": "Remove Square invoice coverage",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "workspace_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "invoice_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "expected_version": {
+                                "$ref": "#/$defs/Version"
+                            },
+                            "square_invoice_id": {
+                                "$ref": "#/$defs/SquareInvoiceId"
+                            },
+                            "confirm": {
+                                "type": "boolean",
+                                "const": true,
+                                "description": "Explicit user confirmation is required."
+                            },
+                            "idempotency_key": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 255
+                            }
+                        },
+                        "required": [
+                            "workspace_id",
+                            "invoice_id",
+                            "expected_version",
+                            "square_invoice_id",
+                            "confirm",
+                            "idempotency_key"
+                        ],
+                        "additionalProperties": false,
+                        "$defs": {
+                            "SquareInvoiceId": {
+                                "type": "string",
+                                "maxLength": 191,
+                                "pattern": "^[A-Za-z0-9_][A-Za-z0-9:_=\\-]{0,190}$",
+                                "description": "A Square invoice id, held as an opaque string. SVC checks its shape only; it never resolves it against Square."
+                            },
+                            "Version": {
+                                "type": "string",
+                                "pattern": "^[a-f0-9]{64}$"
+                            }
+                        }
+                    },
+                    "description": "Workspace managers only. Stop recording a Square invoice as covered by this invoice, only after explicit confirmation. The record is kept as history and the Square invoice may be covered or linked again.",
+                    "annotations": {
+                        "readOnlyHint": false,
+                        "destructiveHint": true,
+                        "idempotentHint": true,
+                        "openWorldHint": false
+                    },
+                    "outputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "data"
+                        ],
+                        "properties": {
+                            "data": {
+                                "$ref": "#/$defs/InvoiceSquare"
+                            }
+                        },
+                        "$defs": {
+                            "Currency": {
+                                "type": "string",
+                                "pattern": "^[A-Z]{3}$"
+                            },
+                            "InvoiceSquare": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "invoice_id",
+                                    "invoice_version",
+                                    "link",
+                                    "covers",
+                                    "agreement_series_key",
+                                    "square_collects",
+                                    "collection_refusal",
+                                    "payment_mismatch"
+                                ],
+                                "properties": {
+                                    "invoice_id": {
+                                        "$ref": "#/$defs/Uuid"
+                                    },
+                                    "invoice_version": {
+                                        "$ref": "#/$defs/Version"
+                                    },
+                                    "link": {
+                                        "oneOf": [
+                                            {
+                                                "$ref": "#/$defs/SquareInvoiceLink"
+                                            },
+                                            {
+                                                "type": "null"
+                                            }
+                                        ],
+                                        "description": "The active link to a Square invoice, or null."
+                                    },
+                                    "covers": {
+                                        "type": "array",
+                                        "maxItems": 50,
+                                        "items": {
+                                            "$ref": "#/$defs/SquareInvoiceCoverage"
+                                        },
+                                        "description": "Square invoices this invoice is recorded as covering besides its linked one (#487), oldest first."
+                                    },
+                                    "agreement_series_key": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "pattern": "^[0-9]{6}$",
+                                        "description": "The Square series of the agreement this invoice was generated under, when that agreement is billed in Square."
+                                    },
+                                    "square_collects": {
+                                        "type": "boolean",
+                                        "description": "True when the invoice is linked or its agreement is billed in Square. SVC then never emails it to the client, charges it or offers a payment link; issuing stays open, and so does recording a payment on the website, but payments.record refuses."
+                                    },
+                                    "collection_refusal": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "description": "Why SVC will not collect this invoice, as the collection paths report it; null when SVC collects."
+                                    },
+                                    "payment_mismatch": {
+                                        "oneOf": [
+                                            {
+                                                "$ref": "#/$defs/SquarePaymentMismatch"
+                                            },
+                                            {
+                                                "type": "null"
+                                            }
+                                        ]
+                                    }
+                                }
+                            },
+                            "SquareInvoiceCoverage": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "square_invoice_id",
+                                    "square_invoice_number",
+                                    "covered_at",
+                                    "covered_by"
+                                ],
+                                "description": "A Square invoice this invoice covers besides its linked one: not a link, so SVC collects and records nothing through it.",
+                                "properties": {
+                                    "square_invoice_id": {
+                                        "$ref": "#/$defs/SquareInvoiceId"
+                                    },
+                                    "square_invoice_number": {
+                                        "$ref": "#/$defs/SquareInvoiceNumber"
+                                    },
+                                    "covered_at": {
+                                        "type": "string",
+                                        "format": "date-time"
+                                    },
+                                    "covered_by": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "description": "Who recorded it, when known."
                                     }
                                 }
                             },
@@ -16090,6 +16947,7 @@
                                     "invoice_id",
                                     "invoice_version",
                                     "link",
+                                    "covers",
                                     "agreement_series_key",
                                     "square_collects",
                                     "collection_refusal",
@@ -16112,6 +16970,14 @@
                                             }
                                         ],
                                         "description": "The active link to a Square invoice, or null."
+                                    },
+                                    "covers": {
+                                        "type": "array",
+                                        "maxItems": 50,
+                                        "items": {
+                                            "$ref": "#/$defs/SquareInvoiceCoverage"
+                                        },
+                                        "description": "Square invoices this invoice is recorded as covering besides its linked one (#487), oldest first."
                                     },
                                     "agreement_series_key": {
                                         "type": [
@@ -16141,6 +17007,36 @@
                                                 "type": "null"
                                             }
                                         ]
+                                    }
+                                }
+                            },
+                            "SquareInvoiceCoverage": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "square_invoice_id",
+                                    "square_invoice_number",
+                                    "covered_at",
+                                    "covered_by"
+                                ],
+                                "description": "A Square invoice this invoice covers besides its linked one: not a link, so SVC collects and records nothing through it.",
+                                "properties": {
+                                    "square_invoice_id": {
+                                        "$ref": "#/$defs/SquareInvoiceId"
+                                    },
+                                    "square_invoice_number": {
+                                        "$ref": "#/$defs/SquareInvoiceNumber"
+                                    },
+                                    "covered_at": {
+                                        "type": "string",
+                                        "format": "date-time"
+                                    },
+                                    "covered_by": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "description": "Who recorded it, when known."
                                     }
                                 }
                             },
@@ -28453,14 +29349,14 @@
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before billing_schedules.generate: it issues invoices and may schedule automatic client delivery. Obtain explicit user confirmation before creating, updating, archiving projects or changing project member access; these decisions affect client visibility and access. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Obtain explicit user confirmation before deleting an attachment. When the user confirms issuing a draft for money already collected elsewhere, pass payment to invoices.issue so it is issued and paid in one step and the automatic client delivery is never sent; never infer a payment from an invoice balance. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; payments.record records money already received but never initiates a charge, and SVC does not expose card data or file uploads through MCP. Use the log-time-across-projects and prepare-invoice-safely prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
-                "agreements.activate": "dc0ac8df95ee027d",
-                "agreements.create": "b76da03e0017b029",
-                "agreements.get": "e4ffe605f88bb15e",
-                "agreements.list": "3b69fb9fbe950761",
-                "agreements.square_series.clear": "d014074ec35642f2",
-                "agreements.square_series.set": "1c0b799c07d4af21",
-                "agreements.terminate": "b74ed14dae4ff1cc",
-                "agreements.update": "dbdf852547ee7c12",
+                "agreements.activate": "2ed68823cfe43e76",
+                "agreements.create": "0c103b90e38bf275",
+                "agreements.get": "0a85d4ecd79bd2da",
+                "agreements.list": "58327dc29e892cb0",
+                "agreements.square_series.clear": "7bcd0a5dfbd9a90f",
+                "agreements.square_series.set": "028abd54f8daa892",
+                "agreements.terminate": "6270398e37fca50e",
+                "agreements.update": "1149344fb28b4dd5",
                 "attachments.delete": "ec3bab66781f94b6",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
                 "attachments.get": "f54affb3d9e104a3",
@@ -28472,7 +29368,7 @@
                 "billing.audit_unlinked_proposal_agreements": "5b8b643f5d70318d",
                 "billing.audit_unplaceable_invoices": "5c425e0550c0d9c9",
                 "billing.preflight_schedule_generation": "f6486e5ee5242614",
-                "billing_audit.stale_and_missing": "e7c615528bc421bf",
+                "billing_audit.stale_and_missing": "fa4a2fdb8a8363aa",
                 "billing_schedules.create": "ce808d037fdc2ee7",
                 "billing_schedules.generate": "b1849c503fd5dc21",
                 "billing_schedules.get": "5e063c9324f1fbd4",
@@ -28521,9 +29417,9 @@
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.generate_period": "a736a25f33ed9607",
-                "invoices.get": "ec39ca94673449ec",
+                "invoices.get": "feb0ddb235aabe60",
                 "invoices.hold_delivery": "5d5d70aa02fac988",
-                "invoices.issue": "a6d503fec0064faa",
+                "invoices.issue": "0be79186b59bd0ce",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
@@ -28532,9 +29428,11 @@
                 "invoices.send": "7eade4913e162ab2",
                 "invoices.send_reminder": "8f62ca2de82c197b",
                 "invoices.square_candidates": "09693c77227c6c63",
-                "invoices.square_link": "6ef66408313e9484",
-                "invoices.square_reconcile": "88cbeaf1317d393e",
-                "invoices.square_unlink": "43197a34c12c579f",
+                "invoices.square_cover": "177828dd5b1742aa",
+                "invoices.square_link": "819bde1069a1a9a7",
+                "invoices.square_reconcile": "e1e06e7dfba48e73",
+                "invoices.square_uncover": "6f5b41aaedc7326a",
+                "invoices.square_unlink": "74d00106bf7d0c72",
                 "invoices.update_details": "9c25cf205acf1a39",
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
@@ -28669,8 +29567,10 @@
                     "invoices.reminders.list role",
                     "invoices.send_reminder role",
                     "invoices.square_candidates role",
+                    "invoices.square_cover role",
                     "invoices.square_link role",
                     "invoices.square_reconcile role",
+                    "invoices.square_uncover role",
                     "invoices.square_unlink role",
                     "payments.correct role",
                     "payments.record role",
@@ -28722,8 +29622,8 @@
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.get": "ec39ca94673449ec",
-                "invoices.issue": "a6d503fec0064faa",
+                "invoices.get": "feb0ddb235aabe60",
+                "invoices.issue": "0be79186b59bd0ce",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.send": "7eade4913e162ab2",
@@ -28830,8 +29730,10 @@
                     "invoices.reminders.list role",
                     "invoices.send_reminder role",
                     "invoices.square_candidates role",
+                    "invoices.square_cover role",
                     "invoices.square_link role",
                     "invoices.square_reconcile role",
+                    "invoices.square_uncover role",
                     "invoices.square_unlink role",
                     "payments.correct role",
                     "payments.record role",
@@ -28883,8 +29785,8 @@
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.get": "ec39ca94673449ec",
-                "invoices.issue": "a6d503fec0064faa",
+                "invoices.get": "feb0ddb235aabe60",
+                "invoices.issue": "0be79186b59bd0ce",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.send": "7eade4913e162ab2",
@@ -28991,8 +29893,10 @@
                     "invoices.reminders.list role",
                     "invoices.send_reminder role",
                     "invoices.square_candidates role",
+                    "invoices.square_cover role",
                     "invoices.square_link role",
                     "invoices.square_reconcile role",
+                    "invoices.square_uncover role",
                     "invoices.square_unlink role",
                     "payments.correct role",
                     "payments.record role",
@@ -29044,8 +29948,8 @@
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.get": "ec39ca94673449ec",
-                "invoices.issue": "a6d503fec0064faa",
+                "invoices.get": "feb0ddb235aabe60",
+                "invoices.issue": "0be79186b59bd0ce",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.send": "7eade4913e162ab2",
@@ -29152,8 +30056,10 @@
                     "invoices.reminders.list role",
                     "invoices.send_reminder role",
                     "invoices.square_candidates role",
+                    "invoices.square_cover role",
                     "invoices.square_link role",
                     "invoices.square_reconcile role",
+                    "invoices.square_uncover role",
                     "invoices.square_unlink role",
                     "payments.correct role",
                     "payments.record role",
@@ -29205,8 +30111,8 @@
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.get": "ec39ca94673449ec",
-                "invoices.issue": "a6d503fec0064faa",
+                "invoices.get": "feb0ddb235aabe60",
+                "invoices.issue": "0be79186b59bd0ce",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.send": "7eade4913e162ab2",
@@ -29288,8 +30194,10 @@
                     "invoices.release_delivery scope_not_granted billing:deliver",
                     "invoices.send scope_not_granted billing:deliver",
                     "invoices.send_reminder scope_not_granted billing:write",
+                    "invoices.square_cover scope_not_granted billing:write",
                     "invoices.square_link scope_not_granted billing:write",
                     "invoices.square_reconcile scope_not_granted billing:write",
+                    "invoices.square_uncover scope_not_granted billing:write",
                     "invoices.square_unlink scope_not_granted billing:write",
                     "invoices.update_details scope_not_granted billing:write",
                     "invoices.update_draft scope_not_granted billing:write",
@@ -29332,8 +30240,8 @@
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. This connection is read-only; use the SVC website for changes. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
-                "agreements.get": "e4ffe605f88bb15e",
-                "agreements.list": "3b69fb9fbe950761",
+                "agreements.get": "0a85d4ecd79bd2da",
+                "agreements.list": "58327dc29e892cb0",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
                 "attachments.get": "f54affb3d9e104a3",
                 "attachments.list": "a8f522c87ae2083f",
@@ -29343,7 +30251,7 @@
                 "billing.audit_unlinked_proposal_agreements": "5b8b643f5d70318d",
                 "billing.audit_unplaceable_invoices": "5c425e0550c0d9c9",
                 "billing.preflight_schedule_generation": "f6486e5ee5242614",
-                "billing_audit.stale_and_missing": "e7c615528bc421bf",
+                "billing_audit.stale_and_missing": "fa4a2fdb8a8363aa",
                 "billing_schedules.get": "5e063c9324f1fbd4",
                 "billing_schedules.list": "91723c13172dc456",
                 "capacity_ledger.get": "b58961097fbfe33e",
@@ -29361,7 +30269,7 @@
                 "finance.invoice_payments.list": "25681f84faec8b6e",
                 "finance.payouts.list": "49fbdd79e642c84c",
                 "invoices.corrections.get": "aa93da895756b80b",
-                "invoices.get": "ec39ca94673449ec",
+                "invoices.get": "feb0ddb235aabe60",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
@@ -29441,17 +30349,17 @@
             },
             "instructions": "Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
-                "agreements.get": "e4ffe605f88bb15e",
-                "agreements.list": "3b69fb9fbe950761",
-                "agreements.square_series.clear": "d014074ec35642f2",
-                "agreements.square_series.set": "1c0b799c07d4af21",
+                "agreements.get": "0a85d4ecd79bd2da",
+                "agreements.list": "58327dc29e892cb0",
+                "agreements.square_series.clear": "7bcd0a5dfbd9a90f",
+                "agreements.square_series.set": "028abd54f8daa892",
                 "billing.audit_missing_billed_overage": "1ce496a1f94756c0",
                 "billing.audit_opening_rollover": "1f761280885e3429",
                 "billing.audit_undated_collectible_invoices": "6309d10a3243dd56",
                 "billing.audit_unlinked_proposal_agreements": "5b8b643f5d70318d",
                 "billing.audit_unplaceable_invoices": "5c425e0550c0d9c9",
                 "billing.preflight_schedule_generation": "f6486e5ee5242614",
-                "billing_audit.stale_and_missing": "e7c615528bc421bf",
+                "billing_audit.stale_and_missing": "fa4a2fdb8a8363aa",
                 "billing_schedules.create": "ce808d037fdc2ee7",
                 "billing_schedules.get": "5e063c9324f1fbd4",
                 "billing_schedules.list": "91723c13172dc456",
@@ -29466,7 +30374,7 @@
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.generate_period": "a736a25f33ed9607",
-                "invoices.get": "ec39ca94673449ec",
+                "invoices.get": "feb0ddb235aabe60",
                 "invoices.hold_delivery": "5d5d70aa02fac988",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
@@ -29474,9 +30382,11 @@
                 "invoices.reminders.list": "86e53f8c46db44c6",
                 "invoices.send_reminder": "8f62ca2de82c197b",
                 "invoices.square_candidates": "09693c77227c6c63",
-                "invoices.square_link": "6ef66408313e9484",
-                "invoices.square_reconcile": "88cbeaf1317d393e",
-                "invoices.square_unlink": "43197a34c12c579f",
+                "invoices.square_cover": "177828dd5b1742aa",
+                "invoices.square_link": "819bde1069a1a9a7",
+                "invoices.square_reconcile": "e1e06e7dfba48e73",
+                "invoices.square_uncover": "6f5b41aaedc7326a",
+                "invoices.square_unlink": "74d00106bf7d0c72",
                 "invoices.update_details": "9c25cf205acf1a39",
                 "invoices.update_draft": "2db06ccf7247d243",
                 "square.customers.get": "8d7d9a7b89dbe75b",
@@ -29579,8 +30489,10 @@
                     "invoices.send scope_not_granted billing:deliver",
                     "invoices.send_reminder scope_not_granted billing:write",
                     "invoices.square_candidates role",
+                    "invoices.square_cover scope_not_granted billing:write",
                     "invoices.square_link scope_not_granted billing:write",
                     "invoices.square_reconcile scope_not_granted billing:write",
+                    "invoices.square_uncover scope_not_granted billing:write",
                     "invoices.square_unlink scope_not_granted billing:write",
                     "invoices.update_details scope_not_granted billing:write",
                     "invoices.update_draft scope_not_granted billing:write",
@@ -29640,7 +30552,7 @@
             "tools": {
                 "context.get": "d36731571bd94125",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "ec39ca94673449ec",
+                "invoices.get": "feb0ddb235aabe60",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "0db82875e0823846",
@@ -29702,7 +30614,7 @@
             "tools": {
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.get": "ec39ca94673449ec",
+                "invoices.get": "feb0ddb235aabe60",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.update_details": "9c25cf205acf1a39",
@@ -29789,8 +30701,10 @@
                     "invoices.send scope_not_granted billing:deliver",
                     "invoices.send_reminder scope_not_granted billing:write",
                     "invoices.square_candidates role",
+                    "invoices.square_cover scope_not_granted billing:write",
                     "invoices.square_link scope_not_granted billing:write",
                     "invoices.square_reconcile scope_not_granted billing:write",
+                    "invoices.square_uncover scope_not_granted billing:write",
                     "invoices.square_unlink scope_not_granted billing:write",
                     "invoices.update_details scope_not_granted billing:write",
                     "invoices.update_draft scope_not_granted billing:write",
@@ -29850,7 +30764,7 @@
             "tools": {
                 "context.get": "d36731571bd94125",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "ec39ca94673449ec",
+                "invoices.get": "feb0ddb235aabe60",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "0db82875e0823846",
@@ -29912,7 +30826,7 @@
             "tools": {
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.get": "ec39ca94673449ec",
+                "invoices.get": "feb0ddb235aabe60",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.update_details": "9c25cf205acf1a39",
@@ -29971,8 +30885,10 @@
                     "invoices.send deployment_disabled",
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates deployment_disabled",
+                    "invoices.square_cover deployment_disabled",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_reconcile deployment_disabled",
+                    "invoices.square_uncover deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -30026,8 +30942,8 @@
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
-                "agreements.get": "e4ffe605f88bb15e",
-                "agreements.list": "3b69fb9fbe950761",
+                "agreements.get": "0a85d4ecd79bd2da",
+                "agreements.list": "58327dc29e892cb0",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
                 "attachments.get": "f54affb3d9e104a3",
                 "attachments.list": "a8f522c87ae2083f",
@@ -30037,7 +30953,7 @@
                 "billing.audit_unlinked_proposal_agreements": "5b8b643f5d70318d",
                 "billing.audit_unplaceable_invoices": "5c425e0550c0d9c9",
                 "billing.preflight_schedule_generation": "f6486e5ee5242614",
-                "billing_audit.stale_and_missing": "e7c615528bc421bf",
+                "billing_audit.stale_and_missing": "fa4a2fdb8a8363aa",
                 "billing_schedules.get": "5e063c9324f1fbd4",
                 "billing_schedules.list": "91723c13172dc456",
                 "capacity_ledger.get": "b58961097fbfe33e",
@@ -30056,7 +30972,7 @@
                 "finance.reconciliations.deactivate": "41db4066d9b89d5c",
                 "finance.reconciliations.upsert": "75cfbd94043071d2",
                 "invoices.corrections.get": "aa93da895756b80b",
-                "invoices.get": "ec39ca94673449ec",
+                "invoices.get": "feb0ddb235aabe60",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
@@ -30133,8 +31049,10 @@
                     "invoices.send deployment_disabled",
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates deployment_disabled",
+                    "invoices.square_cover deployment_disabled",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_reconcile deployment_disabled",
+                    "invoices.square_uncover deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -30188,8 +31106,8 @@
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
-                "agreements.get": "e4ffe605f88bb15e",
-                "agreements.list": "3b69fb9fbe950761",
+                "agreements.get": "0a85d4ecd79bd2da",
+                "agreements.list": "58327dc29e892cb0",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
                 "attachments.get": "f54affb3d9e104a3",
                 "attachments.list": "a8f522c87ae2083f",
@@ -30199,7 +31117,7 @@
                 "billing.audit_unlinked_proposal_agreements": "5b8b643f5d70318d",
                 "billing.audit_unplaceable_invoices": "5c425e0550c0d9c9",
                 "billing.preflight_schedule_generation": "f6486e5ee5242614",
-                "billing_audit.stale_and_missing": "e7c615528bc421bf",
+                "billing_audit.stale_and_missing": "fa4a2fdb8a8363aa",
                 "billing_schedules.get": "5e063c9324f1fbd4",
                 "billing_schedules.list": "91723c13172dc456",
                 "capacity_ledger.get": "b58961097fbfe33e",
@@ -30218,7 +31136,7 @@
                 "finance.reconciliations.deactivate": "41db4066d9b89d5c",
                 "finance.reconciliations.upsert": "75cfbd94043071d2",
                 "invoices.corrections.get": "aa93da895756b80b",
-                "invoices.get": "ec39ca94673449ec",
+                "invoices.get": "feb0ddb235aabe60",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
@@ -30325,8 +31243,10 @@
                     "invoices.send deployment_disabled",
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates deployment_disabled",
+                    "invoices.square_cover deployment_disabled",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_reconcile deployment_disabled",
+                    "invoices.square_uncover deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -30383,7 +31303,7 @@
             "tools": {
                 "context.get": "d36731571bd94125",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "ec39ca94673449ec",
+                "invoices.get": "feb0ddb235aabe60",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "0db82875e0823846",
@@ -30485,8 +31405,10 @@
                     "invoices.send deployment_disabled",
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates deployment_disabled",
+                    "invoices.square_cover deployment_disabled",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_reconcile deployment_disabled",
+                    "invoices.square_uncover deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -30543,7 +31465,7 @@
             "tools": {
                 "context.get": "d36731571bd94125",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "ec39ca94673449ec",
+                "invoices.get": "feb0ddb235aabe60",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "0db82875e0823846",
@@ -30645,8 +31567,10 @@
                     "invoices.send deployment_disabled",
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates deployment_disabled",
+                    "invoices.square_cover deployment_disabled",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_reconcile deployment_disabled",
+                    "invoices.square_uncover deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -30703,7 +31627,7 @@
             "tools": {
                 "context.get": "d36731571bd94125",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "ec39ca94673449ec",
+                "invoices.get": "feb0ddb235aabe60",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "0db82875e0823846",
@@ -30805,8 +31729,10 @@
                     "invoices.send deployment_disabled",
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates deployment_disabled",
+                    "invoices.square_cover deployment_disabled",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_reconcile deployment_disabled",
+                    "invoices.square_uncover deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -30863,7 +31789,7 @@
             "tools": {
                 "context.get": "d36731571bd94125",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "ec39ca94673449ec",
+                "invoices.get": "feb0ddb235aabe60",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "0db82875e0823846",
@@ -30935,8 +31861,10 @@
                     "invoices.release_delivery deployment_disabled",
                     "invoices.send deployment_disabled",
                     "invoices.send_reminder deployment_disabled",
+                    "invoices.square_cover deployment_disabled",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_reconcile deployment_disabled",
+                    "invoices.square_uncover deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -30979,8 +31907,8 @@
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
-                "agreements.get": "e4ffe605f88bb15e",
-                "agreements.list": "3b69fb9fbe950761",
+                "agreements.get": "0a85d4ecd79bd2da",
+                "agreements.list": "58327dc29e892cb0",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
                 "attachments.get": "f54affb3d9e104a3",
                 "attachments.list": "a8f522c87ae2083f",
@@ -30990,7 +31918,7 @@
                 "billing.audit_unlinked_proposal_agreements": "5b8b643f5d70318d",
                 "billing.audit_unplaceable_invoices": "5c425e0550c0d9c9",
                 "billing.preflight_schedule_generation": "f6486e5ee5242614",
-                "billing_audit.stale_and_missing": "e7c615528bc421bf",
+                "billing_audit.stale_and_missing": "fa4a2fdb8a8363aa",
                 "billing_schedules.get": "5e063c9324f1fbd4",
                 "billing_schedules.list": "91723c13172dc456",
                 "capacity_ledger.get": "b58961097fbfe33e",
@@ -31010,7 +31938,7 @@
                 "finance.reconciliations.deactivate": "41db4066d9b89d5c",
                 "finance.reconciliations.upsert": "75cfbd94043071d2",
                 "invoices.corrections.get": "aa93da895756b80b",
-                "invoices.get": "ec39ca94673449ec",
+                "invoices.get": "feb0ddb235aabe60",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
@@ -31095,8 +32023,10 @@
                     "invoices.release_delivery deployment_disabled",
                     "invoices.send deployment_disabled",
                     "invoices.send_reminder deployment_disabled",
+                    "invoices.square_cover deployment_disabled",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_reconcile deployment_disabled",
+                    "invoices.square_uncover deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -31139,8 +32069,8 @@
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
-                "agreements.get": "e4ffe605f88bb15e",
-                "agreements.list": "3b69fb9fbe950761",
+                "agreements.get": "0a85d4ecd79bd2da",
+                "agreements.list": "58327dc29e892cb0",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
                 "attachments.get": "f54affb3d9e104a3",
                 "attachments.list": "a8f522c87ae2083f",
@@ -31150,7 +32080,7 @@
                 "billing.audit_unlinked_proposal_agreements": "5b8b643f5d70318d",
                 "billing.audit_unplaceable_invoices": "5c425e0550c0d9c9",
                 "billing.preflight_schedule_generation": "f6486e5ee5242614",
-                "billing_audit.stale_and_missing": "e7c615528bc421bf",
+                "billing_audit.stale_and_missing": "fa4a2fdb8a8363aa",
                 "billing_schedules.get": "5e063c9324f1fbd4",
                 "billing_schedules.list": "91723c13172dc456",
                 "capacity_ledger.get": "b58961097fbfe33e",
@@ -31170,7 +32100,7 @@
                 "finance.reconciliations.deactivate": "41db4066d9b89d5c",
                 "finance.reconciliations.upsert": "75cfbd94043071d2",
                 "invoices.corrections.get": "aa93da895756b80b",
-                "invoices.get": "ec39ca94673449ec",
+                "invoices.get": "feb0ddb235aabe60",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
@@ -31287,8 +32217,10 @@
                     "invoices.send deployment_disabled",
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates role",
+                    "invoices.square_cover deployment_disabled",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_reconcile deployment_disabled",
+                    "invoices.square_uncover deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -31348,7 +32280,7 @@
             "tools": {
                 "context.get": "d36731571bd94125",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "ec39ca94673449ec",
+                "invoices.get": "feb0ddb235aabe60",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "0db82875e0823846",
@@ -31445,8 +32377,10 @@
                     "invoices.send deployment_disabled",
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates role",
+                    "invoices.square_cover deployment_disabled",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_reconcile deployment_disabled",
+                    "invoices.square_uncover deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -31506,7 +32440,7 @@
             "tools": {
                 "context.get": "d36731571bd94125",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "ec39ca94673449ec",
+                "invoices.get": "feb0ddb235aabe60",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "0db82875e0823846",
@@ -31603,8 +32537,10 @@
                     "invoices.send deployment_disabled",
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates role",
+                    "invoices.square_cover deployment_disabled",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_reconcile deployment_disabled",
+                    "invoices.square_uncover deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -31664,7 +32600,7 @@
             "tools": {
                 "context.get": "d36731571bd94125",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "ec39ca94673449ec",
+                "invoices.get": "feb0ddb235aabe60",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "0db82875e0823846",
@@ -31761,8 +32697,10 @@
                     "invoices.send deployment_disabled",
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates role",
+                    "invoices.square_cover deployment_disabled",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_reconcile deployment_disabled",
+                    "invoices.square_uncover deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -31822,7 +32760,7 @@
             "tools": {
                 "context.get": "d36731571bd94125",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "ec39ca94673449ec",
+                "invoices.get": "feb0ddb235aabe60",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "0db82875e0823846",
@@ -31889,8 +32827,10 @@
                     "invoices.release_delivery deployment_disabled",
                     "invoices.send deployment_disabled",
                     "invoices.send_reminder deployment_disabled",
+                    "invoices.square_cover deployment_disabled",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_reconcile deployment_disabled",
+                    "invoices.square_uncover deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -31930,8 +32870,8 @@
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
-                "agreements.get": "e4ffe605f88bb15e",
-                "agreements.list": "3b69fb9fbe950761",
+                "agreements.get": "0a85d4ecd79bd2da",
+                "agreements.list": "58327dc29e892cb0",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
                 "attachments.get": "f54affb3d9e104a3",
                 "attachments.list": "a8f522c87ae2083f",
@@ -31941,7 +32881,7 @@
                 "billing.audit_unlinked_proposal_agreements": "5b8b643f5d70318d",
                 "billing.audit_unplaceable_invoices": "5c425e0550c0d9c9",
                 "billing.preflight_schedule_generation": "f6486e5ee5242614",
-                "billing_audit.stale_and_missing": "e7c615528bc421bf",
+                "billing_audit.stale_and_missing": "fa4a2fdb8a8363aa",
                 "billing_schedules.get": "5e063c9324f1fbd4",
                 "billing_schedules.list": "91723c13172dc456",
                 "capacity_ledger.get": "b58961097fbfe33e",
@@ -31961,7 +32901,7 @@
                 "finance.reconciliations.deactivate": "41db4066d9b89d5c",
                 "finance.reconciliations.upsert": "75cfbd94043071d2",
                 "invoices.corrections.get": "aa93da895756b80b",
-                "invoices.get": "ec39ca94673449ec",
+                "invoices.get": "feb0ddb235aabe60",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
@@ -32051,8 +32991,10 @@
                     "invoices.release_delivery deployment_disabled",
                     "invoices.send deployment_disabled",
                     "invoices.send_reminder deployment_disabled",
+                    "invoices.square_cover deployment_disabled",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_reconcile deployment_disabled",
+                    "invoices.square_uncover deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -32092,8 +33034,8 @@
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
-                "agreements.get": "e4ffe605f88bb15e",
-                "agreements.list": "3b69fb9fbe950761",
+                "agreements.get": "0a85d4ecd79bd2da",
+                "agreements.list": "58327dc29e892cb0",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
                 "attachments.get": "f54affb3d9e104a3",
                 "attachments.list": "a8f522c87ae2083f",
@@ -32103,7 +33045,7 @@
                 "billing.audit_unlinked_proposal_agreements": "5b8b643f5d70318d",
                 "billing.audit_unplaceable_invoices": "5c425e0550c0d9c9",
                 "billing.preflight_schedule_generation": "f6486e5ee5242614",
-                "billing_audit.stale_and_missing": "e7c615528bc421bf",
+                "billing_audit.stale_and_missing": "fa4a2fdb8a8363aa",
                 "billing_schedules.get": "5e063c9324f1fbd4",
                 "billing_schedules.list": "91723c13172dc456",
                 "capacity_ledger.get": "b58961097fbfe33e",
@@ -32123,7 +33065,7 @@
                 "finance.reconciliations.deactivate": "41db4066d9b89d5c",
                 "finance.reconciliations.upsert": "75cfbd94043071d2",
                 "invoices.corrections.get": "aa93da895756b80b",
-                "invoices.get": "ec39ca94673449ec",
+                "invoices.get": "feb0ddb235aabe60",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
@@ -32245,8 +33187,10 @@
                     "invoices.send deployment_disabled",
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates role",
+                    "invoices.square_cover deployment_disabled",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_reconcile deployment_disabled",
+                    "invoices.square_uncover deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -32303,7 +33247,7 @@
             "tools": {
                 "context.get": "d36731571bd94125",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "ec39ca94673449ec",
+                "invoices.get": "feb0ddb235aabe60",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "0db82875e0823846",
@@ -32405,8 +33349,10 @@
                     "invoices.send deployment_disabled",
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates role",
+                    "invoices.square_cover deployment_disabled",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_reconcile deployment_disabled",
+                    "invoices.square_uncover deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -32463,7 +33409,7 @@
             "tools": {
                 "context.get": "d36731571bd94125",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "ec39ca94673449ec",
+                "invoices.get": "feb0ddb235aabe60",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "0db82875e0823846",
@@ -32565,8 +33511,10 @@
                     "invoices.send deployment_disabled",
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates role",
+                    "invoices.square_cover deployment_disabled",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_reconcile deployment_disabled",
+                    "invoices.square_uncover deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -32623,7 +33571,7 @@
             "tools": {
                 "context.get": "d36731571bd94125",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "ec39ca94673449ec",
+                "invoices.get": "feb0ddb235aabe60",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "0db82875e0823846",
@@ -32725,8 +33673,10 @@
                     "invoices.send deployment_disabled",
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates role",
+                    "invoices.square_cover deployment_disabled",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_reconcile deployment_disabled",
+                    "invoices.square_uncover deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -32783,7 +33733,7 @@
             "tools": {
                 "context.get": "d36731571bd94125",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "ec39ca94673449ec",
+                "invoices.get": "feb0ddb235aabe60",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "0db82875e0823846",
@@ -32825,7 +33775,9 @@
                     "invoices.release_delivery deployment_disabled",
                     "invoices.send deployment_disabled",
                     "invoices.send_reminder deployment_disabled",
+                    "invoices.square_cover deployment_disabled",
                     "invoices.square_link deployment_disabled",
+                    "invoices.square_uncover deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -32846,14 +33798,14 @@
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before creating, updating, archiving projects or changing project member access; these decisions affect client visibility and access. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Obtain explicit user confirmation before deleting an attachment. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; payments.record records money already received but never initiates a charge, and SVC does not expose card data or file uploads through MCP. Use the log-time-across-projects prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
-                "agreements.activate": "dc0ac8df95ee027d",
-                "agreements.create": "b76da03e0017b029",
-                "agreements.get": "e4ffe605f88bb15e",
-                "agreements.list": "3b69fb9fbe950761",
-                "agreements.square_series.clear": "d014074ec35642f2",
-                "agreements.square_series.set": "1c0b799c07d4af21",
-                "agreements.terminate": "b74ed14dae4ff1cc",
-                "agreements.update": "dbdf852547ee7c12",
+                "agreements.activate": "2ed68823cfe43e76",
+                "agreements.create": "0c103b90e38bf275",
+                "agreements.get": "0a85d4ecd79bd2da",
+                "agreements.list": "58327dc29e892cb0",
+                "agreements.square_series.clear": "7bcd0a5dfbd9a90f",
+                "agreements.square_series.set": "028abd54f8daa892",
+                "agreements.terminate": "6270398e37fca50e",
+                "agreements.update": "1149344fb28b4dd5",
                 "attachments.delete": "ec3bab66781f94b6",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
                 "attachments.get": "f54affb3d9e104a3",
@@ -32865,7 +33817,7 @@
                 "billing.audit_unlinked_proposal_agreements": "5b8b643f5d70318d",
                 "billing.audit_unplaceable_invoices": "5c425e0550c0d9c9",
                 "billing.preflight_schedule_generation": "f6486e5ee5242614",
-                "billing_audit.stale_and_missing": "e7c615528bc421bf",
+                "billing_audit.stale_and_missing": "fa4a2fdb8a8363aa",
                 "billing_schedules.get": "5e063c9324f1fbd4",
                 "billing_schedules.list": "91723c13172dc456",
                 "capacity_ledger.get": "b58961097fbfe33e",
@@ -32907,13 +33859,13 @@
                 "finance.reconciliations.deactivate": "41db4066d9b89d5c",
                 "finance.reconciliations.upsert": "75cfbd94043071d2",
                 "invoices.corrections.get": "aa93da895756b80b",
-                "invoices.get": "ec39ca94673449ec",
+                "invoices.get": "feb0ddb235aabe60",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
                 "invoices.reminders.list": "86e53f8c46db44c6",
                 "invoices.square_candidates": "09693c77227c6c63",
-                "invoices.square_reconcile": "88cbeaf1317d393e",
+                "invoices.square_reconcile": "e1e06e7dfba48e73",
                 "operations.summary": "0db82875e0823846",
                 "payments.correct": "f23dd37fdcc72186",
                 "payments.list": "a911cc9b30a4c54a",
@@ -32987,7 +33939,9 @@
                     "invoices.release_delivery deployment_disabled",
                     "invoices.send deployment_disabled",
                     "invoices.send_reminder deployment_disabled",
+                    "invoices.square_cover deployment_disabled",
                     "invoices.square_link deployment_disabled",
+                    "invoices.square_uncover deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -33008,14 +33962,14 @@
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before creating, updating, archiving projects or changing project member access; these decisions affect client visibility and access. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Obtain explicit user confirmation before deleting an attachment. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; payments.record records money already received but never initiates a charge, and SVC does not expose card data or file uploads through MCP. Use the log-time-across-projects prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
-                "agreements.activate": "dc0ac8df95ee027d",
-                "agreements.create": "b76da03e0017b029",
-                "agreements.get": "e4ffe605f88bb15e",
-                "agreements.list": "3b69fb9fbe950761",
-                "agreements.square_series.clear": "d014074ec35642f2",
-                "agreements.square_series.set": "1c0b799c07d4af21",
-                "agreements.terminate": "b74ed14dae4ff1cc",
-                "agreements.update": "dbdf852547ee7c12",
+                "agreements.activate": "2ed68823cfe43e76",
+                "agreements.create": "0c103b90e38bf275",
+                "agreements.get": "0a85d4ecd79bd2da",
+                "agreements.list": "58327dc29e892cb0",
+                "agreements.square_series.clear": "7bcd0a5dfbd9a90f",
+                "agreements.square_series.set": "028abd54f8daa892",
+                "agreements.terminate": "6270398e37fca50e",
+                "agreements.update": "1149344fb28b4dd5",
                 "attachments.delete": "ec3bab66781f94b6",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
                 "attachments.get": "f54affb3d9e104a3",
@@ -33027,7 +33981,7 @@
                 "billing.audit_unlinked_proposal_agreements": "5b8b643f5d70318d",
                 "billing.audit_unplaceable_invoices": "5c425e0550c0d9c9",
                 "billing.preflight_schedule_generation": "f6486e5ee5242614",
-                "billing_audit.stale_and_missing": "e7c615528bc421bf",
+                "billing_audit.stale_and_missing": "fa4a2fdb8a8363aa",
                 "billing_schedules.get": "5e063c9324f1fbd4",
                 "billing_schedules.list": "91723c13172dc456",
                 "capacity_ledger.get": "b58961097fbfe33e",
@@ -33069,13 +34023,13 @@
                 "finance.reconciliations.deactivate": "41db4066d9b89d5c",
                 "finance.reconciliations.upsert": "75cfbd94043071d2",
                 "invoices.corrections.get": "aa93da895756b80b",
-                "invoices.get": "ec39ca94673449ec",
+                "invoices.get": "feb0ddb235aabe60",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
                 "invoices.reminders.list": "86e53f8c46db44c6",
                 "invoices.square_candidates": "09693c77227c6c63",
-                "invoices.square_reconcile": "88cbeaf1317d393e",
+                "invoices.square_reconcile": "e1e06e7dfba48e73",
                 "operations.summary": "0db82875e0823846",
                 "payments.correct": "f23dd37fdcc72186",
                 "payments.list": "a911cc9b30a4c54a",
@@ -33211,8 +34165,10 @@
                     "invoices.send deployment_disabled",
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates role",
+                    "invoices.square_cover deployment_disabled",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_reconcile role",
+                    "invoices.square_uncover deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -33264,7 +34220,7 @@
             "tools": {
                 "context.get": "d36731571bd94125",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "ec39ca94673449ec",
+                "invoices.get": "feb0ddb235aabe60",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "0db82875e0823846",
@@ -33371,8 +34327,10 @@
                     "invoices.send deployment_disabled",
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates role",
+                    "invoices.square_cover deployment_disabled",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_reconcile role",
+                    "invoices.square_uncover deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -33424,7 +34382,7 @@
             "tools": {
                 "context.get": "d36731571bd94125",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "ec39ca94673449ec",
+                "invoices.get": "feb0ddb235aabe60",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "0db82875e0823846",
@@ -33531,8 +34489,10 @@
                     "invoices.send deployment_disabled",
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates role",
+                    "invoices.square_cover deployment_disabled",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_reconcile role",
+                    "invoices.square_uncover deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -33584,7 +34544,7 @@
             "tools": {
                 "context.get": "d36731571bd94125",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "ec39ca94673449ec",
+                "invoices.get": "feb0ddb235aabe60",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "0db82875e0823846",
@@ -33691,8 +34651,10 @@
                     "invoices.send deployment_disabled",
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates role",
+                    "invoices.square_cover deployment_disabled",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_reconcile role",
+                    "invoices.square_uncover deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -33744,7 +34706,7 @@
             "tools": {
                 "context.get": "d36731571bd94125",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "ec39ca94673449ec",
+                "invoices.get": "feb0ddb235aabe60",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "0db82875e0823846",
@@ -33804,8 +34766,10 @@
                     "invoices.release_delivery deployment_disabled",
                     "invoices.send deployment_disabled",
                     "invoices.send_reminder deployment_disabled",
+                    "invoices.square_cover deployment_disabled",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_reconcile deployment_disabled",
+                    "invoices.square_uncover deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -33848,14 +34812,14 @@
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
-                "agreements.activate": "dc0ac8df95ee027d",
-                "agreements.create": "b76da03e0017b029",
-                "agreements.get": "e4ffe605f88bb15e",
-                "agreements.list": "3b69fb9fbe950761",
-                "agreements.square_series.clear": "d014074ec35642f2",
-                "agreements.square_series.set": "1c0b799c07d4af21",
-                "agreements.terminate": "b74ed14dae4ff1cc",
-                "agreements.update": "dbdf852547ee7c12",
+                "agreements.activate": "2ed68823cfe43e76",
+                "agreements.create": "0c103b90e38bf275",
+                "agreements.get": "0a85d4ecd79bd2da",
+                "agreements.list": "58327dc29e892cb0",
+                "agreements.square_series.clear": "7bcd0a5dfbd9a90f",
+                "agreements.square_series.set": "028abd54f8daa892",
+                "agreements.terminate": "6270398e37fca50e",
+                "agreements.update": "1149344fb28b4dd5",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
                 "attachments.get": "f54affb3d9e104a3",
                 "attachments.list": "a8f522c87ae2083f",
@@ -33865,7 +34829,7 @@
                 "billing.audit_unlinked_proposal_agreements": "5b8b643f5d70318d",
                 "billing.audit_unplaceable_invoices": "5c425e0550c0d9c9",
                 "billing.preflight_schedule_generation": "f6486e5ee5242614",
-                "billing_audit.stale_and_missing": "e7c615528bc421bf",
+                "billing_audit.stale_and_missing": "fa4a2fdb8a8363aa",
                 "billing_schedules.get": "5e063c9324f1fbd4",
                 "billing_schedules.list": "91723c13172dc456",
                 "capacity_ledger.get": "b58961097fbfe33e",
@@ -33896,7 +34860,7 @@
                 "finance.invoice_payments.list": "25681f84faec8b6e",
                 "finance.payouts.list": "49fbdd79e642c84c",
                 "invoices.corrections.get": "aa93da895756b80b",
-                "invoices.get": "ec39ca94673449ec",
+                "invoices.get": "feb0ddb235aabe60",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
@@ -33964,8 +34928,10 @@
                     "invoices.release_delivery deployment_disabled",
                     "invoices.send deployment_disabled",
                     "invoices.send_reminder deployment_disabled",
+                    "invoices.square_cover deployment_disabled",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_reconcile deployment_disabled",
+                    "invoices.square_uncover deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -34008,14 +34974,14 @@
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
-                "agreements.activate": "dc0ac8df95ee027d",
-                "agreements.create": "b76da03e0017b029",
-                "agreements.get": "e4ffe605f88bb15e",
-                "agreements.list": "3b69fb9fbe950761",
-                "agreements.square_series.clear": "d014074ec35642f2",
-                "agreements.square_series.set": "1c0b799c07d4af21",
-                "agreements.terminate": "b74ed14dae4ff1cc",
-                "agreements.update": "dbdf852547ee7c12",
+                "agreements.activate": "2ed68823cfe43e76",
+                "agreements.create": "0c103b90e38bf275",
+                "agreements.get": "0a85d4ecd79bd2da",
+                "agreements.list": "58327dc29e892cb0",
+                "agreements.square_series.clear": "7bcd0a5dfbd9a90f",
+                "agreements.square_series.set": "028abd54f8daa892",
+                "agreements.terminate": "6270398e37fca50e",
+                "agreements.update": "1149344fb28b4dd5",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
                 "attachments.get": "f54affb3d9e104a3",
                 "attachments.list": "a8f522c87ae2083f",
@@ -34025,7 +34991,7 @@
                 "billing.audit_unlinked_proposal_agreements": "5b8b643f5d70318d",
                 "billing.audit_unplaceable_invoices": "5c425e0550c0d9c9",
                 "billing.preflight_schedule_generation": "f6486e5ee5242614",
-                "billing_audit.stale_and_missing": "e7c615528bc421bf",
+                "billing_audit.stale_and_missing": "fa4a2fdb8a8363aa",
                 "billing_schedules.get": "5e063c9324f1fbd4",
                 "billing_schedules.list": "91723c13172dc456",
                 "capacity_ledger.get": "b58961097fbfe33e",
@@ -34056,7 +35022,7 @@
                 "finance.invoice_payments.list": "25681f84faec8b6e",
                 "finance.payouts.list": "49fbdd79e642c84c",
                 "invoices.corrections.get": "aa93da895756b80b",
-                "invoices.get": "ec39ca94673449ec",
+                "invoices.get": "feb0ddb235aabe60",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
@@ -34173,8 +35139,10 @@
                     "invoices.send deployment_disabled",
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates role",
+                    "invoices.square_cover deployment_disabled",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_reconcile deployment_disabled",
+                    "invoices.square_uncover deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -34234,7 +35202,7 @@
             "tools": {
                 "context.get": "d36731571bd94125",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "ec39ca94673449ec",
+                "invoices.get": "feb0ddb235aabe60",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "0db82875e0823846",
@@ -34331,8 +35299,10 @@
                     "invoices.send deployment_disabled",
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates role",
+                    "invoices.square_cover deployment_disabled",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_reconcile deployment_disabled",
+                    "invoices.square_uncover deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -34392,7 +35362,7 @@
             "tools": {
                 "context.get": "d36731571bd94125",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "ec39ca94673449ec",
+                "invoices.get": "feb0ddb235aabe60",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "0db82875e0823846",
@@ -34489,8 +35459,10 @@
                     "invoices.send deployment_disabled",
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates role",
+                    "invoices.square_cover deployment_disabled",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_reconcile deployment_disabled",
+                    "invoices.square_uncover deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -34550,7 +35522,7 @@
             "tools": {
                 "context.get": "d36731571bd94125",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "ec39ca94673449ec",
+                "invoices.get": "feb0ddb235aabe60",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "0db82875e0823846",
@@ -34647,8 +35619,10 @@
                     "invoices.send deployment_disabled",
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates role",
+                    "invoices.square_cover deployment_disabled",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_reconcile deployment_disabled",
+                    "invoices.square_uncover deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -34708,7 +35682,7 @@
             "tools": {
                 "context.get": "d36731571bd94125",
                 "expenses.list": "444aff51ddc70e0d",
-                "invoices.get": "ec39ca94673449ec",
+                "invoices.get": "feb0ddb235aabe60",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "0db82875e0823846",
@@ -34751,12 +35725,12 @@
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before billing_schedules.generate: it issues invoices and may schedule automatic client delivery. Obtain explicit user confirmation before creating, updating, archiving projects or changing project member access; these decisions affect client visibility and access. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Obtain explicit user confirmation before deleting an attachment. When the user confirms issuing a draft for money already collected elsewhere, pass payment to invoices.issue so it is issued and paid in one step and the automatic client delivery is never sent; never infer a payment from an invoice balance. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; payments.record records money already received but never initiates a charge, and SVC does not expose card data or file uploads through MCP. Use the log-time-across-projects and prepare-invoice-safely prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
-                "agreements.activate": "dc0ac8df95ee027d",
-                "agreements.create": "b76da03e0017b029",
-                "agreements.square_series.clear": "d014074ec35642f2",
-                "agreements.square_series.set": "1c0b799c07d4af21",
-                "agreements.terminate": "b74ed14dae4ff1cc",
-                "agreements.update": "dbdf852547ee7c12",
+                "agreements.activate": "2ed68823cfe43e76",
+                "agreements.create": "0c103b90e38bf275",
+                "agreements.square_series.clear": "7bcd0a5dfbd9a90f",
+                "agreements.square_series.set": "028abd54f8daa892",
+                "agreements.terminate": "6270398e37fca50e",
+                "agreements.update": "1149344fb28b4dd5",
                 "attachments.delete": "ec3bab66781f94b6",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
                 "attachments.get": "f54affb3d9e104a3",
@@ -34768,7 +35742,7 @@
                 "billing.audit_unlinked_proposal_agreements": "5b8b643f5d70318d",
                 "billing.audit_unplaceable_invoices": "5c425e0550c0d9c9",
                 "billing.preflight_schedule_generation": "f6486e5ee5242614",
-                "billing_audit.stale_and_missing": "e7c615528bc421bf",
+                "billing_audit.stale_and_missing": "fa4a2fdb8a8363aa",
                 "billing_schedules.create": "ce808d037fdc2ee7",
                 "billing_schedules.generate": "b1849c503fd5dc21",
                 "billing_schedules.get": "5e063c9324f1fbd4",
@@ -34817,9 +35791,9 @@
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.generate_period": "a736a25f33ed9607",
-                "invoices.get": "ec39ca94673449ec",
+                "invoices.get": "feb0ddb235aabe60",
                 "invoices.hold_delivery": "5d5d70aa02fac988",
-                "invoices.issue": "a6d503fec0064faa",
+                "invoices.issue": "0be79186b59bd0ce",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
@@ -34828,9 +35802,11 @@
                 "invoices.send": "7eade4913e162ab2",
                 "invoices.send_reminder": "8f62ca2de82c197b",
                 "invoices.square_candidates": "09693c77227c6c63",
-                "invoices.square_link": "6ef66408313e9484",
-                "invoices.square_reconcile": "88cbeaf1317d393e",
-                "invoices.square_unlink": "43197a34c12c579f",
+                "invoices.square_cover": "177828dd5b1742aa",
+                "invoices.square_link": "819bde1069a1a9a7",
+                "invoices.square_reconcile": "e1e06e7dfba48e73",
+                "invoices.square_uncover": "6f5b41aaedc7326a",
+                "invoices.square_unlink": "74d00106bf7d0c72",
                 "invoices.update_details": "9c25cf205acf1a39",
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
@@ -34912,12 +35888,12 @@
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before billing_schedules.generate: it issues invoices and may schedule automatic client delivery. Obtain explicit user confirmation before creating, updating, archiving projects or changing project member access; these decisions affect client visibility and access. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Obtain explicit user confirmation before deleting an attachment. When the user confirms issuing a draft for money already collected elsewhere, pass payment to invoices.issue so it is issued and paid in one step and the automatic client delivery is never sent; never infer a payment from an invoice balance. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; payments.record records money already received but never initiates a charge, and SVC does not expose card data or file uploads through MCP. Use the log-time-across-projects and prepare-invoice-safely prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
-                "agreements.activate": "dc0ac8df95ee027d",
-                "agreements.create": "b76da03e0017b029",
-                "agreements.square_series.clear": "d014074ec35642f2",
-                "agreements.square_series.set": "1c0b799c07d4af21",
-                "agreements.terminate": "b74ed14dae4ff1cc",
-                "agreements.update": "dbdf852547ee7c12",
+                "agreements.activate": "2ed68823cfe43e76",
+                "agreements.create": "0c103b90e38bf275",
+                "agreements.square_series.clear": "7bcd0a5dfbd9a90f",
+                "agreements.square_series.set": "028abd54f8daa892",
+                "agreements.terminate": "6270398e37fca50e",
+                "agreements.update": "1149344fb28b4dd5",
                 "attachments.delete": "ec3bab66781f94b6",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
                 "attachments.get": "f54affb3d9e104a3",
@@ -34929,7 +35905,7 @@
                 "billing.audit_unlinked_proposal_agreements": "5b8b643f5d70318d",
                 "billing.audit_unplaceable_invoices": "5c425e0550c0d9c9",
                 "billing.preflight_schedule_generation": "f6486e5ee5242614",
-                "billing_audit.stale_and_missing": "e7c615528bc421bf",
+                "billing_audit.stale_and_missing": "fa4a2fdb8a8363aa",
                 "billing_schedules.create": "ce808d037fdc2ee7",
                 "billing_schedules.generate": "b1849c503fd5dc21",
                 "billing_schedules.get": "5e063c9324f1fbd4",
@@ -34978,9 +35954,9 @@
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.generate_period": "a736a25f33ed9607",
-                "invoices.get": "ec39ca94673449ec",
+                "invoices.get": "feb0ddb235aabe60",
                 "invoices.hold_delivery": "5d5d70aa02fac988",
-                "invoices.issue": "a6d503fec0064faa",
+                "invoices.issue": "0be79186b59bd0ce",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
@@ -34989,9 +35965,11 @@
                 "invoices.send": "7eade4913e162ab2",
                 "invoices.send_reminder": "8f62ca2de82c197b",
                 "invoices.square_candidates": "09693c77227c6c63",
-                "invoices.square_link": "6ef66408313e9484",
-                "invoices.square_reconcile": "88cbeaf1317d393e",
-                "invoices.square_unlink": "43197a34c12c579f",
+                "invoices.square_cover": "177828dd5b1742aa",
+                "invoices.square_link": "819bde1069a1a9a7",
+                "invoices.square_reconcile": "e1e06e7dfba48e73",
+                "invoices.square_uncover": "6f5b41aaedc7326a",
+                "invoices.square_unlink": "74d00106bf7d0c72",
                 "invoices.update_details": "9c25cf205acf1a39",
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
@@ -35124,8 +36102,10 @@
                     "invoices.reminders.list role",
                     "invoices.send_reminder role",
                     "invoices.square_candidates role",
+                    "invoices.square_cover role",
                     "invoices.square_link role",
                     "invoices.square_reconcile role",
+                    "invoices.square_uncover role",
                     "invoices.square_unlink role",
                     "payments.correct role",
                     "payments.record role",
@@ -35177,8 +36157,8 @@
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.get": "ec39ca94673449ec",
-                "invoices.issue": "a6d503fec0064faa",
+                "invoices.get": "feb0ddb235aabe60",
+                "invoices.issue": "0be79186b59bd0ce",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.send": "7eade4913e162ab2",
@@ -35285,8 +36265,10 @@
                     "invoices.reminders.list role",
                     "invoices.send_reminder role",
                     "invoices.square_candidates role",
+                    "invoices.square_cover role",
                     "invoices.square_link role",
                     "invoices.square_reconcile role",
+                    "invoices.square_uncover role",
                     "invoices.square_unlink role",
                     "payments.correct role",
                     "payments.record role",
@@ -35338,8 +36320,8 @@
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.get": "ec39ca94673449ec",
-                "invoices.issue": "a6d503fec0064faa",
+                "invoices.get": "feb0ddb235aabe60",
+                "invoices.issue": "0be79186b59bd0ce",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.send": "7eade4913e162ab2",
@@ -35446,8 +36428,10 @@
                     "invoices.reminders.list role",
                     "invoices.send_reminder role",
                     "invoices.square_candidates role",
+                    "invoices.square_cover role",
                     "invoices.square_link role",
                     "invoices.square_reconcile role",
+                    "invoices.square_uncover role",
                     "invoices.square_unlink role",
                     "payments.correct role",
                     "payments.record role",
@@ -35499,8 +36483,8 @@
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.get": "ec39ca94673449ec",
-                "invoices.issue": "a6d503fec0064faa",
+                "invoices.get": "feb0ddb235aabe60",
+                "invoices.issue": "0be79186b59bd0ce",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.send": "7eade4913e162ab2",
@@ -35607,8 +36591,10 @@
                     "invoices.reminders.list role",
                     "invoices.send_reminder role",
                     "invoices.square_candidates role",
+                    "invoices.square_cover role",
                     "invoices.square_link role",
                     "invoices.square_reconcile role",
+                    "invoices.square_uncover role",
                     "invoices.square_unlink role",
                     "payments.correct role",
                     "payments.record role",
@@ -35660,8 +36646,8 @@
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.get": "ec39ca94673449ec",
-                "invoices.issue": "a6d503fec0064faa",
+                "invoices.get": "feb0ddb235aabe60",
+                "invoices.issue": "0be79186b59bd0ce",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.send": "7eade4913e162ab2",
@@ -35720,14 +36706,14 @@
             },
             "instructions": "Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before billing_schedules.generate: it issues invoices and may schedule automatic client delivery. Obtain explicit user confirmation before creating, updating, archiving projects or changing project member access; these decisions affect client visibility and access. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Obtain explicit user confirmation before deleting an attachment. When the user confirms issuing a draft for money already collected elsewhere, pass payment to invoices.issue so it is issued and paid in one step and the automatic client delivery is never sent; never infer a payment from an invoice balance. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; payments.record records money already received but never initiates a charge, and SVC does not expose card data or file uploads through MCP.",
             "tools": {
-                "agreements.activate": "dc0ac8df95ee027d",
-                "agreements.create": "b76da03e0017b029",
-                "agreements.get": "e4ffe605f88bb15e",
-                "agreements.list": "3b69fb9fbe950761",
-                "agreements.square_series.clear": "d014074ec35642f2",
-                "agreements.square_series.set": "1c0b799c07d4af21",
-                "agreements.terminate": "b74ed14dae4ff1cc",
-                "agreements.update": "dbdf852547ee7c12",
+                "agreements.activate": "2ed68823cfe43e76",
+                "agreements.create": "0c103b90e38bf275",
+                "agreements.get": "0a85d4ecd79bd2da",
+                "agreements.list": "58327dc29e892cb0",
+                "agreements.square_series.clear": "7bcd0a5dfbd9a90f",
+                "agreements.square_series.set": "028abd54f8daa892",
+                "agreements.terminate": "6270398e37fca50e",
+                "agreements.update": "1149344fb28b4dd5",
                 "attachments.delete": "ec3bab66781f94b6",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
                 "attachments.get": "f54affb3d9e104a3",
@@ -35739,7 +36725,7 @@
                 "billing.audit_unlinked_proposal_agreements": "5b8b643f5d70318d",
                 "billing.audit_unplaceable_invoices": "5c425e0550c0d9c9",
                 "billing.preflight_schedule_generation": "f6486e5ee5242614",
-                "billing_audit.stale_and_missing": "e7c615528bc421bf",
+                "billing_audit.stale_and_missing": "fa4a2fdb8a8363aa",
                 "billing_schedules.create": "ce808d037fdc2ee7",
                 "billing_schedules.generate": "b1849c503fd5dc21",
                 "billing_schedules.get": "5e063c9324f1fbd4",
@@ -35788,7 +36774,7 @@
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.generate_period": "a736a25f33ed9607",
                 "invoices.hold_delivery": "5d5d70aa02fac988",
-                "invoices.issue": "a6d503fec0064faa",
+                "invoices.issue": "0be79186b59bd0ce",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
@@ -35797,9 +36783,11 @@
                 "invoices.send": "7eade4913e162ab2",
                 "invoices.send_reminder": "8f62ca2de82c197b",
                 "invoices.square_candidates": "09693c77227c6c63",
-                "invoices.square_link": "6ef66408313e9484",
-                "invoices.square_reconcile": "88cbeaf1317d393e",
-                "invoices.square_unlink": "43197a34c12c579f",
+                "invoices.square_cover": "177828dd5b1742aa",
+                "invoices.square_link": "819bde1069a1a9a7",
+                "invoices.square_reconcile": "e1e06e7dfba48e73",
+                "invoices.square_uncover": "6f5b41aaedc7326a",
+                "invoices.square_unlink": "74d00106bf7d0c72",
                 "invoices.update_details": "9c25cf205acf1a39",
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
@@ -35880,14 +36868,14 @@
             },
             "instructions": "Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before billing_schedules.generate: it issues invoices and may schedule automatic client delivery. Obtain explicit user confirmation before creating, updating, archiving projects or changing project member access; these decisions affect client visibility and access. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Obtain explicit user confirmation before deleting an attachment. When the user confirms issuing a draft for money already collected elsewhere, pass payment to invoices.issue so it is issued and paid in one step and the automatic client delivery is never sent; never infer a payment from an invoice balance. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; payments.record records money already received but never initiates a charge, and SVC does not expose card data or file uploads through MCP.",
             "tools": {
-                "agreements.activate": "dc0ac8df95ee027d",
-                "agreements.create": "b76da03e0017b029",
-                "agreements.get": "e4ffe605f88bb15e",
-                "agreements.list": "3b69fb9fbe950761",
-                "agreements.square_series.clear": "d014074ec35642f2",
-                "agreements.square_series.set": "1c0b799c07d4af21",
-                "agreements.terminate": "b74ed14dae4ff1cc",
-                "agreements.update": "dbdf852547ee7c12",
+                "agreements.activate": "2ed68823cfe43e76",
+                "agreements.create": "0c103b90e38bf275",
+                "agreements.get": "0a85d4ecd79bd2da",
+                "agreements.list": "58327dc29e892cb0",
+                "agreements.square_series.clear": "7bcd0a5dfbd9a90f",
+                "agreements.square_series.set": "028abd54f8daa892",
+                "agreements.terminate": "6270398e37fca50e",
+                "agreements.update": "1149344fb28b4dd5",
                 "attachments.delete": "ec3bab66781f94b6",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
                 "attachments.get": "f54affb3d9e104a3",
@@ -35899,7 +36887,7 @@
                 "billing.audit_unlinked_proposal_agreements": "5b8b643f5d70318d",
                 "billing.audit_unplaceable_invoices": "5c425e0550c0d9c9",
                 "billing.preflight_schedule_generation": "f6486e5ee5242614",
-                "billing_audit.stale_and_missing": "e7c615528bc421bf",
+                "billing_audit.stale_and_missing": "fa4a2fdb8a8363aa",
                 "billing_schedules.create": "ce808d037fdc2ee7",
                 "billing_schedules.generate": "b1849c503fd5dc21",
                 "billing_schedules.get": "5e063c9324f1fbd4",
@@ -35948,7 +36936,7 @@
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.generate_period": "a736a25f33ed9607",
                 "invoices.hold_delivery": "5d5d70aa02fac988",
-                "invoices.issue": "a6d503fec0064faa",
+                "invoices.issue": "0be79186b59bd0ce",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
@@ -35957,9 +36945,11 @@
                 "invoices.send": "7eade4913e162ab2",
                 "invoices.send_reminder": "8f62ca2de82c197b",
                 "invoices.square_candidates": "09693c77227c6c63",
-                "invoices.square_link": "6ef66408313e9484",
-                "invoices.square_reconcile": "88cbeaf1317d393e",
-                "invoices.square_unlink": "43197a34c12c579f",
+                "invoices.square_cover": "177828dd5b1742aa",
+                "invoices.square_link": "819bde1069a1a9a7",
+                "invoices.square_reconcile": "e1e06e7dfba48e73",
+                "invoices.square_uncover": "6f5b41aaedc7326a",
+                "invoices.square_unlink": "74d00106bf7d0c72",
                 "invoices.update_details": "9c25cf205acf1a39",
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
@@ -36092,8 +37082,10 @@
                     "invoices.reminders.list role",
                     "invoices.send_reminder role",
                     "invoices.square_candidates role",
+                    "invoices.square_cover role",
                     "invoices.square_link role",
                     "invoices.square_reconcile role",
+                    "invoices.square_uncover role",
                     "invoices.square_unlink role",
                     "payments.correct role",
                     "payments.record role",
@@ -36145,7 +37137,7 @@
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.issue": "a6d503fec0064faa",
+                "invoices.issue": "0be79186b59bd0ce",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.send": "7eade4913e162ab2",
@@ -36250,8 +37242,10 @@
                     "invoices.reminders.list role",
                     "invoices.send_reminder role",
                     "invoices.square_candidates role",
+                    "invoices.square_cover role",
                     "invoices.square_link role",
                     "invoices.square_reconcile role",
+                    "invoices.square_uncover role",
                     "invoices.square_unlink role",
                     "payments.correct role",
                     "payments.record role",
@@ -36303,7 +37297,7 @@
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.issue": "a6d503fec0064faa",
+                "invoices.issue": "0be79186b59bd0ce",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.send": "7eade4913e162ab2",
@@ -36408,8 +37402,10 @@
                     "invoices.reminders.list role",
                     "invoices.send_reminder role",
                     "invoices.square_candidates role",
+                    "invoices.square_cover role",
                     "invoices.square_link role",
                     "invoices.square_reconcile role",
+                    "invoices.square_uncover role",
                     "invoices.square_unlink role",
                     "payments.correct role",
                     "payments.record role",
@@ -36461,7 +37457,7 @@
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.issue": "a6d503fec0064faa",
+                "invoices.issue": "0be79186b59bd0ce",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.send": "7eade4913e162ab2",
@@ -36566,8 +37562,10 @@
                     "invoices.reminders.list role",
                     "invoices.send_reminder role",
                     "invoices.square_candidates role",
+                    "invoices.square_cover role",
                     "invoices.square_link role",
                     "invoices.square_reconcile role",
+                    "invoices.square_uncover role",
                     "invoices.square_unlink role",
                     "payments.correct role",
                     "payments.record role",
@@ -36619,7 +37617,7 @@
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.issue": "a6d503fec0064faa",
+                "invoices.issue": "0be79186b59bd0ce",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.send": "7eade4913e162ab2",
@@ -36734,8 +37732,10 @@
                     "invoices.send deployment_disabled",
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates deployment_disabled",
+                    "invoices.square_cover deployment_disabled",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_reconcile deployment_disabled",
+                    "invoices.square_uncover deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -36873,8 +37873,10 @@
                     "invoices.send deployment_disabled",
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates deployment_disabled",
+                    "invoices.square_cover deployment_disabled",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_reconcile deployment_disabled",
+                    "invoices.square_uncover deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -37012,8 +38014,10 @@
                     "invoices.send deployment_disabled",
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates deployment_disabled",
+                    "invoices.square_cover deployment_disabled",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_reconcile deployment_disabled",
+                    "invoices.square_uncover deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -37151,8 +38155,10 @@
                     "invoices.send deployment_disabled",
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates deployment_disabled",
+                    "invoices.square_cover deployment_disabled",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_reconcile deployment_disabled",
+                    "invoices.square_uncover deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -37290,8 +38296,10 @@
                     "invoices.send deployment_disabled",
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates deployment_disabled",
+                    "invoices.square_cover deployment_disabled",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_reconcile deployment_disabled",
+                    "invoices.square_uncover deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -37429,8 +38437,10 @@
                     "invoices.send deployment_disabled",
                     "invoices.send_reminder deployment_disabled",
                     "invoices.square_candidates deployment_disabled",
+                    "invoices.square_cover deployment_disabled",
                     "invoices.square_link deployment_disabled",
                     "invoices.square_reconcile deployment_disabled",
+                    "invoices.square_uncover deployment_disabled",
                     "invoices.square_unlink deployment_disabled",
                     "invoices.update_details deployment_disabled",
                     "invoices.update_draft deployment_disabled",
@@ -37511,14 +38521,14 @@
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before billing_schedules.generate: it issues invoices and may schedule automatic client delivery. Obtain explicit user confirmation before creating, updating, archiving projects or changing project member access; these decisions affect client visibility and access. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Obtain explicit user confirmation before deleting an attachment. When the user confirms issuing a draft for money already collected elsewhere, pass payment to invoices.issue so it is issued and paid in one step and the automatic client delivery is never sent; never infer a payment from an invoice balance. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; payments.record records money already received but never initiates a charge, and SVC does not expose card data or file uploads through MCP. Use the log-time-across-projects and prepare-invoice-safely prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
-                "agreements.activate": "dc0ac8df95ee027d",
-                "agreements.create": "b76da03e0017b029",
-                "agreements.get": "e4ffe605f88bb15e",
-                "agreements.list": "3b69fb9fbe950761",
-                "agreements.square_series.clear": "d014074ec35642f2",
-                "agreements.square_series.set": "1c0b799c07d4af21",
-                "agreements.terminate": "b74ed14dae4ff1cc",
-                "agreements.update": "dbdf852547ee7c12",
+                "agreements.activate": "2ed68823cfe43e76",
+                "agreements.create": "0c103b90e38bf275",
+                "agreements.get": "0a85d4ecd79bd2da",
+                "agreements.list": "58327dc29e892cb0",
+                "agreements.square_series.clear": "7bcd0a5dfbd9a90f",
+                "agreements.square_series.set": "028abd54f8daa892",
+                "agreements.terminate": "6270398e37fca50e",
+                "agreements.update": "1149344fb28b4dd5",
                 "attachments.delete": "ec3bab66781f94b6",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
                 "attachments.get": "f54affb3d9e104a3",
@@ -37530,7 +38540,7 @@
                 "billing.audit_unlinked_proposal_agreements": "5b8b643f5d70318d",
                 "billing.audit_unplaceable_invoices": "5c425e0550c0d9c9",
                 "billing.preflight_schedule_generation": "f6486e5ee5242614",
-                "billing_audit.stale_and_missing": "e7c615528bc421bf",
+                "billing_audit.stale_and_missing": "fa4a2fdb8a8363aa",
                 "billing_schedules.create": "ce808d037fdc2ee7",
                 "billing_schedules.generate": "b1849c503fd5dc21",
                 "billing_schedules.get": "5e063c9324f1fbd4",
@@ -37575,9 +38585,9 @@
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.generate_period": "a736a25f33ed9607",
-                "invoices.get": "ec39ca94673449ec",
+                "invoices.get": "feb0ddb235aabe60",
                 "invoices.hold_delivery": "5d5d70aa02fac988",
-                "invoices.issue": "a6d503fec0064faa",
+                "invoices.issue": "0be79186b59bd0ce",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
@@ -37586,9 +38596,11 @@
                 "invoices.send": "7eade4913e162ab2",
                 "invoices.send_reminder": "8f62ca2de82c197b",
                 "invoices.square_candidates": "09693c77227c6c63",
-                "invoices.square_link": "6ef66408313e9484",
-                "invoices.square_reconcile": "88cbeaf1317d393e",
-                "invoices.square_unlink": "43197a34c12c579f",
+                "invoices.square_cover": "177828dd5b1742aa",
+                "invoices.square_link": "819bde1069a1a9a7",
+                "invoices.square_reconcile": "e1e06e7dfba48e73",
+                "invoices.square_uncover": "6f5b41aaedc7326a",
+                "invoices.square_unlink": "74d00106bf7d0c72",
                 "invoices.update_details": "9c25cf205acf1a39",
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
@@ -37674,14 +38686,14 @@
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before billing_schedules.generate: it issues invoices and may schedule automatic client delivery. Obtain explicit user confirmation before creating, updating, archiving projects or changing project member access; these decisions affect client visibility and access. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Obtain explicit user confirmation before deleting an attachment. When the user confirms issuing a draft for money already collected elsewhere, pass payment to invoices.issue so it is issued and paid in one step and the automatic client delivery is never sent; never infer a payment from an invoice balance. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; payments.record records money already received but never initiates a charge, and SVC does not expose card data or file uploads through MCP. Use the log-time-across-projects and prepare-invoice-safely prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
-                "agreements.activate": "dc0ac8df95ee027d",
-                "agreements.create": "b76da03e0017b029",
-                "agreements.get": "e4ffe605f88bb15e",
-                "agreements.list": "3b69fb9fbe950761",
-                "agreements.square_series.clear": "d014074ec35642f2",
-                "agreements.square_series.set": "1c0b799c07d4af21",
-                "agreements.terminate": "b74ed14dae4ff1cc",
-                "agreements.update": "dbdf852547ee7c12",
+                "agreements.activate": "2ed68823cfe43e76",
+                "agreements.create": "0c103b90e38bf275",
+                "agreements.get": "0a85d4ecd79bd2da",
+                "agreements.list": "58327dc29e892cb0",
+                "agreements.square_series.clear": "7bcd0a5dfbd9a90f",
+                "agreements.square_series.set": "028abd54f8daa892",
+                "agreements.terminate": "6270398e37fca50e",
+                "agreements.update": "1149344fb28b4dd5",
                 "attachments.delete": "ec3bab66781f94b6",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
                 "attachments.get": "f54affb3d9e104a3",
@@ -37693,7 +38705,7 @@
                 "billing.audit_unlinked_proposal_agreements": "5b8b643f5d70318d",
                 "billing.audit_unplaceable_invoices": "5c425e0550c0d9c9",
                 "billing.preflight_schedule_generation": "f6486e5ee5242614",
-                "billing_audit.stale_and_missing": "e7c615528bc421bf",
+                "billing_audit.stale_and_missing": "fa4a2fdb8a8363aa",
                 "billing_schedules.create": "ce808d037fdc2ee7",
                 "billing_schedules.generate": "b1849c503fd5dc21",
                 "billing_schedules.get": "5e063c9324f1fbd4",
@@ -37738,9 +38750,9 @@
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
                 "invoices.generate_period": "a736a25f33ed9607",
-                "invoices.get": "ec39ca94673449ec",
+                "invoices.get": "feb0ddb235aabe60",
                 "invoices.hold_delivery": "5d5d70aa02fac988",
-                "invoices.issue": "a6d503fec0064faa",
+                "invoices.issue": "0be79186b59bd0ce",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.preview_period": "588e53821f4472ec",
@@ -37749,9 +38761,11 @@
                 "invoices.send": "7eade4913e162ab2",
                 "invoices.send_reminder": "8f62ca2de82c197b",
                 "invoices.square_candidates": "09693c77227c6c63",
-                "invoices.square_link": "6ef66408313e9484",
-                "invoices.square_reconcile": "88cbeaf1317d393e",
-                "invoices.square_unlink": "43197a34c12c579f",
+                "invoices.square_cover": "177828dd5b1742aa",
+                "invoices.square_link": "819bde1069a1a9a7",
+                "invoices.square_reconcile": "e1e06e7dfba48e73",
+                "invoices.square_uncover": "6f5b41aaedc7326a",
+                "invoices.square_unlink": "74d00106bf7d0c72",
                 "invoices.update_details": "9c25cf205acf1a39",
                 "invoices.update_draft": "2db06ccf7247d243",
                 "invoices.void": "a198545339b21e29",
@@ -37886,8 +38900,10 @@
                     "invoices.reminders.list role",
                     "invoices.send_reminder role",
                     "invoices.square_candidates role",
+                    "invoices.square_cover role",
                     "invoices.square_link role",
                     "invoices.square_reconcile role",
+                    "invoices.square_uncover role",
                     "invoices.square_unlink role",
                     "payments.correct role",
                     "payments.record role",
@@ -37939,8 +38955,8 @@
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.get": "ec39ca94673449ec",
-                "invoices.issue": "a6d503fec0064faa",
+                "invoices.get": "feb0ddb235aabe60",
+                "invoices.issue": "0be79186b59bd0ce",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.send": "7eade4913e162ab2",
@@ -38047,8 +39063,10 @@
                     "invoices.reminders.list role",
                     "invoices.send_reminder role",
                     "invoices.square_candidates role",
+                    "invoices.square_cover role",
                     "invoices.square_link role",
                     "invoices.square_reconcile role",
+                    "invoices.square_uncover role",
                     "invoices.square_unlink role",
                     "payments.correct role",
                     "payments.record role",
@@ -38100,8 +39118,8 @@
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.get": "ec39ca94673449ec",
-                "invoices.issue": "a6d503fec0064faa",
+                "invoices.get": "feb0ddb235aabe60",
+                "invoices.issue": "0be79186b59bd0ce",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.send": "7eade4913e162ab2",
@@ -38208,8 +39226,10 @@
                     "invoices.reminders.list role",
                     "invoices.send_reminder role",
                     "invoices.square_candidates role",
+                    "invoices.square_cover role",
                     "invoices.square_link role",
                     "invoices.square_reconcile role",
+                    "invoices.square_uncover role",
                     "invoices.square_unlink role",
                     "payments.correct role",
                     "payments.record role",
@@ -38261,8 +39281,8 @@
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.get": "ec39ca94673449ec",
-                "invoices.issue": "a6d503fec0064faa",
+                "invoices.get": "feb0ddb235aabe60",
+                "invoices.issue": "0be79186b59bd0ce",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.send": "7eade4913e162ab2",
@@ -38369,8 +39389,10 @@
                     "invoices.reminders.list role",
                     "invoices.send_reminder role",
                     "invoices.square_candidates role",
+                    "invoices.square_cover role",
                     "invoices.square_link role",
                     "invoices.square_reconcile role",
+                    "invoices.square_uncover role",
                     "invoices.square_unlink role",
                     "payments.correct role",
                     "payments.record role",
@@ -38422,8 +39444,8 @@
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
-                "invoices.get": "ec39ca94673449ec",
-                "invoices.issue": "a6d503fec0064faa",
+                "invoices.get": "feb0ddb235aabe60",
+                "invoices.issue": "0be79186b59bd0ce",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "invoices.send": "7eade4913e162ab2",
