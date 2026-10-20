@@ -1082,7 +1082,8 @@
         "/workspaces/{workspace}/billing-audits/opening-rollover": {
             "get": {
                 "operationId": "billing.audit_opening_rollover",
-                "description": "Workspace managers only. Aggregate counts of the workspace's agreements whose opening rollover changes their capacity ledger, and the capacity at stake in minutes, as svc:billing:audit-opening-rollover reports for every workspace. Counts only; no agreement is identified.",
+                "description": "Workspace managers only. Aggregate counts of the workspace's agreements whose opening rollover changes their capacity ledger, and the capacity at stake in minutes, as svc:billing:audit-opening-rollover reports for every workspace. Counts only; no agreement is identified.\n\nDeprecated: This audit sized the opening-rollover repair (#134), which is done. It will be removed after its deprecation window; see https://github.com/bherila/svc/issues/500. Nothing replaces it.",
+                "deprecated": true,
                 "security": [
                     {
                         "oauth2": [

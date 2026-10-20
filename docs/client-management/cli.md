@@ -172,9 +172,11 @@ running it after a branch is deleted produces a manifest that agrees with the
 deletion. It resolves conflicts, it does not approve them — read the diff. The
 guard test remains the gate.
 
-## Audit Opening Rollover
+## Audit Opening Rollover — deprecated
 
-Read-only. Counts the agreements whose ledger would change if the opening-rollover seed in `InvoiceLedgerBuilder` were repaired (#134), so the size of that change is known before it is made.
+**Deprecated (#460); removal is tracked in #500.** The audit sized the opening-rollover repair (#134), and that repair is done, so the count now describes capacity agreements already receive rather than a pending change. The command, its `billing.audit_opening_rollover` MCP tool and `GET /workspaces/{workspace}/billing-audits/opening-rollover` stay through a deprecation window; nothing replaces them. Text output opens with the deprecation notice. The JSON output is unchanged.
+
+Read-only. Counts the agreements whose ledger takes the opening-rollover seed in `InvoiceLedgerBuilder` (#134).
 
 ```bash
 php artisan svc:billing:audit-opening-rollover                 # counts
