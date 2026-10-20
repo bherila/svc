@@ -1113,7 +1113,6 @@ final class AgentOperationCatalog
                 'mcp.read.agreements',
                 manager: true,
                 input: AgentInlineSchemas::agreementListInput(),
-                output: AgentInlineSchemas::agreementListOutput(),
             ),
             $this->tool(
                 'agreements.get',
@@ -1125,7 +1124,6 @@ final class AgentOperationCatalog
                 'mcp.read.agreements',
                 manager: true,
                 input: AgentInlineSchemas::agreementGetInput(),
-                output: AgentInlineSchemas::agreementOutput(),
             ),
             $this->tool(
                 'clients.list',
@@ -1354,7 +1352,6 @@ final class AgentOperationCatalog
                 'mcp.read.billing_schedules',
                 manager: true,
                 input: AgentInlineSchemas::billingScheduleListInput(),
-                output: AgentInlineSchemas::billingScheduleListOutput(),
             ),
             $this->tool(
                 'billing_schedules.get',
@@ -1366,7 +1363,6 @@ final class AgentOperationCatalog
                 'mcp.read.billing_schedules',
                 manager: true,
                 input: AgentInlineSchemas::billingScheduleGetInput(),
-                output: AgentInlineSchemas::billingScheduleOutput(),
             ),
             $this->tool(
                 'capacity_ledger.get',
@@ -1641,7 +1637,7 @@ final class AgentOperationCatalog
                 ['identity:read'], 'mcp.read.context', $closed, SchemaRef::responseOf('context.get')),
             $this->mcpOnly('resources.agreement', 'Agreement', 'Read one canonical agreement representation visible to a workspace manager.',
                 new McpBinding('agreement', [AgentMcpAgreementResource::class, 'read'], McpKind::ResourceTemplate, 'svc://workspaces/{workspace_id}/agreements/{agreement_id}'),
-                ['billing:read'], 'mcp.read.agreements', AgentInlineSchemas::agreementGetInput(), AgentInlineSchemas::agreementOutput(), manager: true),
+                ['billing:read'], 'mcp.read.agreements', AgentInlineSchemas::agreementGetInput(), SchemaRef::openApi('AgreementResponse'), manager: true),
             $this->mcpOnly('prompts.log_time_across_projects', 'Log time across projects', 'Guide an authorized client through bounded, retry-safe time logging.',
                 new McpBinding('log-time-across-projects', [AgentMcpPrompts::class, 'logTimeAcrossProjects'], McpKind::Prompt),
                 ['identity:read', 'projects:read', 'time:write'], 'mcp.prompt.log_time_across_projects', $closed, AgentInlineSchemas::promptOutput(),
