@@ -164,7 +164,7 @@ An operator with shell access on the host can issue a short-lived agent token
 for one exact person without a browser consent flow:
 
 ```bash
-php artisan svc:auth:issue-agent-token USER_PUBLIC_UUID "Support session" \
+php artisan svc:auth:issue-agent-token USER_PUBLIC_UUID "Support session" --apply \
   mcp:use identity:read projects:read --ttl=60
 ```
 
@@ -211,7 +211,7 @@ the same client.
 Revoke by name, which takes effect on the next request:
 
 ```bash
-php artisan svc:auth:revoke-agent-token USER_PUBLIC_UUID "Support session"
+php artisan svc:auth:revoke-agent-token USER_PUBLIC_UUID "Support session" --apply
 ```
 
 The name is stored under a reserved prefix, so revocation by name only ever
@@ -229,7 +229,7 @@ finance system reconciling payments, for example - connects through the same
 authorization server as any agent, as a pre-registered confidential client:
 
 ```bash
-php artisan svc:auth:register-first-party-client "Finance" \
+php artisan svc:auth:register-first-party-client "Finance" --apply \
   --redirect-uri=https://finance.example.test/oauth/svc/callback \
   --scope=identity:read --scope=finance:read --scope=finance:reconcile
 ```
