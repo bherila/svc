@@ -48,6 +48,7 @@ final class CalendarDateCastTablesTest extends TestCase
                 'starts_on' => DateOnly::class,
                 'ends_on' => DateOnly::class,
                 'is_visible_to_client' => 'boolean',
+                'show_deferred_backlog_to_client' => 'boolean',
                 'hourly_rate_amount' => 'integer',
                 'retainer_amount' => 'integer',
                 'retainer_minutes' => 'integer',
