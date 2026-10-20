@@ -36,6 +36,25 @@ final class DeferredBuyDownRequestTest extends TestCase
         DeferredBuyDownRequest::from($input);
     }
 
+    public function test_whole_minute_float_noise_is_accepted_but_real_fractions_have_a_field_error(): void
+    {
+        foreach ([(60 + 0.000003) / 60, (60 - 0.000003) / 60] as $hours) {
+            $this->assertSame(60, DeferredBuyDownRequest::from(['hours' => $hours])->minutes);
+        }
+        foreach ([['hours' => 0.001], ['hours' => 1, 'discount_amount' => 1]] as $input) {
+            try {
+                DeferredBuyDownRequest::from($input);
+                $this->fail('Invalid selection was accepted.');
+            } catch (ValidationException $refused) {
+                $this->assertArrayHasKey(isset($input['discount_amount']) ? 'discount_reason' : 'hours', $refused->errors());
+            }
+        }
+        $request = DeferredBuyDownRequest::from(['hours' => 1, 'discount_reason' => null]);
+        $this->assertNull($request->discountReason);
+        $this->assertFalse($request->roundUp);
+        $this->assertSame(0, $request->discount);
+    }
+
     public function test_browser_and_console_scalars_normalize_to_the_same_immutable_terms(): void
     {
         $hours = DeferredBuyDownRequest::from(['hours' => '1.5', 'round_up' => '1', 'discount_amount' => '100', 'discount_reason' => '  Synthetic reason  ']);

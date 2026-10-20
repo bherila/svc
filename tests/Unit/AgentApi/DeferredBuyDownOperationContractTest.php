@@ -39,14 +39,20 @@ final class DeferredBuyDownOperationContractTest extends TestCase
             $this->assertSame([AgentMcpDeferredBuyDownTools::class, 'create'], $create->mcp->handler);
             // REST query bounds are a consumer contract independently of MCP's
             // body-derived input schema: zero/negative targets must stay refused.
-            $queries = array_values(array_filter($preview->rest->parameters, static fn ($parameter): bool => is_array($parameter) && ($parameter['in'] ?? null) === 'query'));
             $this->assertSame([
+                'WorkspaceId',
+                ['name' => 'agreement', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'string', 'format' => 'uuid']],
                 ['name' => 'hours', 'in' => 'query', 'schema' => ['type' => 'number', 'exclusiveMinimum' => 0, 'maximum' => 1000000]],
                 ['name' => 'amount', 'in' => 'query', 'schema' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 2147483647]],
                 ['name' => 'round_up', 'in' => 'query', 'schema' => ['type' => 'boolean', 'default' => false]],
                 ['name' => 'discount_amount', 'in' => 'query', 'schema' => ['type' => 'integer', 'minimum' => 0, 'maximum' => 2147483647]],
                 ['name' => 'discount_reason', 'in' => 'query', 'schema' => ['type' => 'string', 'maxLength' => 1000]],
-            ], $queries);
+            ], $preview->rest->parameters);
+            $this->assertSame([
+                'WorkspaceId',
+                ['name' => 'agreement', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'string', 'format' => 'uuid']],
+                'IdempotencyKey',
+            ], $create->rest->parameters);
             $this->assertSame('GET', $preview->rest->method);
             $this->assertSame('POST', $create->rest->method);
             $this->assertSame('/workspaces/{workspace}/agreements/{agreement}/deferred-backlog/preview', $preview->rest->path);

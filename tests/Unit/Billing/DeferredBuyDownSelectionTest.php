@@ -59,6 +59,23 @@ final class DeferredBuyDownSelectionTest extends TestCase
         $this->assertSame(30003, $rounded->total());
     }
 
+    public function test_amount_targets_keep_mixed_pricing_groups_distinct_and_stop_at_an_exact_target(): void
+    {
+        $entries = [$this->entry(1, 60),
+            $this->entry(2, 60, ['subcontractor_billing_mode' => 'flat_hourly', 'subcontractor_cost_amount' => 5000, 'subcontractor_cost_currency' => 'USD']),
+            $this->entry(3, 60, ['user_id' => 2, 'subcontractor_billing_mode' => 'flat_hourly', 'subcontractor_cost_amount' => 7000, 'subcontractor_cost_currency' => 'USD'])];
+        $selection = DeferredBuyDownSelection::select($this->agreement(), $entries, DeferredBuyDownRequest::from(['amount' => 22001]));
+        $this->assertSame([1, 2, 3], array_map(fn ($entry): int => $entry->id, $selection->entries));
+        $this->assertSame(180, $selection->minutes);
+        $this->assertSame(22001, $selection->total());
+        foreach ([['hours' => 1], ['amount' => 10001]] as $target) {
+            $exact = DeferredBuyDownSelection::select($this->agreement(), $entries, DeferredBuyDownRequest::from($target + ['round_up' => true]));
+            $this->assertSame([1], array_map(fn ($entry): int => $entry->id, $exact->entries));
+            $this->assertSame(60, $exact->minutes);
+            $this->assertSame(10001, $exact->total());
+        }
+    }
+
     public function test_nonpositive_minutes_are_refused(): void
     {
         $this->expectException(DomainException::class);
@@ -67,6 +84,10 @@ final class DeferredBuyDownSelectionTest extends TestCase
 
     public function test_the_settlement_kind_preserves_history_without_claiming_a_cadence_cycle(): void
     {
+        foreach (InvoiceKind::cases() as $candidate) {
+            $this->assertSame($candidate !== InvoiceKind::AdHoc, $candidate->requiresCompleteServicePeriod());
+        }
+        $this->assertEqualsCanonicalizing(['interim_overage', 'ad_hoc', 'deferred_buydown'], InvoiceKind::cycleGuardExclusions());
         $kind = InvoiceKind::DeferredBuyDown;
         $this->assertSame('deferred_buydown', $kind->value);
         $this->assertTrue($kind->requiresCompleteServicePeriod());

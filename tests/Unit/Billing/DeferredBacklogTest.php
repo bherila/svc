@@ -286,6 +286,19 @@ final class DeferredBacklogTest extends TestCase
         $this->assertSame(round(15 / 60 / 3, 4), $backlog->netHoursPerMonth());
     }
 
+    public function test_multiple_settlements_accumulate_once_in_the_months_billed_subset(): void
+    {
+        $backlog = $this->calculate(outstanding: [], history: [
+            $this->entry(1, 15, '2026-01-01', lines: [$this->line('deferred_buydown', '2026-03-02')]),
+            $this->entry(2, 45, '2026-02-01', lines: [$this->line('deferred_buydown', '2026-03-03')]),
+        ], periods: ['2026-03']);
+        $this->assertSame(60, $backlog->trend[0]->minutesBoughtDown);
+        $this->assertSame(60, $backlog->trend[0]->minutesBilled);
+        $this->assertSame(-60, $backlog->trend[0]->netMinutes());
+        // Existing callers with no buy-down retain a zero subset.
+        $this->assertSame(0, (new DeferredBacklogMonth('2026-03', 0, 0, 0))->minutesBoughtDown);
+    }
+
     public function test_no_requested_months_is_no_trend(): void
     {
         $backlog = $this->calculate(outstanding: [], history: [$this->entry(1, 60, '2026-03-01', lines: [])]);
