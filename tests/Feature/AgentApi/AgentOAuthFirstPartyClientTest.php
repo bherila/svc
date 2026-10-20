@@ -101,13 +101,13 @@ final class AgentOAuthFirstPartyClientTest extends TestCase
             [['--redirect-uri' => ['https://finance.example.test/callback#fragment'], '--scope' => [AgentApiScopes::FINANCE_READ]], 'https'],
         ];
         foreach ($refused as [$options, $message]) {
-            $this->assertSame(2, Artisan::call('svc:auth:register-first-party-client', ['name' => 'Refused', ...$options]));
+            $this->assertSame(2, Artisan::call('svc:auth:register-first-party-client', ['--apply' => true, 'name' => 'Refused', ...$options]));
             $this->assertStringContainsString($message, Artisan::output());
         }
         $this->assertSame(0, Passport::client()->newQuery()->count());
 
         $this->register('Synthetic Finance');
-        $this->assertSame(1, Artisan::call('svc:auth:register-first-party-client', [
+        $this->assertSame(1, Artisan::call('svc:auth:register-first-party-client', ['--apply' => true,
             'name' => 'Synthetic Finance', '--redirect-uri' => [self::REDIRECT], '--scope' => [AgentApiScopes::FINANCE_READ],
         ]));
         $this->assertStringContainsString('already exists', Artisan::output());
@@ -234,7 +234,7 @@ final class AgentOAuthFirstPartyClientTest extends TestCase
     /** @return array{0: Client, 1: string, 2: string} */
     private function register(string $name): array
     {
-        $this->assertSame(0, Artisan::call('svc:auth:register-first-party-client', [
+        $this->assertSame(0, Artisan::call('svc:auth:register-first-party-client', ['--apply' => true,
             'name' => $name,
             '--redirect-uri' => [self::REDIRECT],
             '--scope' => self::SCOPES,

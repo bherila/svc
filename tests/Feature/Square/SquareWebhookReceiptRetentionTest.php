@@ -33,7 +33,7 @@ final class SquareWebhookReceiptRetentionTest extends TestCase
         DB::table('square_webhook_receipts')->where('workspace_id', $workspace->id)->whereIn('event_hash', array_map(fn ($id) => hash('sha256', 'evt_fixture_'.$id), ['completed', 'failed', 'active']))->update(['received_at' => '2030-01-01 12:00:00']);
         DB::table('square_webhook_receipts')->where('workspace_id', $workspace->id)->where('event_hash', hash('sha256', 'evt_fixture_boundary'))->update(['received_at' => '2030-01-03 12:00:00']);
         DB::table('square_webhook_receipts')->where('workspace_id', $other->id)->update(['received_at' => '2030-01-01 12:00:00', 'lease_expires_at' => null]);
-        $this->artisan('svc:square:prune-webhook-receipts')->assertSuccessful();
+        $this->artisan('svc:square:prune-webhook-receipts', ['--apply' => true])->assertSuccessful();
         $this->assertSame(3, DB::table('square_webhook_receipts')->where('workspace_id', $workspace->id)->count());
         foreach (['active', 'boundary', 'recent'] as $id) {
             $this->assertTrue(DB::table('square_webhook_receipts')->where('workspace_id', $workspace->id)->where('event_hash', hash('sha256', 'evt_fixture_'.$id))->exists());

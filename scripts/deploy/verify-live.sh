@@ -47,7 +47,7 @@ printf '%s' "$redirect_url" | node scripts/deploy/verify-oauth-redirect.mjs
 ssh "$DEPLOY_SSH_TARGET" "bash -s -- $(printf '%q ' "$DEPLOY_STABLE_DIR" "$DEPLOY_PHP_BINARY")" \
     <scripts/deploy/cron-audit.sh
 
-remote_artisan="cd ~/$DEPLOY_STABLE_DIR && $DEPLOY_PHP_BINARY artisan svc:mcp:deploy-smoke-credentials"
+remote_artisan="cd ~/$DEPLOY_STABLE_DIR && $DEPLOY_PHP_BINARY artisan svc:mcp:deploy-smoke-credentials --apply"
 cleanup() {
     status=$?
     trap - EXIT

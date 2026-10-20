@@ -1806,7 +1806,7 @@ class BillingWorkflowTest extends TestCase
         $invoice = $service->createDraft($workspace, $company, $this->invoiceData(), [$this->line()]);
         $service->issue($invoice, $workspace);
 
-        $this->artisan('svc:billing:payment', [
+        $this->artisan('svc:billing:payment', ['--apply' => true,
             'invoice' => $invoice->public_id, 'amount' => '1000', 'currency' => 'USD', 'method' => 'wire',
             '--workspace' => $workspace->public_id, '--format' => 'json', '--idempotency-key' => 'command-payment-1',
         ])->expectsOutputToContain('"invoice_public_id":"'.$invoice->public_id.'"')->assertSuccessful();

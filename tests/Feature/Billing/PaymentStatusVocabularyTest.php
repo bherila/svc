@@ -126,7 +126,7 @@ final class PaymentStatusVocabularyTest extends TestCase
     {
         $invoice = $this->issuedInvoice();
 
-        $this->artisan('svc:billing:payment', [
+        $this->artisan('svc:billing:payment', ['--apply' => true,
             'invoice' => $invoice->public_id,
             'amount' => '10000',
             'currency' => 'USD',

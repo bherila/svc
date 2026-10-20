@@ -239,7 +239,7 @@ final class TimeEntryCreationParityTest extends TestCase
             422 => 2,
             default => 1,
         };
-        $this->artisan('svc:engagement:log-time', array_filter($arguments, fn (mixed $value): bool => $value !== null && $value !== false))
+        $this->artisan('svc:engagement:log-time', ['--apply' => true] + (array_filter($arguments, fn (mixed $value): bool => $value !== null && $value !== false)))
             ->assertExitCode($exit);
     }
 

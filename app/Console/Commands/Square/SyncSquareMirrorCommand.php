@@ -2,17 +2,17 @@
 
 namespace App\Console\Commands\Square;
 
+use App\Console\Commands\MutationCommand;
 use App\Models\SquareSyncRun;
 use App\Models\Workspace;
 use App\Services\Square\Mirror\SquareMirrorSync;
 use App\Services\Square\SquareConfiguration;
-use Illuminate\Console\Command;
 
 /**
  * The scheduled refresh of svc's Square mirror (#438). Read-only against
  * Square and safe to repeat; does nothing while Square is not configured.
  */
-final class SyncSquareMirrorCommand extends Command
+final class SyncSquareMirrorCommand extends MutationCommand
 {
     protected $signature = 'svc:square:sync';
 
@@ -22,18 +22,33 @@ final class SyncSquareMirrorCommand extends Command
     {
         $configuration = SquareConfiguration::fromConfig();
         if (! $configuration->isConfigured()) {
-            $this->components->info('Square is not configured; nothing to sync.');
+            if ($this->option('format') === 'json') {
+                $this->json(['configured' => false, 'synced' => false]);
+            } else {
+                $this->components->info('Square is not configured; nothing to sync.');
+            }
 
             return self::SUCCESS;
         }
-        $workspace = Workspace::query()->where('public_id', (string) $configuration->workspacePublicId)->first();
+        $workspace = $configuration->workspace();
         if (! $workspace instanceof Workspace) {
             $this->components->warn('The workspace Square is bound to does not exist.');
 
             return self::FAILURE;
         }
+        if (! $this->applying()) {
+            return $this->planned();
+        }
+
         $sync->abandonStale($workspace);
         $run = $sync->perform($workspace, $sync->request($workspace, SquareSyncRun::TRIGGER_SCHEDULE));
+        if ($this->option('format') === 'json') {
+            $this->json(['run_id' => $run->public_id, 'status' => $run->status, 'error_code' => $run->error_code,
+                'invoices_seen' => $run->invoices_seen, 'invoices_changed' => $run->invoices_changed,
+                'customers_seen' => $run->customers_seen, 'customers_changed' => $run->customers_changed]);
+
+            return $run->status === SquareSyncRun::COMPLETED ? self::SUCCESS : self::FAILURE;
+        }
         if ($run->status !== SquareSyncRun::COMPLETED) {
             $this->components->warn("Square sync {$run->public_id} ended {$run->status} ({$run->error_code}).");
 

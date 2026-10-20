@@ -1,18 +1,18 @@
 <?php
 
-namespace App\Console\Commands;
+namespace App\Console\Commands\Auth;
 
 use App\Console\Commands\Concerns\FindsUserByPublicId;
+use App\Console\Commands\MutationCommand;
 use App\Services\Credentials\AmbiguousRevocation;
 use App\Services\Credentials\CredentialRevoker;
-use Illuminate\Console\Command;
 
 /**
  * Revoke an exact person's named Sanctum personal access token (the finance
  * integration's) through {@see CredentialRevoker}, which audits it like every
  * other credential revocation.
  */
-class RevokePersonalAccessTokenCommand extends Command
+class RevokePersonalAccessTokenCommand extends MutationCommand
 {
     use FindsUserByPublicId;
 
@@ -36,6 +36,10 @@ class RevokePersonalAccessTokenCommand extends Command
             return $user;
         }
 
+        if (! $this->applying()) {
+            return $this->planned();
+        }
+
         try {
             $revoked = $revoker->revokePersonalAccessTokens($user, $name, (bool) $this->option('all'), 'console');
         } catch (AmbiguousRevocation $ambiguous) {
@@ -49,7 +53,11 @@ class RevokePersonalAccessTokenCommand extends Command
             return self::FAILURE;
         }
 
-        $this->info("Revoked {$revoked} personal access token(s).");
+        if ($this->option('format') === 'json') {
+            $this->json(['revoked' => $revoked]);
+        } else {
+            $this->info("Revoked {$revoked} personal access token(s).");
+        }
 
         return self::SUCCESS;
     }

@@ -9,7 +9,7 @@ use App\Support\Finance\FinanceCaller;
 use App\Support\Finance\ReconciliationTarget;
 
 /** The console twin of `finance.reconciliations.deactivate`; see {@see FinanceCommand}. */
-class DeactivateReconciliationCommand extends FinanceCommand
+class DeactivateReconciliationCommand extends FinanceMutationCommand
 {
     protected $signature = 'svc:finance:unreconcile
         {payment : Payment public UUID}

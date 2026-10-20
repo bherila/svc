@@ -36,7 +36,7 @@ final class PaymentRecordingStatusParityTest extends TestCase
         $accepted = ['console' => [], 'api' => [], 'screen' => []];
         foreach (InvoicePaymentStatus::all() as $status) {
             $invoice = $this->issuedInvoice($workspace, $company);
-            $exit = $this->artisan('svc:billing:payment', [
+            $exit = $this->artisan('svc:billing:payment', ['--apply' => true,
                 'invoice' => $invoice->public_id, 'amount' => '100', 'currency' => 'USD', 'method' => 'wire',
                 '--workspace' => $workspace->public_id, '--status' => $status,
             ])->run();
@@ -68,6 +68,24 @@ final class PaymentRecordingStatusParityTest extends TestCase
         $this->assertSame(['console' => $recordable, 'api' => $recordable, 'screen' => $recordable], $accepted);
         // And nothing refused left a row behind.
         $this->assertSame(6, ClientInvoicePayment::query()->where('workspace_id', $workspace->id)->count());
+    }
+
+    public function test_preview_records_through_the_operation_without_persisting_money_or_spending_a_retry_key(): void
+    {
+        $workspace = Workspace::query()->create(['name' => 'Synthetic payment preview', 'slug' => 'synthetic-payment-preview']);
+        $foreign = Workspace::query()->create(['name' => 'Synthetic foreign', 'slug' => 'synthetic-foreign']);
+        $company = ClientCompany::query()->create(['workspace_id' => $workspace->id, 'name' => 'Synthetic client', 'slug' => 'synthetic-client']);
+        $invoice = $this->issuedInvoice($workspace, $company);
+        $arguments = ['invoice' => $invoice->public_id, 'amount' => '100', 'currency' => 'USD', 'method' => 'wire',
+            '--workspace' => $workspace->public_id, '--format' => 'json', '--idempotency-key' => 'synthetic-preview-retry'];
+        $before = AgentApiVersion::for($invoice);
+        $this->artisan('svc:billing:payment', $arguments)->expectsOutputToContain('"dry_run":true')->assertSuccessful();
+        $this->assertSame($before, AgentApiVersion::for($invoice->fresh()));
+        $this->assertDatabaseCount('client_invoice_payments', 0);
+        $this->artisan('svc:billing:payment', [...$arguments, '--workspace' => $foreign->public_id])->assertFailed();
+        $this->assertDatabaseCount('client_invoice_payments', 0);
+        $this->artisan('svc:billing:payment', [...$arguments, '--apply' => true])->expectsOutputToContain('"dry_run":false')->assertSuccessful();
+        $this->assertSame(100, ClientInvoicePayment::query()->where('workspace_id', $workspace->id)->sole()->amount);
     }
 
     private function issuedInvoice(Workspace $workspace, ClientCompany $company): ClientInvoice

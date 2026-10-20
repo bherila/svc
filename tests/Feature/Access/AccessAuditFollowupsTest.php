@@ -114,10 +114,10 @@ final class AccessAuditFollowupsTest extends TestCase
         app(WorkspaceAccess::class)->grantPortal(AccessMutationContext::system(), $company, $person, PortalAccessScope::Company);
         $args = fn (): array => ['company' => $company->public_id, 'email' => $person->email, '--confirm' => true,
             '--expected-version' => app(AgentPortalContactReadService::class)->contact($workspace, $company, $person->public_id)['version']];
-        $this->artisan('svc:portal:project-access', $args() + ['--company-wide' => true])->assertSuccessful();
+        $this->artisan('svc:portal:project-access', ['--apply' => true] + ($args() + ['--company-wide' => true]))->assertSuccessful();
         $this->assertSame(0, AccessAuditEvent::query()->where('workspace_id', $workspace->id)->where('action', 'portal.scope_changed')->count());
-        $this->artisan('svc:portal:project-access', $args() + ['--project' => [$first->public_id, $second->public_id]])->assertSuccessful();
-        $this->artisan('svc:portal:project-access', $args() + ['--project' => [$second->public_id, $first->public_id]])->assertSuccessful();
+        $this->artisan('svc:portal:project-access', ['--apply' => true] + ($args() + ['--project' => [$first->public_id, $second->public_id]]))->assertSuccessful();
+        $this->artisan('svc:portal:project-access', ['--apply' => true] + ($args() + ['--project' => [$second->public_id, $first->public_id]]))->assertSuccessful();
         $this->assertSame(1, AccessAuditEvent::query()->where('workspace_id', $workspace->id)->where('action', 'portal.scope_changed')->count());
     }
 }

@@ -2,9 +2,9 @@
 
 namespace App\Console\Commands\Billing;
 
+use App\Console\Commands\SvcCommand;
 use App\Services\Billing\UndatedCollectibleInvoiceAuditor;
 use App\Support\Billing\UndatedCollectibleInvoiceCounts;
-use Illuminate\Console\Command;
 
 /**
  * Report collectible invoices that no overdue figure can include (#149).
@@ -21,7 +21,7 @@ use Illuminate\Console\Command;
  * that understates rather than overcharges, and #149 is explicit that the repair
  * is a data one; this is a number to read, not a gate.
  */
-final class AuditUndatedCollectibleInvoicesCommand extends Command
+final class AuditUndatedCollectibleInvoicesCommand extends SvcCommand
 {
     protected $signature = 'svc:billing:audit-undated-collectible-invoices
         {--format=text : Output text or json}';
@@ -31,12 +31,6 @@ final class AuditUndatedCollectibleInvoicesCommand extends Command
     public function handle(UndatedCollectibleInvoiceAuditor $auditor): int
     {
         $format = (string) $this->option('format');
-
-        if (! in_array($format, ['text', 'json'], true)) {
-            $this->error('The --format option must be text or json.');
-
-            return self::INVALID;
-        }
 
         // Unscoped: an operator sizing this needs every workspace at once. A
         // tenant-facing caller passes its own workspace instead.

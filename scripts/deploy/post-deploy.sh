@@ -13,7 +13,7 @@ stable_dir=$3
 test "$stable_dir" = svc-laravel
 cd "$HOME/$app_dir"
 
-"$php" artisan svc:storage:status --write --format=json
+"$php" artisan svc:storage:status --apply --format=json
 
 # The Stripe, Brevo and Square probes exit 1 for "not configured" (Square also for a failed last sync),
 # which is not a deploy failure; anything else is. A probe that crashed also exits 1, so 1 counts as a

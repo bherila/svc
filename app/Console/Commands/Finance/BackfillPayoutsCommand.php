@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands\Finance;
 
+use App\Console\Commands\MutationCommand;
 use App\Models\ClientInvoicePayment;
 use App\Models\Workspace;
 use App\Services\Billing\StripeGateway;
@@ -17,7 +18,6 @@ use App\Support\Square\SquarePaymentFacts;
 use App\Support\WorkspaceClock;
 use Carbon\CarbonImmutable;
 use DomainException;
-use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
@@ -43,7 +43,7 @@ use Illuminate\Database\Eloquent\Builder;
  *
  * Counts only, so the output is safe to paste into an issue.
  */
-final class BackfillPayoutsCommand extends Command
+final class BackfillPayoutsCommand extends MutationCommand
 {
     protected $signature = 'svc:finance:backfill-payouts
         {--provider=all : stripe, square or all}
@@ -85,9 +85,9 @@ final class BackfillPayoutsCommand extends Command
             }
         }
         $only = null;
-        if ($this->option('workspace') !== null) {
+        if ($this->option('workspace') !== null || $this->input->hasParameterOption('--workspace')) {
             $named = (string) $this->option('workspace');
-            $only = Workspace::query()->where('public_id', $named)->orWhere('slug', $named)->first();
+            $only = $this->workspaceByPublicId($named, legacySlug: true);
             if ($only === null) {
                 $this->error('No workspace matches that public id or slug.');
 
@@ -144,7 +144,7 @@ final class BackfillPayoutsCommand extends Command
     {
         $counts = $this->counts();
         $configuration = SquareConfiguration::fromConfig();
-        $workspace = $configuration->isConfigured() ? Workspace::query()->where('public_id', $configuration->workspacePublicId)->first() : null;
+        $workspace = $configuration->isConfigured() ? $configuration->workspace() : null;
         if ($workspace === null || ($only !== null && $only->id !== $workspace->id)) {
             $this->report['square'] = $counts;
             $this->notes['square'] = 'skipped: '.($workspace === null ? 'not configured' : 'connected to another workspace');

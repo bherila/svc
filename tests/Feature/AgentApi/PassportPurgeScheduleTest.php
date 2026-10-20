@@ -67,7 +67,7 @@ final class PassportPurgeScheduleTest extends TestCase
         $this->assertSame([$legacy, $smoke], Passport::token()->newQuery()->orderBy('expires_at')->pluck('id')->all());
         $this->assertSame([$legacyRefresh], Passport::refreshToken()->newQuery()->pluck('id')->all());
         $this->assertSame(0, app(CredentialRevoker::class)->unattributedRefreshTokens());
-        $this->assertSame(0, Artisan::call('svc:oauth:prune-dynamic-clients'));
+        $this->assertSame(0, Artisan::call('svc:oauth:prune-dynamic-clients', ['--apply' => true]));
         $this->assertStringNotContainsString('deferred', Artisan::output());
 
         // Passport's default takes revoked rows at once and expired ones after
@@ -77,7 +77,7 @@ final class PassportPurgeScheduleTest extends TestCase
 
         $this->assertFalse(Passport::token()->newQuery()->exists());
         $this->assertSame(1, app(CredentialRevoker::class)->unattributedRefreshTokens());
-        $this->assertSame(0, Artisan::call('svc:oauth:prune-dynamic-clients'));
+        $this->assertSame(0, Artisan::call('svc:oauth:prune-dynamic-clients', ['--apply' => true]));
         $this->assertStringContainsString('deferred', Artisan::output());
     }
 

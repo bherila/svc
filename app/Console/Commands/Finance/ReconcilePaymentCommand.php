@@ -10,7 +10,7 @@ use App\Support\Finance\ReconciliationAllocation;
 use App\Support\Finance\ReconciliationTarget;
 
 /** The console twin of `finance.reconciliations.upsert`; see {@see FinanceCommand}. */
-class ReconcilePaymentCommand extends FinanceCommand
+class ReconcilePaymentCommand extends FinanceMutationCommand
 {
     protected $signature = 'svc:finance:reconcile
         {payment : Payment public UUID}

@@ -32,7 +32,7 @@ final class PruneDynamicOAuthClientsTest extends TestCase
         $expiredAccess = $this->token($refreshActive->id, $user->id, false, now()->subHour());
         Passport::refreshToken()->forceFill(['id' => Str::random(80), 'access_token_id' => $expiredAccess, 'revoked' => false, 'expires_at' => now()->addDays(10)])->save();
 
-        $this->artisan('svc:oauth:prune-dynamic-clients', ['--days' => 30])->assertSuccessful();
+        $this->artisan('svc:oauth:prune-dynamic-clients', ['--apply' => true, '--days' => 30])->assertSuccessful();
 
         $this->assertDatabaseMissing('oauth_clients', ['id' => $stale->id]);
         $this->assertDatabaseMissing('oauth_access_tokens', ['id' => $inactiveToken]);
@@ -50,7 +50,7 @@ final class PruneDynamicOAuthClientsTest extends TestCase
         $this->artisan('svc:oauth:prune-dynamic-clients', ['--days' => 30, '--pretend' => true])
             ->expectsOutput('Would prune 1 stale dynamic OAuth client(s).')
             ->assertSuccessful();
-        $this->artisan('svc:oauth:prune-dynamic-clients', ['--days' => 0])->assertExitCode(2);
+        $this->artisan('svc:oauth:prune-dynamic-clients', ['--apply' => true, '--days' => 0])->assertExitCode(2);
         $this->assertDatabaseHas('oauth_clients', ['id' => $stale->id]);
     }
 
@@ -67,7 +67,7 @@ final class PruneDynamicOAuthClientsTest extends TestCase
         ])->save();
         Passport::token()->newQuery()->whereKey($accessToken)->delete();
 
-        $this->artisan('svc:oauth:prune-dynamic-clients', ['--days' => 30])
+        $this->artisan('svc:oauth:prune-dynamic-clients', ['--apply' => true, '--days' => 30])
             ->expectsOutput('An active refresh credential has no access-token row; pruning was deferred.')
             ->assertSuccessful();
 
@@ -98,7 +98,7 @@ final class PruneDynamicOAuthClientsTest extends TestCase
         $kept = $this->client('Inside a 60-day window', now()->subDays(45));
         $pruned = $this->client('Outside a 60-day window', now()->subDays(75));
 
-        $this->artisan($name)->expectsOutput('Pruned 1 stale dynamic OAuth client(s).')->assertSuccessful();
+        $this->artisan($name, $name === PruneDynamicOAuthClientsCommand::VENDOR_COMMAND ? [] : ['--apply' => true])->expectsOutput('Pruned 1 stale dynamic OAuth client(s).')->assertSuccessful();
 
         $this->assertDatabaseHas('oauth_clients', ['id' => $kept->id]);
         $this->assertDatabaseMissing('oauth_clients', ['id' => $pruned->id]);
@@ -113,7 +113,7 @@ final class PruneDynamicOAuthClientsTest extends TestCase
             'scopes' => '[]', 'revoked' => false, 'expires_at' => now()->addMinutes(5),
         ])->saveOrFail();
 
-        $this->artisan('svc:oauth:prune-dynamic-clients', ['--days' => 30])
+        $this->artisan('svc:oauth:prune-dynamic-clients', ['--apply' => true, '--days' => 30])
             ->expectsOutput('Pruned 0 stale dynamic OAuth client(s).')
             ->assertSuccessful();
 

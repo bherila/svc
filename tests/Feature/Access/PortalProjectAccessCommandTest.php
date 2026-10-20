@@ -51,11 +51,11 @@ final class PortalProjectAccessCommandTest extends TestCase
 
     public function test_narrowing_reports_the_projects_granted_and_is_audited_as_the_system(): void
     {
-        $this->artisan('svc:portal:project-access', $this->change([
+        $this->artisan('svc:portal:project-access', ['--apply' => true] + ($this->change([
             // The address is matched as sign-in matches it, ignoring case.
             'email' => 'PORTAL-COMMAND@client.example.test',
             '--project' => [$this->first->public_id, $this->second->public_id],
-        ]))->expectsOutputToContain('That user now sees 2 project(s) and nothing else.')->assertSuccessful();
+        ])))->expectsOutputToContain('That user now sees 2 project(s) and nothing else.')->assertSuccessful();
 
         $this->assertEqualsCanonicalizing([$this->first->id, $this->second->id], app(PortalAccess::class)->visibleProjectIds($this->company, $this->client));
         $event = AccessAuditEvent::query()->sole();
@@ -64,7 +64,7 @@ final class PortalProjectAccessCommandTest extends TestCase
 
     public function test_show_reports_the_scope_projects_and_the_version_a_change_needs(): void
     {
-        $this->artisan('svc:portal:project-access', $this->change(['--project' => [$this->second->public_id, $this->first->public_id]]))->assertSuccessful();
+        $this->artisan('svc:portal:project-access', ['--apply' => true] + ($this->change(['--project' => [$this->second->public_id, $this->first->public_id]])))->assertSuccessful();
 
         $this->artisan('svc:portal:project-access', ['company' => $this->company->public_id, 'email' => $this->client->email, '--show' => true])
             ->expectsOutputToContain('projects')
@@ -77,9 +77,9 @@ final class PortalProjectAccessCommandTest extends TestCase
 
     public function test_restoring_company_wide_access_reports_it(): void
     {
-        $this->artisan('svc:portal:project-access', $this->change(['--project' => [$this->first->public_id]]))->assertSuccessful();
+        $this->artisan('svc:portal:project-access', ['--apply' => true] + ($this->change(['--project' => [$this->first->public_id]])))->assertSuccessful();
 
-        $this->artisan('svc:portal:project-access', $this->change(['--company-wide' => true]))
+        $this->artisan('svc:portal:project-access', ['--apply' => true] + ($this->change(['--company-wide' => true])))
             ->expectsOutputToContain('That user sees every client-visible project again.')->assertSuccessful();
 
         $this->assertNull(app(PortalAccess::class)->visibleProjectIds($this->company, $this->client));
@@ -89,7 +89,7 @@ final class PortalProjectAccessCommandTest extends TestCase
     {
         $sibling = $this->project($this->company($this->company->workspace, 'sibling-client'), 'Sibling');
 
-        $this->artisan('svc:portal:project-access', $this->change(['--project' => [$this->first->public_id, $sibling->public_id]]))
+        $this->artisan('svc:portal:project-access', ['--apply' => true] + ($this->change(['--project' => [$this->first->public_id, $sibling->public_id]])))
             ->expectsOutputToContain('One or more projects do not belong to that client.')->assertFailed();
 
         $this->assertNull(app(PortalAccess::class)->visibleProjectIds($this->company, $this->client));
@@ -108,7 +108,7 @@ final class PortalProjectAccessCommandTest extends TestCase
             'company-wide with projects' => [['--company-wide' => true, '--project' => [$this->first->public_id]], 'Access to the whole client is not limited to projects.'],
         ];
         foreach ($cases as $case => [$options, $message]) {
-            $this->artisan('svc:portal:project-access', $this->change($options))->expectsOutputToContain($message)->assertFailed();
+            $this->artisan('svc:portal:project-access', ['--apply' => true] + ($this->change($options)))->expectsOutputToContain($message)->assertFailed();
             $this->assertSame(0, AccessAuditEvent::query()->count(), $case);
         }
         $this->assertNull(app(PortalAccess::class)->visibleProjectIds($this->company, $this->client));
@@ -118,8 +118,16 @@ final class PortalProjectAccessCommandTest extends TestCase
     {
         $stranger = User::factory()->create();
 
-        $this->artisan('svc:portal:project-access', $this->change(['email' => $stranger->email, '--company-wide' => true]))
+        $this->artisan('svc:portal:project-access', ['--apply' => true] + ($this->change(['email' => $stranger->email, '--company-wide' => true])))
             ->expectsOutputToContain('That user is not a portal member of that company.')->assertFailed();
+    }
+
+    public function test_default_preview_checks_the_operation_without_changing_scope_or_writing_audit(): void
+    {
+        $this->artisan('svc:portal:project-access', $this->change(['--project' => [$this->first->public_id], '--format' => 'json']))
+            ->expectsOutputToContain('"dry_run":true')->assertSuccessful();
+        $this->assertNull(app(PortalAccess::class)->visibleProjectIds($this->company, $this->client));
+        $this->assertDatabaseCount('access_audit_events', 0);
     }
 
     /**

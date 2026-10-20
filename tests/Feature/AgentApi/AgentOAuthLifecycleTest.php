@@ -392,21 +392,21 @@ final class AgentOAuthLifecycleTest extends TestCase
         $this->authorize($person, $first, $this->verifier());
         $this->assertSame(1, Passport::authCode()->newQuery()->where('user_id', $person->id)->where('revoked', false)->count());
 
-        $this->assertSame(0, Artisan::call('svc:auth:revoke-connections', ['user_public_id' => $person->public_id, '--client' => $first]));
+        $this->assertSame(0, Artisan::call('svc:auth:revoke-connections', ['--apply' => true, 'user_public_id' => $person->public_id, '--client' => $first]));
         $this->assertSame(['access_tokens' => 0, 'refresh_tokens' => 1, 'authorization_codes' => 1, 'unattributed_refresh_tokens' => 0], json_decode(trim(Artisan::output()), true));
         $this->refresh($first, $purged['refresh_token'], $resource)->assertBadRequest()->assertJsonPath('error', 'invalid_grant');
         Auth::forgetGuards();
         $this->mcpInitialize($onSecond['access_token'])->assertOk();
         $onSecond = $this->refresh($second, $onSecond['refresh_token'], $resource)->assertOk()->json();
 
-        $this->assertSame(0, Artisan::call('svc:auth:revoke-connections', ['user_public_id' => $person->public_id]));
+        $this->assertSame(0, Artisan::call('svc:auth:revoke-connections', ['--apply' => true, 'user_public_id' => $person->public_id]));
         $this->assertSame(['access_tokens' => 1, 'refresh_tokens' => 1, 'authorization_codes' => 0, 'unattributed_refresh_tokens' => 0], json_decode(trim(Artisan::output()), true));
         Auth::forgetGuards();
         $this->mcpInitialize($onSecond['access_token'])->assertUnauthorized();
         $this->refresh($second, $onSecond['refresh_token'], $resource)->assertBadRequest()->assertJsonPath('error', 'invalid_grant');
 
         // Idempotent: nothing of the person's is left live.
-        $this->assertSame(0, Artisan::call('svc:auth:revoke-connections', ['user_public_id' => $person->public_id]));
+        $this->assertSame(0, Artisan::call('svc:auth:revoke-connections', ['--apply' => true, 'user_public_id' => $person->public_id]));
         $this->assertSame(['access_tokens' => 0, 'refresh_tokens' => 0, 'authorization_codes' => 0, 'unattributed_refresh_tokens' => 0], json_decode(trim(Artisan::output()), true));
 
         // The other person's connection to the same client still works.
@@ -434,7 +434,7 @@ final class AgentOAuthLifecycleTest extends TestCase
             $logged[] = ['message' => $event->message, 'context' => $event->context];
         });
 
-        $this->assertSame(0, Artisan::call('svc:auth:revoke-connections', ['user_public_id' => $person->public_id, '--client' => strtoupper($fenced)]));
+        $this->assertSame(0, Artisan::call('svc:auth:revoke-connections', ['--apply' => true, 'user_public_id' => $person->public_id, '--client' => strtoupper($fenced)]));
         // The code itself was revoked; restore it to play the grant that had already passed its check.
         Passport::authCode()->newQuery()->where('client_id', $fenced)->update(['revoked' => false]);
         $raced = $this->exchangeCode($fenced, $inFlight, $verifier, $resource)->assertOk()->json();
@@ -488,17 +488,17 @@ final class AgentOAuthLifecycleTest extends TestCase
         Passport::token()->newQuery()->whereKey($accessId)->delete();
         $stranger = User::factory()->create();
 
-        $this->assertSame(0, Artisan::call('svc:auth:revoke-connections', ['user_public_id' => $stranger->public_id]));
+        $this->assertSame(0, Artisan::call('svc:auth:revoke-connections', ['--apply' => true, 'user_public_id' => $stranger->public_id]));
         $this->assertSame(['access_tokens' => 0, 'refresh_tokens' => 0, 'authorization_codes' => 0, 'unattributed_refresh_tokens' => 1], json_decode(trim(Artisan::output()), true));
         $this->assertFalse((bool) Passport::refreshToken()->newQuery()->where('access_token_id', $accessId)->value('revoked'));
 
         // No fence can name an unattributed token's owner, so issuance must be off first.
-        $this->assertSame(1, Artisan::call('svc:auth:revoke-connections', ['user_public_id' => $stranger->public_id, '--unattributed' => true]));
+        $this->assertSame(1, Artisan::call('svc:auth:revoke-connections', ['--apply' => true, 'user_public_id' => $stranger->public_id, '--unattributed' => true]));
         $this->assertFalse((bool) Passport::refreshToken()->newQuery()->where('access_token_id', $accessId)->value('revoked'));
         $this->expectsRefusal(static fn () => app(CredentialRevoker::class)->revokeUnattributedRefreshTokens('test'));
 
         config(['bherila-auth.oauth_server.enabled' => false]);
-        $this->assertSame(0, Artisan::call('svc:auth:revoke-connections', ['user_public_id' => $stranger->public_id, '--unattributed' => true]));
+        $this->assertSame(0, Artisan::call('svc:auth:revoke-connections', ['--apply' => true, 'user_public_id' => $stranger->public_id, '--unattributed' => true]));
         $this->assertSame(['access_tokens' => 0, 'refresh_tokens' => 0, 'authorization_codes' => 0, 'unattributed_refresh_tokens_revoked' => 1, 'unattributed_refresh_tokens' => 0], json_decode(trim(Artisan::output()), true));
         config(['bherila-auth.oauth_server.enabled' => true]);
         $this->refresh($clientId, $legacy['refresh_token'], $resource)->assertBadRequest()->assertJsonPath('error', 'invalid_grant');
@@ -527,7 +527,7 @@ final class AgentOAuthLifecycleTest extends TestCase
 
         $this->assertSame(0, Artisan::call('passport:purge --expired --hours=744'));
         $this->assertSame(0, app(CredentialRevoker::class)->unattributedRefreshTokens());
-        $this->assertSame(0, Artisan::call('svc:auth:revoke-connections', ['user_public_id' => $person->public_id]));
+        $this->assertSame(0, Artisan::call('svc:auth:revoke-connections', ['--apply' => true, 'user_public_id' => $person->public_id]));
         $this->assertSame(['access_tokens' => 1, 'refresh_tokens' => 1, 'authorization_codes' => 1, 'unattributed_refresh_tokens' => 0], json_decode(trim(Artisan::output()), true));
         $this->refresh($clientId, $legacy['refresh_token'], $resource)->assertBadRequest()->assertJsonPath('error', 'invalid_grant');
 
@@ -639,7 +639,7 @@ final class AgentOAuthLifecycleTest extends TestCase
         $elsewhere = $this->registerClient();
 
         // Upper case, as an operator may paste it.
-        $this->assertSame(0, Artisan::call('svc:auth:revoke-connections', ['user_public_id' => $person->public_id, '--client' => strtoupper($elsewhere)]));
+        $this->assertSame(0, Artisan::call('svc:auth:revoke-connections', ['--apply' => true, 'user_public_id' => $person->public_id, '--client' => strtoupper($elsewhere)]));
         $this->assertSame(['access_tokens' => 0, 'refresh_tokens' => 1, 'authorization_codes' => 0, 'unattributed_refresh_tokens' => 0], json_decode(trim(Artisan::output()), true));
         $this->assertTrue((bool) Passport::refreshToken()->newQuery()->where('access_token_id', $mine)->value('revoked'));
         $this->assertFalse((bool) Passport::refreshToken()->newQuery()->where('access_token_id', $theirs)->value('revoked'));
@@ -827,7 +827,7 @@ final class AgentOAuthLifecycleTest extends TestCase
             $logged[] = ['level' => $event->level, 'message' => $event->message, 'context' => $event->context];
         });
 
-        $this->assertSame(0, Artisan::call('svc:auth:revoke-connections', ['user_public_id' => $person->public_id]));
+        $this->assertSame(0, Artisan::call('svc:auth:revoke-connections', ['--apply' => true, 'user_public_id' => $person->public_id]));
 
         $this->assertSame(1, json_decode(trim(Artisan::output()), true)['access_tokens']);
         Auth::forgetGuards();
@@ -930,17 +930,17 @@ final class AgentOAuthLifecycleTest extends TestCase
     {
         $person = User::factory()->create();
 
-        $this->assertSame(2, Artisan::call('svc:auth:revoke-connections', ['user_public_id' => (string) $person->id]));
-        $this->assertSame(1, Artisan::call('svc:auth:revoke-connections', ['user_public_id' => (string) Str::uuid()]));
-        $this->assertSame(2, Artisan::call('svc:auth:revoke-connections', ['user_public_id' => $person->public_id, '--client' => 'not-a-client']));
-        $this->assertSame(2, Artisan::call('svc:auth:revoke-connections', ['user_public_id' => $person->public_id, '--client' => '']));
+        $this->assertSame(2, Artisan::call('svc:auth:revoke-connections', ['--apply' => true, 'user_public_id' => (string) $person->id]));
+        $this->assertSame(1, Artisan::call('svc:auth:revoke-connections', ['--apply' => true, 'user_public_id' => (string) Str::uuid()]));
+        $this->assertSame(2, Artisan::call('svc:auth:revoke-connections', ['--apply' => true, 'user_public_id' => $person->public_id, '--client' => 'not-a-client']));
+        $this->assertSame(2, Artisan::call('svc:auth:revoke-connections', ['--apply' => true, 'user_public_id' => $person->public_id, '--client' => '']));
         // A bare --client never widens to every connection.
         $verifier = $this->verifier();
         $clientId = $this->registerClient();
         $kept = $this->exchangeCode($clientId, $this->authorize($person, $clientId, $verifier), $verifier, OAuthResourceIndicator::resource(self::MCP))->assertOk()->json();
-        $this->assertSame(2, Artisan::call('svc:auth:revoke-connections', ['user_public_id' => $person->public_id, '--client' => null]));
+        $this->assertSame(2, Artisan::call('svc:auth:revoke-connections', ['--apply' => true, 'user_public_id' => $person->public_id, '--client' => null]));
         $this->assertFalse((bool) Passport::token()->newQuery()->whereKey(OAuthResourceIndicator::tokenClaims($kept['access_token'])['jti'])->value('revoked'));
-        $this->assertSame(1, Artisan::call('svc:auth:revoke-connections', ['user_public_id' => $person->public_id, '--client' => (string) Str::uuid()]));
+        $this->assertSame(1, Artisan::call('svc:auth:revoke-connections', ['--apply' => true, 'user_public_id' => $person->public_id, '--client' => (string) Str::uuid()]));
     }
 
     /**

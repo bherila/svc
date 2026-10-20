@@ -138,7 +138,7 @@ final class PortalProjectScopingTest extends TestCase
     {
         $user = $this->portalUser(ClientCompanyMembership::SCOPE_COMPANY);
 
-        $this->artisan('svc:portal:project-access', [
+        $this->artisan('svc:portal:project-access', ['--apply' => true,
             'company' => $this->company->public_id,
             'email' => $user->email,
             '--confirm' => true, '--expected-version' => $this->portalVersion($user),
@@ -147,7 +147,7 @@ final class PortalProjectScopingTest extends TestCase
 
         $this->assertSame(['Theirs'], $this->projectNamesFor($user));
 
-        $this->artisan('svc:portal:project-access', [
+        $this->artisan('svc:portal:project-access', ['--apply' => true,
             'company' => $this->company->public_id,
             'email' => $user->email,
             '--confirm' => true, '--expected-version' => $this->portalVersion($user),
@@ -170,7 +170,7 @@ final class PortalProjectScopingTest extends TestCase
             'name' => 'Foreign', 'is_visible_to_client' => true,
         ]);
 
-        $this->artisan('svc:portal:project-access', [
+        $this->artisan('svc:portal:project-access', ['--apply' => true,
             'company' => $this->company->public_id,
             'email' => $user->email,
             '--confirm' => true, '--expected-version' => $this->portalVersion($user),
@@ -357,7 +357,7 @@ final class PortalProjectScopingTest extends TestCase
             'email' => $user->email,
             '--show' => true,
         ])->assertExitCode(1);
-        $this->artisan('svc:portal:project-access', [
+        $this->artisan('svc:portal:project-access', ['--apply' => true,
             'company' => $this->company->public_id,
             'email' => $user->email,
             '--confirm' => true, '--expected-version' => str_repeat('0', 64),

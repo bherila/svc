@@ -275,16 +275,31 @@ final class FinanceReconciliationOperationsTest extends TestCase
         $this->assertArrayNotHasKey('idempotency_key', $input['properties']);
     }
 
+    public function test_console_preview_rolls_back_the_allocation_and_its_audit(): void
+    {
+        [$owner, $workspace, $payment] = $this->payment('Preview', 6000);
+        $arguments = ['--workspace' => $workspace->public_id, '--user' => $owner->public_id, '--format' => 'json',
+            'payment' => $payment->public_id, 'system' => 'synthetic-ledger', 'transaction' => (string) Str::uuid(),
+            '--amount' => '2500', '--currency' => 'USD'];
+        $this->artisan('svc:finance:reconcile', $arguments)->expectsOutputToContain('"dry_run":true')->assertSuccessful();
+        $this->assertDatabaseCount('payment_reconciliations', 0);
+        $this->assertDatabaseCount('agent_mutation_audits', 0);
+        $this->artisan('svc:finance:reconcile', [...$arguments, '--apply' => true])->assertSuccessful();
+        $this->assertSame(2500, PaymentReconciliation::query()->where('workspace_id', $workspace->id)->sole()->allocated_amount);
+        $this->artisan('svc:finance:unreconcile', array_diff_key($arguments, array_flip(['--amount', '--currency'])))->expectsOutputToContain('"dry_run":true')->assertSuccessful();
+        $this->assertTrue(PaymentReconciliation::query()->where('workspace_id', $workspace->id)->sole()->is_active);
+    }
+
     public function test_console_commands_run_the_same_operations_as_a_named_manager(): void
     {
         [$owner, $workspace, $payment] = $this->payment('Console', 6000);
         $transaction = (string) Str::uuid();
         $common = ['--workspace' => $workspace->public_id, '--user' => $owner->public_id, '--format' => 'json'];
 
-        $this->artisan('svc:finance:reconcile', [...$common, 'payment' => $payment->public_id, 'system' => 'synthetic-ledger', 'transaction' => $transaction, '--amount' => '2500', '--currency' => 'USD', '--reconciled-on' => '2026-08-15'])
+        $this->artisan('svc:finance:reconcile', ['--apply' => true, ...$common, 'payment' => $payment->public_id, 'system' => 'synthetic-ledger', 'transaction' => $transaction, '--amount' => '2500', '--currency' => 'USD', '--reconciled-on' => '2026-08-15'])
             ->expectsOutputToContain('"created":true')
             ->assertSuccessful();
-        $this->artisan('svc:finance:reconcile', [...$common, 'payment' => $payment->public_id, 'system' => 'synthetic-ledger', 'transaction' => $transaction, '--amount' => '2000', '--currency' => 'USD'])
+        $this->artisan('svc:finance:reconcile', ['--apply' => true, ...$common, 'payment' => $payment->public_id, 'system' => 'synthetic-ledger', 'transaction' => $transaction, '--amount' => '2000', '--currency' => 'USD'])
             ->expectsOutputToContain('"created":false')
             ->assertSuccessful();
         $this->assertSame(2000, PaymentReconciliation::query()->sole()->allocated_amount);
@@ -293,17 +308,17 @@ final class FinanceReconciliationOperationsTest extends TestCase
             ->expectsOutputToContain('"unreconciled_amount":4000')
             ->assertSuccessful();
 
-        $this->artisan('svc:finance:unreconcile', [...$common, 'payment' => $payment->public_id, 'system' => 'synthetic-ledger', 'transaction' => $transaction])
+        $this->artisan('svc:finance:unreconcile', ['--apply' => true, ...$common, 'payment' => $payment->public_id, 'system' => 'synthetic-ledger', 'transaction' => $transaction])
             ->expectsOutputToContain('"is_active":false')
             ->assertSuccessful();
         $this->assertFalse(PaymentReconciliation::query()->sole()->is_active);
         $this->assertSame(['console'], AgentMutationAudit::query()->pluck('oauth_client_id')->unique()->values()->all());
 
         // The same rules refuse the same things.
-        $this->artisan('svc:finance:reconcile', [...$common, 'payment' => $payment->public_id, 'system' => 'synthetic-ledger', 'transaction' => $transaction, '--amount' => '9000', '--currency' => 'USD'])
+        $this->artisan('svc:finance:reconcile', ['--apply' => true, ...$common, 'payment' => $payment->public_id, 'system' => 'synthetic-ledger', 'transaction' => $transaction, '--amount' => '9000', '--currency' => 'USD'])
             ->expectsOutputToContain('cannot exceed')
             ->assertFailed();
-        $this->artisan('svc:finance:reconcile', [...$common, 'payment' => $payment->public_id, 'system' => 'Not A Slug', 'transaction' => $transaction, '--amount' => '1', '--currency' => 'USD'])
+        $this->artisan('svc:finance:reconcile', ['--apply' => true, ...$common, 'payment' => $payment->public_id, 'system' => 'Not A Slug', 'transaction' => $transaction, '--amount' => '1', '--currency' => 'USD'])
             ->assertExitCode(2);
         $member = User::factory()->create();
         $workspace->memberships()->create(['user_id' => $member->id, 'role' => 'member']);
@@ -330,7 +345,7 @@ final class FinanceReconciliationOperationsTest extends TestCase
         match ($door) {
             'rest' => $this->restAsOwner($owner)->putJson($this->allocationPath($workspace, $foreign, 'synthetic-ledger', $transaction), ['allocated_amount' => 100, 'currency' => 'USD', 'is_active' => true])->assertNotFound(),
             'mcp' => $this->assertNotFoundOverMcp($owner, $workspace, $foreign, $transaction),
-            'console' => $this->artisan('svc:finance:reconcile', ['--workspace' => $workspace->public_id, '--user' => $owner->public_id, 'payment' => $foreign->public_id, 'system' => 'synthetic-ledger', 'transaction' => $transaction, '--amount' => '100', '--currency' => 'USD'])
+            'console' => $this->artisan('svc:finance:reconcile', ['--apply' => true, '--workspace' => $workspace->public_id, '--user' => $owner->public_id, 'payment' => $foreign->public_id, 'system' => 'synthetic-ledger', 'transaction' => $transaction, '--amount' => '100', '--currency' => 'USD'])
                 ->expectsOutputToContain('Not found')->assertFailed(),
         };
 

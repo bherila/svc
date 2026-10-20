@@ -45,7 +45,7 @@ final class PaymentReminderCadenceTest extends TestCase
         $this->at('2030-03-15 10:00');
 
         $this->assertSame(0, app(PaymentReminderService::class)->dispatchAutomaticDue());
-        $this->artisan('svc:billing:send-payment-reminders')->assertSuccessful();
+        $this->artisan('svc:billing:send-payment-reminders', ['--apply' => true])->assertSuccessful();
         $this->assertSame(0, InvoiceReminderLog::query()->count());
         Mail::assertNothingSent();
     }

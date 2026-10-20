@@ -1,10 +1,10 @@
 <?php
 
-namespace App\Console\Commands;
+namespace App\Console\Commands\Schema;
 
+use App\Console\Commands\SvcCommand;
 use App\Support\Tenancy\TenantReference;
 use App\Support\Tenancy\TenantReferenceInventory;
-use Illuminate\Console\Command;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -20,7 +20,7 @@ use Illuminate\Support\Facades\Schema;
  * a workspace. The whole point is that it is safe to run against a database of
  * client and billing records and to paste the output into an issue.
  */
-final class AuditTenantForeignKeysCommand extends Command
+final class AuditTenantForeignKeysCommand extends SvcCommand
 {
     protected $signature = 'svc:schema:audit-tenant-fks
         {--format=text : Output text or json}
@@ -31,12 +31,6 @@ final class AuditTenantForeignKeysCommand extends Command
     public function handle(): int
     {
         $format = (string) $this->option('format');
-
-        if (! in_array($format, ['text', 'json'], true)) {
-            $this->error('The --format option must be text or json.');
-
-            return self::INVALID;
-        }
 
         $allowPending = (bool) $this->option('allow-pending');
 

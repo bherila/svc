@@ -1,7 +1,8 @@
 <?php
 
-namespace App\Console\Commands;
+namespace App\Console\Commands\Portal;
 
+use App\Console\Commands\MutationCommand;
 use App\Exceptions\AccessMutationRefused;
 use App\Models\ClientCompany;
 use App\Models\User;
@@ -9,7 +10,6 @@ use App\Services\Access\PortalAccessOperation;
 use App\Services\AgentApi\AgentPortalContactReadService;
 use App\Support\Access\AccessMutationContext;
 use App\Support\Access\PortalAccessScope;
-use Illuminate\Console\Command;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 
@@ -28,7 +28,7 @@ use Symfony\Component\HttpKernel\Exception\HttpException;
  * the everyday way to make this change, and this is for when no workspace
  * manager can reach it.
  */
-final class PortalProjectAccessCommand extends Command
+final class PortalProjectAccessCommand extends MutationCommand
 {
     protected $signature = 'svc:portal:project-access
         {company : Client company public id}
@@ -80,7 +80,11 @@ final class PortalProjectAccessCommand extends Command
         ];
 
         try {
-            $operation->perform(AccessMutationContext::system(), $company, PortalAccessOperation::UPDATE, $user->public_id, $payload);
+            $contact = $this->preview(function () use ($operation, $contacts, $company, $user, $payload): array {
+                $operation->perform(AccessMutationContext::system(), $company, PortalAccessOperation::UPDATE, $user->public_id, $payload);
+
+                return $contacts->contact($company->workspace()->firstOrFail(), $company, $user->public_id);
+            });
         } catch (ValidationException $invalid) {
             foreach ($invalid->errors() as $field => $messages) {
                 $this->components->error(self::flag($field).': '.implode(' ', $messages));
@@ -95,6 +99,23 @@ final class PortalProjectAccessCommand extends Command
             $this->components->error($refused->getMessage());
 
             return self::FAILURE;
+        }
+
+        if (! $this->applying()) {
+            if ($this->option('format') === 'json') {
+                $this->json(['dry_run' => true, 'contact' => $contact]);
+            } else {
+                $this->info('Dry run: nothing was written. Re-run with --apply to write.');
+                $this->report($contact);
+            }
+
+            return self::SUCCESS;
+        }
+
+        if ($this->option('format') === 'json') {
+            $this->json(['dry_run' => false, 'contact' => $contacts->contact($company->workspace()->firstOrFail(), $company, $user->public_id)]);
+
+            return self::SUCCESS;
         }
 
         $this->components->info($companyWide
@@ -118,6 +139,11 @@ final class PortalProjectAccessCommand extends Command
     /** @param array<string, mixed> $contact the contact as the API presents it */
     private function report(array $contact): int
     {
+        if ($this->option('format') === 'json') {
+            $this->json($contact);
+
+            return self::SUCCESS;
+        }
         $this->components->twoColumnDetail('scope', (string) $contact['scope']);
         $this->components->twoColumnDetail('version', (string) $contact['version']);
 

@@ -2,7 +2,7 @@
 
 namespace Tests\Unit;
 
-use App\Console\Commands\DatabaseStatusCommand;
+use App\Console\Commands\Database\DatabaseStatusCommand;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 

@@ -321,7 +321,7 @@ final class AgentManualPaymentChangeTest extends TestCase
         $this->assertSame('paid', $invoice->fresh()?->status);
         $this->assertSame(0, ClientCompanyActivity::query()->where('workspace_id', $workspace->id)->where('action', 'invoice.payment_canceled')->count());
 
-        $this->artisan('svc:billing:payment-status', [
+        $this->artisan('svc:billing:payment-status', ['--apply' => true,
             'payment' => $payment->public_id, '--workspace' => $workspace->public_id, '--status' => 'canceled',
             '--reason' => 'Synthetic duplicate entry', '--expected-version' => AgentApiVersion::for($payment),
         ])->assertSuccessful();
@@ -334,7 +334,7 @@ final class AgentManualPaymentChangeTest extends TestCase
     public function test_a_keyed_retry_naming_another_finance_transaction_is_refused(): void
     {
         [, $workspace, $invoice] = $this->fixture(paid: false);
-        $record = fn (string $transaction): int => $this->artisan('svc:billing:payment', [
+        $record = fn (string $transaction): int => $this->artisan('svc:billing:payment', ['--apply' => true,
             'invoice' => $invoice->public_id, 'amount' => '1000', 'currency' => 'USD', 'method' => 'wire',
             '--workspace' => $workspace->public_id, '--idempotency-key' => 'synthetic-finance-key', '--external-finance-transaction' => $transaction,
         ])->run();
@@ -351,14 +351,14 @@ final class AgentManualPaymentChangeTest extends TestCase
         [, $workspace, , $payment] = $this->fixture();
         [, $other] = $this->fixture();
 
-        $this->artisan('svc:billing:refund-payment', ['payment' => $payment->public_id, '--workspace' => $other->public_id, '--amount' => '100', '--reason' => 'Synthetic'])->assertFailed();
-        $this->artisan('svc:billing:refund-payment', ['payment' => $payment->public_id, '--workspace' => $workspace->public_id, '--amount' => '1.5', '--reason' => 'Synthetic'])->assertExitCode(2);
-        $this->artisan('svc:billing:refund-payment', ['payment' => $payment->public_id, '--workspace' => $workspace->public_id, '--amount' => '100'])->assertExitCode(2);
-        $this->artisan('svc:billing:refund-payment', ['payment' => $payment->public_id, '--workspace' => $workspace->public_id, '--amount' => '10001', '--reason' => 'Synthetic'])->assertFailed();
-        $this->artisan('svc:billing:refund-payment', ['payment' => $payment->public_id, '--workspace' => $workspace->public_id, '--amount' => '100', '--reason' => 'Synthetic', '--expected-version' => str_repeat('a', 64)])->assertFailed();
+        $this->artisan('svc:billing:refund-payment', ['--apply' => true, 'payment' => $payment->public_id, '--workspace' => $other->public_id, '--amount' => '100', '--reason' => 'Synthetic'])->assertFailed();
+        $this->artisan('svc:billing:refund-payment', ['--apply' => true, 'payment' => $payment->public_id, '--workspace' => $workspace->public_id, '--amount' => '1.5', '--reason' => 'Synthetic'])->assertExitCode(2);
+        $this->artisan('svc:billing:refund-payment', ['--apply' => true, 'payment' => $payment->public_id, '--workspace' => $workspace->public_id, '--amount' => '100'])->assertExitCode(2);
+        $this->artisan('svc:billing:refund-payment', ['--apply' => true, 'payment' => $payment->public_id, '--workspace' => $workspace->public_id, '--amount' => '10001', '--reason' => 'Synthetic'])->assertFailed();
+        $this->artisan('svc:billing:refund-payment', ['--apply' => true, 'payment' => $payment->public_id, '--workspace' => $workspace->public_id, '--amount' => '100', '--reason' => 'Synthetic', '--expected-version' => str_repeat('a', 64)])->assertFailed();
         $this->assertSame(0, $payment->fresh()?->refunded_amount);
 
-        $this->artisan('svc:billing:refund-payment', ['payment' => $payment->public_id, '--workspace' => $workspace->public_id, '--amount' => '2500', '--reason' => 'Synthetic goodwill', '--format' => 'json'])
+        $this->artisan('svc:billing:refund-payment', ['--apply' => true, 'payment' => $payment->public_id, '--workspace' => $workspace->public_id, '--amount' => '2500', '--reason' => 'Synthetic goodwill', '--format' => 'json'])
             ->expectsOutputToContain('"refunded_amount":{"old":0,"new":2500}')->assertSuccessful();
         $this->assertSame(2500, $payment->fresh()?->refunded_amount);
     }

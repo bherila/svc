@@ -2,8 +2,9 @@
 
 namespace App\Console\Commands\OAuth;
 
+use App\Console\Commands\MutationCommand;
 use BWH\Auth\Console\PruneDynamicClientsCommand;
-use Illuminate\Console\Command;
+use Symfony\Component\Console\Output\BufferedOutput;
 
 /**
  * The old name for {@see PruneDynamicClientsCommand}, kept so a runbook or
@@ -17,11 +18,11 @@ use Illuminate\Console\Command;
  * (`bherila-auth.oauth_server.dynamic_clients.retention_days`, still read from
  * `AGENT_API_DYNAMIC_CLIENT_RETENTION_DAYS`).
  */
-final class PruneDynamicOAuthClientsCommand extends Command
+final class PruneDynamicOAuthClientsCommand extends MutationCommand
 {
     public const VENDOR_COMMAND = 'bherila-auth:prune-dynamic-clients';
 
-    protected $signature = 'svc:oauth:prune-dynamic-clients {--days= : Override the configured retention window} {--pretend : Report without deleting}';
+    protected $signature = 'svc:oauth:prune-dynamic-clients {--days= : Override the configured retention window} {--pretend : Deprecated alias for the default preview}';
 
     protected $description = 'Alias of bherila-auth:prune-dynamic-clients: delete stale, unused dynamically registered OAuth clients';
 
@@ -31,8 +32,16 @@ final class PruneDynamicOAuthClientsCommand extends Command
         if ($this->option('days') !== null) {
             $options['--days'] = $this->option('days');
         }
-        if ($this->option('pretend')) {
+        if (! $this->applying()) {
             $options['--pretend'] = true;
+        }
+
+        if ($this->option('format') === 'json') {
+            $buffer = new BufferedOutput;
+            $exit = $this->runCommand(self::VENDOR_COMMAND, $options, $buffer);
+            $this->json(['dry_run' => ! $this->applying(), 'exit_code' => $exit, 'report' => trim($buffer->fetch())]);
+
+            return $exit;
         }
 
         return $this->call(self::VENDOR_COMMAND, $options);

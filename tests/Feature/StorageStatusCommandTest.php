@@ -22,7 +22,7 @@ class StorageStatusCommandTest extends TestCase
         Storage::fake('svc_files');
         config(['svc.filesystem_disk' => 'svc_files']);
 
-        $this->artisan('svc:storage:status', ['--write' => true, '--format' => 'json'])
+        $this->artisan('svc:storage:status', ['--apply' => true, '--format' => 'json'])
             ->expectsOutput('{"configured":true,"write_probe":true,"cleanup":true}')
             ->assertSuccessful();
 

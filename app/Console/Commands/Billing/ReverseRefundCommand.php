@@ -17,7 +17,7 @@ class ReverseRefundCommand extends ManualPaymentCommand
         {--amount= : How much of that refund to reverse, in integer minor units (default: all of it)}
         {--reason= : Why the refund was recorded in error (required)}
         {--expected-version= : Refuse unless the payment is still at this version}
-        {--dry-run : Report what would change and write nothing}
+        {--dry-run : Deprecated alias for the default preview}
         {--format=text : Output text or json}';
 
     protected $description = 'Reverse a refund recorded in error against a hand-recorded payment, with a recorded reason; the refund itself is kept';
