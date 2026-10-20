@@ -10,7 +10,7 @@ use App\Support\Expenses\ExpenseStatus;
 final class AgentExpensePresenter
 {
     /** @return array<string, mixed> */
-    public function present(ClientExpense $expense, bool $canWrite): array
+    public function present(ClientExpense $expense, bool $canWrite, bool $isWorkspaceManager = false): array
     {
         $editable = $canWrite && ExpenseStatus::isEditableValue($expense->status);
 
@@ -22,6 +22,7 @@ final class AgentExpensePresenter
             'amount' => $expense->amount,
             'currency' => $expense->currency,
             'description' => $expense->description,
+            'external_finance_transaction_uuid' => $isWorkspaceManager ? $expense->external_finance_transaction_uuid : null,
             'status' => $expense->status,
             'status_label' => match (ExpenseStatus::tryFrom($expense->status)) {
                 ExpenseStatus::Draft => 'Draft',

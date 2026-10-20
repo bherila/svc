@@ -1093,6 +1093,24 @@ project/date filters to narrow the result. Pagination cursors are bound to all
 filters; fetch a new first page when changing them. Pages default to 25 rows and
 are capped at 100; descriptions are preserved.
 
+## Expense finance provenance
+
+`expenses.log` accepts optional `external_finance_transaction_uuid` on each
+entry: an opaque UUID identifying the finance consumer's transaction. It is
+creation-only provenance, not a reconciliation allocation, receipt, or proof of
+payment. Existing requests may omit it or send null.
+
+Keep the same `idempotency_key` when retrying the same request. Changing the UUID
+under that key returns `409`; a different key is a distinct request, even with
+the same UUID. There is no UUID uniqueness or deduplication rule. Do not change
+keys to work around a retry conflict.
+
+`expenses.update` cannot replace or clear the reference. Ordinary edits preserve
+it, and generated recurring occurrences do not inherit it. The response returns
+it only to workspace owners and administrators, including readers whose write
+cutovers are disabled; other readers receive null. Generic model serialization
+also hides it. Receipt upload and existing expense scopes are unchanged.
+
 ## Expense approvals, receipts, and recurrence
 
 Workspace owners and administrators can use `expenses.approve` and

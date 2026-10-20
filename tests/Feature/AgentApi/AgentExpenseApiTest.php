@@ -9,8 +9,10 @@ use App\Models\ClientProjectMembership;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Queries\Expenses\WorkspaceExpenses;
+use App\Queries\Expenses\WorkspaceExpenseSchedules;
 use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
 use App\Support\AgentApi\AgentApiVersion;
+use App\Support\Billing\BillingCadence;
 use App\Support\Expenses\NewExpense;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -112,6 +114,26 @@ final class AgentExpenseApiTest extends TestCase
         $this->withHeader('Idempotency-Key', 'finance-expense-create')->postJson($url, $payload)->assertForbidden();
     }
 
+    public function test_recurring_occurrences_do_not_inherit_an_existing_expenses_finance_reference(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-09-07 12:00:00 UTC'));
+        [$workspace, $company, , $owner] = $this->fixture();
+        $this->agent($owner);
+        $reference = '00000000-0000-4000-8000-000000000004';
+        $this->withHeader('Idempotency-Key', 'finance-expense-original')->postJson($this->url($workspace), [
+            'entries' => [$this->facts() + ['company_id' => $company->public_id, 'external_finance_transaction_uuid' => $reference]],
+        ])->assertCreated();
+        $original = ClientExpense::query()->sole();
+        $schedules = new WorkspaceExpenseSchedules($workspace);
+        $schedule = $schedules->create($company, null, new NewExpense($original->spent_on, $original->amount, $original->currency, $original->description), BillingCadence::Monthly);
+        $this->assertSame(1, $schedules->generate($schedule->public_id, $owner));
+        $occurrence = ClientExpense::query()->where('client_expense_schedule_id', $schedule->id)->sole();
+        $this->assertNull($occurrence->external_finance_transaction_uuid);
+        $this->assertSame($reference, $original->refresh()->external_finance_transaction_uuid);
+        $this->assertSame(0, $schedules->generate($schedule->public_id, $owner));
+        $this->assertDatabaseCount('client_expenses', 2);
+    }
+
     public function test_invalid_finance_reference_refuses_the_whole_batch_and_old_requests_stay_valid(): void
     {
         [$workspace, $company, , $owner] = $this->fixture();
@@ -124,6 +146,44 @@ final class AgentExpenseApiTest extends TestCase
         $this->assertDatabaseCount('agent_mutation_receipts', 0);
         $this->withHeader('Idempotency-Key', 'finance-expense-legacy')->postJson($this->url($workspace), ['entries' => [$entry]])->assertCreated();
         $this->assertNull(ClientExpense::query()->sole()->external_finance_transaction_uuid);
+    }
+
+    public static function financeReferenceReaders(): iterable
+    {
+        yield 'owner' => ['owner'];
+        yield 'administrator' => ['admin'];
+    }
+
+    #[DataProvider('financeReferenceReaders')]
+    public function test_only_workspace_managers_read_finance_provenance_even_when_writes_are_disabled(string $role): void
+    {
+        [$workspace, $company, $project, $owner] = $this->fixture();
+        $workspace->memberships()->where('user_id', $owner->id)->update(['role' => $role]);
+        $this->agent($owner);
+        $reference = '00000000-0000-4000-8000-000000000003';
+        $this->withHeader('Idempotency-Key', 'finance-expense-private')->postJson($this->url($workspace), [
+            'entries' => [$this->facts() + ['company_id' => $company->public_id, 'project_id' => $project->public_id, 'external_finance_transaction_uuid' => $reference]],
+        ])->assertCreated()->assertJsonPath('data.0.external_finance_transaction_uuid', $reference);
+        $this->record($workspace, $company, $project);
+
+        $this->agent($owner, ['expenses:read']);
+        config(['agent_api.writes_enabled' => false, 'agent_api.expense_writes_enabled' => false]);
+        $page = $this->getJson($this->url($workspace))->assertOk();
+        $page->assertJsonPath('data.0.external_finance_transaction_uuid', $reference)->assertJsonPath('data.0.can_edit', false);
+        $this->assertArrayHasKey('external_finance_transaction_uuid', $page->json('data.1'));
+        $page->assertJsonPath('data.1.external_finance_transaction_uuid', null);
+
+        $member = User::factory()->create();
+        $workspace->memberships()->create(['user_id' => $member->id, 'role' => 'member']);
+        ClientProjectMembership::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $project->id, 'user_id' => $member->id, 'role' => 'contributor']);
+        $this->agent($member, ['expenses:read']);
+        $memberPage = $this->getJson($this->url($workspace))->assertOk()->assertJsonCount(2, 'data');
+        foreach ($memberPage->json('data') as $expense) {
+            $this->assertArrayHasKey('external_finance_transaction_uuid', $expense);
+            $this->assertNull($expense['external_finance_transaction_uuid']);
+        }
+        $this->assertStringNotContainsString($reference, $memberPage->getContent());
+        $this->assertSame([], (new SchemaValidator)->validateAgainstJsonSchema($memberPage->json(), AgentApiResponseSchemaCatalog::forOperation('expenses.list')));
     }
 
     public function test_browser_mutations_advance_revision_and_both_deletions_require_drafts(): void

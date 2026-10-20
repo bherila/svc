@@ -12272,6 +12272,15 @@
                     },
                     "can_delete": {
                         "type": "boolean"
+                    },
+                    "external_finance_transaction_uuid": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "uuid",
+                        "readOnly": true,
+                        "description": "Creation-only finance transaction provenance. Returned only to workspace owners/admins; null for other readers."
                     }
                 }
             },

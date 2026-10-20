@@ -2308,6 +2308,11 @@ export interface components {
             version: components['schemas']['Version'];
             can_edit: boolean;
             can_delete: boolean;
+            /**
+             * Format: uuid
+             * @description Creation-only finance transaction provenance. Returned only to workspace owners/admins; null for other readers.
+             */
+            readonly external_finance_transaction_uuid?: string | null;
         };
         ExpenseApprovalRequest: {
             expected_version: components['schemas']['Version'];

@@ -20,6 +20,28 @@ and each is an MCP tool and a console command of the same name, all running one
 | `finance.reconciliations.upsert`     | `PUT …/invoice-payments/{payment}/reconciliations/{external-system}/{transaction-uuid}` | `finance:reconcile` | `svc:finance:reconcile`    |
 | `finance.reconciliations.deactivate` | `DELETE` the same path                                    | `finance:reconcile` | `svc:finance:unreconcile`  |
 
+## Billable expense provenance
+
+A finance consumer can record a billable expense through `expenses.log`, using
+its existing expense scopes and manager authorization, with optional
+`external_finance_transaction_uuid` on each entry. This opaque UUID is
+creation-only provenance; SVC does not verify a remote banking transaction or
+create a reconciliation allocation, receipt, or payment from it.
+
+The existing `Idempotency-Key` remains the retry identity. The same key and body
+replay the original result across REST and MCP; the same key with a changed UUID
+returns `409`. A different key is a distinct allowed request, even for the same
+UUID. There is no additional UUID uniqueness or deduplication policy.
+
+Omitting the field or sending null preserves legacy behavior. API updates cannot
+replace or clear it; ordinary edits retain it, and generated recurring expenses
+do not copy it. Workspace owners/admins can read the reference even with
+read-only credentials or disabled write cutovers. Other readers receive null,
+and generic model serialization hides it. Existing receipt upload is unchanged.
+
+See [expense tools](mcp.md#expense-finance-provenance) for the shared transport
+contract.
+
 ## Authentication
 
 Two credentials open these routes, and only these routes accept the first.
