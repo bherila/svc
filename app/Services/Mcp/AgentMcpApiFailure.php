@@ -12,7 +12,8 @@ final class AgentMcpApiFailure
             return 'This connection lacks the required permission.';
         }
 
-        if (! in_array($status, [409, 422], true)) {
+        // A budget's refusal says when to retry; the bare status would not.
+        if (! in_array($status, [409, 422, 429], true)) {
             return 'The SVC API request could not be completed.';
         }
 

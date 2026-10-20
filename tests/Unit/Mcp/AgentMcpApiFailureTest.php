@@ -32,7 +32,10 @@ final class AgentMcpApiFailureTest extends TestCase
         yield 'empty message' => [422, ['message' => ' ', 'errors' => []], $generic];
         yield 'empty response' => [409, null, $generic];
         yield 'empty validation response' => [422, null, $generic];
-        foreach ([400, 401, 404, 408, 410, 421, 423, 429, 500, 503] as $status) {
+        // A budget's refusal is written for the caller and says when to retry.
+        yield 'budget refusal' => [429, ['message' => 'The schedule preflight ran recently. Retry in 42 seconds.', 'errors' => ['field' => ['Ignored.']]], 'The schedule preflight ran recently. Retry in 42 seconds. Ignored.'];
+        yield 'empty budget refusal' => [429, null, $generic];
+        foreach ([400, 401, 404, 408, 410, 421, 423, 500, 503] as $status) {
             yield 'conceal '.$status => [$status, ['message' => 'Internal synthetic detail.', 'errors' => ['field' => ['Internal synthetic error.']]], $generic];
         }
         yield 'permission refusal' => [403, ['message' => 'Internal synthetic detail.'], 'This connection lacks the required permission.'];

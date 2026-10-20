@@ -2,103 +2,49 @@
 
 namespace App\Services\Mcp;
 
-use App\Services\AgentApi\AgentBillingAuditReadService;
-use App\Services\Mcp\Context\McpAccountContextResolver;
-use App\Services\Mcp\Context\McpRequestContext;
-use Illuminate\Http\Exceptions\ThrottleRequestsException;
-use LogicException;
 use Mcp\Capability\Attribute\Schema;
-use Mcp\Exception\ToolCallException;
-use stdClass;
 
-/** Thin MCP adapters over the canonical aggregate-only billing audits. */
+/**
+ * The aggregate billing audits over MCP (#459): the same REST operations,
+ * scopes, budget and refusals.
+ */
 final class AgentMcpBillingAuditTools
 {
-    public function __construct(
-        private readonly AgentBillingAuditReadService $audits,
-        private readonly McpAccountContextResolver $accounts,
-        private readonly ?McpRequestContext $requestContext = null,
-    ) {}
+    public function __construct(private readonly AgentMcpRestCall $rest) {}
 
-    /** @return array{data: array<string, float|int>} */
+    /** @return array<string, mixed> */
     public function unplaceableInvoices(#[Schema(format: 'uuid')] string $workspace_id): array
     {
-        $context = $this->workspace($workspace_id);
-
-        return ['data' => $this->audits->unplaceableInvoices($context->principal->subject, $context->workspace)];
+        return $this->rest->call('billing.audit_unplaceable_invoices', ['workspace' => $workspace_id]);
     }
 
-    /**
-     * @return array{data: array{
-     *     invoices: int,
-     *     collectible: int,
-     *     undated: int,
-     *     with_an_issue_date: int,
-     *     without_an_issue_date: int,
-     *     would_become_overdue_if_backfilled: int,
-     *     undated_balances: array<string, int>|stdClass,
-     *     would_become_overdue_balances: array<string, int>|stdClass,
-     * }}
-     */
+    /** @return array<string, mixed> */
     public function undatedCollectibleInvoices(#[Schema(format: 'uuid')] string $workspace_id): array
     {
-        $context = $this->workspace($workspace_id);
-        $data = $this->audits->undatedCollectibleInvoices($context->principal->subject, $context->workspace);
-        if ($data['undated_balances'] === []) {
-            $data['undated_balances'] = new stdClass;
-        }
-        if ($data['would_become_overdue_balances'] === []) {
-            $data['would_become_overdue_balances'] = new stdClass;
-        }
-
-        return ['data' => $data];
+        return $this->rest->call('billing.audit_undated_collectible_invoices', ['workspace' => $workspace_id]);
     }
 
-    /** @return array{data: array<string, int>} */
+    /** @return array<string, mixed> */
     public function missingBilledOverage(#[Schema(format: 'uuid')] string $workspace_id): array
     {
-        $context = $this->workspace($workspace_id);
-
-        return ['data' => $this->audits->missingBilledOverage($context->principal->subject, $context->workspace)];
+        return $this->rest->call('billing.audit_missing_billed_overage', ['workspace' => $workspace_id]);
     }
 
-    /** @return array{data: array<string, int>} */
+    /** @return array<string, mixed> */
     public function openingRollover(#[Schema(format: 'uuid')] string $workspace_id): array
     {
-        $context = $this->workspace($workspace_id);
-
-        return ['data' => $this->audits->openingRollover($context->principal->subject, $context->workspace)];
+        return $this->rest->call('billing.audit_opening_rollover', ['workspace' => $workspace_id]);
     }
 
-    /** @return array{data: array<string, mixed>} */
+    /** @return array<string, mixed> */
     public function scheduleGenerationPreflight(#[Schema(format: 'uuid')] string $workspace_id): array
     {
-        $context = $this->workspace($workspace_id);
-
-        try {
-            return ['data' => $this->audits->scheduleGenerationPreflight($context->principal->subject, $context->workspace)];
-        } catch (ThrottleRequestsException $budget) {
-            // The budget's own text says when to retry; the request handler
-            // would otherwise answer only that the tool failed.
-            throw new ToolCallException($budget->getMessage());
-        }
+        return $this->rest->call('billing.preflight_schedule_generation', ['workspace' => $workspace_id]);
     }
 
-    /** @return array{data: array<string, int>} */
+    /** @return array<string, mixed> */
     public function unlinkedProposalAgreements(#[Schema(format: 'uuid')] string $workspace_id): array
     {
-        $context = $this->workspace($workspace_id);
-
-        return ['data' => $this->audits->unlinkedProposalAgreements($context->principal->subject, $context->workspace)];
-    }
-
-    private function workspace(string $workspaceId): McpRequestContext
-    {
-        $context = $this->requestContext ?? throw new LogicException('MCP billing audit tools require a request context.');
-        if (! $context->principal->hasScope('billing:read')) {
-            throw new ToolCallException('This connection lacks the required permission.');
-        }
-
-        return $this->accounts->resolve($context, $workspaceId);
+        return $this->rest->call('billing.audit_unlinked_proposal_agreements', ['workspace' => $workspace_id]);
     }
 }

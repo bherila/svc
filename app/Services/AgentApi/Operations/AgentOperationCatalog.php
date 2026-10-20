@@ -75,6 +75,12 @@ final class AgentOperationCatalog
         'attachments.list' => ['attachments.index', '/workspaces/{workspace}/records/{recordType}/{recordPublicId}/attachments', [200]],
         'attachments.upload' => ['attachments.upload', '/workspaces/{workspace}/records/{recordType}/{recordPublicId}/attachments/upload', [201]],
         'attachments.upload_url' => ['attachments.upload-url', '/workspaces/{workspace}/records/{recordType}/{recordPublicId}/attachments/upload-url', [200]],
+        'billing.audit_missing_billed_overage' => ['billing-audits.missing-billed-overage', '/workspaces/{workspace}/billing-audits/missing-billed-overage', [200]],
+        'billing.audit_opening_rollover' => ['billing-audits.opening-rollover', '/workspaces/{workspace}/billing-audits/opening-rollover', [200]],
+        'billing.audit_undated_collectible_invoices' => ['billing-audits.undated-collectible-invoices', '/workspaces/{workspace}/billing-audits/undated-collectible-invoices', [200]],
+        'billing.audit_unlinked_proposal_agreements' => ['billing-audits.unlinked-proposal-agreements', '/workspaces/{workspace}/billing-audits/unlinked-proposal-agreements', [200]],
+        'billing.audit_unplaceable_invoices' => ['billing-audits.unplaceable-invoices', '/workspaces/{workspace}/billing-audits/unplaceable-invoices', [200]],
+        'billing.preflight_schedule_generation' => ['billing-audits.schedule-generation-preflight', '/workspaces/{workspace}/billing-audits/schedule-generation-preflight', [200]],
         'billing_audit.stale_and_missing' => ['billing_audit.stale_and_missing', '/workspaces/{workspace}/billing-audits/stale-and-missing', [200]],
         'billing_schedules.create' => ['billing-schedules.store', '/workspaces/{workspace}/billing-schedules', [201]],
         'billing_schedules.generate' => ['billing-schedules.generate', '/workspaces/{workspace}/billing-schedules/{schedule}/generate', [200]],
@@ -1352,80 +1358,68 @@ final class AgentOperationCatalog
             $this->tool(
                 'billing.audit_unplaceable_invoices',
                 'Audit unplaceable invoices',
-                'Get aggregate counts of invoices whose billing period or cycle cannot be placed safely.',
+                self::restDescription('billing.audit_unplaceable_invoices'),
                 [AgentMcpBillingAuditTools::class, 'unplaceableInvoices'],
                 Effect::Read,
                 true,
                 'mcp.read.billing.audit_unplaceable_invoices',
                 manager: true,
                 input: AgentInlineSchemas::billingAuditInput(),
-                output: AgentInlineSchemas::billingAuditOutput(AgentInlineSchemas::billingAuditProperties('billing.audit_unplaceable_invoices')),
-                scopes: ['billing:read'],
             ),
             $this->tool(
                 'billing.audit_undated_collectible_invoices',
                 'Audit undated collectible invoices',
-                'Get aggregate counts and per-currency balances for collectible invoices without due dates.',
+                self::restDescription('billing.audit_undated_collectible_invoices'),
                 [AgentMcpBillingAuditTools::class, 'undatedCollectibleInvoices'],
                 Effect::Read,
                 true,
                 'mcp.read.billing.audit_undated_collectible_invoices',
                 manager: true,
                 input: AgentInlineSchemas::billingAuditInput(),
-                output: AgentInlineSchemas::billingAuditOutput(AgentInlineSchemas::billingAuditProperties('billing.audit_undated_collectible_invoices')),
-                scopes: ['billing:read'],
             ),
             $this->tool(
                 'billing.audit_missing_billed_overage',
                 'Audit missing billed overage',
-                'Get aggregate counts of charged invoices missing billed-overage data.',
+                self::restDescription('billing.audit_missing_billed_overage'),
                 [AgentMcpBillingAuditTools::class, 'missingBilledOverage'],
                 Effect::Read,
                 true,
                 'mcp.read.billing.audit_missing_billed_overage',
                 manager: true,
                 input: AgentInlineSchemas::billingAuditInput(),
-                output: AgentInlineSchemas::billingAuditOutput(AgentInlineSchemas::billingAuditProperties('billing.audit_missing_billed_overage')),
-                scopes: ['billing:read'],
             ),
             $this->tool(
                 'billing.audit_opening_rollover',
                 'Audit opening rollover',
-                'Get aggregate counts of agreements whose opening rollover changes their capacity ledger.',
+                self::restDescription('billing.audit_opening_rollover'),
                 [AgentMcpBillingAuditTools::class, 'openingRollover'],
                 Effect::Read,
                 true,
                 'mcp.read.billing.audit_opening_rollover',
                 manager: true,
                 input: AgentInlineSchemas::billingAuditInput(),
-                output: AgentInlineSchemas::billingAuditOutput(AgentInlineSchemas::billingAuditProperties('billing.audit_opening_rollover')),
-                scopes: ['billing:read'],
             ),
             $this->tool(
                 'billing.preflight_schedule_generation',
                 'Preflight schedule generation',
-                'Workspace managers only. Classify every period each of the workspace\'s active billing schedules is due to bill through today, without writing, and count how many schedules would halt and why, as svc:billing:preflight-schedule-generation does for every workspace. Counts only. It examines at most 60 periods per schedule (the command examines 240), and complete is false when a backlog was longer, so the result is inconclusive rather than clean; a workspace gets 5 per ten minutes.',
+                self::restDescription('billing.preflight_schedule_generation'),
                 [AgentMcpBillingAuditTools::class, 'scheduleGenerationPreflight'],
                 Effect::Read,
                 true,
                 'mcp.read.billing.preflight_schedule_generation',
                 manager: true,
                 input: AgentInlineSchemas::billingAuditInput(),
-                output: AgentInlineSchemas::billingAuditOutput(AgentInlineSchemas::billingAuditProperties('billing.preflight_schedule_generation')),
-                scopes: ['billing:read'],
             ),
             $this->tool(
                 'billing.audit_unlinked_proposal_agreements',
                 'Audit unlinked proposal agreements',
-                'Workspace managers only. Count the workspace\'s proposals whose agreement the duplicate guard in acceptance cannot see, as svc:engagement:audit-unlinked-proposal-agreements does for every workspace. Counts only; nothing is repaired or guessed.',
+                self::restDescription('billing.audit_unlinked_proposal_agreements'),
                 [AgentMcpBillingAuditTools::class, 'unlinkedProposalAgreements'],
                 Effect::Read,
                 true,
                 'mcp.read.billing.audit_unlinked_proposal_agreements',
                 manager: true,
                 input: AgentInlineSchemas::billingAuditInput(),
-                output: AgentInlineSchemas::billingAuditOutput(AgentInlineSchemas::billingAuditProperties('billing.audit_unlinked_proposal_agreements')),
-                scopes: ['billing:read'],
             ),
         ];
     }
@@ -1742,6 +1736,20 @@ final class AgentOperationCatalog
             output: $output,
             requiresOperations: $requires,
         );
+    }
+
+    /**
+     * A tool described by its REST operation's prose, so the two cannot drift apart.
+     *
+     * @infection-ignore-all The refusal is for an operation documented without
+     * prose, which none is: every caller names a documented operation, and
+     * BillingAuditOperationContractTest pins each one's text.
+     */
+    private static function restDescription(string $id): string
+    {
+        $description = AgentRestDocumentation::operations()[$id]['description'] ?? null;
+
+        return is_string($description) ? $description : throw new LogicException("Operation [{$id}] documents no description.");
     }
 
     /** @return list<string> */

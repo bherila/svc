@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\V1\AgentBillingAuditController;
 use App\Http\Controllers\Api\V1\AgentBillingScheduleController;
 use App\Http\Controllers\Api\V1\AgentCapacityLedgerController;
 use App\Http\Controllers\Api\V1\AgentClientController;
@@ -281,6 +282,17 @@ Route::prefix('v1')
             ->whereUuid('invoice')
             ->middleware(EnsureAgentWorkspaceVisible::class)
             ->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']));
+        // The aggregate billing audits (#459), which MCP reaches through these routes.
+        foreach ([
+            'billing.audit_unplaceable_invoices' => 'unplaceableInvoices',
+            'billing.audit_undated_collectible_invoices' => 'undatedCollectibleInvoices',
+            'billing.audit_missing_billed_overage' => 'missingBilledOverage',
+            'billing.audit_opening_rollover' => 'openingRollover',
+            'billing.preflight_schedule_generation' => 'scheduleGenerationPreflight',
+            'billing.audit_unlinked_proposal_agreements' => 'unlinkedProposalAgreements',
+        ] as $operationId => $action) {
+            $inVisibleWorkspace($operation($operationId, [AgentBillingAuditController::class, $action]));
+        }
         $operation('billing_audit.stale_and_missing', [AgentInvoiceOperationsController::class, 'audit'])
             ->middleware(EnsureAgentWorkspaceVisible::class)
             ->missing(static fn () => abort(404, (new ModelNotFoundException)->setModel(Workspace::class)->getMessage(), ['Cache-Control' => 'private, no-store']));

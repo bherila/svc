@@ -3,7 +3,6 @@
 namespace App\Services\Mcp;
 
 use App\Services\AgentApi\AgentAgreementReadService;
-use App\Services\AgentApi\AgentBillingAuditReadService;
 use App\Services\AgentApi\AgentBillingScheduleReadService;
 use App\Services\AgentApi\AgentCapacityLedgerReadService;
 use App\Services\AgentApi\AgentClientReadService;
@@ -63,7 +62,6 @@ final class AgentMcpServerFactory
         private readonly AgentAgreementReadService $agreementReadService,
         private readonly AgentBillingScheduleReadService $billingScheduleReadService,
         private readonly AgentCapacityLedgerReadService $capacityLedgerReadService,
-        private readonly AgentBillingAuditReadService $billingAuditReadService,
         private readonly AgentClientReadService $clientReadService,
         private readonly SquareReadService $squareReadService,
         private readonly McpAccountContextResolver $accounts,
@@ -91,7 +89,6 @@ final class AgentMcpServerFactory
         $agreementResource = new AgentMcpAgreementResource($this->agreementReadService, $this->accounts, $context);
         $schedules = new AgentMcpBillingScheduleTools($this->billingScheduleReadService, $this->accounts, $context);
         $capacityLedger = new AgentMcpCapacityLedgerTools($this->capacityLedgerReadService, $this->accounts, $context);
-        $billingAudits = new AgentMcpBillingAuditTools($this->billingAuditReadService, $this->accounts, $context);
         $clients = new AgentMcpClientTools($this->clientReadService, $this->accounts, $context);
         $rest = $this->rest->forContext($context);
         $clientWrites = new AgentMcpClientWriteTools($rest, $this->requestArguments);
@@ -103,7 +100,7 @@ final class AgentMcpServerFactory
             AgentMcpAgreementResource::class => $agreementResource,
             AgentMcpBillingScheduleTools::class => $schedules,
             AgentMcpCapacityLedgerTools::class => $capacityLedger,
-            AgentMcpBillingAuditTools::class => $billingAudits,
+            AgentMcpBillingAuditTools::class => new AgentMcpBillingAuditTools($rest),
             AgentMcpClientTools::class => $clients,
             AgentMcpSquareTools::class => new AgentMcpSquareTools($this->squareReadService, $this->accounts, $context),
             AgentMcpSquareMirrorTools::class => new AgentMcpSquareMirrorTools(app(InternalAgentApiTransport::class)),

@@ -283,9 +283,8 @@ final class AgentMcpInventoryTest extends TestCase
     public function test_inventory_and_openapi_map_every_integrated_tool_with_matching_scopes(): void
     {
         $this->enableAll();
-        // These historical read tools predate REST parity and are outside the
-        // remaining operations named in #386. Every added tool is mapped.
-        $legacy = ['billing.audit_unplaceable_invoices', 'billing.audit_undated_collectible_invoices', 'billing.audit_missing_billed_overage', 'billing.audit_opening_rollover', 'billing.audit_unlinked_proposal_agreements', 'billing.preflight_schedule_generation'];
+        // Every tool has its REST operation; the billing audits were the
+        // last without one (#459).
         $spec = json_decode((string) file_get_contents(public_path('openapi/svc-agent-v1.json')), true, flags: JSON_THROW_ON_ERROR);
         $mapped = [];
         $definitions = collect($this->mcpTools())->keyBy(fn (Operation $operation): string => (string) $operation->mcpName());
@@ -307,7 +306,7 @@ final class AgentMcpInventoryTest extends TestCase
         }
         $actual = array_keys($mapped);
         sort($actual);
-        $this->assertSame(array_values(array_diff(self::TOOLS, $legacy)), $actual);
+        $this->assertSame(self::TOOLS, $actual);
     }
 
     public function test_missing_scopes_precede_role_and_every_tool_reports_its_required_scope(): void
