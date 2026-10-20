@@ -4,13 +4,13 @@ namespace Tests\Feature\Finance;
 
 use App\Models\ClientInvoicePayment;
 use App\Models\Workspace;
+use App\Services\Finance\ProcessorSettlementRecorder;
 use App\Services\Square\SquarePaymentReconciler;
 use App\Services\Square\SquarePendingSettlements;
-use App\Services\Finance\ProcessorSettlementRecorder;
-use App\Support\Finance\PaymentSettlement;
+use App\Services\Square\SquareSettlementSync;
 use App\Support\Concurrency\LockOrderRecorder;
 use App\Support\Concurrency\LockResource;
-use App\Services\Square\SquareSettlementSync;
+use App\Support\Finance\PaymentSettlement;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Factory;
 use Illuminate\Http\Client\Request;
@@ -164,6 +164,7 @@ final class SquarePendingSettlementTest extends TestCase
         Http::preventStrayRequests();
         Http::fake(function (Request $request) {
             $path = rawurldecode((string) parse_url($request->url(), PHP_URL_PATH));
+
             return Http::response(match ($path) {
                 '/v2/payouts/po_fixture_pending' => ['payout' => $this->payout],
                 '/v2/payouts/po_fixture_pending/payout-entries' => ['payout_entries' => [[
