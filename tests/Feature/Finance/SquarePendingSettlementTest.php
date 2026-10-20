@@ -2,7 +2,10 @@
 
 namespace Tests\Feature\Finance;
 
+use App\Models\ClientCompany;
+use App\Models\ClientInvoice;
 use App\Models\ClientInvoicePayment;
+use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Finance\ProcessorSettlementRecorder;
 use App\Services\Square\SquarePaymentReconciler;
@@ -14,8 +17,11 @@ use App\Support\Finance\PaymentSettlement;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Factory;
 use Illuminate\Http\Client\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Testing\TestResponse;
+use RuntimeException;
 use Tests\Concerns\FakesSquarePaymentSync;
 use Tests\TestCase;
 
@@ -97,10 +103,10 @@ final class SquarePendingSettlementTest extends TestCase
         try {
             DB::transaction(function () use ($pending, $workspace): void {
                 $this->assertTrue($pending->deliver($workspace, 'pay_fixture_1'));
-                throw new \RuntimeException('Synthetic rollback');
+                throw new RuntimeException('Synthetic rollback');
             });
             $this->fail('The synthetic rollback did not occur.');
-        } catch (\RuntimeException $exception) {
+        } catch (RuntimeException $exception) {
             $this->assertSame('Synthetic rollback', $exception->getMessage());
         }
         $this->assertNull($invoice->payments()->sole()->provider_payout_identifier);
@@ -149,7 +155,7 @@ final class SquarePendingSettlementTest extends TestCase
         }
     }
 
-    /** @return array{\App\Models\Workspace, \App\Models\User, \App\Models\ClientCompany, \App\Models\ClientInvoice} */
+    /** @return array{Workspace, User, ClientCompany, ClientInvoice} */
     private function fixture(): array
     {
         $fixture = $this->paymentFixture();
@@ -183,7 +189,8 @@ final class SquarePendingSettlementTest extends TestCase
         return $fixture;
     }
 
-    private function deliver(string $id): \Illuminate\Testing\TestResponse
+    /** @return TestResponse<Response> */
+    private function deliver(string $id): TestResponse
     {
         $raw = json_encode(['event_id' => $id, 'type' => 'payout.paid', 'data' => ['id' => 'po_fixture_pending']], JSON_THROW_ON_ERROR);
         $signature = base64_encode(hash_hmac('sha256', 'https://svc.example.test/api/webhooks/square'.$raw, 'fixture-signature-key', true));
