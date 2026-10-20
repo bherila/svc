@@ -7,7 +7,9 @@ use App\Models\ClientBillingSchedule;
 use App\Models\ClientCompany;
 use App\Models\Workspace;
 use App\Support\AgentApi\AgentApiVersion;
+use App\Support\Billing\BillingPeriod;
 use App\Support\Concurrency\Locks;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
@@ -15,6 +17,8 @@ use Illuminate\Support\Facades\DB;
 /** Shared creation boundary for website and API billing schedules. */
 final class CreateBillingScheduleAction
 {
+    public function __construct(private readonly AgreementHandoverRepository $handovers = new AgreementHandoverRepository) {}
+
     /** @param array<string, mixed> $data */
     public function create(Workspace $workspace, ClientCompany $company, array $data, ?string $expectedVersion = null): ClientBillingSchedule
     {
@@ -31,6 +35,14 @@ final class CreateBillingScheduleAction
                 abort_unless(AgentApiVersion::matches($agreement, $expectedVersion), 409, 'The agreement has changed; read it and retry.');
             }
             abort_if(ClientBillingSchedule::query()->where('workspace_id', $workspace->id)->where('client_agreement_id', $agreement->id)->exists(), 409, 'This agreement already has a billing schedule; read it before generating invoices.');
+
+            $nextRun = $data['next_run_on'] ?? null;
+            $cadence = $data['cadence'] ?? null;
+            if (! is_string($nextRun) || ! is_string($cadence)) {
+                throw new \DomainException('The billing schedule needs a next run date and cadence.');
+            }
+            $period = BillingPeriod::beginningAt(CarbonImmutable::parse($nextRun), $cadence);
+            $this->handovers->forAgreement($agreement)?->assertClear($period->start->toDateString(), $period->end->toDateString());
 
             try {
                 // An earlier consistent read can retain a stale REPEATABLE READ

@@ -4,6 +4,7 @@ namespace App\Services\Billing;
 
 use App\Models\ClientBillingSchedule;
 use App\Models\Workspace;
+use App\Support\Billing\AgreementHandover;
 use App\Support\Billing\BillingPeriod;
 use App\Support\Billing\BillingScheduleLineTemplate;
 use App\Support\Billing\PeriodClaimVerdict;
@@ -100,6 +101,7 @@ final class ScheduleGenerationPreflight
     public function __construct(
         private readonly BillingPeriodCollisionResolver $collisions,
         private readonly WorkspaceClock $clock = new WorkspaceClock,
+        private readonly AgreementHandoverRepository $handovers = new AgreementHandoverRepository,
     ) {}
 
     /**
@@ -150,9 +152,13 @@ final class ScheduleGenerationPreflight
         $this->schedules($workspace)->chunkById(200, function (Collection $chunk) use (
             $through, $cap, &$refusals, &$defects, &$schedules, &$due, &$periods, &$refused, &$pending, &$defective, &$truncated
         ): void {
+            $scopes = array_values($chunk->map(fn (ClientBillingSchedule $schedule): array => [
+                'workspace_id' => $schedule->workspace_id, 'client_company_id' => $schedule->client_company_id,
+            ])->unique(fn (array $scope): string => implode(':', $scope))->all());
+            $handovers = $this->handovers->forCompanies($scopes);
             foreach ($chunk as $schedule) {
                 $schedules++;
-                $outcome = $this->classifySchedule($schedule, $through, $cap);
+                $outcome = $this->classifySchedule($schedule, $through, $cap, $handovers[$schedule->client_agreement_id] ?? null);
 
                 $periods += $outcome['periods'];
                 if ($outcome['due']) {
@@ -205,7 +211,7 @@ final class ScheduleGenerationPreflight
      *
      * @return array{due: bool, periods: int, reason: ?PeriodRefusalReason, defect: ?ScheduleDefect, pending: bool, truncated: bool}
      */
-    private function classifySchedule(ClientBillingSchedule $schedule, CarbonImmutable $through, int $cap): array
+    private function classifySchedule(ClientBillingSchedule $schedule, CarbonImmutable $through, int $cap, ?AgreementHandover $handover): array
     {
         $cursor = CarbonImmutable::parse((string) $schedule->next_run_on);
         $due = $cursor->lte($through);
@@ -237,6 +243,9 @@ final class ScheduleGenerationPreflight
             }
 
             $periods++;
+            if ($handover?->overlaps($period->start->toDateString(), $period->end->toDateString())) {
+                return $this->outcome($due, $periods, defect: ScheduleDefect::AgreementHandoverOverlap);
+            }
             $claim = $this->collisions->resolve($schedule, $period->start, $period->end);
 
             // Exhaustive, with no `default`, for the same reason

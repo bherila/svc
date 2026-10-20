@@ -342,3 +342,13 @@ Kind is applied before either, exactly as those lookups apply it — an ad-hoc o
 **No fix is implied for the cycle columns, and none should be inferred from the count.** A null service period can be read fail-closed because the question is which side of a window the row falls on. A null cycle cannot: the question is which single cycle the row belongs to, and counting it in every cycle would under-charge repeatedly rather than repair anything. Those rows need a real value, which is what this command exists to find.
 
 It reports counts and aggregate hours only — never a row, an id, an invoice number, a company, or a workspace — so it is safe to run against real billing data and to paste into an issue. It always exits zero; it is a prompt to correct rows, not a gate.
+
+### Agreement handover coverage
+
+`svc:billing:audit-handovers --workspace=<workspace-public-id> --format=json`
+reports issued invoice coverage overlapping a successor, with at most 100 invoice
+identifiers. Omit `--workspace` for an operator report across all workspaces.
+It writes nothing and exits 0 when the report completes (2 for an unknown workspace).
+Review the original pricing and proration before correcting an invoice.
+`svc:billing:preflight-schedule-generation` also reports due schedule handover
+conflicts and exits 1 until they are resolved, using the generator's policy.

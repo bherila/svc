@@ -3134,7 +3134,7 @@
                             }
                         }
                     },
-                    "description": "Workspace managers only. Classify every period each of the workspace's active billing schedules is due to bill through today, without writing, and count how many schedules would halt and why, as svc:billing:preflight-schedule-generation does for every workspace. Counts only. It examines at most 60 periods per schedule (the command examines 240), and complete is false when a backlog was longer, so the result is inconclusive rather than clean. A workspace gets 5 per ten minutes, then 429 with Retry-After.",
+                    "description": "Workspace managers only. Classify every period each of the workspace's active billing schedules is due to bill through today, without writing, and count how many schedules would halt and why, as svc:billing:preflight-schedule-generation does for every workspace. Counts only, including agreement_handover_overlap schedule defects. It examines at most 60 periods per schedule (the command examines 240), and complete is false when a backlog was longer, so the result is inconclusive rather than clean. A workspace gets 5 per ten minutes, then 429 with Retry-After.",
                     "annotations": {
                         "readOnlyHint": true,
                         "destructiveHint": false,
@@ -3263,7 +3263,8 @@
                                         "additionalProperties": false,
                                         "required": [
                                             "unreadable_cadence",
-                                            "unreadable_line_template"
+                                            "unreadable_line_template",
+                                            "agreement_handover_overlap"
                                         ],
                                         "properties": {
                                             "unreadable_cadence": {
@@ -3271,6 +3272,10 @@
                                                 "minimum": 0
                                             },
                                             "unreadable_line_template": {
+                                                "type": "integer",
+                                                "minimum": 0
+                                            },
+                                            "agreement_handover_overlap": {
                                                 "type": "integer",
                                                 "minimum": 0
                                             }
@@ -3297,7 +3302,7 @@
                         ],
                         "additionalProperties": false
                     },
-                    "description": "Workspace managers only. Count drafts whose due date or scheduled issue date has passed and active recurring agreements lacking a non-void invoice for their current retainer period, with balances per currency and up to 100 identifiers per category. Where Square serves the workspace, also flags invoices paid outside Square, billed Square series periods with no linked svc invoice, unrecorded Square payments, unlinked Square customers with an open balance, and series drift from the agreement. Flags only: nothing is issued, sent or generated, and nothing is written to Square.",
+                    "description": "Workspace managers only. Count drafts whose due date or scheduled issue date has passed and active recurring agreements lacking a non-void invoice for their current retainer period, with balances per currency and up to 100 identifiers per category. Where Square serves the workspace, also flags invoices paid outside Square, billed Square series periods with no linked svc invoice, unrecorded Square payments, unlinked Square customers with an open balance, and series drift from the agreement. Also reports issued invoice coverage overlapping a successor agreement for review, without inferring whether it was prorated. Flags only: nothing is issued, sent or generated, and nothing is written to Square.",
                     "annotations": {
                         "readOnlyHint": true,
                         "destructiveHint": false,
@@ -3316,6 +3321,61 @@
                             }
                         },
                         "$defs": {
+                            "AgreementHandoverAudit": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "count",
+                                    "invoices",
+                                    "truncated"
+                                ],
+                                "properties": {
+                                    "count": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                    },
+                                    "invoices": {
+                                        "type": "array",
+                                        "maxItems": 100,
+                                        "items": {
+                                            "type": "object",
+                                            "additionalProperties": false,
+                                            "required": [
+                                                "invoice_id",
+                                                "successor_id",
+                                                "successor_starts_on",
+                                                "coverage_start",
+                                                "coverage_end"
+                                            ],
+                                            "properties": {
+                                                "invoice_id": {
+                                                    "type": "string",
+                                                    "format": "uuid"
+                                                },
+                                                "successor_id": {
+                                                    "type": "string",
+                                                    "format": "uuid"
+                                                },
+                                                "successor_starts_on": {
+                                                    "type": "string",
+                                                    "format": "date"
+                                                },
+                                                "coverage_start": {
+                                                    "type": "string",
+                                                    "format": "date"
+                                                },
+                                                "coverage_end": {
+                                                    "type": "string",
+                                                    "format": "date"
+                                                }
+                                            }
+                                        }
+                                    },
+                                    "truncated": {
+                                        "type": "boolean"
+                                    }
+                                }
+                            },
                             "Currency": {
                                 "type": "string",
                                 "pattern": "^[A-Z]{3}$"
@@ -3848,7 +3908,8 @@
                                     "missing_periods",
                                     "missing_periods_truncated",
                                     "square_payment_mismatches",
-                                    "square_billing_audit"
+                                    "square_billing_audit",
+                                    "agreement_handovers"
                                 ],
                                 "properties": {
                                     "as_of": {
@@ -3895,6 +3956,9 @@
                                     },
                                     "square_billing_audit": {
                                         "$ref": "#/$defs/SquareBillingAudit"
+                                    },
+                                    "agreement_handovers": {
+                                        "$ref": "#/$defs/AgreementHandoverAudit"
                                     }
                                 }
                             },
@@ -29433,8 +29497,8 @@
                 "billing.audit_undated_collectible_invoices": "6309d10a3243dd56",
                 "billing.audit_unlinked_proposal_agreements": "5b8b643f5d70318d",
                 "billing.audit_unplaceable_invoices": "5c425e0550c0d9c9",
-                "billing.preflight_schedule_generation": "f6486e5ee5242614",
-                "billing_audit.stale_and_missing": "fa4a2fdb8a8363aa",
+                "billing.preflight_schedule_generation": "605ad94a702db9b2",
+                "billing_audit.stale_and_missing": "daab20f5158701ee",
                 "billing_schedules.create": "ce808d037fdc2ee7",
                 "billing_schedules.generate": "b1849c503fd5dc21",
                 "billing_schedules.get": "5e063c9324f1fbd4",
@@ -30316,8 +30380,8 @@
                 "billing.audit_undated_collectible_invoices": "6309d10a3243dd56",
                 "billing.audit_unlinked_proposal_agreements": "5b8b643f5d70318d",
                 "billing.audit_unplaceable_invoices": "5c425e0550c0d9c9",
-                "billing.preflight_schedule_generation": "f6486e5ee5242614",
-                "billing_audit.stale_and_missing": "fa4a2fdb8a8363aa",
+                "billing.preflight_schedule_generation": "605ad94a702db9b2",
+                "billing_audit.stale_and_missing": "daab20f5158701ee",
                 "billing_schedules.get": "5e063c9324f1fbd4",
                 "billing_schedules.list": "91723c13172dc456",
                 "capacity_ledger.get": "b58961097fbfe33e",
@@ -30424,8 +30488,8 @@
                 "billing.audit_undated_collectible_invoices": "6309d10a3243dd56",
                 "billing.audit_unlinked_proposal_agreements": "5b8b643f5d70318d",
                 "billing.audit_unplaceable_invoices": "5c425e0550c0d9c9",
-                "billing.preflight_schedule_generation": "f6486e5ee5242614",
-                "billing_audit.stale_and_missing": "fa4a2fdb8a8363aa",
+                "billing.preflight_schedule_generation": "605ad94a702db9b2",
+                "billing_audit.stale_and_missing": "daab20f5158701ee",
                 "billing_schedules.create": "ce808d037fdc2ee7",
                 "billing_schedules.get": "5e063c9324f1fbd4",
                 "billing_schedules.list": "91723c13172dc456",
@@ -31018,8 +31082,8 @@
                 "billing.audit_undated_collectible_invoices": "6309d10a3243dd56",
                 "billing.audit_unlinked_proposal_agreements": "5b8b643f5d70318d",
                 "billing.audit_unplaceable_invoices": "5c425e0550c0d9c9",
-                "billing.preflight_schedule_generation": "f6486e5ee5242614",
-                "billing_audit.stale_and_missing": "fa4a2fdb8a8363aa",
+                "billing.preflight_schedule_generation": "605ad94a702db9b2",
+                "billing_audit.stale_and_missing": "daab20f5158701ee",
                 "billing_schedules.get": "5e063c9324f1fbd4",
                 "billing_schedules.list": "91723c13172dc456",
                 "capacity_ledger.get": "b58961097fbfe33e",
@@ -31182,8 +31246,8 @@
                 "billing.audit_undated_collectible_invoices": "6309d10a3243dd56",
                 "billing.audit_unlinked_proposal_agreements": "5b8b643f5d70318d",
                 "billing.audit_unplaceable_invoices": "5c425e0550c0d9c9",
-                "billing.preflight_schedule_generation": "f6486e5ee5242614",
-                "billing_audit.stale_and_missing": "fa4a2fdb8a8363aa",
+                "billing.preflight_schedule_generation": "605ad94a702db9b2",
+                "billing_audit.stale_and_missing": "daab20f5158701ee",
                 "billing_schedules.get": "5e063c9324f1fbd4",
                 "billing_schedules.list": "91723c13172dc456",
                 "capacity_ledger.get": "b58961097fbfe33e",
@@ -31983,8 +32047,8 @@
                 "billing.audit_undated_collectible_invoices": "6309d10a3243dd56",
                 "billing.audit_unlinked_proposal_agreements": "5b8b643f5d70318d",
                 "billing.audit_unplaceable_invoices": "5c425e0550c0d9c9",
-                "billing.preflight_schedule_generation": "f6486e5ee5242614",
-                "billing_audit.stale_and_missing": "fa4a2fdb8a8363aa",
+                "billing.preflight_schedule_generation": "605ad94a702db9b2",
+                "billing_audit.stale_and_missing": "daab20f5158701ee",
                 "billing_schedules.get": "5e063c9324f1fbd4",
                 "billing_schedules.list": "91723c13172dc456",
                 "capacity_ledger.get": "b58961097fbfe33e",
@@ -32145,8 +32209,8 @@
                 "billing.audit_undated_collectible_invoices": "6309d10a3243dd56",
                 "billing.audit_unlinked_proposal_agreements": "5b8b643f5d70318d",
                 "billing.audit_unplaceable_invoices": "5c425e0550c0d9c9",
-                "billing.preflight_schedule_generation": "f6486e5ee5242614",
-                "billing_audit.stale_and_missing": "fa4a2fdb8a8363aa",
+                "billing.preflight_schedule_generation": "605ad94a702db9b2",
+                "billing_audit.stale_and_missing": "daab20f5158701ee",
                 "billing_schedules.get": "5e063c9324f1fbd4",
                 "billing_schedules.list": "91723c13172dc456",
                 "capacity_ledger.get": "b58961097fbfe33e",
@@ -32946,8 +33010,8 @@
                 "billing.audit_undated_collectible_invoices": "6309d10a3243dd56",
                 "billing.audit_unlinked_proposal_agreements": "5b8b643f5d70318d",
                 "billing.audit_unplaceable_invoices": "5c425e0550c0d9c9",
-                "billing.preflight_schedule_generation": "f6486e5ee5242614",
-                "billing_audit.stale_and_missing": "fa4a2fdb8a8363aa",
+                "billing.preflight_schedule_generation": "605ad94a702db9b2",
+                "billing_audit.stale_and_missing": "daab20f5158701ee",
                 "billing_schedules.get": "5e063c9324f1fbd4",
                 "billing_schedules.list": "91723c13172dc456",
                 "capacity_ledger.get": "b58961097fbfe33e",
@@ -33110,8 +33174,8 @@
                 "billing.audit_undated_collectible_invoices": "6309d10a3243dd56",
                 "billing.audit_unlinked_proposal_agreements": "5b8b643f5d70318d",
                 "billing.audit_unplaceable_invoices": "5c425e0550c0d9c9",
-                "billing.preflight_schedule_generation": "f6486e5ee5242614",
-                "billing_audit.stale_and_missing": "fa4a2fdb8a8363aa",
+                "billing.preflight_schedule_generation": "605ad94a702db9b2",
+                "billing_audit.stale_and_missing": "daab20f5158701ee",
                 "billing_schedules.get": "5e063c9324f1fbd4",
                 "billing_schedules.list": "91723c13172dc456",
                 "capacity_ledger.get": "b58961097fbfe33e",
@@ -33882,8 +33946,8 @@
                 "billing.audit_undated_collectible_invoices": "6309d10a3243dd56",
                 "billing.audit_unlinked_proposal_agreements": "5b8b643f5d70318d",
                 "billing.audit_unplaceable_invoices": "5c425e0550c0d9c9",
-                "billing.preflight_schedule_generation": "f6486e5ee5242614",
-                "billing_audit.stale_and_missing": "fa4a2fdb8a8363aa",
+                "billing.preflight_schedule_generation": "605ad94a702db9b2",
+                "billing_audit.stale_and_missing": "daab20f5158701ee",
                 "billing_schedules.get": "5e063c9324f1fbd4",
                 "billing_schedules.list": "91723c13172dc456",
                 "capacity_ledger.get": "b58961097fbfe33e",
@@ -34046,8 +34110,8 @@
                 "billing.audit_undated_collectible_invoices": "6309d10a3243dd56",
                 "billing.audit_unlinked_proposal_agreements": "5b8b643f5d70318d",
                 "billing.audit_unplaceable_invoices": "5c425e0550c0d9c9",
-                "billing.preflight_schedule_generation": "f6486e5ee5242614",
-                "billing_audit.stale_and_missing": "fa4a2fdb8a8363aa",
+                "billing.preflight_schedule_generation": "605ad94a702db9b2",
+                "billing_audit.stale_and_missing": "daab20f5158701ee",
                 "billing_schedules.get": "5e063c9324f1fbd4",
                 "billing_schedules.list": "91723c13172dc456",
                 "capacity_ledger.get": "b58961097fbfe33e",
@@ -34894,8 +34958,8 @@
                 "billing.audit_undated_collectible_invoices": "6309d10a3243dd56",
                 "billing.audit_unlinked_proposal_agreements": "5b8b643f5d70318d",
                 "billing.audit_unplaceable_invoices": "5c425e0550c0d9c9",
-                "billing.preflight_schedule_generation": "f6486e5ee5242614",
-                "billing_audit.stale_and_missing": "fa4a2fdb8a8363aa",
+                "billing.preflight_schedule_generation": "605ad94a702db9b2",
+                "billing_audit.stale_and_missing": "daab20f5158701ee",
                 "billing_schedules.get": "5e063c9324f1fbd4",
                 "billing_schedules.list": "91723c13172dc456",
                 "capacity_ledger.get": "b58961097fbfe33e",
@@ -35056,8 +35120,8 @@
                 "billing.audit_undated_collectible_invoices": "6309d10a3243dd56",
                 "billing.audit_unlinked_proposal_agreements": "5b8b643f5d70318d",
                 "billing.audit_unplaceable_invoices": "5c425e0550c0d9c9",
-                "billing.preflight_schedule_generation": "f6486e5ee5242614",
-                "billing_audit.stale_and_missing": "fa4a2fdb8a8363aa",
+                "billing.preflight_schedule_generation": "605ad94a702db9b2",
+                "billing_audit.stale_and_missing": "daab20f5158701ee",
                 "billing_schedules.get": "5e063c9324f1fbd4",
                 "billing_schedules.list": "91723c13172dc456",
                 "capacity_ledger.get": "b58961097fbfe33e",
@@ -35807,8 +35871,8 @@
                 "billing.audit_undated_collectible_invoices": "6309d10a3243dd56",
                 "billing.audit_unlinked_proposal_agreements": "5b8b643f5d70318d",
                 "billing.audit_unplaceable_invoices": "5c425e0550c0d9c9",
-                "billing.preflight_schedule_generation": "f6486e5ee5242614",
-                "billing_audit.stale_and_missing": "fa4a2fdb8a8363aa",
+                "billing.preflight_schedule_generation": "605ad94a702db9b2",
+                "billing_audit.stale_and_missing": "daab20f5158701ee",
                 "billing_schedules.create": "ce808d037fdc2ee7",
                 "billing_schedules.generate": "b1849c503fd5dc21",
                 "billing_schedules.get": "5e063c9324f1fbd4",
@@ -35970,8 +36034,8 @@
                 "billing.audit_undated_collectible_invoices": "6309d10a3243dd56",
                 "billing.audit_unlinked_proposal_agreements": "5b8b643f5d70318d",
                 "billing.audit_unplaceable_invoices": "5c425e0550c0d9c9",
-                "billing.preflight_schedule_generation": "f6486e5ee5242614",
-                "billing_audit.stale_and_missing": "fa4a2fdb8a8363aa",
+                "billing.preflight_schedule_generation": "605ad94a702db9b2",
+                "billing_audit.stale_and_missing": "daab20f5158701ee",
                 "billing_schedules.create": "ce808d037fdc2ee7",
                 "billing_schedules.generate": "b1849c503fd5dc21",
                 "billing_schedules.get": "5e063c9324f1fbd4",
@@ -36790,8 +36854,8 @@
                 "billing.audit_undated_collectible_invoices": "6309d10a3243dd56",
                 "billing.audit_unlinked_proposal_agreements": "5b8b643f5d70318d",
                 "billing.audit_unplaceable_invoices": "5c425e0550c0d9c9",
-                "billing.preflight_schedule_generation": "f6486e5ee5242614",
-                "billing_audit.stale_and_missing": "fa4a2fdb8a8363aa",
+                "billing.preflight_schedule_generation": "605ad94a702db9b2",
+                "billing_audit.stale_and_missing": "daab20f5158701ee",
                 "billing_schedules.create": "ce808d037fdc2ee7",
                 "billing_schedules.generate": "b1849c503fd5dc21",
                 "billing_schedules.get": "5e063c9324f1fbd4",
@@ -36952,8 +37016,8 @@
                 "billing.audit_undated_collectible_invoices": "6309d10a3243dd56",
                 "billing.audit_unlinked_proposal_agreements": "5b8b643f5d70318d",
                 "billing.audit_unplaceable_invoices": "5c425e0550c0d9c9",
-                "billing.preflight_schedule_generation": "f6486e5ee5242614",
-                "billing_audit.stale_and_missing": "fa4a2fdb8a8363aa",
+                "billing.preflight_schedule_generation": "605ad94a702db9b2",
+                "billing_audit.stale_and_missing": "daab20f5158701ee",
                 "billing_schedules.create": "ce808d037fdc2ee7",
                 "billing_schedules.generate": "b1849c503fd5dc21",
                 "billing_schedules.get": "5e063c9324f1fbd4",
@@ -38605,8 +38669,8 @@
                 "billing.audit_undated_collectible_invoices": "6309d10a3243dd56",
                 "billing.audit_unlinked_proposal_agreements": "5b8b643f5d70318d",
                 "billing.audit_unplaceable_invoices": "5c425e0550c0d9c9",
-                "billing.preflight_schedule_generation": "f6486e5ee5242614",
-                "billing_audit.stale_and_missing": "fa4a2fdb8a8363aa",
+                "billing.preflight_schedule_generation": "605ad94a702db9b2",
+                "billing_audit.stale_and_missing": "daab20f5158701ee",
                 "billing_schedules.create": "ce808d037fdc2ee7",
                 "billing_schedules.generate": "b1849c503fd5dc21",
                 "billing_schedules.get": "5e063c9324f1fbd4",
@@ -38770,8 +38834,8 @@
                 "billing.audit_undated_collectible_invoices": "6309d10a3243dd56",
                 "billing.audit_unlinked_proposal_agreements": "5b8b643f5d70318d",
                 "billing.audit_unplaceable_invoices": "5c425e0550c0d9c9",
-                "billing.preflight_schedule_generation": "f6486e5ee5242614",
-                "billing_audit.stale_and_missing": "fa4a2fdb8a8363aa",
+                "billing.preflight_schedule_generation": "605ad94a702db9b2",
+                "billing_audit.stale_and_missing": "daab20f5158701ee",
                 "billing_schedules.create": "ce808d037fdc2ee7",
                 "billing_schedules.generate": "b1849c503fd5dc21",
                 "billing_schedules.get": "5e063c9324f1fbd4",
