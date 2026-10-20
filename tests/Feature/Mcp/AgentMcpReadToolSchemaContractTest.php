@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Mcp;
 
+use App\Services\AgentApi\Operations\AgentOperationCatalog;
 use App\Services\Mcp\AgentMcpToolSchemas;
 use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
 use Bherila\McpLaravelBridge\Capabilities\Operation;
@@ -89,6 +90,22 @@ final class AgentMcpReadToolSchemaContractTest extends TestCase
         foreach ($this->readTools() as $operation) {
             $this->assertSame(AgentApiResponseSchemaCatalog::forOperation($operation->id), $schemas->output($operation), $operation->id);
         }
+    }
+
+    public function test_the_resources_that_return_a_route_representation_promise_exactly_it(): void
+    {
+        $schemas = new AgentMcpToolSchemas;
+        $catalog = app(AgentOperationCatalog::class);
+        $registry = app(OperationRegistry::class);
+        foreach (['resources.current_context' => ['ContextResponse', false], 'resources.agreement' => ['AgreementResponse', true]] as $id => [$component, $manager]) {
+            $operation = $registry->find($id);
+            $this->assertNotNull($operation, $id);
+            $this->assertNull($operation->rest, $id);
+            $this->assertSame(AgentApiResponseSchemaCatalog::schema($component), $schemas->output($operation), $id);
+            $this->assertSame($manager, $catalog->isManagerOnly($id), $id);
+        }
+        $this->assertSame(AgentApiResponseSchemaCatalog::forOperation('context.get'), AgentApiResponseSchemaCatalog::schema('ContextResponse'));
+        $this->assertSame(AgentApiResponseSchemaCatalog::forOperation('agreements.get'), AgentApiResponseSchemaCatalog::schema('AgreementResponse'));
     }
 
     public function test_every_exception_names_a_parameter_its_route_still_takes(): void
