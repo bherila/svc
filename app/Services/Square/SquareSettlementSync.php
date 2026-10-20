@@ -30,6 +30,7 @@ final class SquareSettlementSync
     public function __construct(
         private readonly SquareClient $client,
         private readonly ProcessorSettlementRecorder $recorder,
+        private readonly SquarePendingSettlements $pending,
     ) {}
 
     /**
@@ -96,7 +97,10 @@ final class SquareSettlementSync
             $payment->processingFee === null ? null : $payment->currency,
         );
 
-        return $this->recorder->recordPaymentSettlement($workspace, 'square', [$payment->id], $settlement, $apply);
+        $charged = $this->recorder->recordPaymentSettlement($workspace, 'square', [$payment->id], $settlement, $apply);
+        $settled = $this->pending->deliver($workspace, $payment->id, $apply);
+
+        return $charged || $settled;
     }
 
     /** @throws SquareRequestFailed */
@@ -132,7 +136,13 @@ final class SquareSettlementSync
                 continue;
             }
             $settlement = PaymentSettlement::payout($payout->identifier, $payout->arrivalDate, $payout->observedAtMs, null, $entry->fee, $entry->currency);
-            if ($this->recorder->recordPaymentSettlement($workspace, 'square', [$entry->paymentId], $settlement, $apply)) {
+            if ($apply) {
+                $this->pending->remember($workspace, $entry->paymentId, $settlement);
+            }
+            $changed = $apply
+                ? $this->pending->deliver($workspace, $entry->paymentId)
+                : $this->recorder->recordPaymentSettlement($workspace, 'square', [$entry->paymentId], $settlement, false);
+            if ($changed) {
                 $payments++;
             }
         }

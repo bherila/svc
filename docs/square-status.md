@@ -32,6 +32,26 @@ the ProcessingFee reference assessments as positive - so the sign of the
 `INITIAL` fee decides which convention a response uses, and adjustments net in
 it. Payout history is filled by `svc:finance:backfill-payouts`, which lists
 each location's payouts with `GET /v2/payouts`.
+
+A payout can arrive before its invoice payment is recorded: Square does not promise
+[notification order](https://developer.squareup.com/docs/webhooks/overview#requirements-and-limitations).
+Charge entries are first kept in the workspace's `square_pending_settlements`, then delivered
+through `ProcessorSettlementRecorder`. The payment reconciliation path also delivers waiting
+entries after it records or refreshes the payment. Missing payments retain their entries; a
+successful or already-current delivery consumes the entry with the payment update in one
+transaction. Newer reports replace older waiting facts, and the recorder still prevents a stale
+report from replacing newer payment facts. Dry runs create or consume no entries. No queue worker
+or repeat delivery of an already-completed webhook is needed.
+
+Some payout charges are non-invoice sales that will never be recorded here. The daily
+`svc:square:prune-pending-settlements` command removes at most 1,000 waiting entries older than
+30 days for the configured workspace; a larger backlog continues on later daily runs or manual
+invocations. `SQUARE_PENDING_SETTLEMENT_RETENTION_DAYS` changes this positive-day retention.
+A newer accepted report resets the retention time; a duplicate or stale report does not.
+After retention expires, late-recorded payments still use the explicit recovery command
+`svc:finance:backfill-payouts --provider=square --apply` to reread their payout history. This
+bounded retention is accepted for the single-operator workload; unbounded late invoice recording
+would need a longer configured window or a separate recovery process.
 No raw webhook body or signature key is stored in a receipt.
 
 `svc:square:reconcile-payments` runs every fifteen minutes without overlapping.
