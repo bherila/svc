@@ -6,6 +6,7 @@ use App\Models\ClientAgreement;
 use App\Models\ClientTimeEntry;
 use App\Support\Billing\DeferredBuyDownRequest;
 use App\Support\Billing\DeferredBuyDownSelection;
+use App\Support\Billing\InvoiceKind;
 use DomainException;
 use Tests\TestCase;
 
@@ -62,6 +63,16 @@ final class DeferredBuyDownSelectionTest extends TestCase
     {
         $this->expectException(DomainException::class);
         DeferredBuyDownSelection::select($this->agreement(), [$this->entry(1, 0)], DeferredBuyDownRequest::from(['hours' => 1]));
+    }
+
+    public function test_the_settlement_kind_preserves_history_without_claiming_a_cadence_cycle(): void
+    {
+        $kind = InvoiceKind::DeferredBuyDown;
+        $this->assertSame('deferred_buydown', $kind->value);
+        $this->assertTrue($kind->requiresCompleteServicePeriod());
+        $this->assertContains($kind->value, InvoiceKind::cycleGuardExclusions());
+        $this->assertNotContains($kind->value, InvoiceKind::matchedByCycle());
+        $this->assertEqualsCanonicalizing(['ad_hoc', 'deferred_buydown'], InvoiceKind::preservedHistoryValues());
     }
 
     private function agreement(): ClientAgreement

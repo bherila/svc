@@ -39,6 +39,15 @@ final class CalendarDateCastTablesTest extends TestCase
         $this->assertSame($expected, $instance->getCasts());
     }
 
+    public function test_the_portal_backlog_setting_is_fillable_and_can_be_turned_off_again(): void
+    {
+        $agreement = new ClientAgreement;
+        $agreement->fill(['show_deferred_backlog_to_client' => 1]);
+        $this->assertTrue($agreement->show_deferred_backlog_to_client);
+        $agreement->fill(['show_deferred_backlog_to_client' => 0]);
+        $this->assertFalse($agreement->show_deferred_backlog_to_client);
+    }
+
     /** @return iterable<string, array{class-string<Model>, array<string, string>}> */
     public static function tables(): iterable
     {
