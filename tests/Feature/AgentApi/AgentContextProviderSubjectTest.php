@@ -3,10 +3,13 @@
 namespace Tests\Feature\AgentApi;
 
 use App\Models\User;
+use App\Support\AgentApi\AgentApiContract;
 use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
 use App\Support\AgentApi\AgentApiScopes;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Mcp\Capability\Discovery\SchemaValidator;
+use PHPUnit\Framework\Attributes\DataProvider;
+use Tests\Concerns\CallsMcp;
 use Tests\Concerns\IssuesAgentOAuthTokens;
 use Tests\TestCase;
 
@@ -18,6 +21,7 @@ use Tests\TestCase;
  */
 final class AgentContextProviderSubjectTest extends TestCase
 {
+    use CallsMcp;
     use IssuesAgentOAuthTokens;
     use RefreshDatabase;
 
@@ -37,8 +41,55 @@ final class AgentContextProviderSubjectTest extends TestCase
         $context = $this->withToken($tokens['access_token'])->getJson('/api/v1/context')
             ->assertOk()
             ->assertJsonPath('data.id', $user->public_id)
-            ->assertJsonPath('data.provider_subject', '4711');
+            ->assertJsonPath('data.provider_subject', '4711')
+            ->assertJsonPath('data.contract_version', 1);
+        $this->assertSame(1, AgentApiContract::VERSION);
         $this->assertSame([], (new SchemaValidator)->validateAgainstJsonSchema($context->json(), AgentApiResponseSchemaCatalog::forOperation('context.get')));
+    }
+
+    public function test_the_real_oauth_mcp_context_publishes_the_same_contract_and_preserves_its_own_provider_subject(): void
+    {
+        $user = User::factory()->create(['oauth_provider' => self::PROVIDER, 'oauth_subject' => '4711']);
+        $tokens = $this->issueAgentTokens($user, 'mcp', [AgentApiScopes::MCP_USE, AgentApiScopes::IDENTITY_READ]);
+        $this->withToken($tokens['access_token']);
+        $context = $this->callTool($this->initialize(), 'context.get', []);
+
+        $this->assertArrayNotHasKey('error', $context);
+        $body = $context['result']['structuredContent'];
+        $this->assertSame(1, $body['data']['contract_version'] ?? null);
+        $this->assertSame($user->public_id, $body['data']['id']);
+        $this->assertSame('4711', $body['data']['provider_subject']);
+        $this->assertSame([], (new SchemaValidator)->validateAgainstJsonSchema($body, AgentApiResponseSchemaCatalog::forOperation('context.get')));
+    }
+
+    /** @return array<string, array{bool, mixed}> */
+    public static function invalidContractVersions(): array
+    {
+        return [
+            'missing' => [false, null],
+            'null' => [true, null],
+            'numeric string' => [true, '1'],
+            'boolean' => [true, true],
+            'fraction' => [true, 1.5],
+            'zero' => [true, 0],
+            'unsupported integer' => [true, 2],
+        ];
+    }
+
+    #[DataProvider('invalidContractVersions')]
+    public function test_the_canonical_context_requires_the_exact_supported_integer_contract(bool $present, mixed $version): void
+    {
+        $context = ['id' => '0192f0e4-7b3a-7c3e-9a51-3f1d2b6c4a01', 'name' => 'Synthetic person', 'provider_subject' => null,
+            'capabilities' => [], 'withheld_tools' => [], 'workspaces' => [], 'contract_version' => 1];
+        $schema = AgentApiResponseSchemaCatalog::schema('Context');
+        $validator = new SchemaValidator;
+        $this->assertSame([], $validator->validateAgainstJsonSchema($context, $schema));
+        unset($context['contract_version']);
+        if ($present) {
+            $context['contract_version'] = $version;
+        }
+
+        $this->assertNotSame([], $validator->validateAgainstJsonSchema($context, $schema));
     }
 
     public function test_an_unbound_or_foreign_binding_has_no_provider_subject(): void

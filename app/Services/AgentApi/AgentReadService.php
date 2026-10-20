@@ -18,6 +18,7 @@ use App\Services\Authorization\ProjectAccess;
 use App\Services\Billing\DeferredBacklogReadService;
 use App\Services\Billing\InvoiceCorrectionReadService;
 use App\Services\Mcp\AgentWithheldTools;
+use App\Support\AgentApi\AgentApiContract;
 use App\Support\AgentApi\AgentApiCursor;
 use App\Support\AgentApi\AgentApiScopes;
 use App\Support\AgentApi\AgentWriteCutover;
@@ -92,6 +93,7 @@ final class AgentReadService
             ->filter(fn (Workspace $workspace): bool => $this->access->canViewWorkspace($user, $workspace));
 
         return [
+            'contract_version' => AgentApiContract::VERSION,
             'id' => $user->public_id,
             'name' => $user->name,
             'provider_subject' => $this->providerSubject($user),

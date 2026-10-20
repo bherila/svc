@@ -11914,6 +11914,7 @@
                 "type": "object",
                 "additionalProperties": false,
                 "required": [
+                    "contract_version",
                     "id",
                     "name",
                     "provider_subject",
@@ -11922,6 +11923,13 @@
                     "withheld_tools"
                 ],
                 "properties": {
+                    "contract_version": {
+                        "type": "integer",
+                        "enum": [
+                            1
+                        ],
+                        "description": "Published agent API contract baseline. A finance consumer must explicitly support this integer; it is independent of resource version hashes, the application release and the MCP protocol."
+                    },
                     "id": {
                         "$ref": "#/components/schemas/Uuid"
                     },
