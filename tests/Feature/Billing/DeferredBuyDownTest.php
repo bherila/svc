@@ -98,6 +98,7 @@ final class DeferredBuyDownTest extends TestCase
         $this->assertSame(240, $movement->trend[0]->minutesBoughtDown);
         $this->assertSame(-240, $movement->trend[0]->netMinutes());
         $this->assertSame(10000, $invoice->lines[0]->unit_amount);
+        $this->assertSame('4.0000', $invoice->lines[0]->hours);
         $this->assertSame([$first->id, $second->id], $invoice->lines[0]->timeEntries()->pluck('client_time_entries.id')->all());
         $remainder = app(DeferredBillingAllocator::class)->collectForTermination($this->company, Carbon::parse('2026-06-15'), $this->agreement);
         $this->assertSame([$last->id], $remainder->modelKeys());
@@ -107,6 +108,32 @@ final class DeferredBuyDownTest extends TestCase
         app(InvoiceLifecycleService::class)->discardDraft($invoice, $this->workspace, 'Synthetic cancellation');
         $this->assertCount(3, app(DeferredBillingAllocator::class)->collectForTermination($this->company, Carbon::parse('2026-06-15'), $this->agreement));
         $this->assertDatabaseCount('client_invoice_line_time_entries', 0);
+    }
+
+    public function test_mixed_pricing_groups_keep_their_hours_rates_project_and_entry_links_on_the_draft(): void
+    {
+        $consultant = $this->entry(60, '2026-01-01');
+        $project = ClientProject::query()->create(['workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id, 'name' => 'Synthetic flat-hourly project']);
+        $flat = $this->entry(90, '2026-01-02');
+        $flat->update(['client_project_id' => $project->id, 'subcontractor_billing_mode' => 'flat_hourly', 'subcontractor_cost_amount' => 5000, 'subcontractor_cost_currency' => 'USD']);
+        $direct = $this->entry(60, '2026-01-03');
+        $direct->update(['subcontractor_billing_mode' => 'direct']);
+        $billing = app(DeferredBuyDownAction::class);
+        $request = DeferredBuyDownRequest::from(['hours' => 3]);
+        $preview = $billing->preview($this->workspace, $this->agreement, $request);
+        $invoice = $billing->create($this->workspace, $this->agreement, $request, $preview->version);
+        $this->assertSame(17500, $invoice->total_amount);
+        $lines = $invoice->lines()->orderBy('unit_amount', 'desc')->with('timeEntries')->get();
+        $this->assertCount(2, $lines);
+        $this->assertSame(['1.0000', '1.5000'], $lines->pluck('hours')->all());
+        $this->assertSame(['1.0000', '1.5000'], $lines->pluck('quantity')->all());
+        $this->assertSame([10000, 5000], $lines->pluck('unit_amount')->all());
+        $this->assertSame([10000, 7500], $lines->pluck('total_amount')->all());
+        $this->assertSame(['deferred_buydown', 'deferred_buydown'], $lines->pluck('type')->all());
+        $this->assertSame($project->id, $lines[1]->client_project_id);
+        $this->assertSame([$consultant->id], $lines[0]->timeEntries->modelKeys());
+        $this->assertSame([$flat->id], $lines[1]->timeEntries->modelKeys());
+        $this->assertFalse($direct->invoiceLines()->exists());
     }
 
     public function test_issued_unpaid_work_stays_reserved_and_void_restores_it(): void

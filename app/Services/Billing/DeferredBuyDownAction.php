@@ -118,9 +118,10 @@ final class DeferredBuyDownAction
     /** @param list<ClientTimeEntry> $entries */
     private function line(ClientInvoice $invoice, array $entries, int $minutes, int $rate, int $total, ?int $project): void
     {
+        $hours = MoneyService::hoursForMinutes($minutes);
         $line = $invoice->lines()->create(['workspace_id' => $invoice->workspace_id, 'client_agreement_id' => $invoice->client_agreement_id, 'client_project_id' => $project,
             'type' => InvoiceLineType::DeferredBuyDown->value, 'description' => 'Deferred work settled outside the retainer',
-            'quantity' => MoneyService::hoursForMinutes($minutes), 'unit_amount' => $rate,
+            'quantity' => $hours, 'hours' => $hours, 'unit_amount' => $rate,
             'tax_amount' => 0, 'total_amount' => $total, 'line_date' => $invoice->issue_date?->toDateString(), 'sort_order' => $entries[0]->id]);
         $line->timeEntries()->attach(array_map(static fn (ClientTimeEntry $entry): int => $entry->id, $entries), ['workspace_id' => $invoice->workspace_id]);
     }
