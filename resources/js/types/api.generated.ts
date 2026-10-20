@@ -2312,7 +2312,7 @@ export interface components {
              * Format: uuid
              * @description Creation-only finance transaction provenance. Returned only to workspace owners/admins; null for other readers.
              */
-            readonly external_finance_transaction_uuid?: string | null;
+            readonly external_finance_transaction_uuid: string | null;
         };
         ExpenseApprovalRequest: {
             expected_version: components['schemas']['Version'];

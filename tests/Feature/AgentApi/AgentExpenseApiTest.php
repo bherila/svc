@@ -186,6 +186,21 @@ final class AgentExpenseApiTest extends TestCase
         $this->assertSame([], (new SchemaValidator)->validateAgainstJsonSchema($memberPage->json(), AgentApiResponseSchemaCatalog::forOperation('expenses.list')));
     }
 
+    public function test_expense_response_schema_requires_the_nullable_finance_reference_key(): void
+    {
+        [$workspace, $company, , $owner] = $this->fixture();
+        $this->record($workspace, $company);
+        $this->agent($owner, ['expenses:read']);
+        $page = $this->getJson($this->url($workspace))->assertOk()->json();
+        $schema = AgentApiResponseSchemaCatalog::forOperation('expenses.list');
+        $validator = new SchemaValidator;
+        $this->assertArrayHasKey('external_finance_transaction_uuid', $page['data'][0]);
+        $this->assertNull($page['data'][0]['external_finance_transaction_uuid']);
+        $this->assertSame([], $validator->validateAgainstJsonSchema($page, $schema));
+        unset($page['data'][0]['external_finance_transaction_uuid']);
+        $this->assertNotSame([], $validator->validateAgainstJsonSchema($page, $schema));
+    }
+
     public function test_browser_mutations_advance_revision_and_both_deletions_require_drafts(): void
     {
         [$workspace, $company, $project, $owner] = $this->fixture();
