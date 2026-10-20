@@ -128,10 +128,26 @@ final class PassportConnectionIsolationTest extends TestCase
             'expires_at' => now()->addDay(),
         ])->saveOrFail();
 
+        // This fixture creates a separate Passport database by hand. Register
+        // its pre-cutover credentials through the real guard migration too.
+        $defaultSequences = DB::table('oauth_credential_revocations')->orderBy('scope_key')->pluck('sequence', 'scope_key')->all();
+        $defaultLineages = DB::table('oauth_credential_lineages')->count();
+        $migration = require database_path('migrations/2026_10_20_230000_create_oauth_credential_lineages.php');
+        $this->assertSame('passport_test', $migration->getConnection());
+        $migration->up();
+        foreach (['oauth_credential_revocations', 'oauth_credential_lineages', 'oauth_credential_members'] as $table) {
+            $this->assertTrue(Schema::connection('passport_test')->hasTable($table), $table);
+        }
+
         $refreshUpdateTransactionLevels = [];
         $updates = [];
         DB::listen(static function (QueryExecuted $query) use (&$refreshUpdateTransactionLevels, &$updates): void {
             if ($query->connectionName !== 'passport_test' || ! str_starts_with($query->sql, 'update')) {
+                return;
+            }
+            // Guard metadata is updated in the same transaction; this ordering
+            // assertion specifically follows the Passport credential writes.
+            if (! str_contains($query->sql, 'oauth_refresh_tokens') && ! str_contains($query->sql, 'oauth_access_tokens')) {
                 return;
             }
             $updates[] = str_contains($query->sql, 'oauth_refresh_tokens') ? 'refresh' : 'access';
@@ -150,6 +166,11 @@ final class PassportConnectionIsolationTest extends TestCase
         $this->assertSame(['refresh', 'access'], $updates);
         $this->assertTrue((bool) Passport::token()->newQuery()->findOrFail($tokenId)->revoked);
         $this->assertTrue((bool) Passport::refreshToken()->newQuery()->where('access_token_id', $tokenId)->sole()->revoked);
+        $this->assertTrue((bool) DB::connection('passport_test')->table('oauth_credential_lineages')->sole()->revoked);
+        $this->assertSame(2, DB::connection('passport_test')->table('oauth_credential_members')->count());
+        $this->assertSame($defaultSequences, DB::table('oauth_credential_revocations')->orderBy('scope_key')->pluck('sequence', 'scope_key')->all());
+        $this->assertSame($defaultLineages, DB::table('oauth_credential_lineages')->count());
+
     }
 
     private function configurePassportConnection(): void
