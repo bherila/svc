@@ -30,10 +30,12 @@ final class AgentExpenseCrossTransportRetryTest extends TestCase
             yield $operation.' REST then MCP' => [$operation, true];
             yield $operation.' MCP then REST' => [$operation, false];
         }
+        yield 'finance reference REST then MCP' => ['log', true, true];
+        yield 'finance reference MCP then REST' => ['log', false, true];
     }
 
     #[DataProvider('directions')]
-    public function test_same_client_and_key_replay_across_transports(string $operation, bool $restFirst): void
+    public function test_same_client_and_key_replay_across_transports(string $operation, bool $restFirst, bool $withFinanceReference = false): void
     {
         [$workspace, $company, $owner] = $this->fixture();
         $this->actingAsMcp($owner, ['mcp:use', 'expenses:read', 'expenses:write']);
@@ -45,6 +47,9 @@ final class AgentExpenseCrossTransportRetryTest extends TestCase
             'update' => $facts + ['expected_version' => AgentApiVersion::for($record)],
             'delete' => ['expected_version' => AgentApiVersion::for($record)],
         };
+        if ($withFinanceReference) {
+            $body['entries'][0]['external_finance_transaction_uuid'] = '00000000-0000-4000-8000-000000000004';
+        }
         $method = match ($operation) {
             'log' => 'POST', 'update' => 'PATCH', 'delete' => 'DELETE'
         };
@@ -63,6 +68,10 @@ final class AgentExpenseCrossTransportRetryTest extends TestCase
         $receipts = AgentMutationReceipt::query()->where('workspace_id', $workspace->id)->get();
         $this->assertCount(1, $receipts);
         $this->assertSame('mcp-test-client', $receipts->sole()->oauth_client_id);
+        if ($withFinanceReference) {
+            $this->assertSame('00000000-0000-4000-8000-000000000004', $first[0]['external_finance_transaction_uuid']);
+            $this->assertSame('00000000-0000-4000-8000-000000000004', ClientExpense::query()->sole()->external_finance_transaction_uuid);
+        }
     }
 
     public function test_rest_receipts_are_isolated_between_authenticated_oauth_clients(): void

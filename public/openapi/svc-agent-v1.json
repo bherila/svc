@@ -12223,7 +12223,8 @@
                     "status_label",
                     "version",
                     "can_edit",
-                    "can_delete"
+                    "can_delete",
+                    "external_finance_transaction_uuid"
                 ],
                 "properties": {
                     "id": {
@@ -12272,6 +12273,15 @@
                     },
                     "can_delete": {
                         "type": "boolean"
+                    },
+                    "external_finance_transaction_uuid": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "uuid",
+                        "readOnly": true,
+                        "description": "Creation-only finance transaction provenance. Returned only to workspace owners/admins; null for other readers."
                     }
                 }
             },
@@ -12359,6 +12369,14 @@
                             "null"
                         ],
                         "format": "uuid"
+                    },
+                    "external_finance_transaction_uuid": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "uuid",
+                        "description": "Optional creation-only finance transaction provenance. Retry identity remains the Idempotency-Key, not this reference."
                     }
                 }
             },

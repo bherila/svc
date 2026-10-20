@@ -13,9 +13,9 @@ use App\Support\Expenses\NewExpense;
 /** Shared web and API expense operations; lifecycle and locks belong to the scoped DAO. */
 final class ExpenseAction
 {
-    public function record(Workspace $workspace, ClientCompany $company, ?ClientProject $project, NewExpense $facts, User $actor): ClientExpense
+    public function record(Workspace $workspace, ClientCompany $company, ?ClientProject $project, NewExpense $facts, User $actor, ?string $externalFinanceTransactionUuid = null): ClientExpense
     {
-        return (new WorkspaceExpenses($workspace))->record($company, $project, $facts, $actor);
+        return (new WorkspaceExpenses($workspace))->record($company, $project, $facts, $actor, $externalFinanceTransactionUuid);
     }
 
     public function update(Workspace $workspace, string $id, NewExpense $facts, ?string $projectId, bool $reattribute, ?string $expectedVersion = null): ClientExpense

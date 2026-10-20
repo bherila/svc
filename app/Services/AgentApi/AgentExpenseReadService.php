@@ -55,9 +55,10 @@ final class AgentExpenseReadService
         }
         $last = $records->last();
         $canWrite = $writeScope && $this->canWrite($user, $workspace);
+        $manager = $this->access->isWorkspaceManager($user, $workspace);
 
         return [
-            'data' => array_values($records->map(fn (ClientExpense $record): array => $this->presenter->present($record, $canWrite))->all()),
+            'data' => array_values($records->map(fn (ClientExpense $record): array => $this->presenter->present($record, $canWrite, $manager))->all()),
             'meta' => ['next_cursor' => $hasMore && $last !== null ? AgentApiCursor::encode($last->id, $workspace->public_id, $queryKey) : null],
         ];
     }
@@ -68,11 +69,12 @@ final class AgentExpenseReadService
     {
         $records = $this->visible($user, $workspace)->whereIn('public_id', $ids)->get()->keyBy('public_id');
         $canWrite = $this->canWrite($user, $workspace);
+        $manager = $this->access->isWorkspaceManager($user, $workspace);
         $result = [];
         foreach ($ids as $id) {
             $record = $records->get($id);
             abort_unless($record instanceof ClientExpense, 404);
-            $result[] = $this->presenter->present($record, $canWrite);
+            $result[] = $this->presenter->present($record, $canWrite, $manager);
         }
 
         return $result;
