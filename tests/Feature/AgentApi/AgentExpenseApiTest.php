@@ -83,6 +83,49 @@ final class AgentExpenseApiTest extends TestCase
         $this->getJson($this->url($workspace))->assertOk()->assertJsonCount(0, 'data');
     }
 
+    public function test_finance_reference_is_creation_only_provenance_bound_to_the_existing_retry_key(): void
+    {
+        [$workspace, $company, , $owner] = $this->fixture();
+        $this->agent($owner);
+        $reference = '00000000-0000-4000-8000-000000000001';
+        $entry = $this->facts() + ['company_id' => $company->public_id, 'external_finance_transaction_uuid' => $reference];
+        $payload = ['entries' => [$entry]];
+        $url = $this->url($workspace);
+        $created = $this->withHeader('Idempotency-Key', 'finance-expense-create')->postJson($url, $payload)->assertCreated();
+        $id = $created->json('data.0.id');
+        $record = ClientExpense::query()->where('public_id', $id)->sole();
+        $this->assertSame($reference, $record->external_finance_transaction_uuid);
+        $this->assertArrayNotHasKey('external_finance_transaction_uuid', $record->toArray());
+        $this->postJson($url, $payload)->assertCreated()->assertJsonPath('data.0.id', $id);
+        $this->assertDatabaseCount('client_expenses', 1);
+        $changed = $entry;
+        $changed['external_finance_transaction_uuid'] = '00000000-0000-4000-8000-000000000002';
+        $this->postJson($url, ['entries' => [$changed]])->assertConflict();
+        $this->withHeader('Idempotency-Key', 'finance-expense-distinct-request')->postJson($url, $payload)->assertCreated();
+        $this->assertSame(2, ClientExpense::query()->count(), 'The reference is not a second idempotency namespace.');
+
+        $update = $this->facts() + ['expected_version' => $created->json('data.0.version')];
+        $this->withHeader('Idempotency-Key', 'finance-expense-reference-edit')->patchJson($url.'/'.$id, $update + ['external_finance_transaction_uuid' => $reference])->assertUnprocessable();
+        $this->withHeader('Idempotency-Key', 'finance-expense-facts-edit')->patchJson($url.'/'.$id, $update)->assertOk();
+        $this->assertSame($reference, $record->refresh()->external_finance_transaction_uuid);
+        $workspace->memberships()->where('user_id', $owner->id)->update(['role' => 'member']);
+        $this->withHeader('Idempotency-Key', 'finance-expense-create')->postJson($url, $payload)->assertForbidden();
+    }
+
+    public function test_invalid_finance_reference_refuses_the_whole_batch_and_old_requests_stay_valid(): void
+    {
+        [$workspace, $company, , $owner] = $this->fixture();
+        $this->agent($owner);
+        $entry = $this->facts() + ['company_id' => $company->public_id];
+        $this->withHeader('Idempotency-Key', 'finance-expense-invalid')->postJson($this->url($workspace), [
+            'entries' => [$entry, $entry + ['external_finance_transaction_uuid' => 'not-a-uuid']],
+        ])->assertUnprocessable();
+        $this->assertDatabaseCount('client_expenses', 0);
+        $this->assertDatabaseCount('agent_mutation_receipts', 0);
+        $this->withHeader('Idempotency-Key', 'finance-expense-legacy')->postJson($this->url($workspace), ['entries' => [$entry]])->assertCreated();
+        $this->assertNull(ClientExpense::query()->sole()->external_finance_transaction_uuid);
+    }
+
     public function test_browser_mutations_advance_revision_and_both_deletions_require_drafts(): void
     {
         [$workspace, $company, $project, $owner] = $this->fixture();

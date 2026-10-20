@@ -111,6 +111,7 @@ final class WorkspaceExpenses
         ?ClientProject $project,
         NewExpense $expense,
         ?User $recordedBy = null,
+        ?string $externalFinanceTransactionUuid = null,
     ): ClientExpense {
         if ($company->workspace_id !== $this->workspace->id) {
             throw new CrossTenantReference('That client company belongs to another workspace.');
@@ -130,6 +131,7 @@ final class WorkspaceExpenses
             'client_company_id' => $company->id,
             'client_project_id' => $project?->id,
             'created_by_user_id' => $recordedBy?->id,
+            'external_finance_transaction_uuid' => $externalFinanceTransactionUuid,
             'status' => ExpenseStatus::Draft->value,
         ]);
     }

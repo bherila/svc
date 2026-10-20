@@ -12359,6 +12359,14 @@
                             "null"
                         ],
                         "format": "uuid"
+                    },
+                    "external_finance_transaction_uuid": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "uuid",
+                        "description": "Optional creation-only finance transaction provenance. Retry identity remains the Idempotency-Key, not this reference."
                     }
                 }
             },

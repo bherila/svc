@@ -2329,6 +2329,11 @@ export interface components {
             description: string;
             /** Format: uuid */
             project_id?: string | null;
+            /**
+             * Format: uuid
+             * @description Optional creation-only finance transaction provenance. Retry identity remains the Idempotency-Key, not this reference.
+             */
+            external_finance_transaction_uuid?: string | null;
         };
         ExpenseLogRequest: {
             entries: components['schemas']['ExpenseLogItem'][];
