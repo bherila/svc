@@ -123,6 +123,9 @@ one rather than a list this page can keep true.
 the operation behind `clients.portal_access.update` that the settings page, REST
 and MCP also use, with the same fields and validation: it takes the contact's
 current version (`--show` prints it) as `--expected-version`, and `--confirm`.
+It is kept as a break-glass tool by owner decision (#460): the client's settings
+page is the everyday way to change a contact's scope, and the command is for when
+no workspace manager can reach that page.
 
 **Changing access.** Staff memberships, staff project assignments and portal
 memberships are written only through `App\Services\Access\WorkspaceAccess`

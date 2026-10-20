@@ -96,6 +96,22 @@ aggregate; `--report` writes per-invoice detail with keyed description digests,
 which stays on the host and is never pasted into an issue. Do not add a
 `--commit` option: if a divergence needs fixing, fix the engine and replay again.
 
+## Portal Project Access — break-glass
+
+`svc:portal:project-access` narrows a portal user to named projects, or returns
+them to company-wide access, through the same `PortalAccessOperation` as the
+client's settings page, REST and MCP (`clients.portal_access.update`). It is
+kept as a break-glass tool by owner decision (#460): use the settings page day to
+day, and the command when no workspace manager can reach it.
+
+```bash
+php artisan svc:portal:project-access <company public id> person@example.test --show
+php artisan svc:portal:project-access <company public id> person@example.test \
+  --project=<project public id> --expected-version=<version from --show> --confirm
+php artisan svc:portal:project-access <company public id> person@example.test --company-wide \
+  --expected-version=<version from --show> --confirm
+```
+
 ## Rehearse Generation
 
 Runs `generateAllInvoices()` for every client of a workspace inside a transaction that is always rolled back, and fails if any issued, paid or void invoice would change. Nothing is written.
