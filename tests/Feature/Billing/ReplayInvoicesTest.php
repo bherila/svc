@@ -330,6 +330,20 @@ final class ReplayInvoicesTest extends TestCase
      * the current engine. This is the control: if it fails, the harness is
      * comparing the wrong things.
      */
+    public function test_json_replay_is_one_aggregate_report_with_the_same_gate_and_rollback(): void
+    {
+        $this->generatedHistory();
+        $before = ClientInvoice::query()->where('workspace_id', $this->workspace->id)->count();
+        $this->assertSame(0, Artisan::call('svc:billing:replay', ['--workspace' => $this->workspace->public_id, '--format' => 'json']));
+        $report = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+        $this->assertGreaterThan(0, $report['summary']['matched']);
+        $this->assertSame(0, $report['summary']['unexplained']);
+        $this->assertSame(0, $report['summary']['generation_failures']);
+        $this->assertSame($before, ClientInvoice::query()->where('workspace_id', $this->workspace->id)->count());
+        $this->assertSame(1, Artisan::call('svc:billing:replay', ['--workspace' => 'synthetic-missing', '--format' => 'json']));
+        $this->assertArrayHasKey('error', json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR));
+    }
+
     public function test_invoices_the_engine_produced_replay_to_the_cent(): void
     {
         $this->generatedHistory();

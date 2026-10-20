@@ -2,12 +2,11 @@
 
 namespace App\Console\Commands\Square;
 
-use App\Models\Workspace;
+use App\Console\Commands\MutationCommand;
 use App\Services\Square\SquareConfiguration;
 use App\Services\Square\SquarePendingSettlements;
-use Illuminate\Console\Command;
 
-final class PruneSquarePendingSettlementsCommand extends Command
+final class PruneSquarePendingSettlementsCommand extends MutationCommand
 {
     protected $signature = 'svc:square:prune-pending-settlements';
 
@@ -16,9 +15,12 @@ final class PruneSquarePendingSettlementsCommand extends Command
     public function handle(SquarePendingSettlements $pending): int
     {
         $publicId = SquareConfiguration::fromConfig()->workspacePublicId;
-        $workspace = $publicId === null ? null : Workspace::query()->where('public_id', $publicId)->first();
-        if ($workspace !== null) {
-            $pending->prune($workspace);
+        $workspace = $publicId === null ? null : $this->workspaceByPublicId($publicId);
+        $pruned = $workspace === null ? 0 : $this->preview(fn () => $pending->prune($workspace));
+        if ($this->option('format') === 'json') {
+            $this->json(['dry_run' => ! $this->applying(), 'pruned' => $pruned]);
+        } else {
+            $this->info(($this->applying() ? 'Pruned ' : 'Would prune ').$pruned.' pending settlement entries.');
         }
 
         return self::SUCCESS;

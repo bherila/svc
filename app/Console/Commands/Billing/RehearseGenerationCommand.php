@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands\Billing;
 
+use App\Console\Commands\TextReportCommand;
 use App\Exceptions\BillingMaintenanceBusy;
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
@@ -18,7 +19,6 @@ use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\InvoiceStatus;
 use App\Support\Billing\RecordedOverage;
 use App\Support\WorkspaceClock;
-use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -49,7 +49,7 @@ use Throwable;
  * prints client billing detail, so it is for the host's own terminal, never
  * for pasting into an issue.
  */
-final class RehearseGenerationCommand extends Command
+final class RehearseGenerationCommand extends TextReportCommand
 {
     protected $signature = 'svc:billing:rehearse-generation
         {--workspace= : Required. Workspace public id to rehearse}
@@ -67,7 +67,7 @@ final class RehearseGenerationCommand extends Command
             return self::FAILURE;
         }
 
-        $workspace = Workspace::query()->where('public_id', $publicId)->first();
+        $workspace = $this->workspaceByPublicId($publicId);
         if (! $workspace instanceof Workspace) {
             $this->components->error('No workspace matches that public id.');
 
@@ -184,6 +184,17 @@ final class RehearseGenerationCommand extends Command
             if (! isset($settledAfter[$id]) || $settledAfter[$id] !== $fingerprint) {
                 $changed[] = $id;
             }
+        }
+
+        $this->reportPayload = ['summary' => [
+            'invoices_created' => $created,
+            'settled_invoices_watched' => count($settledBefore),
+            'settled_invoices_changed' => count($changed),
+            'companies_skipped' => count($withoutAgreement),
+            'generation_failures' => count($failures),
+        ]];
+        if ($show) {
+            $this->reportPayload['details'] = $shown;
         }
 
         foreach ($shown as $line) {

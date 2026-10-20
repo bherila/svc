@@ -31,7 +31,7 @@ class DeploySmokeCredentialsTest extends TestCase
     /** @return array<string, mixed> */
     private function issue(): array
     {
-        Artisan::call('svc:mcp:deploy-smoke-credentials');
+        Artisan::call('svc:mcp:deploy-smoke-credentials', ['--apply' => true]);
 
         return json_decode(trim(Artisan::output()), true, flags: JSON_THROW_ON_ERROR);
     }
@@ -110,7 +110,7 @@ class DeploySmokeCredentialsTest extends TestCase
 
         $this->assertSame(2, Passport::token()->newQuery()->where('user_id', $principal->id)->where('revoked', false)->count());
 
-        Artisan::call('svc:mcp:deploy-smoke-credentials', ['--revoke' => true]);
+        Artisan::call('svc:mcp:deploy-smoke-credentials', ['--apply' => true, '--revoke' => true]);
 
         $this->assertSame(['revoked' => 2], json_decode(trim(Artisan::output()), true, flags: JSON_THROW_ON_ERROR));
         $this->assertSame(0, Passport::token()->newQuery()->where('user_id', $principal->id)->where('revoked', false)->count());
@@ -159,7 +159,7 @@ class DeploySmokeCredentialsTest extends TestCase
         $this->expectException(RuntimeException::class);
         $this->expectExceptionMessageMatches('/holds 1 in workspace_memberships/');
 
-        Artisan::call('svc:mcp:deploy-smoke-credentials');
+        Artisan::call('svc:mcp:deploy-smoke-credentials', ['--apply' => true]);
     }
 
     /**
@@ -204,6 +204,6 @@ class DeploySmokeCredentialsTest extends TestCase
         $this->expectException(RuntimeException::class);
         $this->expectExceptionMessageMatches('/client_company_memberships/');
 
-        Artisan::call('svc:mcp:deploy-smoke-credentials');
+        Artisan::call('svc:mcp:deploy-smoke-credentials', ['--apply' => true]);
     }
 }

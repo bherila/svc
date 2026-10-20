@@ -1,7 +1,8 @@
 <?php
 
-namespace App\Console\Commands;
+namespace App\Console\Commands\Auth;
 
+use App\Console\Commands\MutationCommand;
 use App\Models\User;
 use App\Support\Auth\PersonalAccessTokenIdentity;
 use BWH\Auth\OAuth\Session\ProviderStatusUnavailable;
@@ -9,12 +10,11 @@ use Carbon\CarbonImmutable;
 use DateTimeImmutable;
 use DateTimeInterface;
 use DomainException;
-use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\NewAccessToken;
 
-class IssuePersonalAccessTokenCommand extends Command
+class IssuePersonalAccessTokenCommand extends MutationCommand
 {
     protected $signature = 'svc:auth:issue-token
         {user_public_id : Exact user public UUID}
@@ -80,6 +80,10 @@ class IssuePersonalAccessTokenCommand extends Command
             return self::FAILURE;
         }
 
+        if (! $this->applying()) {
+            return $this->planned();
+        }
+
         /** @var NewAccessToken $issuedToken */
         $issuedToken = DB::transaction(static function () use ($user, $name, $abilities, $expiresAt, $stamp): NewAccessToken {
             $issued = $user->createToken($name, $abilities, $expiresAt);
@@ -89,6 +93,12 @@ class IssuePersonalAccessTokenCommand extends Command
 
             return $issued;
         });
+
+        if ($this->option('format') === 'json') {
+            $this->json(['user_public_id' => $publicId, 'name' => $name, 'abilities' => $abilities, 'expires_at' => $expiresAt->toIso8601String(), 'token' => $issuedToken->plainTextToken]);
+
+            return self::SUCCESS;
+        }
 
         $this->components->info('Personal access token issued.');
         $this->components->twoColumnDetail('User public UUID', $publicId);

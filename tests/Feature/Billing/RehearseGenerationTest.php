@@ -12,6 +12,7 @@ use App\Models\Workspace;
 use App\Services\Billing\ClientInvoicingService;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
@@ -53,6 +54,20 @@ final class RehearseGenerationTest extends TestCase
     {
         $this->artisan('svc:billing:rehearse-generation')->assertFailed();
         $this->artisan('svc:billing:rehearse-generation', ['--workspace' => 'no-such-workspace'])->assertFailed();
+    }
+
+    public function test_json_rehearsal_is_one_report_and_still_rolls_back(): void
+    {
+        $this->settledHistory();
+        $before = ClientInvoice::query()->where('workspace_id', $this->workspace->id)->count();
+        $this->assertSame(0, Artisan::call('svc:billing:rehearse-generation', ['--workspace' => $this->workspace->public_id, '--format' => 'json', '--show' => true]));
+        $report = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+        $this->assertSame(0, $report['summary']['settled_invoices_changed']);
+        $this->assertSame(0, $report['summary']['generation_failures']);
+        $this->assertArrayHasKey('details', $report);
+        $this->assertSame($before, ClientInvoice::query()->where('workspace_id', $this->workspace->id)->count());
+        $this->assertSame(1, Artisan::call('svc:billing:rehearse-generation', ['--workspace' => 'synthetic-missing', '--format' => 'json']));
+        $this->assertArrayHasKey('error', json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR));
     }
 
     public function test_it_passes_when_settled_invoices_are_left_alone(): void

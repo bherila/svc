@@ -221,22 +221,22 @@ final class SquareOperabilityTest extends TestCase
         [$workspace, , $company, $invoice] = $this->paymentFixture();
         $unlinked = ClientInvoice::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'invoice_number' => 'SYNTHETIC-002', 'invoice_kind' => 'ad_hoc', 'status' => 'issued', 'currency' => 'USD', 'total_amount' => 100, 'balance_amount' => 100]);
 
-        $this->artisan('svc:square:reconcile-payments', ['--invoice' => 'not-an-id'])->assertExitCode(2);
-        $this->artisan('svc:square:reconcile-payments', ['--invoice' => null])->assertExitCode(2);
+        $this->artisan('svc:square:reconcile-payments', ['--apply' => true, '--invoice' => 'not-an-id'])->assertExitCode(2);
+        $this->artisan('svc:square:reconcile-payments', ['--apply' => true, '--invoice' => null])->assertExitCode(2);
         $this->assertSame(0, Http::recorded()->count(), 'A bare --invoice never starts the sweep.');
-        $this->artisan('svc:square:reconcile-payments', ['--invoice' => '00000000-0000-4000-8000-000000000999'])->assertFailed();
-        $this->artisan('svc:square:reconcile-payments', ['--invoice' => $unlinked->public_id])->expectsOutputToContain('not linked to a Square invoice')->assertFailed();
+        $this->artisan('svc:square:reconcile-payments', ['--apply' => true, '--invoice' => '00000000-0000-4000-8000-000000000999'])->assertFailed();
+        $this->artisan('svc:square:reconcile-payments', ['--apply' => true, '--invoice' => $unlinked->public_id])->expectsOutputToContain('not linked to a Square invoice')->assertFailed();
         $this->assertSame(0, Http::recorded()->count());
-        $this->artisan('svc:square:reconcile-payments', ['--invoice' => $invoice->public_id])->expectsOutputToContain('SYNTHETIC-001 reconciled with Square: paid, balance 0 USD')->assertSuccessful();
+        $this->artisan('svc:square:reconcile-payments', ['--apply' => true, '--invoice' => $invoice->public_id])->expectsOutputToContain('SYNTHETIC-001 reconciled with Square: paid, balance 0 USD')->assertSuccessful();
         $this->assertSame(1, $invoice->payments()->count());
         $this->squareInvoiceFailureStatus = 503;
-        $this->artisan('svc:square:reconcile-payments', ['--invoice' => $invoice->public_id])->assertFailed();
+        $this->artisan('svc:square:reconcile-payments', ['--apply' => true, '--invoice' => $invoice->public_id])->assertFailed();
         Http::assertNotSent(fn ($request): bool => $request->method() !== 'GET');
 
         // Asked for one invoice with Square unconfigured, it did nothing, and says so.
         config(['services.square.access_token' => null]);
-        $this->artisan('svc:square:reconcile-payments', ['--invoice' => $invoice->public_id])->expectsOutputToContain('Square is not configured, so the invoice was not reconciled.')->assertFailed();
-        $this->artisan('svc:square:reconcile-payments')->assertSuccessful();
+        $this->artisan('svc:square:reconcile-payments', ['--apply' => true, '--invoice' => $invoice->public_id])->expectsOutputToContain('Square is not configured, so the invoice was not reconciled.')->assertFailed();
+        $this->artisan('svc:square:reconcile-payments', ['--apply' => true])->assertSuccessful();
     }
 
     public function test_the_final_link_check_is_a_current_read_taken_after_the_invoice_lock(): void

@@ -1,11 +1,11 @@
 <?php
 
-namespace App\Console\Commands;
+namespace App\Console\Commands\Auth;
 
+use App\Console\Commands\MutationCommand;
 use App\Support\AgentApi\AgentApiScopes;
 use App\Support\Auth\OAuthClient;
 use BWH\Auth\OAuth\Credentials\ApiCredentialService;
-use Illuminate\Console\Command;
 use Laravel\Passport\ClientRepository;
 use Laravel\Passport\Passport;
 use Psr\Log\LoggerInterface;
@@ -24,7 +24,7 @@ use Symfony\Component\Console\Output\OutputInterface;
  * client id to AGENT_API_FIRST_PARTY_OAUTH_CLIENTS, a separate, deliberate
  * step ({@see OAuthClient}).
  */
-final class RegisterFirstPartyOAuthClientCommand extends Command
+final class RegisterFirstPartyOAuthClientCommand extends MutationCommand
 {
     protected $signature = 'svc:auth:register-first-party-client
         {name : Name shown to the person connecting it}
@@ -61,6 +61,10 @@ final class RegisterFirstPartyOAuthClientCommand extends Command
             }
         }
 
+        if (! $this->applying()) {
+            return $this->planned();
+        }
+
         $model = Passport::client();
         $connection = $model->getConnection();
         $registered = $connection->transaction(function () use ($clients, $model, $name, $redirectUris, $scopes): ?array {
@@ -91,6 +95,9 @@ final class RegisterFirstPartyOAuthClientCommand extends Command
             'redirect_uris' => $redirectUris,
             'scopes' => $scopes,
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES), OutputInterface::OUTPUT_RAW);
+        if ($this->option('format') === 'json') {
+            return self::SUCCESS;
+        }
         $this->line('The secret is shown only now. To skip the consent screen for this client, add its client_id to AGENT_API_FIRST_PARTY_OAUTH_CLIENTS.');
 
         return self::SUCCESS;

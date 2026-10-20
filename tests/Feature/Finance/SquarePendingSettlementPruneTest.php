@@ -33,13 +33,24 @@ final class SquarePendingSettlementPruneTest extends TestCase
             $this->entry($other, 'pay_fixture_foreign', '2030-02-01 12:00:00'),
         ]);
 
-        $this->artisan('svc:square:prune-pending-settlements')->assertSuccessful();
+        $this->artisan('svc:square:prune-pending-settlements', ['--apply' => true])->assertSuccessful();
 
         $this->assertSame(4, DB::table('square_pending_settlements')->count(), 'Only 1,000 entries are pruned per invocation.');
-        $this->artisan('svc:square:prune-pending-settlements')->assertSuccessful();
+        $this->artisan('svc:square:prune-pending-settlements', ['--apply' => true])->assertSuccessful();
         $this->assertSame(['pay_fixture_boundary', 'pay_fixture_recent', 'pay_fixture_foreign'], DB::table('square_pending_settlements')->orderBy('id')->pluck('payment_identifier')->all());
-        $this->artisan('svc:square:prune-pending-settlements')->assertSuccessful();
+        $this->artisan('svc:square:prune-pending-settlements', ['--apply' => true])->assertSuccessful();
         $this->assertSame(3, DB::table('square_pending_settlements')->count());
+    }
+
+    public function test_default_preview_keeps_entries_and_reports_the_same_bounded_prune(): void
+    {
+        Date::setTestNow('2030-03-05 12:00:00');
+        $workspace = Workspace::query()->create(['name' => 'Synthetic preview', 'slug' => 'synthetic-preview']);
+        $this->connectSquare($workspace);
+        DB::table('square_pending_settlements')->insert($this->entry($workspace, 'pay_fixture_preview', '2030-02-01 12:00:00'));
+        $this->artisan('svc:square:prune-pending-settlements', ['--format' => 'json'])
+            ->expectsOutput('{"dry_run":true,"pruned":1}')->assertSuccessful();
+        $this->assertDatabaseCount('square_pending_settlements', 1);
     }
 
     public function test_configured_retention_is_used_and_a_newer_report_is_rechecked_before_deletion(): void
@@ -62,7 +73,7 @@ final class SquarePendingSettlementPruneTest extends TestCase
                 PaymentSettlement::payout('po_fixture_refresh', '2030-03-06', 2000, null, 5, 'USD'));
         });
 
-        $this->artisan('svc:square:prune-pending-settlements')->assertSuccessful();
+        $this->artisan('svc:square:prune-pending-settlements', ['--apply' => true])->assertSuccessful();
 
         $this->assertTrue($refreshed);
         $this->assertSame(['pay_fixture_refresh', 'pay_fixture_current'], DB::table('square_pending_settlements')->orderBy('id')->pluck('payment_identifier')->all());

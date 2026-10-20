@@ -150,11 +150,11 @@ final class IssueAgentTokenCommandTest extends TestCase
             [(string) $user->id, 'Internal id', [AgentApiScopes::IDENTITY_READ]],
         ];
         foreach ($cases as [$publicId, $name, $scopes]) {
-            $exit = Artisan::call('svc:auth:issue-agent-token', ['user_public_id' => $publicId, 'name' => $name, 'scopes' => $scopes]);
+            $exit = Artisan::call('svc:auth:issue-agent-token', ['--apply' => true, 'user_public_id' => $publicId, 'name' => $name, 'scopes' => $scopes]);
             $this->assertSame(2, $exit, json_encode([$publicId, $name, $scopes]));
         }
 
-        $exit = Artisan::call('svc:auth:issue-agent-token', ['user_public_id' => (string) Str::uuid(), 'name' => 'Nobody', 'scopes' => [AgentApiScopes::IDENTITY_READ]]);
+        $exit = Artisan::call('svc:auth:issue-agent-token', ['--apply' => true, 'user_public_id' => (string) Str::uuid(), 'name' => 'Nobody', 'scopes' => [AgentApiScopes::IDENTITY_READ]]);
         $this->assertSame(1, $exit);
 
         $this->assertSame(0, Passport::token()->newQuery()->count());
@@ -198,27 +198,27 @@ final class IssueAgentTokenCommandTest extends TestCase
         $path = "/api/v1/workspaces/{$workspace->public_id}/projects";
         $this->bearer($first)->getJson($path)->assertOk();
 
-        $this->assertSame(1, Artisan::call('svc:auth:revoke-agent-token', ['user_public_id' => $user->public_id, 'name' => 'Shared name']));
+        $this->assertSame(1, Artisan::call('svc:auth:revoke-agent-token', ['--apply' => true, 'user_public_id' => $user->public_id, 'name' => 'Shared name']));
         $this->bearer($first)->getJson($path)->assertOk();
 
-        $this->assertSame(0, Artisan::call('svc:auth:revoke-agent-token', ['user_public_id' => $user->public_id, 'name' => 'Shared name', '--all' => true]));
+        $this->assertSame(0, Artisan::call('svc:auth:revoke-agent-token', ['--apply' => true, 'user_public_id' => $user->public_id, 'name' => 'Shared name', '--all' => true]));
         $this->assertSame(['revoked' => 2], $this->decode(Artisan::output()));
         $this->bearer($first)->getJson($path)->assertUnauthorized();
         $this->bearer($second)->getJson($path)->assertUnauthorized();
         $this->bearer($other)->getJson($path)->assertOk();
 
         // Already revoked: nothing left to match.
-        $this->assertSame(1, Artisan::call('svc:auth:revoke-agent-token', ['user_public_id' => $user->public_id, 'name' => 'Shared name', '--all' => true]));
+        $this->assertSame(1, Artisan::call('svc:auth:revoke-agent-token', ['--apply' => true, 'user_public_id' => $user->public_id, 'name' => 'Shared name', '--all' => true]));
         // Another person's token of the same name is out of reach.
         [$stranger] = $this->member('stranger');
-        $this->assertSame(1, Artisan::call('svc:auth:revoke-agent-token', ['user_public_id' => $stranger->public_id, 'name' => 'Kept']));
+        $this->assertSame(1, Artisan::call('svc:auth:revoke-agent-token', ['--apply' => true, 'user_public_id' => $stranger->public_id, 'name' => 'Kept']));
         $this->bearer($other)->getJson($path)->assertOk();
 
-        $this->assertSame(0, Artisan::call('svc:auth:revoke-agent-token', ['user_public_id' => $user->public_id, 'name' => 'Kept']));
+        $this->assertSame(0, Artisan::call('svc:auth:revoke-agent-token', ['--apply' => true, 'user_public_id' => $user->public_id, 'name' => 'Kept']));
         $this->bearer($other)->getJson($path)->assertUnauthorized();
 
-        $this->assertSame(2, Artisan::call('svc:auth:revoke-agent-token', ['user_public_id' => 'not-a-uuid', 'name' => 'Kept']));
-        $this->assertSame(1, Artisan::call('svc:auth:revoke-agent-token', ['user_public_id' => (string) Str::uuid(), 'name' => 'Kept']));
+        $this->assertSame(2, Artisan::call('svc:auth:revoke-agent-token', ['--apply' => true, 'user_public_id' => 'not-a-uuid', 'name' => 'Kept']));
+        $this->assertSame(1, Artisan::call('svc:auth:revoke-agent-token', ['--apply' => true, 'user_public_id' => (string) Str::uuid(), 'name' => 'Kept']));
     }
 
     public function test_the_json_line_is_written_raw_so_a_name_with_markup_round_trips(): void
@@ -228,7 +228,7 @@ final class IssueAgentTokenCommandTest extends TestCase
         [$exit, $output] = $this->issue($user, '<info>Support</info>', [AgentApiScopes::IDENTITY_READ]);
         $this->assertSame(0, $exit);
         $this->assertSame('<info>Support</info>', $this->decode($output)['name']);
-        $this->assertSame(0, Artisan::call('svc:auth:revoke-agent-token', ['user_public_id' => $user->public_id, 'name' => '<info>Support</info>']));
+        $this->assertSame(0, Artisan::call('svc:auth:revoke-agent-token', ['--apply' => true, 'user_public_id' => $user->public_id, 'name' => '<info>Support</info>']));
     }
 
     public function test_nothing_is_issued_while_oauth_issuance_is_switched_off(): void
@@ -255,13 +255,13 @@ final class IssueAgentTokenCommandTest extends TestCase
         $browser = $principal->createToken('api-token: Laptop', [AgentApiScopes::PROJECTS_READ]);
         $other = $principal->createToken('Laptop', [AgentApiScopes::PROJECTS_READ]);
 
-        $this->assertSame(1, Artisan::call('svc:auth:revoke-agent-token', ['user_public_id' => $user->public_id, 'name' => 'api-token: Laptop']));
-        $this->assertSame(1, Artisan::call('svc:auth:revoke-agent-token', ['user_public_id' => $user->public_id, 'name' => 'Laptop', '--all' => true]));
+        $this->assertSame(1, Artisan::call('svc:auth:revoke-agent-token', ['--apply' => true, 'user_public_id' => $user->public_id, 'name' => 'api-token: Laptop']));
+        $this->assertSame(1, Artisan::call('svc:auth:revoke-agent-token', ['--apply' => true, 'user_public_id' => $user->public_id, 'name' => 'Laptop', '--all' => true]));
         $this->assertSame(0, Passport::token()->newQuery()->where('revoked', true)->count());
 
         $issued = $this->decode($this->issue($user, 'Laptop', [AgentApiScopes::PROJECTS_READ])[1]);
         $this->assertSame('Laptop', $issued['name']);
-        $this->assertSame(0, Artisan::call('svc:auth:revoke-agent-token', ['user_public_id' => $user->public_id, 'name' => 'Laptop']));
+        $this->assertSame(0, Artisan::call('svc:auth:revoke-agent-token', ['--apply' => true, 'user_public_id' => $user->public_id, 'name' => 'Laptop']));
         $this->assertSame(['revoked' => 1], $this->decode(Artisan::output()));
         $this->bearer($issued['token'])->getJson("/api/v1/workspaces/{$workspace->public_id}/projects")->assertUnauthorized();
         $this->assertFalse((bool) Passport::token()->newQuery()->whereKey($browser->accessTokenId)->value('revoked'));
@@ -275,12 +275,12 @@ final class IssueAgentTokenCommandTest extends TestCase
         Passport::token()->newQuery()->update(['expires_at' => now()->subMinute()]);
         $current = $this->decode($this->issue($user, 'Reused', [AgentApiScopes::PROJECTS_READ])[1])['token'];
 
-        $this->assertSame(0, Artisan::call('svc:auth:revoke-agent-token', ['user_public_id' => $user->public_id, 'name' => 'Reused']));
+        $this->assertSame(0, Artisan::call('svc:auth:revoke-agent-token', ['--apply' => true, 'user_public_id' => $user->public_id, 'name' => 'Reused']));
         $this->assertSame(['revoked' => 1], $this->decode(Artisan::output()));
         $this->bearer($current)->getJson("/api/v1/workspaces/{$workspace->public_id}/projects")->assertUnauthorized();
 
         // Only an expired match left: nothing live to revoke.
-        $this->assertSame(1, Artisan::call('svc:auth:revoke-agent-token', ['user_public_id' => $user->public_id, 'name' => 'Reused', '--all' => true]));
+        $this->assertSame(1, Artisan::call('svc:auth:revoke-agent-token', ['--apply' => true, 'user_public_id' => $user->public_id, 'name' => 'Reused', '--all' => true]));
     }
 
     public function test_the_token_is_printed_once_and_never_logged_while_issue_and_revoke_are_audited(): void
@@ -293,7 +293,7 @@ final class IssueAgentTokenCommandTest extends TestCase
         $this->assertSame(1, substr_count($output, $token));
         $this->assertStringNotContainsString($user->email, $output);
 
-        Artisan::call('svc:auth:revoke-agent-token', ['user_public_id' => $user->public_id, 'name' => 'Audited']);
+        Artisan::call('svc:auth:revoke-agent-token', ['--apply' => true, 'user_public_id' => $user->public_id, 'name' => 'Audited']);
         $this->assertStringNotContainsString($token, Artisan::output());
 
         $messages = array_column($this->logged, 'message');
@@ -324,7 +324,7 @@ final class IssueAgentTokenCommandTest extends TestCase
         $lifetime = Passport::$personalAccessTokensExpireIn;
 
         $this->assertSame(0, $this->issue($user, 'Before smoke', [AgentApiScopes::IDENTITY_READ])[0]);
-        $this->assertSame(0, Artisan::call('svc:mcp:deploy-smoke-credentials', ['--ttl' => '5']));
+        $this->assertSame(0, Artisan::call('svc:mcp:deploy-smoke-credentials', ['--apply' => true, '--ttl' => '5']));
         $smoke = json_decode(trim(Artisan::output()), true, flags: JSON_THROW_ON_ERROR);
         $this->assertSame($lifetime, Passport::$personalAccessTokensExpireIn);
         [$exit, $output] = $this->issue($user, 'After smoke', [AgentApiScopes::IDENTITY_READ]);
@@ -341,8 +341,8 @@ final class IssueAgentTokenCommandTest extends TestCase
             $this->assertEqualsWithDelta(time() + 300, Carbon::parse($expiresAt)->getTimestamp(), 5);
         }
 
-        $this->assertSame(2, Artisan::call('svc:mcp:deploy-smoke-credentials', ['--ttl' => '241']));
-        $this->assertSame(0, Artisan::call('svc:mcp:deploy-smoke-credentials', ['--ttl' => '5']));
+        $this->assertSame(2, Artisan::call('svc:mcp:deploy-smoke-credentials', ['--apply' => true, '--ttl' => '241']));
+        $this->assertSame(0, Artisan::call('svc:mcp:deploy-smoke-credentials', ['--apply' => true, '--ttl' => '5']));
         $this->assertSame(1, Passport::client()->newQuery()->count());
 
         // The smoke's audit names its own actor, by fingerprint only.
@@ -365,7 +365,7 @@ final class IssueAgentTokenCommandTest extends TestCase
         $kept = $this->decode($this->issue($stranger, 'Rest', [AgentApiScopes::IDENTITY_READ])[1])['token'];
         $ids = Passport::token()->newQuery()->where('user_id', $user->id)->pluck('id')->map(static fn (mixed $id): string => (string) $id)->all();
 
-        $this->assertSame(0, Artisan::call('svc:auth:revoke-connections', ['user_public_id' => $user->public_id]));
+        $this->assertSame(0, Artisan::call('svc:auth:revoke-connections', ['--apply' => true, 'user_public_id' => $user->public_id]));
         $this->assertSame(['access_tokens' => 2, 'refresh_tokens' => 0, 'authorization_codes' => 0, 'unattributed_refresh_tokens' => 0], $this->decode(Artisan::output()));
 
         $this->bearer($rest)->getJson("/api/v1/workspaces/{$workspace->public_id}/projects")->assertUnauthorized();
@@ -397,7 +397,7 @@ final class IssueAgentTokenCommandTest extends TestCase
     {
         [$user] = $this->member('fenced-operator');
         [$stranger] = $this->member('fenced-stranger');
-        $this->assertSame(0, Artisan::call('svc:auth:revoke-connections', ['user_public_id' => $user->public_id]));
+        $this->assertSame(0, Artisan::call('svc:auth:revoke-connections', ['--apply' => true, 'user_public_id' => $user->public_id]));
 
         [$exit, $output] = $this->issue($user, 'Inside fence', [AgentApiScopes::IDENTITY_READ]);
         $this->assertSame(1, $exit);
@@ -408,6 +408,23 @@ final class IssueAgentTokenCommandTest extends TestCase
 
         $this->travel(AgentCredentialFence::SECONDS + 1)->seconds();
         $this->assertSame(0, $this->issue($user, 'After fence', [AgentApiScopes::IDENTITY_READ])[0]);
+    }
+
+    public function test_a_revocation_preview_leaves_credentials_live_and_does_not_install_a_fence(): void
+    {
+        [$user] = $this->member('preview-revocation');
+        $this->assertSame(0, $this->issue($user, 'Before preview', [AgentApiScopes::IDENTITY_READ])[0]);
+        foreach (['svc:auth:revoke-connections', 'svc:auth:revoke-agent-token'] as $command) {
+            $arguments = ['user_public_id' => $user->public_id, '--format' => 'json'];
+            if ($command === 'svc:auth:revoke-agent-token') {
+                $arguments['name'] = 'Before preview';
+            }
+            $this->assertSame(0, Artisan::call($command, $arguments));
+            $this->assertFalse(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['executed']);
+        }
+        $this->assertSame(1, Passport::token()->newQuery()->where('user_id', $user->id)->where('revoked', false)->count());
+        $this->assertSame(0, $this->issue($user, 'After preview', [AgentApiScopes::IDENTITY_READ])[0]);
+        $this->assertSame(2, Passport::token()->newQuery()->where('user_id', $user->id)->where('revoked', false)->count());
     }
 
     /** @return array{0: User, 1: Workspace} */
@@ -427,7 +444,7 @@ final class IssueAgentTokenCommandTest extends TestCase
      */
     private function issue(User $user, string $name, array $scopes, array $options = []): array
     {
-        $exit = Artisan::call('svc:auth:issue-agent-token', [
+        $exit = Artisan::call('svc:auth:issue-agent-token', ['--apply' => true,
             'user_public_id' => $user->public_id,
             'name' => $name,
             'scopes' => $scopes,

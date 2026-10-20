@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands\Mcp;
 
+use App\Console\Commands\MutationCommand;
 use App\Models\User;
 use App\Services\Credentials\AgentCredentialSelection;
 use App\Services\Credentials\AgentTokenIssuer;
@@ -10,7 +11,6 @@ use App\Services\Credentials\AgentTokenRefused;
 use App\Services\Credentials\AgentTokenRequest;
 use App\Services\Credentials\CredentialRevoker;
 use App\Support\AgentApi\AgentApiScopes;
-use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
@@ -56,7 +56,7 @@ use RuntimeException;
  * the backstop for the case that step never runs at all, which is why the tokens
  * are minted with a short expiry rather than Passport's one-year default.
  */
-final class DeploySmokeCredentialsCommand extends Command
+final class DeploySmokeCredentialsCommand extends MutationCommand
 {
     protected $signature = 'svc:mcp:deploy-smoke-credentials
         {--revoke : Revoke every token held by the smoke principal and issue nothing}
@@ -76,6 +76,10 @@ final class DeploySmokeCredentialsCommand extends Command
 
     public function handle(AgentTokenIssuer $issuer, CredentialRevoker $revoker): int
     {
+        if (! $this->applying()) {
+            return $this->planned();
+        }
+
         $user = $this->principal();
         $kind = AgentTokenKind::DeploymentSmoke;
 

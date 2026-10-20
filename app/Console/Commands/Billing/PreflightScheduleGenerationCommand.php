@@ -2,12 +2,12 @@
 
 namespace App\Console\Commands\Billing;
 
+use App\Console\Commands\SvcCommand;
 use App\Services\Billing\ScheduleGenerationPreflight;
 use App\Support\Billing\PeriodRefusalReason;
 use App\Support\Billing\ScheduleDefect;
 use App\Support\Billing\ScheduleGenerationPreflightReport;
 use Carbon\CarbonImmutable;
-use Illuminate\Console\Command;
 
 /**
  * Ask every due billing schedule what it would do, and report what would stop.
@@ -49,7 +49,7 @@ use Illuminate\Console\Command;
  * once money has been taken against it. So this exits non-zero when it finds
  * any, which is what lets a deployment pipeline gate on it.
  */
-final class PreflightScheduleGenerationCommand extends Command
+final class PreflightScheduleGenerationCommand extends SvcCommand
 {
     protected $signature = 'svc:billing:preflight-schedule-generation
         {--through= : Classify periods due through this date (default: today)}
@@ -61,12 +61,6 @@ final class PreflightScheduleGenerationCommand extends Command
     public function handle(ScheduleGenerationPreflight $preflight): int
     {
         $format = (string) $this->option('format');
-
-        if (! in_array($format, ['text', 'json'], true)) {
-            $this->error('The --format option must be text or json.');
-
-            return self::INVALID;
-        }
 
         $through = $this->option('through');
 

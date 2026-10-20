@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands\Square;
 
+use App\Console\Commands\SvcCommand;
 use App\Models\SquareSyncRun;
 use App\Models\Workspace;
 use App\Services\Square\Mirror\SquareMirrorPresenter;
@@ -9,7 +10,6 @@ use App\Services\Square\Mirror\SquareMirrorReadService;
 use App\Services\Square\Mirror\SquareMirrorSync;
 use App\Services\Square\SquareConfiguration;
 use Carbon\CarbonImmutable;
-use Illuminate\Console\Command;
 
 /**
  * Whether Square is configured, and how its last mirror sync went (#458),
@@ -22,7 +22,7 @@ use Illuminate\Console\Command;
  * own records: the latest run as the mirror reads report it, and freshness
  * from the authoritative (highest) completed generation.
  */
-final class SquareStatusCommand extends Command
+final class SquareStatusCommand extends SvcCommand
 {
     protected $signature = 'svc:square:status {--format=text : Output text or json}';
 
@@ -34,15 +34,10 @@ final class SquareStatusCommand extends Command
     public function handle(SquareMirrorReadService $mirror): int
     {
         $format = (string) $this->option('format');
-        if (! in_array($format, ['text', 'json'], true)) {
-            $this->error('The --format option must be text or json.');
-
-            return self::INVALID;
-        }
 
         $configuration = SquareConfiguration::fromConfig();
         $configured = $configuration->isConfigured();
-        $workspace = $configured ? Workspace::query()->where('public_id', (string) $configuration->workspacePublicId)->first() : null;
+        $workspace = $configured ? $configuration->workspace() : null;
         $freshness = $workspace === null ? ['last_synced_at' => null, 'last_run' => null] : $mirror->freshness($workspace);
         $lastRun = $freshness['last_run'];
         // The authoritative completed generation, as the mirror fences its

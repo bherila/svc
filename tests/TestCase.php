@@ -17,6 +17,9 @@ abstract class TestCase extends BaseTestCase
         parent::setUp();
 
         $this->withoutVite();
+        // A locally built SSR bundle must not turn a backend test into an HTTP
+        // call to the renderer. CI and a clean checkout have no such bundle.
+        config(['inertia.ssr.enabled' => false]);
         $key = openssl_pkey_new([
             'private_key_bits' => 2048,
             'private_key_type' => OPENSSL_KEYTYPE_RSA,

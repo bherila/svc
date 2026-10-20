@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands\Billing;
 
+use App\Console\Commands\TextReportCommand;
 use App\Exceptions\BillingMaintenanceBusy;
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
@@ -35,7 +36,6 @@ use App\Support\Billing\ReplaySnapshotValue;
 use App\Support\Billing\RetainerLineDescription;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
-use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -91,7 +91,7 @@ use Throwable;
  * clock is pinned instead - by default to the newest cycle history contains - so
  * the engine is asked for exactly the set that should exist.
  */
-final class ReplayInvoicesCommand extends Command
+final class ReplayInvoicesCommand extends TextReportCommand
 {
     protected $signature = 'svc:billing:replay
         {--workspace= : Required. Workspace public id to replay}
@@ -182,7 +182,7 @@ final class ReplayInvoicesCommand extends Command
             return self::FAILURE;
         }
 
-        $workspace = Workspace::query()->where('public_id', $workspacePublicId)->first();
+        $workspace = $this->workspaceByPublicId($workspacePublicId);
         if (! $workspace instanceof Workspace) {
             $this->components->error('No workspace matches that public id.');
 
@@ -2497,6 +2497,19 @@ final class ReplayInvoicesCommand extends Command
         // intended; failing on it would ask the engine to reproduce bugs it was
         // fixed not to have. The whole value of this run is the other number.
         $failed = count($unexplained) + count($missing) + count($extra);
+
+        $this->reportPayload = ['summary' => [
+            'matched' => count($matched),
+            'legacy_period_matches' => count($legacyPeriod),
+            'composition_differs' => count($composition),
+            'explained' => count($explained),
+            'unexplained' => count($unexplained),
+            'missing' => count($missing),
+            'unexpected' => count($extra),
+            'hours_differ_only' => count($hourOnly),
+            'unexplained_divergence_minor' => $absolute,
+            'generation_failures' => count($outcome['generation']),
+        ]];
 
         if ($failed > 0 || $outcome['generation'] !== []) {
             $this->components->error(sprintf('%d invoice(s) did not reproduce. Money must match exactly.', $failed));

@@ -3,12 +3,12 @@
 namespace App\Console\Commands\Finance;
 
 use App\Console\Commands\Concerns\FindsUserByPublicId;
+use App\Console\Commands\SvcCommand;
 use App\Models\Workspace;
 use App\Services\Finance\FinanceReconciliationOperations;
 use App\Support\Finance\FinanceCaller;
 use DomainException;
 use Illuminate\Auth\Access\AuthorizationException;
-use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
@@ -21,7 +21,7 @@ use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
  * same operation, rules and audit as the API: only the door differs. Output
  * is the API's own representation, as JSON, or a short text summary.
  */
-abstract class FinanceCommand extends Command
+abstract class FinanceCommand extends SvcCommand
 {
     use FindsUserByPublicId;
 
@@ -35,14 +35,15 @@ abstract class FinanceCommand extends Command
     /** @param array<string, mixed> $result */
     abstract protected function summarize(array $result): void;
 
+    /** @return array<string, mixed> */
+    protected function runOperation(FinanceReconciliationOperations $operations, FinanceCaller $caller, Workspace $workspace): array
+    {
+        return $this->perform($operations, $caller, $workspace);
+    }
+
     public function handle(FinanceReconciliationOperations $operations): int
     {
         $format = (string) $this->option('format');
-        if (! in_array($format, ['text', 'json'], true)) {
-            $this->error('The --format option must be text or json.');
-
-            return self::INVALID;
-        }
         $workspaceId = trim((string) $this->option('workspace'));
         if ($workspaceId === '') {
             $this->error('The --workspace option is required.');
@@ -53,7 +54,7 @@ abstract class FinanceCommand extends Command
         if (is_int($user)) {
             return $user;
         }
-        $workspace = Workspace::query()->where('public_id', $workspaceId)->first();
+        $workspace = $this->workspaceByPublicId($workspaceId);
         if ($workspace === null) {
             $this->error('No workspace exists for that public UUID.');
 
@@ -61,7 +62,7 @@ abstract class FinanceCommand extends Command
         }
 
         try {
-            $result = $this->perform($operations, FinanceCaller::operator($user), $workspace);
+            $result = $this->runOperation($operations, FinanceCaller::operator($user), $workspace);
         } catch (ValidationException $exception) {
             foreach ($exception->errors() as $messages) {
                 foreach ($messages as $message) {
@@ -91,6 +92,9 @@ abstract class FinanceCommand extends Command
         if ($format === 'json') {
             $this->line((string) json_encode($result, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
         } else {
+            if ($result['dry_run'] ?? false) {
+                $this->info('Dry run: nothing was written. Re-run with --apply to write.');
+            }
             $this->summarize($result);
         }
 

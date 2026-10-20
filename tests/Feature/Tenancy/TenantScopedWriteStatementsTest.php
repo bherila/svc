@@ -260,7 +260,7 @@ final class TenantScopedWriteStatementsTest extends TestCase
         $this->project->forceFill(['is_visible_to_client' => true])->save();
 
         $narrowing = $this->writesIssuedBy(function () use ($portalUser): void {
-            $this->artisan('svc:portal:project-access', [
+            $this->artisan('svc:portal:project-access', ['--apply' => true,
                 'company' => $this->company->public_id,
                 'email' => $portalUser->email,
                 '--confirm' => true, '--expected-version' => $this->portalVersion($portalUser),
@@ -270,7 +270,7 @@ final class TenantScopedWriteStatementsTest extends TestCase
         $this->assertEveryTenantOwnedWriteNamesItsWorkspace($narrowing, ['client_portal_project_access']);
 
         $restoring = $this->writesIssuedBy(function () use ($portalUser): void {
-            $this->artisan('svc:portal:project-access', [
+            $this->artisan('svc:portal:project-access', ['--apply' => true,
                 'company' => $this->company->public_id,
                 'email' => $portalUser->email,
                 '--confirm' => true, '--expected-version' => $this->portalVersion($portalUser),

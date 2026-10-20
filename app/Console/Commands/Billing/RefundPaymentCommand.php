@@ -14,7 +14,7 @@ class RefundPaymentCommand extends ManualPaymentCommand
         {--amount= : What was returned to the client now, in integer minor units (required)}
         {--reason= : Why the money was returned (required)}
         {--expected-version= : Refuse unless the payment is still at this version}
-        {--dry-run : Report what would change and write nothing}
+        {--dry-run : Deprecated alias for the default preview}
         {--format=text : Output text or json}';
 
     protected $description = 'Record money returned to the client against a hand-recorded payment, with a recorded reason';

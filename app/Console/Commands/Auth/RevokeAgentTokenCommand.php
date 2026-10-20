@@ -1,13 +1,13 @@
 <?php
 
-namespace App\Console\Commands;
+namespace App\Console\Commands\Auth;
 
 use App\Console\Commands\Concerns\FindsUserByPublicId;
+use App\Console\Commands\MutationCommand;
 use App\Services\Credentials\AgentCredentialSelection;
 use App\Services\Credentials\AgentTokenKind;
 use App\Services\Credentials\AmbiguousRevocation;
 use App\Services\Credentials\CredentialRevoker;
-use Illuminate\Console\Command;
 
 /**
  * Revoke an exact person's named agent access tokens issued by
@@ -15,7 +15,7 @@ use Illuminate\Console\Command;
  * Revocation is checked on every request, so the token stops working at once
  * rather than at its expiry.
  */
-final class RevokeAgentTokenCommand extends Command
+final class RevokeAgentTokenCommand extends MutationCommand
 {
     use FindsUserByPublicId;
 
@@ -37,6 +37,10 @@ final class RevokeAgentTokenCommand extends Command
         $user = $this->userByPublicId((string) $this->argument('user_public_id'));
         if (is_int($user)) {
             return $user;
+        }
+
+        if (! $this->applying()) {
+            return $this->planned();
         }
 
         $kind = AgentTokenKind::Operator;

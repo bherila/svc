@@ -1,46 +1,69 @@
 # Client Management CLI
 
-These Artisan commands are admin-only operational helpers. They default to user id `1`; pass `--user=<id>` only when another admin should be the actor.
+Application commands use `svc:<area>:<operation>`. Run `php artisan list svc` or
+`php artisan help <command>` for the current argument list. Commands live under
+`app/Console/Commands/<Area>`; the old `engagement:log-time`, `svc:log-time` and
+`billing:apply-payment` aliases remain available.
 
-Use built-in help for the current option list:
+## Write convention
 
-```bash
-php artisan list client-management
-php artisan help client-management:invoices
-php artisan help client-management:apply-payment
-php artisan help client-management:create-time-entry
-php artisan help client-management:invoice-email-status
-```
+**Preview is the default. Pass `--apply` to write.** This includes payment
+recording and corrections, refunds, finance reconciliation, logging time,
+portal access, credential issuance and revocation, maintenance and delivery.
+`--confirm` and `--expected-version` still apply wherever the operation requires
+them; `--apply` does not replace those checks.
 
-## List Invoices
+`--dry-run` and `--pretend` remain deprecated preview aliases through the next
+CLI compatibility window. Combining either with `--apply` exits `2` before the
+operation runs. Storage status also keeps `--write` as a deprecated alias for
+`--apply`. Deprecation notices go to stderr in a terminal; JSON captured through
+`Artisan::call` omits notices so its single output buffer stays parseable.
 
-```bash
-php artisan client-management:invoices
-php artisan client-management:invoices --client=acme-inc
-php artisan client-management:invoices --status=issued --status=paid
-php artisan client-management:invoices --client=acme-inc --status=draft,issued --format=json
-```
+Database-only operations (time, payments, finance allocations and portal scope)
+preview the same operation inside a transaction that is always rolled back.
+Payment and time results include `dry_run`; IDs from a preview do not identify
+persisted new records. A preview can still refuse invalid or stale input.
 
-The table includes invoice totals, payment totals, remaining balances, and hour-balance columns. Omit `--client` to list across all clients.
+Credential commands, email delivery, Square sync/reconciliation and receipt
+pruning report intent without invoking their effectful operation. Their preview
+JSON is `{ "dry_run": true, "operation": "svc:…", "executed": false }`.
+This is not a certification that a future applied run will succeed. OAuth client
+pruning and attachment repair use their existing native preview paths; payout
+backfill retains its existing read-only provider lookups. The scheduler and
+deployment smoke explicitly pass `--apply`; the vendor Passport and auth
+maintenance commands retain their own contracts.
+
+## Workspaces and output
+
+Workspace arguments/options take a **public UUID**, resolved by one shared
+lookup. Log-time and payout backfill still accept a workspace slug with a
+deprecation notice. Other commands do not interpret internal numeric IDs or
+slugs as workspace public IDs. An explicitly empty `--workspace` never widens a
+scoped command into all workspaces. Square commands use the workspace bound in
+server configuration through `SquareConfiguration::workspace()`.
+
+Every application command accepts `--format=text|json`; other values exit `2`
+before the operation runs. Audit JSON shapes and exit codes are preserved.
+Replay and rehearsal now emit a single `summary` object without progress text;
+early refusals produce an `error` object and the same failing exit code.
+Rehearsal `--show --format=json` adds a `details` array with the same private
+billing detail as text output. OAuth prune wraps the vendor's report text in
+`{ "dry_run": true|false, "exit_code": number, "report": string }`.
+Existing credential commands that already emit JSON by default keep doing so.
 
 ## Apply Payment
 
-```bash
-php artisan client-management:apply-payment INV-202605-001 250.00 2026-05-14
-php artisan client-management:apply-payment 123 250.00 2026-05-14 --type=wire --notes="Wire confirmation 1042"
-```
-
-Payments can be applied only to issued invoices. `--type` defaults to `ach` and accepts `ach`, `credit-card`, `wire`, `check`, or `other`. A full or over payment marks the invoice paid, matching the admin API behavior.
-
-## Create Time Entry
+Amounts are integer currency minor units, as in REST. The workspace is required;
+the invoice must belong to it. Recording uses the shared `RecordReceivedPayment`
+operation and accepts `succeeded` or `pending`. Later status changes and refunds
+use their own commands. A full payment updates the invoice through the same
+billing rules as the API.
 
 ```bash
-php artisan client-management:create-time-entry acme-inc "Build payment export" 1:30 2026-05-14
-php artisan client-management:create-time-entry acme-inc "Discovery call" 0.75 2026-05-14 --project=platform --billable=0 --category="Project Management"
-php artisan client-management:create-time-entry acme-inc "Deferred implementation" 2.25 2026-05-14 --defer=1
+php artisan svc:billing:payment INVOICE_PUBLIC_UUID 25000 USD wire --workspace=WORKSPACE_PUBLIC_UUID --format=json
+php artisan svc:billing:payment INVOICE_PUBLIC_UUID 25000 USD wire --workspace=WORKSPACE_PUBLIC_UUID --apply
+php artisan svc:billing:correct-payment PAYMENT_PUBLIC_UUID --workspace=WORKSPACE_PUBLIC_UUID --reference=SYNTHETIC-001 --reason="Synthetic correction" --apply
 ```
-
-If `--project` is omitted, the command uses the client's only project. When a client has zero or multiple projects, pass `--project=<id|slug|exact name>`. Defaults are billable `true`, deferred billing `false`, and category `Software Development`.
 
 ## Log Time
 
@@ -50,12 +73,12 @@ the time sheet, so it accepts and refuses exactly what they do
 (`TimeEntryCreationParityTest` runs every case through all four).
 
 ```bash
-php artisan svc:engagement:log-time <workspace> <project> 45 "Synthetic work" --user=worker@example.test
+php artisan svc:engagement:log-time <workspace> <project> 45 "Synthetic work" --user=worker@example.test --apply
 php artisan svc:engagement:log-time <workspace> <project> 90 "Synthetic work" --user=7 --no-billable \
-  --worked-on=2026-10-01 --client-description="Release preparation" --format=json
+  --worked-on=2026-10-01 --client-description="Release preparation" --format=json --apply
 ```
 
-`<workspace>` is a public id or slug and `<project>` a public id or slugified
+`<workspace>` is a public UUID (legacy slugs are deprecated) and `<project>` a public id or slugified
 name. The worker named by `--user` must hold a project role that may log time
 there. Only someone who may approve the time may pass `--rate`: a project owner
 or manager, or a workspace owner or admin. The currency defaults to the
@@ -63,7 +86,7 @@ workspace's. `--worked-on` defaults to today on the workspace calendar and
 must fall inside the time sheet's window. Time is billable unless `--no-billable`
 is given, as an API entry without `is_billable` is. Client-facing text makes the entry
 client-visible unless `--internal` is given. It exits `0` when the entry is
-logged, `2` when the input is refused (the API's 422) and `1` when the
+logged or successfully previewed, `2` when the input is refused (the API's 422) and `1` when the
 workspace, project, task or worker is not found or may not log the time (the
 API's 404 and 403). `engagement:log-time` and `svc:log-time` remain aliases.
 
@@ -107,9 +130,9 @@ day, and the command when no workspace manager can reach it.
 ```bash
 php artisan svc:portal:project-access <company public id> person@example.test --show
 php artisan svc:portal:project-access <company public id> person@example.test \
-  --project=<project public id> --expected-version=<version from --show> --confirm
+  --project=<project public id> --expected-version=<version from --show> --confirm --apply
 php artisan svc:portal:project-access <company public id> person@example.test --company-wide \
-  --expected-version=<version from --show> --confirm
+  --expected-version=<version from --show> --confirm --apply
 ```
 
 ## Rehearse Generation
@@ -125,29 +148,11 @@ php artisan svc:billing:rehearse-generation --workspace=<workspace public id> --
 
 A company with no agreement in force, ended, or starting within the month is listed as skipped, not failed.
 
-## Migrate Legacy Cadence Invoices
+## Retired client-management commands
 
-One-off, idempotent migration of legacy `period == cycle` cadence invoices to the prior-period layout. Dry-run by default; pass `--apply` to write.
-
-```bash
-php artisan client-management:migrate-legacy-cadence-invoices                       # preview all
-php artisan client-management:migrate-legacy-cadence-invoices --company=acme-inc     # scope to one client
-php artisan client-management:migrate-legacy-cadence-invoices --apply                # write changes
-```
-
-Issued/paid legacy rows are re-keyed so `period_start`/`period_end` point at the prior work cycle (`cycle_*` and the invoice number are left untouched); void legacy rows are soft-deleted, and any orphaned unbilled billable time entries in their window are marked non-billable. Re-running is a no-op once migrated. See [Cadence billing & regeneration › Regenerating Cadence Invoices](cadence-billing.md#regenerating-cadence-invoices) for why this is needed.
-
-## Invoice Email Delivery Status
-
-Show or refresh the Brevo email-delivery status for a client invoice.
-
-```bash
-php artisan client-management:invoice-email-status INV-202605-001            # show stored status
-php artisan client-management:invoice-email-status 123 --refresh             # query Brevo for latest events
-php artisan client-management:invoice-email-status 123 --delivery=45 --format=json
-```
-
-`--refresh` queries Brevo and stores the latest delivery events; without it the command reports the last stored status. Use `--delivery=<id>` to scope to one delivery record.
+The old `client-management:*` commands documented here no longer exist. Use the
+current `svc:*` commands and API for those operations. Legacy cadence migration
+and the old invoice-email-status command have no active CLI alias.
 
 ## Regenerate the Null-Semantics Manifests
 

@@ -2,10 +2,9 @@
 
 namespace App\Console\Commands\Billing;
 
+use App\Console\Commands\SvcCommand;
 use App\Models\ClientAgreement;
-use App\Models\Workspace;
 use App\Services\Billing\DeferredBacklogReadService;
-use Illuminate\Console\Command;
 
 /**
  * Print one agreement's deferred backlog.
@@ -14,7 +13,7 @@ use Illuminate\Console\Command;
  * ledger, the operations summary and the agreement page also read, so an
  * operator sees the figure those surfaces show. Read-only.
  */
-final class DeferredBacklogCommand extends Command
+final class DeferredBacklogCommand extends SvcCommand
 {
     protected $signature = 'svc:billing:deferred-backlog
         {workspace : Workspace public UUID}
@@ -27,11 +26,6 @@ final class DeferredBacklogCommand extends Command
     public function handle(DeferredBacklogReadService $backlogs): int
     {
         $format = (string) $this->option('format');
-        if (! in_array($format, ['text', 'json'], true)) {
-            $this->error('The --format option must be text or json.');
-
-            return self::INVALID;
-        }
         $months = filter_var($this->option('months'), FILTER_VALIDATE_INT, ['options' => ['min_range' => 1, 'max_range' => 60]]);
         if ($months === false) {
             $this->error('The --months option must be a whole number from 1 to 60.');
@@ -39,7 +33,7 @@ final class DeferredBacklogCommand extends Command
             return self::INVALID;
         }
 
-        $workspace = Workspace::query()->where('public_id', (string) $this->argument('workspace'))->first();
+        $workspace = $this->workspaceByPublicId((string) $this->argument('workspace'));
         $agreement = $workspace === null ? null : ClientAgreement::query()
             ->where('workspace_id', $workspace->id)
             ->where('public_id', (string) $this->argument('agreement'))

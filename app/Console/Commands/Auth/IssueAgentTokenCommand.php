@@ -1,14 +1,14 @@
 <?php
 
-namespace App\Console\Commands;
+namespace App\Console\Commands\Auth;
 
 use App\Console\Commands\Concerns\FindsUserByPublicId;
+use App\Console\Commands\MutationCommand;
 use App\Services\Credentials\AgentTokenIssuer;
 use App\Services\Credentials\AgentTokenKind;
 use App\Services\Credentials\AgentTokenRefused;
 use App\Services\Credentials\AgentTokenRequest;
 use App\Services\Credentials\InvalidAgentTokenRequest;
-use Illuminate\Console\Command;
 use Symfony\Component\Console\Output\OutputInterface;
 
 /**
@@ -17,7 +17,7 @@ use Symfony\Component\Console\Output\OutputInterface;
  * walking a browser consent flow. {@see AgentTokenIssuer} owns the issue and
  * its audit; this only reads the shell's arguments and prints the result once.
  */
-final class IssueAgentTokenCommand extends Command
+final class IssueAgentTokenCommand extends MutationCommand
 {
     use FindsUserByPublicId;
 
@@ -54,6 +54,10 @@ final class IssueAgentTokenCommand extends Command
         $user = $this->userByPublicId((string) $this->argument('user_public_id'));
         if (is_int($user)) {
             return $user;
+        }
+
+        if (! $this->applying()) {
+            return $this->planned();
         }
 
         try {

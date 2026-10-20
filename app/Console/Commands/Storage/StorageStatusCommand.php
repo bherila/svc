@@ -1,29 +1,35 @@
 <?php
 
-namespace App\Console\Commands;
+namespace App\Console\Commands\Storage;
 
-use Illuminate\Console\Command;
+use App\Console\Commands\MutationCommand;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Output\OutputInterface;
 use Throwable;
 
-class StorageStatusCommand extends Command
+class StorageStatusCommand extends MutationCommand
 {
     protected $signature = 'svc:storage:status
-        {--write : Write, verify, and remove a synthetic health probe}
+        {--write : Deprecated alias for --apply}
         {--format=text : Output text or json}';
 
     protected $description = 'Verify the private SVC storage disk without exposing paths or data';
 
+    protected function execute(InputInterface $input, OutputInterface $output): int
+    {
+        if ($this->option('write')) {
+            $input->setOption('apply', true);
+            $this->deprecation('Deprecated: --write; use --apply.');
+        }
+
+        return parent::execute($input, $output);
+    }
+
     public function handle(): int
     {
         $format = (string) $this->option('format');
-
-        if (! in_array($format, ['text', 'json'], true)) {
-            $this->error('The --format option must be text or json.');
-
-            return self::INVALID;
-        }
 
         $disk = config('svc.filesystem_disk');
 
@@ -35,7 +41,7 @@ class StorageStatusCommand extends Command
             ], self::FAILURE);
         }
 
-        if (! $this->option('write')) {
+        if (! $this->applying()) {
             return $this->report($format, [
                 'configured' => true,
                 'write_probe' => null,

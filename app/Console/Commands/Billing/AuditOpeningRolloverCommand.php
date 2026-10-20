@@ -2,9 +2,9 @@
 
 namespace App\Console\Commands\Billing;
 
+use App\Console\Commands\SvcCommand;
 use App\Services\AgentApi\Operations\AgentRestDocumentation;
 use App\Services\Billing\OpeningRolloverAuditor;
-use Illuminate\Console\Command;
 
 /**
  * Deprecated (#460): it sized the population #134 would change, and #134 is
@@ -41,7 +41,7 @@ use Illuminate\Console\Command;
  * offering a number nobody could check. Capacity at stake is the honest
  * measure: it is the ceiling on what the correction can move.
  */
-final class AuditOpeningRolloverCommand extends Command
+final class AuditOpeningRolloverCommand extends SvcCommand
 {
     protected $signature = 'svc:billing:audit-opening-rollover
         {--format=text : Output text or json}';
@@ -51,12 +51,6 @@ final class AuditOpeningRolloverCommand extends Command
     public function handle(OpeningRolloverAuditor $auditor): int
     {
         $format = (string) $this->option('format');
-
-        if (! in_array($format, ['text', 'json'], true)) {
-            $this->error('The --format option must be text or json.');
-
-            return self::INVALID;
-        }
 
         // Text only: the JSON shape is a contract until the command is removed.
         if ($format === 'text') {

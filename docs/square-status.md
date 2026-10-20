@@ -55,7 +55,7 @@ would need a longer configured window or a separate recovery process.
 No raw webhook body or signature key is stored in a receipt.
 
 `svc:square:reconcile-payments` runs every fifteen minutes without overlapping.
-`svc:square:reconcile-payments --invoice=INVOICE_PUBLIC_ID` reconciles one linked
+`svc:square:reconcile-payments --invoice=INVOICE_PUBLIC_ID --apply` reconciles one linked
 invoice now instead, and `invoices.square_reconcile` (REST and MCP, workspace
 managers, `billing:write` and `billing:read`) does the same for an agent - for example right after
 `invoices.square_link`, rather than waiting up to fifteen minutes. All three use

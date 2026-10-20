@@ -454,15 +454,15 @@ final class SquareMirrorSyncTest extends TestCase
         $this->assertTrue($events[0]->withoutOverlapping);
 
         $this->serveSquareAccount();
-        $this->artisan('svc:square:sync')->assertSuccessful();
+        $this->artisan('svc:square:sync', ['--apply' => true])->assertSuccessful();
         $this->assertSame(['trigger' => SquareSyncRun::TRIGGER_SCHEDULE, 'status' => SquareSyncRun::COMPLETED], SquareSyncRun::query()->sole()->only(['trigger', 'status']));
 
         config(['services.square.access_token' => null]);
-        $this->artisan('svc:square:sync')->expectsOutputToContain('not configured')->assertSuccessful();
+        $this->artisan('svc:square:sync', ['--apply' => true])->expectsOutputToContain('not configured')->assertSuccessful();
         $this->assertSame(1, SquareSyncRun::query()->count());
 
         $this->connectSquare(null, ['workspace' => '00000000-0000-4000-8000-000000000000']);
-        $this->artisan('svc:square:sync')->assertFailed();
+        $this->artisan('svc:square:sync', ['--apply' => true])->assertFailed();
     }
 
     private function sync(): SquareSyncRun

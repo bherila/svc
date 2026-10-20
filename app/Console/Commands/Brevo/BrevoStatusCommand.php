@@ -1,13 +1,13 @@
 <?php
 
-namespace App\Console\Commands;
+namespace App\Console\Commands\Brevo;
 
-use Illuminate\Console\Command;
+use App\Console\Commands\SvcCommand;
 use Symfony\Component\Mailer\Bridge\Brevo\Transport\BrevoTransportFactory;
 use Symfony\Component\Mailer\Transport\Dsn;
 use Throwable;
 
-class BrevoStatusCommand extends Command
+class BrevoStatusCommand extends SvcCommand
 {
     protected $signature = 'svc:brevo:status {--format=text : Output text or json}';
 
@@ -16,12 +16,6 @@ class BrevoStatusCommand extends Command
     public function handle(): int
     {
         $format = (string) $this->option('format');
-
-        if (! in_array($format, ['text', 'json'], true)) {
-            $this->error('The --format option must be text or json.');
-
-            return self::INVALID;
-        }
 
         $mailer = config('mail.default');
         $mailerUsesBrevo = is_string($mailer) && in_array($mailer, ['brevo', 'hybrid'], true);

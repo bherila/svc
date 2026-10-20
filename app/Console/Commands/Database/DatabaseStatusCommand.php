@@ -1,12 +1,12 @@
 <?php
 
-namespace App\Console\Commands;
+namespace App\Console\Commands\Database;
 
-use Illuminate\Console\Command;
+use App\Console\Commands\SvcCommand;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
-final class DatabaseStatusCommand extends Command
+final class DatabaseStatusCommand extends SvcCommand
 {
     protected $signature = 'svc:database:status {--format=text : Output text or json}';
 
@@ -15,12 +15,6 @@ final class DatabaseStatusCommand extends Command
     public function handle(): int
     {
         $format = (string) $this->option('format');
-
-        if (! in_array($format, ['text', 'json'], true)) {
-            $this->error('The --format option must be text or json.');
-
-            return self::INVALID;
-        }
 
         $driver = DB::connection()->getDriverName();
         $serverVersion = null;

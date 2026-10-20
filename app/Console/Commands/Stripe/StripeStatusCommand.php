@@ -1,11 +1,11 @@
 <?php
 
-namespace App\Console\Commands;
+namespace App\Console\Commands\Stripe;
 
+use App\Console\Commands\SvcCommand;
 use App\Services\Billing\StripeGateway;
-use Illuminate\Console\Command;
 
-class StripeStatusCommand extends Command
+class StripeStatusCommand extends SvcCommand
 {
     protected $signature = 'svc:stripe:status {--format=text : Output text or json}';
 
@@ -14,12 +14,6 @@ class StripeStatusCommand extends Command
     public function handle(StripeGateway $gateway): int
     {
         $format = (string) $this->option('format');
-
-        if (! in_array($format, ['text', 'json'], true)) {
-            $this->error('The --format option must be text or json.');
-
-            return self::INVALID;
-        }
 
         $status = [
             'provider' => 'stripe',

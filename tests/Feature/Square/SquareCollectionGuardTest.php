@@ -223,7 +223,7 @@ final class SquareCollectionGuardTest extends TestCase
 
         $commands = array_map(static fn (Event $event): string => (string) $event->command, app(Schedule::class)->events());
         $this->assertNotEmpty(array_filter($commands, static fn (string $command): bool => str_contains($command, 'svc:billing:dispatch-invoice-emails')), 'The scheduler runs the dispatcher');
-        Artisan::call('svc:billing:dispatch-invoice-emails', ['--limit' => 50]);
+        Artisan::call('svc:billing:dispatch-invoice-emails', ['--apply' => true, '--limit' => 50]);
 
         Mail::assertNothingSent();
         $invoice->refresh();

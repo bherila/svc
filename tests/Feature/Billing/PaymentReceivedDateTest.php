@@ -166,7 +166,7 @@ final class PaymentReceivedDateTest extends TestCase
             // Not a calendar day: refused by the shared rules before anything
             // is looked up. A day outside the window: refused by the service.
             foreach (['next friday' => 2, '2015-08-29' => 1, '2026-08-30' => 1] as $refused => $exit) {
-                $this->artisan('svc:billing:payment', [
+                $this->artisan('svc:billing:payment', ['--apply' => true,
                     'invoice' => $invoice->public_id,
                     'amount' => '1000',
                     'currency' => 'USD',

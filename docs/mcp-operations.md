@@ -51,9 +51,9 @@ For a compromised connector, a lost device, or a person who must be cut off
 now, an operator with shell access on the host runs:
 
 ```bash
-php artisan svc:auth:revoke-connections USER_PUBLIC_UUID
+php artisan svc:auth:revoke-connections USER_PUBLIC_UUID --apply
 # or only the credentials issued to one OAuth client:
-php artisan svc:auth:revoke-connections USER_PUBLIC_UUID --client=OAUTH_CLIENT_ID
+php artisan svc:auth:revoke-connections USER_PUBLIC_UUID --client=OAUTH_CLIENT_ID --apply
 ```
 
 1. For a suspected client-wide or deployment-wide compromise, first globally

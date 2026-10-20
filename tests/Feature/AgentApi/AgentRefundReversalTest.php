@@ -319,25 +319,25 @@ final class AgentRefundReversalTest extends TestCase
         $refundId = $this->refund($user, $workspace, $payment, 2500);
         $options = ['payment' => $payment->public_id, '--workspace' => $workspace->public_id, '--refund' => $refundId, '--reason' => 'Synthetic refund keyed twice'];
 
-        $this->artisan('svc:billing:reverse-refund', [...$options, '--workspace' => $other->public_id])->assertFailed();
-        $this->artisan('svc:billing:reverse-refund', [...$options, '--amount' => '1.5'])->assertExitCode(2);
-        $this->artisan('svc:billing:reverse-refund', [...$options, '--reason' => null])->assertExitCode(2);
-        $this->artisan('svc:billing:reverse-refund', [...$options, '--refund' => 'nope'])->assertExitCode(2);
-        $this->artisan('svc:billing:reverse-refund', [...$options, '--refund' => (string) Str::uuid()])
+        $this->artisan('svc:billing:reverse-refund', ['--apply' => true, ...$options, '--workspace' => $other->public_id])->assertFailed();
+        $this->artisan('svc:billing:reverse-refund', ['--apply' => true, ...$options, '--amount' => '1.5'])->assertExitCode(2);
+        $this->artisan('svc:billing:reverse-refund', ['--apply' => true, ...$options, '--reason' => null])->assertExitCode(2);
+        $this->artisan('svc:billing:reverse-refund', ['--apply' => true, ...$options, '--refund' => 'nope'])->assertExitCode(2);
+        $this->artisan('svc:billing:reverse-refund', ['--apply' => true, ...$options, '--refund' => (string) Str::uuid()])
             ->expectsOutputToContain('Refunds of this payment not yet reversed: '.$refundId.'.')->assertFailed();
-        $this->artisan('svc:billing:reverse-refund', [...$options, '--expected-version' => str_repeat('a', 64)])->assertFailed();
+        $this->artisan('svc:billing:reverse-refund', ['--apply' => true, ...$options, '--expected-version' => str_repeat('a', 64)])->assertFailed();
 
         $this->artisan('svc:billing:reverse-refund', [...$options, '--amount' => '1000', '--dry-run' => true, '--format' => 'json'])
             ->expectsOutputToContain('"dry_run":true,"changed":true,"status":{"old":"succeeded","new":"succeeded"},"refunded_amount":{"old":2500,"new":1500}')->assertSuccessful();
         $this->assertSame(2500, $payment->fresh()?->refunded_amount);
         $this->assertSame(1, ClientInvoicePaymentRefund::query()->where('workspace_id', $workspace->id)->count());
 
-        $this->artisan('svc:billing:reverse-refund', [...$options, '--expected-version' => AgentApiVersion::for($payment->fresh() ?? $payment), '--format' => 'json'])
+        $this->artisan('svc:billing:reverse-refund', ['--apply' => true, ...$options, '--expected-version' => AgentApiVersion::for($payment->fresh() ?? $payment), '--format' => 'json'])
             ->expectsOutputToContain('"refunded_amount":{"old":2500,"new":0}')->assertSuccessful();
         $this->assertSame([2500, PaymentRefundKind::Reversal], [ClientInvoicePaymentRefund::query()->where('workspace_id', $workspace->id)->latest('id')->firstOrFail()->amount, ClientInvoicePaymentRefund::query()->where('workspace_id', $workspace->id)->latest('id')->firstOrFail()->kind]);
         $this->assertSame(0, $payment->fresh()?->refunded_amount);
         $this->assertSame('paid', $invoice->fresh()?->status);
-        $this->artisan('svc:billing:reverse-refund', $options)->expectsOutputToContain('This payment has no refund left to reverse.')->assertFailed();
+        $this->artisan('svc:billing:reverse-refund', ['--apply' => true] + ($options))->expectsOutputToContain('This payment has no refund left to reverse.')->assertFailed();
     }
 
     public function test_a_refund_row_is_immutable_and_reversed_at_most_once_by_the_schema(): void

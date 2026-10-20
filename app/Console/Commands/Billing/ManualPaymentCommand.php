@@ -2,14 +2,13 @@
 
 namespace App\Console\Commands\Billing;
 
+use App\Console\Commands\MutationCommand;
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoicePayment;
-use App\Models\Workspace;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Billing\ManualPaymentChange;
 use DomainException;
-use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -25,7 +24,7 @@ use Throwable;
  * is always rolled back, so what it reports is what a real run would do. The
  * report is taken from the row the service locked, never from a read before it.
  */
-abstract class ManualPaymentCommand extends Command
+abstract class ManualPaymentCommand extends MutationCommand
 {
     /** The change the options describe; a DomainException is reported as a refusal. */
     abstract protected function change(): ManualPaymentChange;
@@ -39,11 +38,6 @@ abstract class ManualPaymentCommand extends Command
     public function handle(InvoiceLifecycleService $service): int
     {
         $format = (string) $this->option('format');
-        if (! in_array($format, ['text', 'json'], true)) {
-            $this->error('The --format option must be text or json.');
-
-            return self::INVALID;
-        }
         $workspaceId = (string) $this->option('workspace');
         if ($workspaceId === '') {
             $this->error('The --workspace option is required.');
@@ -58,7 +52,7 @@ abstract class ManualPaymentCommand extends Command
             return self::INVALID;
         }
 
-        $workspace = Workspace::query()->where('public_id', $workspaceId)->first();
+        $workspace = $this->workspaceByPublicId($workspaceId);
         $payment = $workspace === null ? null : ClientInvoicePayment::query()
             ->where('workspace_id', $workspace->id)
             ->where('public_id', (string) $this->argument('payment'))
@@ -70,7 +64,7 @@ abstract class ManualPaymentCommand extends Command
         }
 
         $expected = $this->option('expected-version');
-        $dryRun = (bool) $this->option('dry-run');
+        $dryRun = ! $this->applying();
 
         DB::beginTransaction();
         try {

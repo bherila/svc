@@ -1,11 +1,11 @@
 <?php
 
-namespace App\Console\Commands;
+namespace App\Console\Commands\Attachments;
 
+use App\Console\Commands\MutationCommand;
 use App\Services\Files\AttachmentStorageService;
-use Illuminate\Console\Command;
 
-class RepairAttachmentsCommand extends Command
+class RepairAttachmentsCommand extends MutationCommand
 {
     protected $signature = 'svc:attachments:repair
         {--apply : Apply cleanup and corruption-state mutations}

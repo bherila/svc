@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands\Engagement;
 
+use App\Console\Commands\MutationCommand;
 use App\Models\ClientProject;
 use App\Models\User;
 use App\Models\Workspace;
@@ -9,7 +10,6 @@ use App\Services\AgentApi\TimeEntryMutationService;
 use App\Support\Engagement\TimeEntryCreationRules;
 use App\Support\WorkspaceClock;
 use DomainException;
-use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
@@ -31,7 +31,7 @@ use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
  * 422; 1 (`FAILURE`) the workspace, project, task or worker was not found or
  * may not log this time, as the API's 404 and 403.
  */
-class LogTimeEntryCommand extends Command
+class LogTimeEntryCommand extends MutationCommand
 {
     protected $signature = 'svc:engagement:log-time
         {workspace : Workspace public UUID or slug}
@@ -59,11 +59,6 @@ class LogTimeEntryCommand extends Command
     {
         $format = (string) $this->option('format');
 
-        if (! in_array($format, ['text', 'json'], true)) {
-            $this->error('The --format option must be text or json.');
-
-            return self::INVALID;
-        }
         if ($this->option('billable') && $this->option('no-billable')) {
             $this->error('Give --billable or --no-billable, not both.');
 
@@ -93,7 +88,7 @@ class LogTimeEntryCommand extends Command
 
         try {
             $data = Validator::make($payload, TimeEntryCreationRules::entry($workspace->timezone))->validate();
-            $entry = $time->create($workspace, $project, $worker, $data);
+            $entry = $this->preview(fn () => $time->create($workspace, $project, $worker, $data));
         } catch (ValidationException $invalid) {
             foreach ($invalid->errors() as $messages) {
                 foreach ($messages as $message) {
@@ -119,6 +114,7 @@ class LogTimeEntryCommand extends Command
         }
 
         $result = [
+            'dry_run' => ! $this->applying(),
             'id' => $entry->public_id,
             'workspace_id' => $workspace->public_id,
             'client_company_id' => $entry->clientCompany->public_id,
@@ -136,7 +132,7 @@ class LogTimeEntryCommand extends Command
         if ($format === 'json') {
             $this->line((string) json_encode($result, JSON_THROW_ON_ERROR));
         } else {
-            $this->info(sprintf('Logged %d minutes to %s (%s).', $entry->minutes, $project->name, $entry->public_id));
+            $this->info(sprintf(($this->applying() ? 'Logged %d minutes to %s (%s).' : 'Would log %d minutes to %s (%s); use --apply to write.'), $entry->minutes, $project->name, $entry->public_id));
         }
 
         return self::SUCCESS;
@@ -205,15 +201,7 @@ class LogTimeEntryCommand extends Command
 
     private function resolveWorkspace(string $value): Workspace|string
     {
-        $matches = Workspace::query()
-            ->where(static fn ($query) => $query->where('public_id', $value)->orWhere('slug', $value))
-            ->get();
-
-        if ($matches->count() !== 1) {
-            return $matches->isEmpty() ? 'Workspace not found.' : 'Workspace lookup is ambiguous.';
-        }
-
-        return $matches->sole();
+        return $this->workspaceByPublicId($value, legacySlug: true) ?? 'Workspace not found.';
     }
 
     private function resolveProject(Workspace $workspace, string $value): ClientProject|string

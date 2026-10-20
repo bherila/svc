@@ -69,7 +69,7 @@ Issue an expiring token for an exact SVC user public UUID. The plaintext token i
 shown once; only its SHA-256 digest is stored.
 
 ```bash
-php artisan svc:auth:issue-token \
+php artisan svc:auth:issue-token --apply \
   USER_PUBLIC_UUID \
   "Finance integration" \
   finance.read finance.reconcile \
@@ -86,7 +86,7 @@ and reconciliation writes require owner or admin access. This is the contract th
 integration has always had. Revoke a named token with:
 
 ```bash
-php artisan svc:auth:revoke-token USER_PUBLIC_UUID "Finance integration"
+php artisan svc:auth:revoke-token USER_PUBLIC_UUID "Finance integration" --apply
 ```
 
 If duplicate names exist, the command fails closed unless `--all` is supplied.

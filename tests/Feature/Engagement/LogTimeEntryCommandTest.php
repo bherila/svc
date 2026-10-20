@@ -36,7 +36,7 @@ final class LogTimeEntryCommandTest extends TestCase
     {
         [$workspace, $project] = $this->fixture('manager');
 
-        $this->artisan($name, [
+        $this->artisan($name, ['--apply' => true,
             'workspace' => 'synthetic-command-workspace',
             'project' => 'website-refresh',
             'minutes' => '45',
@@ -63,13 +63,26 @@ final class LogTimeEntryCommandTest extends TestCase
         $this->assertSame('draft', $entry->status);
     }
 
+    public function test_the_default_preview_runs_the_shared_rules_but_keeps_no_entry(): void
+    {
+        [$workspace, $project] = $this->fixture('manager');
+        $arguments = ['workspace' => $workspace->public_id, 'project' => $project->public_id,
+            'minutes' => '45', 'description' => 'Synthetic preview', '--user' => 'worker@example.test', '--format' => 'json'];
+        $this->artisan('svc:engagement:log-time', $arguments)->expectsOutputToContain('"dry_run":true')->assertSuccessful();
+        $this->assertDatabaseCount('client_time_entries', 0);
+        $this->artisan('svc:engagement:log-time', [...$arguments, '--rate' => '-1'])->assertExitCode(2);
+        $this->assertDatabaseCount('client_time_entries', 0);
+        $this->artisan('svc:engagement:log-time', [...$arguments, '--apply' => true])->expectsOutputToContain('"dry_run":false')->assertSuccessful();
+        $this->assertSame(1, ClientTimeEntry::query()->where('workspace_id', $workspace->id)->count());
+    }
+
     public function test_today_is_the_workspace_day_not_the_utc_day(): void
     {
         [$workspace] = $this->fixture('contributor', 'Pacific/Honolulu');
         // 07:00 UTC is still the previous evening in Honolulu.
         $this->travelTo(CarbonImmutable::parse('2026-10-19 07:00:00', 'UTC'));
 
-        $this->artisan('svc:engagement:log-time', [
+        $this->artisan('svc:engagement:log-time', ['--apply' => true,
             'workspace' => $workspace->public_id, 'project' => 'Website Refresh', 'minutes' => '30',
             'description' => 'Synthetic evening work', '--user' => 'worker@example.test',
         ])->assertSuccessful();
@@ -81,7 +94,7 @@ final class LogTimeEntryCommandTest extends TestCase
     {
         [$workspace] = $this->fixture('manager');
 
-        $this->artisan('svc:engagement:log-time', [
+        $this->artisan('svc:engagement:log-time', ['--apply' => true,
             'workspace' => $workspace->public_id, 'project' => 'website-refresh', 'minutes' => '15',
             'description' => 'Synthetic priced work', '--user' => 'worker@example.test', '--rate' => '10000',
         ])->assertSuccessful();
@@ -105,7 +118,7 @@ final class LogTimeEntryCommandTest extends TestCase
         [$workspace] = $this->fixture($projectRole);
         $workspace->memberships()->update(['role' => $workspaceRole]);
 
-        $this->artisan('svc:engagement:log-time', [
+        $this->artisan('svc:engagement:log-time', ['--apply' => true,
             'workspace' => $workspace->public_id, 'project' => 'website-refresh', 'minutes' => '15',
             'description' => 'Synthetic priced work', '--user' => 'worker@example.test', '--rate' => '12000',
         ])->assertSuccessful();
@@ -121,9 +134,9 @@ final class LogTimeEntryCommandTest extends TestCase
             'description' => 'Synthetic work', '--user' => 'worker@example.test',
         ];
 
-        $this->artisan('svc:engagement:log-time', $arguments)->assertSuccessful();
-        $this->artisan('svc:engagement:log-time', $arguments + ['--billable' => true])->assertSuccessful();
-        $this->artisan('svc:engagement:log-time', $arguments + ['--no-billable' => true])->assertSuccessful();
+        $this->artisan('svc:engagement:log-time', ['--apply' => true] + ($arguments))->assertSuccessful();
+        $this->artisan('svc:engagement:log-time', ['--apply' => true] + ($arguments + ['--billable' => true]))->assertSuccessful();
+        $this->artisan('svc:engagement:log-time', ['--apply' => true] + ($arguments + ['--no-billable' => true]))->assertSuccessful();
 
         $this->assertSame([true, true, false], ClientTimeEntry::query()->where('workspace_id', $workspace->id)->orderBy('id')->pluck('is_billable')->all());
     }
@@ -137,8 +150,8 @@ final class LogTimeEntryCommandTest extends TestCase
             '--client-description' => 'Synthetic client summary',
         ];
 
-        $this->artisan('svc:engagement:log-time', $arguments)->assertSuccessful();
-        $this->artisan('svc:engagement:log-time', $arguments + ['--internal' => true])->assertSuccessful();
+        $this->artisan('svc:engagement:log-time', ['--apply' => true] + ($arguments))->assertSuccessful();
+        $this->artisan('svc:engagement:log-time', ['--apply' => true] + ($arguments + ['--internal' => true]))->assertSuccessful();
 
         $entries = ClientTimeEntry::query()->where('workspace_id', $workspace->id)->orderBy('id')->get();
         $this->assertSame([true, false], $entries->pluck('is_visible_to_client')->all());
@@ -174,10 +187,10 @@ final class LogTimeEntryCommandTest extends TestCase
     {
         [$workspace] = $this->fixture($role);
 
-        $this->artisan('svc:engagement:log-time', $override + [
+        $this->artisan('svc:engagement:log-time', ['--apply' => true] + ($override + [
             'workspace' => $workspace->public_id, 'project' => 'website-refresh', 'minutes' => '30',
             'description' => 'Synthetic refused work', '--user' => 'worker@example.test',
-        ])->expectsOutputToContain($message)->assertExitCode($exit);
+        ]))->expectsOutputToContain($message)->assertExitCode($exit);
 
         $this->assertDatabaseCount('client_time_entries', 0);
     }
@@ -187,7 +200,7 @@ final class LogTimeEntryCommandTest extends TestCase
         [$workspace] = $this->fixture('manager');
         User::factory()->create(['email' => 'outsider@example.test']);
 
-        $this->artisan('svc:engagement:log-time', [
+        $this->artisan('svc:engagement:log-time', ['--apply' => true,
             'workspace' => $workspace->public_id, 'project' => 'website-refresh', 'minutes' => '30',
             'description' => 'Synthetic outsider work', '--user' => 'outsider@example.test',
         ])->expectsOutputToContain('The worker is not a member of this workspace.')->assertFailed();

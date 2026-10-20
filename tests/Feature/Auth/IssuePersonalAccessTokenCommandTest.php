@@ -21,7 +21,7 @@ class IssuePersonalAccessTokenCommandTest extends TestCase
         $otherUser = User::factory()->create(['email' => 'other-user@synthetic.test']);
         $expiresAt = Carbon::now()->addDays(7)->startOfMinute();
 
-        $exitCode = Artisan::call('svc:auth:issue-token', [
+        $exitCode = Artisan::call('svc:auth:issue-token', ['--apply' => true,
             'user_public_id' => $user->public_id,
             'name' => 'Synthetic reconciliation client',
             'abilities' => ['finance.read', 'finance.reconcile', 'finance.read'],
@@ -57,7 +57,7 @@ class IssuePersonalAccessTokenCommandTest extends TestCase
     {
         $user = User::factory()->create(['email' => 'token-validation@synthetic.test']);
 
-        Artisan::call('svc:auth:issue-token', [
+        Artisan::call('svc:auth:issue-token', ['--apply' => true,
             'user_public_id' => $user->public_id,
             'name' => 'Missing expiry',
             'abilities' => ['finance.read'],
@@ -65,7 +65,7 @@ class IssuePersonalAccessTokenCommandTest extends TestCase
 
         $this->assertSame(0, PersonalAccessToken::query()->count());
 
-        $exitCode = Artisan::call('svc:auth:issue-token', [
+        $exitCode = Artisan::call('svc:auth:issue-token', ['--apply' => true,
             'user_public_id' => $user->public_id,
             'name' => 'Expired token',
             'abilities' => ['finance.read'],
@@ -79,7 +79,7 @@ class IssuePersonalAccessTokenCommandTest extends TestCase
 
     public function test_it_requires_a_valid_exact_public_uuid_and_explicit_ability(): void
     {
-        $exitCode = Artisan::call('svc:auth:issue-token', [
+        $exitCode = Artisan::call('svc:auth:issue-token', ['--apply' => true,
             'user_public_id' => 'not-a-uuid',
             'name' => 'Invalid user',
             'abilities' => [],
@@ -96,14 +96,14 @@ class IssuePersonalAccessTokenCommandTest extends TestCase
         $first = $user->createToken('Finance integration', ['finance.read'], now()->addDay());
         $second = $user->createToken('Finance integration', ['finance.read'], now()->addDay());
 
-        $ambiguous = Artisan::call('svc:auth:revoke-token', [
+        $ambiguous = Artisan::call('svc:auth:revoke-token', ['--apply' => true,
             'user_public_id' => $user->public_id,
             'name' => 'Finance integration',
         ]);
         $this->assertSame(1, $ambiguous);
         $this->assertDatabaseCount('personal_access_tokens', 2);
 
-        $revoked = Artisan::call('svc:auth:revoke-token', [
+        $revoked = Artisan::call('svc:auth:revoke-token', ['--apply' => true,
             'user_public_id' => $user->public_id,
             'name' => 'Finance integration',
             '--all' => true,
@@ -128,8 +128,8 @@ class IssuePersonalAccessTokenCommandTest extends TestCase
             $logged[] = ['message' => $event->message, 'context' => $event->context];
         });
 
-        $this->assertSame(0, Artisan::call('svc:auth:revoke-token', ['user_public_id' => $user->public_id, 'name' => 'Finance integration']));
-        $this->assertSame(1, Artisan::call('svc:auth:revoke-token', ['user_public_id' => $user->public_id, 'name' => 'Finance integration']));
+        $this->assertSame(0, Artisan::call('svc:auth:revoke-token', ['--apply' => true, 'user_public_id' => $user->public_id, 'name' => 'Finance integration']));
+        $this->assertSame(1, Artisan::call('svc:auth:revoke-token', ['--apply' => true, 'user_public_id' => $user->public_id, 'name' => 'Finance integration']));
 
         $this->assertNull(PersonalAccessToken::query()->find($mine->accessToken->getKey()));
         $this->assertNotNull(PersonalAccessToken::query()->find($theirs->accessToken->getKey()));

@@ -28,15 +28,15 @@ Schedule::command('bherila-auth:prune-dynamic-clients')->daily()->withoutOverlap
 Schedule::command('passport:purge --expired --hours=744')->daily()->withoutOverlapping(30);
 // Expired delegated access assertion nonces and operation receipts past their 30 days.
 Schedule::command('bherila-auth:prune-delegated-nonces')->daily()->withoutOverlapping();
-Schedule::command('svc:billing:dispatch-invoice-emails --limit=50')->everyMinute()->withoutOverlapping();
+Schedule::command('svc:billing:dispatch-invoice-emails --apply --limit=50')->everyMinute()->withoutOverlapping();
 // Payment reminder cadences (#438), off until enabled per client. Each step is
 // claimed once per invoice, so an overlapping or repeated run sends nothing twice.
-Schedule::command('svc:billing:send-payment-reminders --limit=50')->everyFifteenMinutes()->withoutOverlapping(30);
+Schedule::command('svc:billing:send-payment-reminders --apply --limit=50')->everyFifteenMinutes()->withoutOverlapping(30);
 // The read-only Square mirror (#438): no more often than every 15 minutes.
 // The lock expires well before a day so a crashed run cannot stall the next.
-Schedule::command('svc:square:sync')->everyFifteenMinutes()->withoutOverlapping(30);
-Schedule::command('svc:square:reconcile-payments')->everyFifteenMinutes()->withoutOverlapping(30);
-Schedule::command('svc:square:prune-webhook-receipts')->daily()->withoutOverlapping(30);
+Schedule::command('svc:square:sync --apply')->everyFifteenMinutes()->withoutOverlapping(30);
+Schedule::command('svc:square:reconcile-payments --apply')->everyFifteenMinutes()->withoutOverlapping(30);
+Schedule::command('svc:square:prune-webhook-receipts --apply')->daily()->withoutOverlapping(30);
 
 // Non-invoice Square charges need not wait forever for a local payment (#495).
-Schedule::command('svc:square:prune-pending-settlements')->daily()->withoutOverlapping(30);
+Schedule::command('svc:square:prune-pending-settlements --apply')->daily()->withoutOverlapping(30);

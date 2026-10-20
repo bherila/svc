@@ -2,12 +2,11 @@
 
 namespace App\Console\Commands\Billing;
 
+use App\Console\Commands\MutationCommand;
 use App\Models\ClientInvoice;
-use App\Models\Workspace;
 use App\Services\Billing\RecordReceivedPayment;
 use App\Support\Billing\ReceivedPaymentData;
 use DomainException;
-use Illuminate\Console\Command;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 
@@ -21,7 +20,7 @@ use InvalidArgumentException;
  * where a recorded payment ends up, reached with `svc:billing:payment-status`
  * and `svc:billing:refund-payment`, never recorded as a new row.
  */
-class ApplyPaymentCommand extends Command
+class ApplyPaymentCommand extends MutationCommand
 {
     protected $signature = 'svc:billing:payment
         {invoice : Invoice public UUID}
@@ -44,11 +43,6 @@ class ApplyPaymentCommand extends Command
     public function handle(RecordReceivedPayment $payments): int
     {
         $format = (string) $this->option('format');
-        if (! in_array($format, ['text', 'json'], true)) {
-            $this->error('The --format option must be text or json.');
-
-            return self::INVALID;
-        }
         $workspaceId = (string) $this->option('workspace');
         if ($workspaceId === '') {
             $this->error('The --workspace option is required.');
@@ -81,7 +75,7 @@ class ApplyPaymentCommand extends Command
             return self::INVALID;
         }
 
-        $workspace = Workspace::query()->where('public_id', $workspaceId)->first();
+        $workspace = $this->workspaceByPublicId($workspaceId);
         $invoice = $workspace === null ? null : ClientInvoice::query()
             ->where('workspace_id', $workspace->id)
             ->where('public_id', (string) $this->argument('invoice'))
@@ -93,7 +87,7 @@ class ApplyPaymentCommand extends Command
         }
 
         try {
-            $payment = $payments->record($workspace, $invoice, $facts);
+            $payment = $this->preview(fn () => $payments->record($workspace, $invoice, $facts));
         } catch (DomainException|InvalidArgumentException $exception) {
             $this->error($exception->getMessage());
 
@@ -102,6 +96,7 @@ class ApplyPaymentCommand extends Command
         $recorded = $payment->getRelation('invoice');
 
         $result = [
+            'dry_run' => ! $this->applying(),
             'payment_public_id' => $payment->public_id,
             'invoice_public_id' => $invoice->public_id,
             'status' => $payment->status,
@@ -113,6 +108,9 @@ class ApplyPaymentCommand extends Command
         if ($format === 'json') {
             $this->line((string) json_encode($result, JSON_THROW_ON_ERROR));
         } else {
+            if (! $this->applying()) {
+                $this->info('Dry run: nothing was written. Re-run with --apply to write.');
+            }
             $this->components->twoColumnDetail('Payment', $payment->public_id);
             $this->components->twoColumnDetail('Invoice status', (string) $result['invoice_status']);
             $this->components->twoColumnDetail('Remaining balance', (string) $result['remaining_balance']);

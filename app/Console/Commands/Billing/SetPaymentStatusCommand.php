@@ -13,7 +13,7 @@ class SetPaymentStatusCommand extends ManualPaymentCommand
         {--status= : succeeded (it cleared), failed (it bounced or was reversed) or canceled (recorded in error)}
         {--reason= : Why the status is changing (required)}
         {--expected-version= : Refuse unless the payment is still at this version}
-        {--dry-run : Report what would change and write nothing}
+        {--dry-run : Deprecated alias for the default preview}
         {--format=text : Output text or json}';
 
     protected $description = 'Mark a hand-recorded payment succeeded, failed or canceled, with a recorded reason';

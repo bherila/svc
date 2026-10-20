@@ -2,13 +2,13 @@
 
 namespace App\Console\Commands\Square;
 
+use App\Console\Commands\MutationCommand;
 use App\Models\Workspace;
 use App\Services\Square\SquareConfiguration;
 use App\Services\Square\SquareInvoiceReconciliation;
 use App\Services\Square\SquarePaymentReconciler;
 use App\Services\Square\SquareRequestFailed;
 use DomainException;
-use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Str;
 
@@ -17,7 +17,7 @@ use Illuminate\Support\Str;
  * `--invoice=` reconciles one linked invoice now, through the same
  * {@see SquareInvoiceReconciliation} as `invoices.square_reconcile`.
  */
-final class ReconcileSquarePaymentsCommand extends Command
+final class ReconcileSquarePaymentsCommand extends MutationCommand
 {
     protected $signature = 'svc:square:reconcile-payments
         {--invoice= : Reconcile only this linked svc invoice (its public id), now}';
@@ -40,16 +40,24 @@ final class ReconcileSquarePaymentsCommand extends Command
 
                 return self::FAILURE;
             }
-            $this->components->info('Square is not configured; nothing to reconcile.');
+            if ($this->option('format') === 'json') {
+                $this->json(['configured' => false, 'reconciled' => false]);
+            } else {
+                $this->components->info('Square is not configured; nothing to reconcile.');
+            }
 
             return self::SUCCESS;
         }
-        $workspace = Workspace::query()->where('public_id', $configuration->workspacePublicId)->first();
+        $workspace = $configuration->workspace();
         if ($workspace === null) {
             $this->components->warn('The configured workspace does not exist.');
 
             return self::FAILURE;
         }
+        if (! $this->applying()) {
+            return $this->planned();
+        }
+
         if ($invoice !== null) {
             return $this->reconcileOne($single, $workspace, $invoice);
         }
@@ -82,6 +90,11 @@ final class ReconcileSquarePaymentsCommand extends Command
                 $failed++;
             }
         }
+        if ($this->option('format') === 'json') {
+            $this->json(['failed' => $failed]);
+
+            return $failed === 0 ? self::SUCCESS : self::FAILURE;
+        }
         if ($failed > 0) {
             $this->components->warn('Some linked invoices could not be reconciled; the next sweep will retry.');
         }
@@ -105,6 +118,11 @@ final class ReconcileSquarePaymentsCommand extends Command
             $this->components->warn($refused->getMessage());
 
             return self::FAILURE;
+        }
+        if ($this->option('format') === 'json') {
+            $this->json(['invoice_id' => $reconciled->public_id, 'status' => $reconciled->status, 'balance_amount' => (int) $reconciled->balance_amount, 'currency' => $reconciled->currency]);
+
+            return self::SUCCESS;
         }
         $this->components->info(sprintf('Invoice %s reconciled with Square: %s, balance %d %s.', $reconciled->invoice_number ?? $reconciled->public_id, $reconciled->status, (int) $reconciled->balance_amount, $reconciled->currency));
 

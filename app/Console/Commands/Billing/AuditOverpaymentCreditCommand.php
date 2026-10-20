@@ -2,10 +2,10 @@
 
 namespace App\Console\Commands\Billing;
 
+use App\Console\Commands\SvcCommand;
 use App\Models\Workspace;
 use App\Services\Billing\OverpaymentCreditAuditor;
 use App\Support\Billing\CreditPoolPartition;
-use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -21,7 +21,7 @@ use Illuminate\Support\Str;
  * Read-only. A deficit is a current state to investigate, not proof of how it
  * arose, and nothing here repairs data or refunds anyone.
  */
-final class AuditOverpaymentCreditCommand extends Command
+final class AuditOverpaymentCreditCommand extends SvcCommand
 {
     protected $signature = 'svc:billing:audit-overpayment-credit
         {--format=text : Output text or json}
@@ -36,17 +36,12 @@ final class AuditOverpaymentCreditCommand extends Command
     public function handle(OverpaymentCreditAuditor $auditor): int
     {
         $format = (string) $this->option('format');
-        if (! in_array($format, ['text', 'json'], true)) {
-            $this->error('The --format option must be text or json.');
-
-            return self::INVALID;
-        }
 
         $workspace = null;
         $requested = $this->option('workspace');
         // A bare --workspace must not widen into every tenant.
         if ($requested !== null || $this->input->hasParameterOption('--workspace')) {
-            $workspace = is_string($requested) && Str::isUuid($requested) ? Workspace::query()->where('public_id', $requested)->first() : null;
+            $workspace = is_string($requested) && Str::isUuid($requested) ? $this->workspaceByPublicId($requested) : null;
             if ($workspace === null) {
                 $this->error('The --workspace option must be the public id of an existing workspace.');
 

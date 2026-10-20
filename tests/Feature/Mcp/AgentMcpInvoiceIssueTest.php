@@ -134,7 +134,7 @@ final class AgentMcpInvoiceIssueTest extends TestCase
         $this->assertDatabaseHas('agent_mutation_audits', ['operation' => 'payments.record', 'outcome' => 'success']);
         $this->assertSame(1, AgentMutationReceipt::query()->where('operation', 'invoices.issue')->where('status', 'completed')->count());
 
-        Artisan::call('svc:billing:dispatch-invoice-emails');
+        Artisan::call('svc:billing:dispatch-invoice-emails', ['--apply' => true]);
         Mail::assertNotSent(InvoiceMail::class);
         $this->assertDatabaseMissing('client_invoice_email_deliveries', ['client_invoice_id' => $invoice->id, 'origin' => 'automatic']);
 
@@ -232,7 +232,7 @@ final class AgentMcpInvoiceIssueTest extends TestCase
         // Issuing itself sent the client nothing.
         Mail::assertNotSent(InvoiceMail::class);
 
-        Artisan::call('svc:billing:dispatch-invoice-emails');
+        Artisan::call('svc:billing:dispatch-invoice-emails', ['--apply' => true]);
         Mail::assertSent(InvoiceMail::class, 1);
     }
 
@@ -574,7 +574,7 @@ final class AgentMcpInvoiceIssueTest extends TestCase
         $this->assertEquals($before, $draft->fresh()?->only(['status', 'issue_date', 'issued_at', 'paid_amount', 'balance_amount', 'automatic_delivery_status', 'is_visible_to_client']));
         $this->assertDatabaseCount('client_invoice_payments', 0);
         $this->assertDatabaseMissing('agent_mutation_audits', ['operation' => 'payments.record', 'outcome' => 'success']);
-        Artisan::call('svc:billing:dispatch-invoice-emails');
+        Artisan::call('svc:billing:dispatch-invoice-emails', ['--apply' => true]);
         Mail::assertNotSent(InvoiceMail::class);
     }
 

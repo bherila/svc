@@ -1,11 +1,11 @@
 <?php
 
-namespace App\Console\Commands;
+namespace App\Console\Commands\Auth;
 
 use App\Console\Commands\Concerns\FindsUserByPublicId;
+use App\Console\Commands\MutationCommand;
 use App\Services\Credentials\AgentCredentialSelection;
 use App\Services\Credentials\CredentialRevoker;
-use Illuminate\Console\Command;
 use Illuminate\Support\Str;
 use Laravel\Passport\Passport;
 
@@ -26,7 +26,7 @@ use Laravel\Passport\Passport;
  * access token Passport has since purged, cannot be tied to anyone. Those are
  * counted on every run, and `--unattributed` revokes them for everyone.
  */
-final class RevokeAgentConnectionsCommand extends Command
+final class RevokeAgentConnectionsCommand extends MutationCommand
 {
     use FindsUserByPublicId;
 
@@ -68,6 +68,10 @@ final class RevokeAgentConnectionsCommand extends Command
             $this->error('No OAuth client exists with that id.');
 
             return self::FAILURE;
+        }
+
+        if (! $this->applying()) {
+            return $this->planned();
         }
 
         $revocation = $revoker->revoke(AgentCredentialSelection::connections($user, $clientId), 'console');
