@@ -42,8 +42,8 @@ final class AgentContextProviderSubjectTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.id', $user->public_id)
             ->assertJsonPath('data.provider_subject', '4711')
-            ->assertJsonPath('data.contract_version', 2);
-        $this->assertSame(2, AgentApiContract::VERSION);
+            ->assertJsonPath('data.contract_version', 3);
+        $this->assertSame(3, AgentApiContract::VERSION);
         $this->assertSame([], (new SchemaValidator)->validateAgainstJsonSchema($context->json(), AgentApiResponseSchemaCatalog::forOperation('context.get')));
     }
 
@@ -56,7 +56,7 @@ final class AgentContextProviderSubjectTest extends TestCase
 
         $this->assertArrayNotHasKey('error', $context);
         $body = $context['result']['structuredContent'];
-        $this->assertSame(2, $body['data']['contract_version'] ?? null);
+        $this->assertSame(3, $body['data']['contract_version'] ?? null);
         $this->assertSame($user->public_id, $body['data']['id']);
         $this->assertSame('4711', $body['data']['provider_subject']);
         $this->assertSame([], (new SchemaValidator)->validateAgainstJsonSchema($body, AgentApiResponseSchemaCatalog::forOperation('context.get')));
@@ -72,6 +72,7 @@ final class AgentContextProviderSubjectTest extends TestCase
             'boolean' => [true, true],
             'fraction' => [true, 1.5],
             'zero' => [true, 0],
+            'previous baseline' => [true, 2],
             'unsupported integer' => [true, 1],
         ];
     }
@@ -80,7 +81,7 @@ final class AgentContextProviderSubjectTest extends TestCase
     public function test_the_canonical_context_requires_the_exact_supported_integer_contract(bool $present, mixed $version): void
     {
         $context = ['id' => '0192f0e4-7b3a-7c3e-9a51-3f1d2b6c4a01', 'name' => 'Synthetic person', 'provider_subject' => null,
-            'capabilities' => [], 'withheld_tools' => [], 'workspaces' => [], 'contract_version' => 2];
+            'capabilities' => [], 'withheld_tools' => [], 'workspaces' => [], 'contract_version' => 3];
         $schema = AgentApiResponseSchemaCatalog::schema('Context');
         $validator = new SchemaValidator;
         $this->assertSame([], $validator->validateAgainstJsonSchema($context, $schema));

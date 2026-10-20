@@ -12150,7 +12150,7 @@
                     "contract_version": {
                         "type": "integer",
                         "enum": [
-                            2
+                            3
                         ],
                         "description": "Published agent API contract baseline. A finance consumer must explicitly support this integer; it is independent of resource version hashes, the application release and the MCP protocol."
                     },
