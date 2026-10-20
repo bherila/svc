@@ -32,11 +32,12 @@ foreach (['paused', 'release'] as $key) {
 config(['database.connections.square_race' => $input['connection'], 'database.default' => 'square_race']);
 DB::purge('square_race');
 
-// Hold the link just after it has checked that the Square invoice is free and
-// before it inserts: both workers then believe they may take it.
+// Hold the claim at its first read of who holds the Square invoice, inside
+// its transaction: a second claim arriving meanwhile shows whether it can read
+// the claim tables at all before this one commits.
 $armed = true;
 DB::listen(static function (QueryExecuted $query) use (&$armed, $input): void {
-    if (! $armed || ! str_contains($query->sql, 'from `invoice_square_links`') || ! str_contains($query->sql, 'active_square_invoice_slot')) {
+    if (! $armed || ! (str_contains($query->sql, 'from `invoice_square_links`') || str_contains($query->sql, 'from `square_invoice_coverages`')) || ! str_contains($query->sql, 'active_square_invoice_slot')) {
         return;
     }
     $armed = false;
@@ -57,10 +58,11 @@ $invoice = ClientInvoice::query()->where('workspace_id', $workspace->id)->whereK
 $actor = User::query()->whereKey((int) $input['user'])->firstOrFail();
 
 try {
-    $link = app(SquareLinkService::class)->link($workspace, $invoice, $actor, AgentApiVersion::for($invoice), new SquareInvoiceReference(
-        'inv:0-fixturerace', '000001-R-0001', 'USD', SquareMatchMethod::Manual,
-    ), false);
-    echo json_encode(['outcome' => 'success', 'link' => $link->public_id], JSON_THROW_ON_ERROR)."\n";
+    $reference = new SquareInvoiceReference('inv:0-fixturerace', '000001-R-0001', 'USD', SquareMatchMethod::Manual);
+    $claim = ($input['action'] ?? 'link') === 'cover'
+        ? app(SquareLinkService::class)->cover($workspace, $invoice, $actor, AgentApiVersion::for($invoice), $reference)
+        : app(SquareLinkService::class)->link($workspace, $invoice, $actor, AgentApiVersion::for($invoice), $reference, false);
+    echo json_encode(['outcome' => 'success', 'link' => $claim->public_id], JSON_THROW_ON_ERROR)."\n";
 } catch (HttpExceptionInterface $exception) {
     echo json_encode(['outcome' => 'refused', 'status' => $exception->getStatusCode(), 'message' => $exception->getMessage()], JSON_THROW_ON_ERROR)."\n";
 } catch (Throwable $exception) {

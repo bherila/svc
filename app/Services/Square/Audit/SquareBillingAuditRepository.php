@@ -12,6 +12,7 @@ use App\Models\SquareSyncRun;
 use App\Models\Workspace;
 use App\Services\Square\Mirror\SquareSeriesSummary;
 use App\Services\Square\Mirror\SquareSnapshotMapper;
+use App\Support\Billing\InvoiceStatus;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 
@@ -55,7 +56,7 @@ final class SquareBillingAuditRepository
         $seriesKeys = array_map(static fn (SquareAuditAgreement $agreement): string => $agreement->seriesKey, $agreements);
 
         $columns = ['id', 'square_invoice_id', 'invoice_number', 'series_key', 'series_occurrence', 'square_customer_id', 'recipient_name', 'square_location_id',
-            'status', 'currency', 'total_amount', 'paid_amount', 'due_on', 'scheduled_at', 'autopay', 'square_order_id', 'payment_ids_basis'];
+            'status', 'currency', 'total_amount', 'paid_amount', 'due_on', 'scheduled_at', 'autopay', 'square_order_id', 'square_version', 'payment_ids_basis'];
         // Series members first, under their own bound and newest first, so a
         // large mirror never hides a billed-in-Square series: drift reads the
         // latest members, and absence is only claimed of a complete load.
@@ -99,6 +100,7 @@ final class SquareBillingAuditRepository
             }
         }
         $links = $this->links($workspace, $squareInvoiceIds);
+        $coverages = $this->coverages($workspace, $squareInvoiceIds);
         $customerIds = array_map(strval(...), array_keys($customerIds));
         $mappedCustomers = $this->mappedCustomers($workspace, $customerIds);
         $ambiguous = SquareBillingAuditPolicy::ambiguousSeries($agreements, array_map(static fn (SquareInvoiceSnapshot $snapshot): array => [
@@ -109,8 +111,8 @@ final class SquareBillingAuditRepository
         // complete generation (checked again after the loads).
         $mirrorLooksComplete = $before !== null && $before->status === SquareSyncRun::COMPLETED && ! $before->truncated;
         foreach ($seriesComplete && $mirrorLooksComplete ? $agreements : [] as $agreement) {
-            if (! isset($ambiguous[$agreement->seriesKey])) {
-                $billedSeries[$agreement->seriesKey] = $agreement;
+            if (! isset($ambiguous[$agreement->key()])) {
+                $billedSeries[$agreement->key()] = $agreement;
             }
         }
 
@@ -121,8 +123,8 @@ final class SquareBillingAuditRepository
         $wanted = [];
         foreach ($snapshots as $snapshot) {
             if (SquareSnapshotMapper::mayHoldPayment($snapshot->status, $snapshot->paid_amount)
-                && SquareSnapshotMapper::paymentIdsCurrent($snapshot->status, $snapshot->paid_amount, $snapshot->square_order_id, $snapshot->payment_ids_basis)
-                && SquareBillingAuditPolicy::inPaymentReach(isset($links[$snapshot->square_invoice_id]), $snapshot->series_key, $snapshot->square_customer_id,
+                && SquareSnapshotMapper::paymentIdsCurrent($snapshot->status, $snapshot->paid_amount, $snapshot->square_version, $snapshot->square_order_id, $snapshot->payment_ids_basis)
+                && SquareBillingAuditPolicy::inPaymentReach(isset($links[$snapshot->square_invoice_id]), $snapshot->series_key, $snapshot->square_location_id, $snapshot->square_customer_id,
                     $snapshot->due_on?->toDateString() ?? $snapshot->scheduled_at?->toDateString(), $billedSeries, $mappedCustomers)) {
                 $wanted[] = $snapshot->square_invoice_id;
             }
@@ -167,7 +169,8 @@ final class SquareBillingAuditRepository
                 $idsByInvoice[$snapshot->square_invoice_id] ?? [],
                 $links[$snapshot->square_invoice_id] ?? null,
                 ! isset($deferred[$snapshot->square_invoice_id])
-                    && SquareSnapshotMapper::paymentIdsCurrent($snapshot->status, $snapshot->paid_amount, $snapshot->square_order_id, $snapshot->payment_ids_basis),
+                    && SquareSnapshotMapper::paymentIdsCurrent($snapshot->status, $snapshot->paid_amount, $snapshot->square_version, $snapshot->square_order_id, $snapshot->payment_ids_basis),
+                $coverages[$snapshot->square_invoice_id] ?? null,
             );
         }
 
@@ -202,6 +205,7 @@ final class SquareBillingAuditRepository
         $rows = ClientAgreement::query()->where('client_agreements.workspace_id', $workspace->id)->whereNotNull('client_agreements.square_series_key')
             ->join('client_companies as c', static fn ($join) => $join->on('c.id', '=', 'client_agreements.client_company_id')->where('c.workspace_id', $workspace->id))
             ->orderBy('client_agreements.square_series_key')
+            ->orderBy('client_agreements.square_location_id')
             ->limit(self::MAX_AGREEMENTS + 1)
             ->get(['client_agreements.*', 'c.public_id as company_public_id']);
         $agreements = [];
@@ -218,6 +222,7 @@ final class SquareBillingAuditRepository
                 $amount > 0 ? $amount : null,
                 strtoupper((string) $agreement->getAttribute('currency')),
                 $agreement->ends_on?->toDateString(),
+                $agreement->square_location_id,
             );
         }
 
@@ -244,6 +249,30 @@ final class SquareBillingAuditRepository
         }
 
         return $links;
+    }
+
+    /**
+     * The svc invoice each of these Square invoices is recorded as covered
+     * by (#487). A void invoice covers nothing.
+     *
+     * @param  list<string>  $squareInvoiceIds
+     * @return array<string, SquareAuditLinkedInvoice>
+     */
+    private function coverages(Workspace $workspace, array $squareInvoiceIds): array
+    {
+        $coverages = [];
+        foreach (array_chunk($squareInvoiceIds, self::CHUNK) as $chunk) {
+            $rows = DB::table('square_invoice_coverages as v')->where('v.workspace_id', $workspace->id)->whereIn('v.active_square_invoice_slot', $chunk)
+                ->join('client_invoices as i', static fn ($join) => $join->on('i.id', '=', 'v.client_invoice_id')->where('i.workspace_id', $workspace->id))
+                ->join('client_companies as c', static fn ($join) => $join->on('c.id', '=', 'i.client_company_id')->where('c.workspace_id', $workspace->id))
+                ->where('i.status', '!=', InvoiceStatus::Void->value)
+                ->get(['v.active_square_invoice_slot', 'i.public_id as invoice_public_id', 'c.public_id as company_public_id']);
+            foreach ($rows as $row) {
+                $coverages[(string) $row->active_square_invoice_slot] = new SquareAuditLinkedInvoice((string) $row->invoice_public_id, (string) $row->company_public_id);
+            }
+        }
+
+        return $coverages;
     }
 
     /**

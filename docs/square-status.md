@@ -112,11 +112,14 @@ invoice there; svc does not write to Square.
 `billing_audit.stale_and_missing` also carries `square_billing_audit`, read from
 svc's mirror as of its last sync and empty where Square does not serve the
 workspace. Each flag has a full `count`, at most 100 entries with finished svc and
-Square dashboard URLs, and `truncated`:
+Square dashboard URLs, and `truncated`. Periods and drift name the agreement's
+`square_location_id` (#488), and drift's explore link shows the series in that
+location only:
 
 - `unmirrored_series_periods`: a member of a series an agreement is billed in
-  (`square_series_key`), within the agreement (from its start to its end, once it
-  has one), that no svc invoice is linked to. `SCHEDULED` members are not billed yet, and `DRAFT`, `CANCELED` and
+  (`square_series_key` in its `square_location_id`), within the agreement (from its start to its end, once it
+  has one), that no svc invoice is linked to or recorded as covering
+  (`invoices.square_cover`, #487; a void invoice covers nothing). `SCHEDULED` members are not billed yet, and `DRAFT`, `CANCELED` and
   `FAILED` ones are no bill, so none of them is flagged.
 - `unmatched_payments`: a Square payment id on an invoice in svc's reach (actively
   linked, a billed-in-Square series member within its agreement, or of a confirmed
@@ -129,7 +132,9 @@ Square dashboard URLs, and `truncated`:
   - and counts a tender once it is settled (a captured card, Square account or buy
   now pay later tender, a completed bank transfer, or cash): an authorization may
   still be voided, and a capture changes the invoice's paid amount, so the order is read
-  again then. An order with more tenders than the reconciler accepts (100) stays
+  again then. Any change Square makes to a paid invoice advances its version, which
+  also sends the order to be read again: a refund and an equal recapture between two
+  syncs leave the status and paid amount where they were, but not the tenders. An order with more tenders than the reconciler accepts (100) stays
   unresolved, as does a paid invoice until the sync has read its order or an order
   whose tender list is malformed; ids awaiting a re-read are not reported.
 - `unlinked_customer_balances`: Square customers with no client company mapped
@@ -140,8 +145,11 @@ Square dashboard URLs, and `truncated`:
   `amount`, or whose series the mirror does not hold (`series_not_mirrored`).
   `SCHEDULED` members are not billed yet, and members dated before the
   agreement's start are history; both are left out. Square numbers invoices
-  uniquely per location only, so a prefix used in more than one location (or by a
-  bill with no location) is
+  uniquely per location only, so a series is its prefix in the agreement's
+  location, and the prefix in another location is another agreement's series or
+  none (#488). A series that cannot be placed - a bill with its prefix that names
+  no location, or, for a marker set before markers named a location, the prefix
+  billed from more than one - is
   reported as `multiple_locations` and nothing else is derived from it - no
   comparison, unmirrored period or unmatched payment - and Square still billing
   after the agreement ended is reported as `billed_after_end`. The agreement's amount
@@ -163,7 +171,8 @@ a floor: without a complete sync nothing is derived from a series and no balance
 is stated; a series is reported absent only after a complete sync, no series drift
 is reported when series members were bounded, and no customer balance is stated
 when the other invoices were, since any of them could then be partial. Payment ids record
-the tender rules they were read by, so a change to those rules re-reads each
+the invoice's status, paid amount and Square version they were read for and the
+tender rules they were read by, so a change to those rules re-reads each
 paid invoice's order once. Every flag
 is resolved in svc or in the Square dashboard by a person: nothing here links,
 records, imports or writes to Square.

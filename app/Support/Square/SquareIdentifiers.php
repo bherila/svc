@@ -2,6 +2,7 @@
 
 namespace App\Support\Square;
 
+use App\Services\Square\SquareClient;
 use App\Services\Square\SquareInvoiceSeries;
 
 /**
@@ -44,6 +45,9 @@ final class SquareIdentifiers
     public const string INVOICE_NUMBER_PATTERN = '/^[!-~](?:[ -~]{0,189}[!-~])?$/D';
 
     public const string SERIES_KEY_PATTERN = '/^[0-9]{6}$/D';
+
+    /** A Square location id, as the mirror stores it (#488). */
+    public const string LOCATION_ID_PATTERN = SquareClient::ID_PATTERN;
 
     /**
      * The one validation rule for a stated Square invoice id: the link

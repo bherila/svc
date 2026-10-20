@@ -10,6 +10,9 @@ use App\Support\Billing\BillingCadence;
  * does not bill on a repeating cycle; `periodAmount` is the retainer fee for
  * one whole cycle in minor units - positive, or null when the agreement
  * sells none. Dates are calendar days; `endsOn` is null while it runs on.
+ * `locationId` is the Square location the series bills from (#488), or null
+ * for a marker from before markers named one, which takes the prefix in
+ * every location.
  */
 final readonly class SquareAuditAgreement
 {
@@ -23,7 +26,24 @@ final readonly class SquareAuditAgreement
         public ?int $periodAmount,
         public string $currency,
         public ?string $endsOn = null,
+        public ?string $locationId = null,
     ) {}
+
+    /** Which series this is: its location, or none, and its prefix. */
+    public function key(): string
+    {
+        return ($this->locationId ?? '').'|'.$this->seriesKey;
+    }
+
+    /**
+     * Whether a Square invoice with this prefix and location is a member of
+     * this agreement's series: the same prefix, in its location when it names
+     * one. An invoice naming no location cannot be placed in a located series.
+     */
+    public function bills(?string $seriesKey, ?string $locationId): bool
+    {
+        return $seriesKey === $this->seriesKey && ($this->locationId === null || $locationId === $this->locationId);
+    }
 
     /**
      * Whether a Square invoice dated `$date` falls within this agreement:

@@ -255,6 +255,9 @@ $squareRow = app(SquareSnapshotMapper::class)->invoice([
 app(SquareMirrorRepository::class)->storeInvoices($workspace, [$squareRow], CarbonImmutable::now('UTC'));
 app(SquareLinkService::class)->link($workspace, $squareInvoice, $owner, AgentApiVersion::for($squareInvoice),
     new SquareInvoiceReference('inv_fixture_layout', '000001-R-0001', 'USD', SquareMatchMethod::Manual), false);
+// A Square invoice it covers besides (#487), numbered with no break in it.
+app(SquareLinkService::class)->cover($workspace, $squareInvoice->refresh(), $owner, AgentApiVersion::for($squareInvoice),
+    new SquareInvoiceReference('inv_fixture_layout_covered', 'SYNTHETICCOVERED'.str_repeat('X', 120), 'USD', SquareMatchMethod::Manual));
 app(RecordReceivedPayment::class)->record($workspace, $squareInvoice, ReceivedPaymentData::from([
     'amount' => 12_345, 'currency' => 'USD', 'received_on' => $date, 'method' => 'cash',
 ]));
@@ -301,6 +304,8 @@ if (getenv('SVC_LAYOUT_DEFERRED_BACKLOG') === '1') {
         'billing_cadence' => 'monthly', 'starts_on' => CarbonImmutable::parse($date)->subMonthsNoOverflow(8)->startOfMonth()->toDateString(),
         'retainer_minutes' => 1200, 'hourly_rate_amount' => 987_654,
     ]);
+    // Billed in Square from a location whose id has no break in it (#488).
+    $backlogAgreement->forceFill(['square_series_key' => '000999', 'square_location_id' => 'LOC'.str_repeat('SYNTHETICLAYOUT', 12)])->save();
     foreach ([3, 2, 1, 0] as $monthsAgo) {
         ClientTimeEntry::query()->create([
             'workspace_id' => $workspace->id, 'client_company_id' => $backlogCompany->id,

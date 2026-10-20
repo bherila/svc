@@ -222,6 +222,35 @@ export function SquareInvoiceCard({ square }: { square: InvoiceSquareState }) {
                     </dl>
                 )}
 
+                {square.covers.length > 0 && (
+                    <div className="grid grid-cols-1 gap-1">
+                        <p className="text-muted-foreground">
+                            Also covers these Square invoices. SVC collects and
+                            records nothing through them; they are not reported
+                            as unmirrored periods.
+                        </p>
+                        <ul className="grid grid-cols-1 gap-1">
+                            {square.covers.map((coverage) => (
+                                <li
+                                    key={coverage.square_invoice_id}
+                                    className="min-w-0 wrap-anywhere"
+                                >
+                                    <span className="font-mono">
+                                        {coverage.square_invoice_number}
+                                    </span>
+                                    <span className="text-muted-foreground">
+                                        {' '}
+                                        · recorded{' '}
+                                        {formatTimestamp(coverage.covered_at)}
+                                        {coverage.covered_by !== null &&
+                                            ` by ${coverage.covered_by}`}
+                                    </span>
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                )}
+
                 {notice !== null && (
                     <p
                         role="alert"

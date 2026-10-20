@@ -405,7 +405,7 @@
             },
             "put": {
                 "operationId": "agreements.square_series.set",
-                "description": "Workspace managers only. Mark an agreement as billed in Square by its recurring series key (the six-digit prefix of the series' NNNNNN-R-NNNN invoice numbers). SVC still generates and issues the agreement's invoices, but never emails, charges or offers a payment link for them. Requires the agreement's current expected_version and confirm: true. A series already marking another agreement is refused with 409. Nothing is sent to Square.",
+                "description": "Workspace managers only. Mark an agreement as billed in Square by its recurring series key (the six-digit prefix of the series' NNNNNN-R-NNNN invoice numbers) in one Square location: Square numbers invoices uniquely per location only, so the same prefix in another location is another series. Without location_id the location is the one SVC's Square mirror holds the series in; a series it holds in no location or in more than one is refused with 422 until location_id names it. SVC still generates and issues the agreement's invoices, but never emails, charges or offers a payment link for them. Requires the agreement's current expected_version and confirm: true. A series already marking another agreement in that location (or in every location, from before markers named one) is refused with 409. Nothing is sent to Square.",
                 "security": [
                     {
                         "oauth2": [
@@ -6584,6 +6584,136 @@
                 "x-agent-mcp-tool": "invoices.square_candidates"
             }
         },
+        "/workspaces/{workspace}/invoices/{invoice}/square-coverage": {
+            "post": {
+                "operationId": "invoices.square_cover",
+                "description": "Workspace managers only. When one SVC invoice covers what Square split into several invoices, record another Square invoice as covered by this one (#487), as confirmed by a person. The invoice must already be linked to its primary Square invoice (invoices.square_link) and must not be void; a Square invoice linked or covered anywhere is refused with 409. When currency is given it must equal the invoice's. A coverage is not a link: SVC collects, reconciles and records no payment through it. It tells the billing audit the Square invoice is accounted for, so it is not reported as an unmirrored series period. Requires the invoice's current expected_version and confirm: true. Square ids are checked for shape only; nothing is sent to Square.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "billing:write",
+                            "billing:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/InvoiceSquareCoverRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/InvoiceId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Square invoice recorded as covered",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/InvoiceSquareResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "local_write",
+                "x-agent-idempotent": true,
+                "x-agent-write-safety": {
+                    "idempotency_key": "header_and_argument",
+                    "expected_version": true,
+                    "confirm": true
+                },
+                "x-agent-mcp-tool": "invoices.square_cover",
+                "x-mcp-tool": "invoices.square_cover",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_INVOICE_WRITES_ENABLED"
+                ]
+            },
+            "delete": {
+                "operationId": "invoices.square_uncover",
+                "description": "Workspace managers only. Stop recording a Square invoice as covered by this invoice. The record is kept as history and the Square invoice may be covered or linked again. Requires the invoice's current expected_version and confirm: true; a Square invoice this invoice does not cover is refused with 409.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "billing:write",
+                            "billing:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/InvoiceSquareUncoverRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/InvoiceId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Square invoice no longer covered",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/InvoiceSquareResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "destructive",
+                "x-agent-idempotent": true,
+                "x-agent-write-safety": {
+                    "idempotency_key": "header_and_argument",
+                    "expected_version": true,
+                    "confirm": true
+                },
+                "x-agent-mcp-tool": "invoices.square_uncover",
+                "x-mcp-tool": "invoices.square_uncover",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_INVOICE_WRITES_ENABLED"
+                ]
+            }
+        },
         "/workspaces/{workspace}/invoices/{invoice}/square-link": {
             "post": {
                 "operationId": "invoices.square_link",
@@ -10333,7 +10463,8 @@
                     "client_id",
                     "client_name",
                     "project_id",
-                    "square_series_key"
+                    "square_series_key",
+                    "square_location_id"
                 ],
                 "properties": {
                     "version": {
@@ -10476,6 +10607,14 @@
                         ],
                         "pattern": "^[0-9]{6}$",
                         "description": "Billed in Square: the Square series that bills this agreement. While set, SVC issues the agreement's invoices but never emails, charges or offers a payment link for them."
+                    },
+                    "square_location_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 192,
+                        "description": "The Square location the series bills from: Square numbers invoices uniquely per location only, so the same prefix in another location is another series. Null with a series key for a marker set before markers named a location; it then matches the prefix in every location until the agreement is marked again."
                     }
                 }
             },
@@ -10541,6 +10680,9 @@
                     },
                     "series_key": {
                         "$ref": "#/components/schemas/SquareSeriesKey"
+                    },
+                    "location_id": {
+                        "$ref": "#/components/schemas/SquareLocationId"
                     },
                     "confirm": {
                         "type": "boolean",
@@ -14850,6 +14992,7 @@
                     "invoice_id",
                     "invoice_version",
                     "link",
+                    "covers",
                     "agreement_series_key",
                     "square_collects",
                     "collection_refusal",
@@ -14872,6 +15015,14 @@
                             }
                         ],
                         "description": "The active link to a Square invoice, or null."
+                    },
+                    "covers": {
+                        "type": "array",
+                        "maxItems": 50,
+                        "items": {
+                            "$ref": "#/components/schemas/SquareInvoiceCoverage"
+                        },
+                        "description": "Square invoices this invoice is recorded as covering besides its linked one (#487), oldest first."
                     },
                     "agreement_series_key": {
                         "type": [
@@ -14901,6 +15052,37 @@
                                 "type": "null"
                             }
                         ]
+                    }
+                }
+            },
+            "InvoiceSquareCoverRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "expected_version",
+                    "square_invoice_id",
+                    "square_invoice_number",
+                    "confirm"
+                ],
+                "properties": {
+                    "expected_version": {
+                        "$ref": "#/components/schemas/Version"
+                    },
+                    "square_invoice_id": {
+                        "$ref": "#/components/schemas/SquareInvoiceId"
+                    },
+                    "square_invoice_number": {
+                        "$ref": "#/components/schemas/SquareInvoiceNumber"
+                    },
+                    "currency": {
+                        "type": "string",
+                        "pattern": "^[A-Z]{3}$",
+                        "description": "The Square invoice's currency. When given it must equal the SVC invoice's."
+                    },
+                    "confirm": {
+                        "type": "boolean",
+                        "const": true,
+                        "description": "Explicit user confirmation is required."
                     }
                 }
             },
@@ -14985,6 +15167,28 @@
                 "properties": {
                     "data": {
                         "$ref": "#/components/schemas/InvoiceSquare"
+                    }
+                }
+            },
+            "InvoiceSquareUncoverRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "expected_version",
+                    "square_invoice_id",
+                    "confirm"
+                ],
+                "properties": {
+                    "expected_version": {
+                        "$ref": "#/components/schemas/Version"
+                    },
+                    "square_invoice_id": {
+                        "$ref": "#/components/schemas/SquareInvoiceId"
+                    },
+                    "confirm": {
+                        "type": "boolean",
+                        "const": true,
+                        "description": "Explicit user confirmation is required."
                     }
                 }
             },
@@ -18123,6 +18327,36 @@
                     }
                 }
             },
+            "SquareInvoiceCoverage": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "square_invoice_id",
+                    "square_invoice_number",
+                    "covered_at",
+                    "covered_by"
+                ],
+                "description": "A Square invoice this invoice covers besides its linked one: not a link, so SVC collects and records nothing through it.",
+                "properties": {
+                    "square_invoice_id": {
+                        "$ref": "#/components/schemas/SquareInvoiceId"
+                    },
+                    "square_invoice_number": {
+                        "$ref": "#/components/schemas/SquareInvoiceNumber"
+                    },
+                    "covered_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "covered_by": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Who recorded it, when known."
+                    }
+                }
+            },
             "SquareInvoiceId": {
                 "type": "string",
                 "maxLength": 191,
@@ -18334,6 +18568,11 @@
                         "maxLength": 64
                     }
                 }
+            },
+            "SquareLocationId": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9:_\\-]{0,191}$",
+                "description": "A Square location id."
             },
             "SquareLocationListResponse": {
                 "type": "object",
@@ -19685,6 +19924,7 @@
                     "agreement_id",
                     "agreement_url",
                     "series_key",
+                    "square_location_id",
                     "codes",
                     "agreement_cadence",
                     "series_cadence",
@@ -19704,6 +19944,14 @@
                     },
                     "series_key": {
                         "$ref": "#/components/schemas/SquareSeriesKey"
+                    },
+                    "square_location_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 192,
+                        "description": "The Square location the agreement's series bills from; null for a marker set before markers named a location, which takes the prefix in every location."
                     },
                     "codes": {
                         "type": "array",
@@ -20296,6 +20544,7 @@
                     "agreement_id",
                     "agreement_url",
                     "series_key",
+                    "square_location_id",
                     "square_invoice_id",
                     "invoice_number",
                     "status",
@@ -20314,6 +20563,14 @@
                     },
                     "series_key": {
                         "$ref": "#/components/schemas/SquareSeriesKey"
+                    },
+                    "square_location_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 192,
+                        "description": "The Square location the agreement's series bills from; null for a marker set before markers named a location, which takes the prefix in every location."
                     },
                     "square_invoice_id": {
                         "type": "string",

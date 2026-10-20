@@ -165,7 +165,7 @@ final class SquareMirrorSyncTest extends TestCase
         }
         $repository->storeInvoices($this->workspace, $rows, $now);
         foreach (array_slice($rows, 0, 10) as $row) {
-            $repository->storePaymentIds($this->workspace, $row['square_invoice_id'], SquareSnapshotMapper::paymentIdsBasis('PAID', 12_345), []);
+            $repository->storePaymentIds($this->workspace, $row['square_invoice_id'], SquareSnapshotMapper::paymentIdsBasis('PAID', 12_345, $row['square_version']), []);
         }
         $queries = [];
         DB::listen(function (QueryExecuted $query) use (&$queries): void {
@@ -303,6 +303,38 @@ final class SquareMirrorSyncTest extends TestCase
         $this->assertSame(['PAID', 3, 12_345, ['pay_fixture_1']], [$snapshot->status, $snapshot->square_version, $snapshot->paid_amount, $snapshot->payment_ids]);
     }
 
+    /**
+     * A refund and an equal recapture between two syncs (#489) end with the
+     * invoice paid in full again: status and paid amount are what they were,
+     * but Square advanced the invoice's version and the order holds a new
+     * tender. The version is what sends the order to be read again.
+     */
+    public function test_a_refund_and_an_equal_recapture_between_syncs_reads_the_order_again(): void
+    {
+        $this->serveSquareAccount();
+        $this->sync();
+        $this->assertSame(['pay_fixture_1'], SquareInvoiceSnapshot::query()->where('square_invoice_id', 'inv:0-fixture2')->sole()->payment_ids);
+
+        $recaptured = [
+            ['id' => 'tender_fixture_1', 'type' => 'CARD', 'amount_money' => ['amount' => 12_345, 'currency' => 'USD'], 'payment_id' => 'pay_fixture_1', 'card_details' => ['status' => 'CAPTURED']],
+            ['id' => 'tender_fixture_9', 'type' => 'CARD', 'amount_money' => ['amount' => 12_345, 'currency' => 'USD'], 'payment_id' => 'pay_fixture_9', 'card_details' => ['status' => 'CAPTURED']],
+        ];
+        $this->squareOrderOverrides = ['tenders' => $recaptured];
+        // The same invoice as before: nothing says the tenders changed.
+        $this->sync();
+        $this->assertSame(['pay_fixture_1'], SquareInvoiceSnapshot::query()->where('square_invoice_id', 'inv:0-fixture2')->sole()->payment_ids);
+
+        [$unpaid, $paid, $oneOff] = $this->syntheticInvoices();
+        $paid['version'] = 5;
+        $paid['updated_at'] = '2026-10-03T09:00:00Z';
+        $this->serveSquareAccount(invoices: [$unpaid, $paid, $oneOff]);
+        $run = $this->sync();
+
+        $snapshot = SquareInvoiceSnapshot::query()->where('square_invoice_id', 'inv:0-fixture2')->sole();
+        $this->assertSame(['PAID', 12_345, 5, ['pay_fixture_1', 'pay_fixture_9']], [$snapshot->status, $snapshot->paid_amount, $snapshot->square_version, $snapshot->payment_ids]);
+        $this->assertSame(['PAID|12345|5|t3', 1], [$snapshot->getAttribute('payment_ids_basis'), $run->payments_resolved]);
+    }
+
     public function test_a_paid_order_showing_no_settled_tender_is_retried_not_taken_as_paymentless(): void
     {
         $this->squareOrderOverrides = ['tenders' => [['id' => 'tender_fixture_1', 'payment_id' => 'pay_fixture_1', 'card_details' => ['status' => 'AUTHORIZED']]]];
@@ -310,7 +342,7 @@ final class SquareMirrorSyncTest extends TestCase
         $this->sync();
 
         $snapshot = SquareInvoiceSnapshot::query()->where('square_invoice_id', 'inv:0-fixture2')->sole();
-        $this->assertSame(['PAID|12345|t3|p', null], [$snapshot->getAttribute('payment_ids_basis'), $snapshot->payment_ids]);
+        $this->assertSame(['PAID|12345|2|t3|p', null], [$snapshot->getAttribute('payment_ids_basis'), $snapshot->payment_ids]);
 
         $this->squareOrderOverrides = [];
         $this->sync();

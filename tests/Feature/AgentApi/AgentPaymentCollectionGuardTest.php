@@ -359,7 +359,7 @@ final class AgentPaymentCollectionGuardTest extends TestCase
             $links->link($workspace, $invoice, $owner, AgentApiVersion::for($invoice), new SquareInvoiceReference('inv:0-fixture1', '000001-R-0001', 'USD', SquareMatchMethod::Manual), false);
         } else {
             $agreement = ClientAgreement::query()->where('workspace_id', $workspace->id)->whereKey($invoice->client_agreement_id)->firstOrFail();
-            $links->markAgreement($workspace, $agreement, $owner, AgentApiVersion::for($agreement), '000001');
+            $links->markAgreement($workspace, $agreement, $owner, AgentApiVersion::for($agreement), '000001', 'LOCFIXTURE01');
         }
         $this->assertSame(PaymentCollectionGuard::OWNER_SQUARE, app(PaymentCollectionGuard::class)->summary($invoice->refresh())['collection_owner']);
     }

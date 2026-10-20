@@ -67,6 +67,8 @@ final class SquareOperationContractTest extends TestCase
             'invoices.square_link' => [[AgentDeploymentFlags::INVOICES], []],
             'invoices.square_reconcile' => [[AgentDeploymentFlags::WRITES], [AgentDeploymentFlags::SQUARE]],
             'invoices.square_unlink' => [[AgentDeploymentFlags::INVOICES], []],
+            'invoices.square_cover' => [[AgentDeploymentFlags::INVOICES], []],
+            'invoices.square_uncover' => [[AgentDeploymentFlags::INVOICES], []],
             'companies.square_customer.get' => [[], []],
             'companies.square_customer.set' => [[AgentDeploymentFlags::CLIENTS], []],
             'companies.square_customer.clear' => [[AgentDeploymentFlags::CLIENTS], []],

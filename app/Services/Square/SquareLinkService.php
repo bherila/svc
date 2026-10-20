@@ -7,6 +7,7 @@ use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use App\Models\CompanySquareCustomer;
 use App\Models\InvoiceSquareLink;
+use App\Models\SquareInvoiceCoverage;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Activity\ClientActivityRecorder;
@@ -58,6 +59,8 @@ final class SquareLinkService
         try {
             return DB::transaction(function () use ($workspace, $invoice, $actor, $expectedVersion, $square, $replace): InvoiceSquareLink {
                 $locked = $this->lockInvoice($workspace, $invoice);
+                // Next in lock order, before the hand-off checks lock anything else.
+                $this->lockSquareClaims($workspace);
                 abort_unless(AgentApiVersion::matches($locked, $expectedVersion), 409, 'The invoice has changed; read it and retry.');
                 if ($locked->status === InvoiceStatus::Void->value) {
                     throw new DomainException('A void invoice cannot be linked to Square.');
@@ -91,6 +94,10 @@ final class SquareLinkService
                 if ($elsewhere !== null) {
                     $other = ClientInvoice::query()->where('workspace_id', $workspace->id)->whereKey($elsewhere->client_invoice_id)->value('invoice_number');
                     abort(409, sprintf('Square invoice %s is already linked to invoice %s. Unlink it there first.', $square->number, is_string($other) ? $other : 'another invoice'));
+                }
+                $covered = $this->links->activeCoverage($workspace->id, $square->id);
+                if ($covered !== null) {
+                    abort(409, sprintf('Square invoice %s is recorded as covered by invoice %s. Remove that first.', $square->number, $this->invoiceNumber($workspace, $covered->client_invoice_id)));
                 }
                 if ($current !== null && ! $replace) {
                     abort(409, sprintf('Invoice %s is already linked to Square invoice %s. Pass replace: true to re-point it.', (string) $locked->invoice_number, $current->square_invoice_number));
@@ -134,6 +141,99 @@ final class SquareLinkService
         }
     }
 
+    /**
+     * Record a Square invoice as covered by this invoice (#487): one svc
+     * invoice covers what Square split into several, its primary Square
+     * invoice is linked, and each other one is covered. The billing audit
+     * then does not report the covered invoice as an unmirrored period.
+     *
+     * Not a link: SVC collects, reconciles and records nothing through it.
+     * Refused with 409 when the Square invoice is linked or covered anywhere
+     * (the same one again included), and with 422 when this invoice has no
+     * linked Square invoice to be the primary, is void, or is in another
+     * currency than a stated one.
+     */
+    public function cover(Workspace $workspace, ClientInvoice $invoice, User $actor, string $expectedVersion, SquareInvoiceReference $square): SquareInvoiceCoverage
+    {
+        try {
+            return DB::transaction(function () use ($workspace, $invoice, $actor, $expectedVersion, $square): SquareInvoiceCoverage {
+                $locked = $this->lockInvoice($workspace, $invoice);
+                abort_unless(AgentApiVersion::matches($locked, $expectedVersion), 409, 'The invoice has changed; read it and retry.');
+                if ($locked->status === InvoiceStatus::Void->value) {
+                    throw new DomainException('A void invoice covers nothing.');
+                }
+                $this->lockSquareClaims($workspace);
+                $primary = $this->links->activeLink($locked);
+                if ($primary === null) {
+                    throw new DomainException(sprintf('Invoice %s is not linked to a Square invoice. Link its primary Square invoice first; the others it covers are recorded besides.', (string) $locked->invoice_number));
+                }
+                if ($square->currency !== null && $square->currency !== strtoupper((string) $locked->currency)) {
+                    throw new DomainException(sprintf(
+                        'Square invoice %s is in %s and invoice %s is in %s; an invoice covers only its own currency.',
+                        $square->number, $square->currency, (string) $locked->invoice_number, strtoupper((string) $locked->currency),
+                    ));
+                }
+                $linked = $this->links->activeLinkForSquareInvoice($workspace->id, $square->id);
+                if ($linked !== null) {
+                    abort(409, sprintf('Square invoice %s is linked to invoice %s, so it is not covered by another.', $square->number, $this->invoiceNumber($workspace, $linked->client_invoice_id)));
+                }
+                $covered = $this->links->activeCoverage($workspace->id, $square->id);
+                if ($covered !== null) {
+                    abort(409, sprintf('Square invoice %s is already recorded as covered by invoice %s.', $square->number, $this->invoiceNumber($workspace, $covered->client_invoice_id)));
+                }
+                if ($this->links->activeCoveragesOf($locked)->count() >= SquareLinkRepository::MAX_COVERAGES) {
+                    throw new DomainException(sprintf('Invoice %s already covers %d Square invoices besides its linked one.', (string) $locked->invoice_number, SquareLinkRepository::MAX_COVERAGES));
+                }
+
+                $coverage = SquareInvoiceCoverage::query()->create([
+                    'workspace_id' => $workspace->id,
+                    'client_invoice_id' => $locked->id,
+                    'square_invoice_id' => $square->id,
+                    'square_invoice_number' => $square->number,
+                    'active_square_invoice_slot' => $square->id,
+                    'covered_by_user_id' => $actor->id,
+                    'covered_at' => $this->clock->now($workspace)->utc(),
+                ]);
+                $locked->advanceAgentRevision();
+                $this->activities->record($workspace, $this->companyOf($workspace, $locked), 'invoice.square_coverage_added', $locked, [
+                    'square_invoice_id' => $square->id,
+                    'square_invoice_number' => $square->number,
+                    'primary_square_invoice_number' => $primary->square_invoice_number,
+                ], $actor, (string) Str::uuid());
+
+                return $coverage;
+            });
+        } catch (UniqueConstraintViolationException) {
+            // Another invoice recorded this Square invoice as covered between
+            // the check above and this insert.
+            abort(409, sprintf('Square invoice %s is already recorded as covered by another invoice.', $square->number));
+        }
+    }
+
+    /** Clear a coverage of this invoice; the row stays as history and the Square invoice may be covered or linked again. */
+    public function uncover(Workspace $workspace, ClientInvoice $invoice, User $actor, string $expectedVersion, string $squareInvoiceId): SquareInvoiceCoverage
+    {
+        return DB::transaction(function () use ($workspace, $invoice, $actor, $expectedVersion, $squareInvoiceId): SquareInvoiceCoverage {
+            $locked = $this->lockInvoice($workspace, $invoice);
+            abort_unless(AgentApiVersion::matches($locked, $expectedVersion), 409, 'The invoice has changed; read it and retry.');
+            $coverage = $this->links->activeCoverage($workspace->id, $squareInvoiceId);
+            abort_if($coverage === null || $coverage->client_invoice_id !== $locked->id, 409, sprintf('Invoice %s does not cover that Square invoice.', (string) $locked->invoice_number));
+
+            $coverage->forceFill([
+                'active_square_invoice_slot' => null,
+                'cleared_by_user_id' => $actor->id,
+                'cleared_at' => $this->clock->now($workspace)->utc(),
+            ])->save();
+            $locked->advanceAgentRevision();
+            $this->activities->record($workspace, $this->companyOf($workspace, $locked), 'invoice.square_coverage_removed', $locked, [
+                'square_invoice_id' => $coverage->square_invoice_id,
+                'square_invoice_number' => $coverage->square_invoice_number,
+            ], $actor, (string) Str::uuid());
+
+            return $coverage;
+        });
+    }
+
     /** Soft-unlink: the link stays as history and either side may be linked again. */
     public function unlink(Workspace $workspace, ClientInvoice $invoice, User $actor, string $expectedVersion): InvoiceSquareLink
     {
@@ -142,6 +242,11 @@ final class SquareLinkService
             abort_unless(AgentApiVersion::matches($locked, $expectedVersion), 409, 'The invoice has changed; read it and retry.');
             $current = $this->links->activeLink($locked);
             abort_if($current === null, 409, sprintf('Invoice %s is not linked to a Square invoice.', (string) $locked->invoice_number));
+            // A coverage stands beside its invoice's primary link: unlinked,
+            // the invoice could be collected by SVC while the Square invoices
+            // it covers still read as accounted for.
+            $covers = $this->links->activeCoveragesOf($locked)->count();
+            abort_if($covers > 0, 409, sprintf('Invoice %s covers %d other Square invoice(s). Remove those coverages before unlinking it.', (string) $locked->invoice_number, $covers));
 
             $this->retire($current, $actor, $this->clock->now($workspace)->utc());
             $locked->advanceAgentRevision();
@@ -221,20 +326,29 @@ final class SquareLinkService
     }
 
     /**
-     * Mark the agreement as billed in Square by its series.
+     * Mark the agreement as billed in Square by its series, in one Square
+     * location (#488): Square numbers invoices uniquely per location only, so
+     * the same prefix in another location is another series.
+     *
+     * Without `$locationId` the location is the one the mirror holds the
+     * series in; a series it holds in no location, in more than one, or with
+     * an invoice naming none, is refused until the caller names it.
      *
      * From then on SVC never collects the agreement's invoices - see
      * {@see SquareCollectionGuard}. A series already marking another agreement
-     * is refused with 409; the same series again is a no-op.
+     * in that location is refused with 409; the same series and location
+     * again is a no-op.
      */
-    public function markAgreement(Workspace $workspace, ClientAgreement $agreement, User $actor, string $expectedVersion, string $seriesKey): ClientAgreement
+    public function markAgreement(Workspace $workspace, ClientAgreement $agreement, User $actor, string $expectedVersion, string $seriesKey, ?string $locationId = null): ClientAgreement
     {
+        $locationId ??= $this->seriesLocation($workspace, $seriesKey);
         try {
-            return DB::transaction(function () use ($workspace, $agreement, $actor, $expectedVersion, $seriesKey): ClientAgreement {
+            return DB::transaction(function () use ($workspace, $agreement, $actor, $expectedVersion, $seriesKey, $locationId): ClientAgreement {
                 $locked = $this->lockAgreement($workspace, $agreement);
                 abort_unless(AgentApiVersion::matches($locked, $expectedVersion), 409, 'The agreement has changed; read it and retry.');
                 $previous = $locked->square_series_key;
-                if ($previous === $seriesKey) {
+                $previousLocation = $locked->square_location_id;
+                if ($previous === $seriesKey && $previousLocation === $locationId) {
                     return $locked;
                 }
                 // As for a link: no hand-off while a Stripe payment the client
@@ -250,22 +364,42 @@ final class SquareLinkService
                 if ($emailing !== null) {
                     abort(409, sprintf('An email to the client for invoice %s of this agreement is being sent. Retry once it has gone.', $emailing));
                 }
-                $holder = $this->links->agreementForSeries($workspace->id, $seriesKey);
+                $holder = $this->links->agreementForSeries($workspace->id, $seriesKey, $locationId, $locked->id);
                 if ($holder !== null) {
-                    abort(409, sprintf('Square series %s already marks agreement "%s". Clear it there first.', $seriesKey, (string) $holder->title));
+                    abort(409, sprintf('Square series %s in location %s already marks agreement "%s". Clear it there first.', $seriesKey, $locationId, (string) $holder->title));
                 }
 
-                $locked->forceFill(['square_series_key' => $seriesKey])->save();
+                $locked->forceFill(['square_series_key' => $seriesKey, 'square_location_id' => $locationId])->save();
                 $this->activities->record($workspace, $this->companyOfAgreement($workspace, $locked), 'agreement.square_series_set', $locked, [
                     'series_key' => $seriesKey,
+                    'location_id' => $locationId,
                     'replaced_series_key' => $previous,
+                    'replaced_location_id' => $previousLocation,
                 ], $actor, (string) Str::uuid());
 
                 return $locked;
             });
         } catch (UniqueConstraintViolationException) {
-            abort(409, sprintf('Square series %s already marks another agreement.', $seriesKey));
+            abort(409, sprintf('Square series %s in location %s already marks another agreement.', $seriesKey, $locationId));
         }
+    }
+
+    /**
+     * The one Square location the mirror holds this series in.
+     *
+     * @throws DomainException when that is not exactly one location
+     */
+    private function seriesLocation(Workspace $workspace, string $seriesKey): string
+    {
+        $locations = $this->links->seriesLocations($workspace->id, $seriesKey);
+        if ($locations === []) {
+            throw new DomainException(sprintf('The Square mirror holds no invoice of series %s, so its location is not known. Pass location_id, or sync first.', $seriesKey));
+        }
+        if (count($locations) > 1 || $locations[0] === null) {
+            throw new DomainException(sprintf('Square series %s is used in more than one Square location, or by an invoice naming none. Pass location_id to say which location bills this agreement.', $seriesKey));
+        }
+
+        return $locations[0];
     }
 
     public function clearAgreement(Workspace $workspace, ClientAgreement $agreement, User $actor, string $expectedVersion): ClientAgreement
@@ -276,9 +410,11 @@ final class SquareLinkService
             $previous = $locked->square_series_key;
             abort_if($previous === null, 409, 'This agreement is not marked as billed in Square.');
 
-            $locked->forceFill(['square_series_key' => null])->save();
+            $previousLocation = $locked->square_location_id;
+            $locked->forceFill(['square_series_key' => null, 'square_location_id' => null])->save();
             $this->activities->record($workspace, $this->companyOfAgreement($workspace, $locked), 'agreement.square_series_cleared', $locked, [
                 'series_key' => $previous,
+                'location_id' => $previousLocation,
             ], $actor, (string) Str::uuid());
 
             return $locked;
@@ -331,6 +467,25 @@ final class SquareLinkService
     {
         return ClientAgreement::query()->where('workspace_id', $workspace->id)->whereKey($agreement->id)
             ->tap(Locks::forUpdate())->firstOrFail();
+    }
+
+    /**
+     * Links and coverages each claim a Square invoice, in two tables whose
+     * unique indexes cannot see each other. Two claims on different invoices
+     * lock different rows, so both take the workspace row next (after the
+     * invoice, in lock order) and read the other table only then: a link and a
+     * coverage of one Square invoice can no longer both commit.
+     */
+    private function lockSquareClaims(Workspace $workspace): void
+    {
+        Workspace::query()->whereKey($workspace->id)->tap(Locks::forUpdate())->firstOrFail();
+    }
+
+    private function invoiceNumber(Workspace $workspace, int $invoiceId): string
+    {
+        $number = ClientInvoice::query()->where('workspace_id', $workspace->id)->whereKey($invoiceId)->value('invoice_number');
+
+        return is_string($number) ? $number : 'another invoice';
     }
 
     private function companyOf(Workspace $workspace, ClientInvoice $invoice): ClientCompany

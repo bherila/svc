@@ -71,16 +71,21 @@ final class SquareBillingAuditPolicyTest extends TestCase
 
     public function test_payment_reach_is_a_link_a_billed_series_or_a_confirmed_customer(): void
     {
-        $series = ['000123' => self::agreement()];
+        $series = ['|000123' => self::agreement()];
         $mapped = ['cust_mapped' => true];
 
-        $this->assertTrue(SquareBillingAuditPolicy::inPaymentReach(true, null, null, null, $series, $mapped));
-        $this->assertTrue(SquareBillingAuditPolicy::inPaymentReach(false, '000123', null, '2030-02-01', $series, $mapped));
-        $this->assertTrue(SquareBillingAuditPolicy::inPaymentReach(false, null, 'cust_mapped', '2020-01-01', $series, $mapped));
-        $this->assertFalse(SquareBillingAuditPolicy::inPaymentReach(false, '000999', 'cust_other', null, $series, $mapped));
-        $this->assertFalse(SquareBillingAuditPolicy::inPaymentReach(false, null, null, null, $series, $mapped));
-        $this->assertFalse(SquareBillingAuditPolicy::inPaymentReach(false, '000123', null, '2029-12-31', $series, $mapped), 'History before the agreement is not in reach by its series.');
-        $this->assertTrue(SquareBillingAuditPolicy::inPaymentReach(false, '000123', 'cust_mapped', '2029-12-31', $series, $mapped), 'A confirmed customer reaches it all the same.');
+        $this->assertTrue(SquareBillingAuditPolicy::inPaymentReach(true, null, null, null, null, $series, $mapped));
+        $this->assertTrue(SquareBillingAuditPolicy::inPaymentReach(false, '000123', 'LOCFIXTURE01', null, '2030-02-01', $series, $mapped));
+        $this->assertTrue(SquareBillingAuditPolicy::inPaymentReach(false, null, null, 'cust_mapped', '2020-01-01', $series, $mapped));
+        $this->assertFalse(SquareBillingAuditPolicy::inPaymentReach(false, '000999', 'LOCFIXTURE01', 'cust_other', null, $series, $mapped));
+        $this->assertFalse(SquareBillingAuditPolicy::inPaymentReach(false, null, null, null, null, $series, $mapped));
+        $this->assertFalse(SquareBillingAuditPolicy::inPaymentReach(false, '000123', 'LOCFIXTURE01', null, '2029-12-31', $series, $mapped), 'History before the agreement is not in reach by its series.');
+        $this->assertTrue(SquareBillingAuditPolicy::inPaymentReach(false, '000123', 'LOCFIXTURE01', 'cust_mapped', '2029-12-31', $series, $mapped), 'A confirmed customer reaches it all the same.');
+        // A series in its own location (#488): the prefix elsewhere is not in reach by it.
+        $located = ['LOCFIXTURE01|000123' => self::agreement(location: 'LOCFIXTURE01')];
+        $this->assertTrue(SquareBillingAuditPolicy::inPaymentReach(false, '000123', 'LOCFIXTURE01', null, '2030-02-01', $located, $mapped));
+        $this->assertFalse(SquareBillingAuditPolicy::inPaymentReach(false, '000123', 'LOCFIXTURE02', null, '2030-02-01', $located, $mapped));
+        $this->assertFalse(SquareBillingAuditPolicy::inPaymentReach(false, '000123', null, null, '2030-02-01', $located, $mapped));
     }
 
     public function test_unmapped_customers_with_open_invoices_are_ranked_by_what_they_owe(): void
@@ -414,15 +419,91 @@ final class SquareBillingAuditPolicyTest extends TestCase
         $this->assertSame([], $findings->unmatchedPayments);
         $this->assertSame([[SquareBillingAuditPolicy::DRIFT_MULTIPLE_LOCATIONS]], array_column($findings->seriesDrift, 'codes'));
         $this->assertSame([], SquareBillingAuditPolicy::ambiguousSeries([self::agreement()], [['000123', 'PAID', '2029-01-01', 'LOCFIXTURE02'], ['000123', 'SCHEDULED', '2030-05-01', 'LOCFIXTURE03'], ['000123', 'PAID', null, 'LOCFIXTURE01'], ['000999', 'PAID', null, 'LOCFIXTURE09'], [null, 'PAID', null, 'LOCFIXTURE08'], ['000123', 'CANCELED', '2030-02-01', null]]));
-        $this->assertSame(['000123' => true], SquareBillingAuditPolicy::ambiguousSeries([self::agreement()], [['000123', 'PAID', null, 'LOCFIXTURE01'], ['000123', 'PAID', '2030-02-01', null]]), 'A bill with no location cannot be tied to the others.');
-        $this->assertSame(['000123' => true], SquareBillingAuditPolicy::ambiguousSeries([self::agreement()], [['000123', 'PAID', '2030-02-01', null]]), 'Nor, alone, to any series.');
-        $this->assertSame(['000123' => true], SquareBillingAuditPolicy::ambiguousSeries([self::agreement()], [['000123', 'PAID', '2030-01-01', 'LOCFIXTURE02'], ['000123', 'PAID', null, 'LOCFIXTURE01']]));
+        $this->assertSame(['|000123' => true], SquareBillingAuditPolicy::ambiguousSeries([self::agreement()], [['000123', 'PAID', null, 'LOCFIXTURE01'], ['000123', 'PAID', '2030-02-01', null]]), 'A bill with no location cannot be tied to the others.');
+        $this->assertSame(['|000123' => true], SquareBillingAuditPolicy::ambiguousSeries([self::agreement()], [['000123', 'PAID', '2030-02-01', null]]), 'Nor, alone, to any series.');
+        $this->assertSame(['|000123' => true], SquareBillingAuditPolicy::ambiguousSeries([self::agreement()], [['000123', 'PAID', '2030-01-01', 'LOCFIXTURE02'], ['000123', 'PAID', null, 'LOCFIXTURE01']]));
         $other = new SquareAuditAgreement('00000000-0000-4000-8000-00000000a009', self::COMPANY, '000999', '2030-01-01', BillingCadence::Monthly, 1, 'USD');
-        $this->assertSame(['000123' => true, '000999' => true], SquareBillingAuditPolicy::ambiguousSeries([self::agreement(), $other], [
+        $this->assertSame(['|000123' => true, '|000999' => true], SquareBillingAuditPolicy::ambiguousSeries([self::agreement(), $other], [
             ['000123', 'PAID', null, 'LOCFIXTURE01'], ['000123', 'PAID', null, 'LOCFIXTURE01'], ['000123', 'PAID', null, 'LOCFIXTURE02'],
             ['000999', 'PAID', null, 'LOCFIXTURE01'], ['000999', 'PAID', null, 'LOCFIXTURE02'],
         ]));
         $this->assertSame([], SquareBillingAuditPolicy::ambiguousSeries([self::agreement()], [['000123', 'PAID', null, 'LOCFIXTURE01'], ['000123', 'PAID', null, 'LOCFIXTURE01']]), 'One location twice is one location.');
+    }
+
+    /**
+     * A series member recorded as covered by an svc invoice besides that
+     * invoice's linked one (#487) is accounted for: not an unmirrored period.
+     * Its payments are still checked like any unlinked member's.
+     */
+    public function test_a_covered_series_member_is_not_an_unmirrored_period(): void
+    {
+        $findings = self::classify([
+            self::invoice('inv_primary', 1, '2030-01-15', 'UNPAID', linked: true),
+            self::invoice('inv_covered', 2, '2030-02-15', 'PAID', payments: ['pay_covered'], paid: 12_345, covered: true),
+            self::invoice('inv_unmirrored', 3, '2030-03-15', 'UNPAID'),
+        ]);
+
+        $this->assertSame(['inv_unmirrored'], array_map(static fn (array $period): string => $period['invoice']->squareInvoiceId, $findings->unmirroredPeriods));
+        $this->assertSame([['pay_covered', SquareBillingAuditPolicy::PAYMENT_INVOICE_NOT_LINKED]], array_map(static fn (array $payment): array => [$payment['payment_id'], $payment['reason']], $findings->unmatchedPayments));
+    }
+
+    /**
+     * Square numbers invoices uniquely per location only (#488). A series is
+     * its prefix in the agreement's location, so one prefix in two locations
+     * is two agreements' series, each audited on its own members; a bill
+     * naming no location cannot be placed in either.
+     */
+    public function test_a_located_series_is_its_prefix_in_its_own_location(): void
+    {
+        $here = self::agreement(location: 'LOCFIXTURE01');
+        $there = self::agreement(amount: 20_000, location: 'LOCFIXTURE02', id: '00000000-0000-4000-8000-00000000a002');
+        $this->assertSame(['LOCFIXTURE01|000123', 'LOCFIXTURE02|000123'], [$here->key(), $there->key()]);
+        $this->assertTrue($here->bills('000123', 'LOCFIXTURE01'));
+        $this->assertFalse($here->bills('000123', 'LOCFIXTURE02'));
+        $this->assertFalse($here->bills('000123', null));
+        $this->assertFalse($here->bills('000999', 'LOCFIXTURE01'));
+        $this->assertTrue(self::agreement()->bills('000123', 'LOCFIXTURE09'), 'A marker naming no location takes the prefix anywhere.');
+        $keyed = [$here->key() => $here, $there->key() => $there, '|000777' => self::agreement()];
+        $this->assertSame($there, SquareBillingAuditPolicy::agreementOf($keyed, '000123', 'LOCFIXTURE02'));
+        $this->assertNull(SquareBillingAuditPolicy::agreementOf($keyed, '000123', 'LOCFIXTURE03'));
+        $this->assertNull(SquareBillingAuditPolicy::agreementOf($keyed, '000123', null));
+        $this->assertNull(SquareBillingAuditPolicy::agreementOf($keyed, null, 'LOCFIXTURE01'));
+        $this->assertSame($keyed['|000777'], SquareBillingAuditPolicy::agreementOf($keyed, '000777', 'LOCFIXTURE05'));
+        // The marker in the invoice's own location wins over one naming none.
+        $this->assertSame($here, SquareBillingAuditPolicy::agreementOf([...$keyed, '|000123' => self::agreement()], '000123', 'LOCFIXTURE01'));
+        $this->assertSame($keyed['|000777'], SquareBillingAuditPolicy::agreementOf($keyed, '000777', null), 'A bill naming no location falls to the marker naming none.');
+
+        // Drift is ordered by prefix, then location, whatever order the agreements came in.
+        $drifting = SquareBillingAuditPolicy::classify(new SquareBillingAuditFacts('2030-10-01', [$there, $here], [
+            self::invoice('inv_drift_there_1', 1, '2030-01-20', 'UNPAID', total: 1, location: 'LOCFIXTURE02'),
+            self::invoice('inv_drift_there_2', 2, '2030-02-20', 'UNPAID', total: 1, location: 'LOCFIXTURE02'),
+            self::invoice('inv_drift_here_1', 1, '2030-01-15', 'UNPAID', total: 1),
+            self::invoice('inv_drift_here_2', 2, '2030-02-15', 'UNPAID', total: 1),
+        ], [], [], [], true));
+        $this->assertSame([$here, $there], array_column($drifting->seriesDrift, 'agreement'));
+
+        $findings = SquareBillingAuditPolicy::classify(new SquareBillingAuditFacts('2030-10-01', [$here, $there], [
+            self::invoice('inv_here_1', 1, '2030-01-15', 'PAID', payments: ['pay_here'], paid: 12_345),
+            self::invoice('inv_here_2', 2, '2030-02-15', 'UNPAID', linked: true),
+            self::invoice('inv_there_1', 1, '2030-01-20', 'UNPAID', total: 20_000, location: 'LOCFIXTURE02'),
+            self::invoice('inv_there_2', 2, '2030-02-20', 'UNPAID', total: 20_000, linked: true, location: 'LOCFIXTURE02'),
+            // The prefix in a third location is no agreement's series.
+            self::invoice('inv_elsewhere', 1, '2030-01-25', 'PAID', payments: ['pay_elsewhere'], customer: 'cust_other', total: 99, paid: 99, location: 'LOCFIXTURE03'),
+        ], ['cust_mapped' => true], [], [], true));
+
+        $this->assertSame(['inv_here_1', 'inv_there_1'], array_map(static fn (array $period): string => $period['invoice']->squareInvoiceId, $findings->unmirroredPeriods));
+        $this->assertSame([$here, $there], array_column($findings->unmirroredPeriods, 'agreement'));
+        $this->assertSame(['pay_here'], array_column($findings->unmatchedPayments, 'payment_id'), 'A payment in another location is not in reach by the series.');
+        $this->assertSame([], $findings->seriesDrift, 'Each series matches its own agreement, though their amounts differ.');
+
+        // A bill with the prefix naming no location cannot be placed: both are ambiguous.
+        $this->assertSame(['LOCFIXTURE01|000123' => true, 'LOCFIXTURE02|000123' => true], SquareBillingAuditPolicy::ambiguousSeries([$here, $there], [['000123', 'PAID', '2030-03-01', null]]));
+        $this->assertSame([], SquareBillingAuditPolicy::ambiguousSeries([$here], [['000123', 'PAID', '2030-03-01', 'LOCFIXTURE02'], ['000123', 'PAID', '2029-03-01', null], ['000123', 'CANCELED', '2030-03-01', null]]), 'Another location, history and a non-bill place nothing.');
+        $unplaced = SquareBillingAuditPolicy::classify(new SquareBillingAuditFacts('2030-10-01', [$here], [
+            self::invoice('inv_unplaced', 3, '2030-03-15', 'UNPAID', location: null),
+        ], [], [], [], true));
+        $this->assertSame([], $unplaced->unmirroredPeriods);
+        $this->assertSame([[SquareBillingAuditPolicy::DRIFT_MULTIPLE_LOCATIONS]], array_column($unplaced->seriesDrift, 'codes'), 'Reported although no member is placed in the series.');
     }
 
     public function test_a_bounded_member_load_derives_no_series_periods_or_payments(): void
@@ -487,9 +568,9 @@ final class SquareBillingAuditPolicyTest extends TestCase
         return $members;
     }
 
-    private static function agreement(?BillingCadence $cadence = BillingCadence::Monthly, ?int $amount = 12_345): SquareAuditAgreement
+    private static function agreement(?BillingCadence $cadence = BillingCadence::Monthly, ?int $amount = 12_345, ?string $location = null, string $id = self::AGREEMENT): SquareAuditAgreement
     {
-        return new SquareAuditAgreement(self::AGREEMENT, self::COMPANY, '000123', '2030-01-01', $cadence, $amount, 'USD');
+        return new SquareAuditAgreement($id, self::COMPANY, '000123', '2030-01-01', $cadence, $amount, 'USD', locationId: $location);
     }
 
     /**
@@ -524,6 +605,8 @@ final class SquareBillingAuditPolicyTest extends TestCase
         ?int $paid = 0,
         ?string $currency = 'USD',
         ?string $name = null,
+        ?string $location = 'LOCFIXTURE01',
+        bool $covered = false,
     ): SquareAuditInvoice {
         return new SquareAuditInvoice(
             $id,
@@ -532,7 +615,7 @@ final class SquareBillingAuditPolicyTest extends TestCase
             $occurrence,
             $customer,
             $name,
-            'LOCFIXTURE01',
+            $location,
             $status,
             $currency,
             $total,
@@ -543,6 +626,7 @@ final class SquareBillingAuditPolicyTest extends TestCase
             $payments,
             $linked ? new SquareAuditLinkedInvoice('00000000-0000-4000-8000-0000000b'.substr(md5($id), 0, 4), self::COMPANY) : null,
             true,
+            $covered ? new SquareAuditLinkedInvoice('00000000-0000-4000-8000-0000000c'.substr(md5($id), 0, 4), self::COMPANY) : null,
         );
     }
 }

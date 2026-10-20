@@ -46,6 +46,7 @@ final class SquareBillingAudit
                 'agreement_id' => $period['agreement']->agreementId,
                 'agreement_url' => $agreementUrl($period['agreement']),
                 'series_key' => $period['agreement']->seriesKey,
+                'square_location_id' => $period['agreement']->locationId,
                 'square_invoice_id' => $period['invoice']->squareInvoiceId,
                 'invoice_number' => $period['invoice']->invoiceNumber,
                 'status' => $period['invoice']->status,
@@ -72,6 +73,7 @@ final class SquareBillingAudit
                 'agreement_id' => $drift['agreement']->agreementId,
                 'agreement_url' => $agreementUrl($drift['agreement']),
                 'series_key' => $drift['agreement']->seriesKey,
+                'square_location_id' => $drift['agreement']->locationId,
                 'codes' => $drift['codes'],
                 'agreement_cadence' => $drift['agreement']->cadence?->value,
                 'series_cadence' => $drift['series_cadence'],
@@ -79,7 +81,8 @@ final class SquareBillingAudit
                 'series_currency' => $drift['series_currency'],
                 'agreement_amount' => $drift['agreement']->periodAmount,
                 'series_amount' => $drift['series_amount'],
-                'explore_url' => $explore(['series_key' => $drift['agreement']->seriesKey]),
+                // The series in its own location (#488); the prefix everywhere for a marker naming none.
+                'explore_url' => $explore(array_filter(['series_key' => $drift['agreement']->seriesKey, 'location_id' => $drift['agreement']->locationId], is_string(...))),
             ]),
         ];
     }
