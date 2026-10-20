@@ -6,7 +6,6 @@ use App\Models\ClientAgreement;
 use App\Models\ClientTimeEntry;
 use App\Services\Billing\MoneyService;
 use DomainException;
-use LogicException;
 
 /** Whole entries in FIFO order, priced through termination's canonical rule. */
 final readonly class DeferredBuyDownSelection
@@ -35,7 +34,7 @@ final readonly class DeferredBuyDownSelection
         // preserve aggregate rounding rather than rounding each entry's charge.
         $groups = [];
         foreach ($full->agreementRateEntries as $entry) {
-            $groups[$entry->id] = ['agreement', $full->agreementRateUnitAmount ?? throw new LogicException('Missing deferred agreement rate.')];
+            $groups[$entry->id] = ['agreement', $agreement->hourlyRateAmountOrFail()];
         }
         foreach ($full->flatHourlyGroups as $index => $group) {
             foreach ($group->entries as $entry) {
