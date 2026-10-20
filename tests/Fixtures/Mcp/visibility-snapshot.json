@@ -593,6 +593,11 @@
                         ],
                         "properties": {
                             "data": {
+                                "$ref": "#/$defs/Agreement"
+                            }
+                        },
+                        "$defs": {
+                            "Agreement": {
                                 "type": "object",
                                 "additionalProperties": false,
                                 "required": [
@@ -759,14 +764,16 @@
                                             "string",
                                             "null"
                                         ],
-                                        "pattern": "^[0-9]{6}$"
+                                        "pattern": "^[0-9]{6}$",
+                                        "description": "Billed in Square: the Square series that bills this agreement. While set, SVC issues the agreement's invoices but never emails, charges or offers a payment link for them."
                                     },
                                     "square_location_id": {
                                         "type": [
                                             "string",
                                             "null"
                                         ],
-                                        "maxLength": 192
+                                        "maxLength": 192,
+                                        "description": "The Square location the series bills from: Square numbers invoices uniquely per location only, so the same prefix in another location is another series. Null with a series key for a marker set before markers named a location; it then matches the prefix in every location until the agreement is marked again."
                                     }
                                 }
                             }
@@ -835,185 +842,195 @@
                                 "type": "array",
                                 "maxItems": 100,
                                 "items": {
-                                    "type": "object",
-                                    "additionalProperties": false,
-                                    "required": [
-                                        "version",
-                                        "id",
-                                        "title",
-                                        "status",
-                                        "currency",
-                                        "billing_cadence",
-                                        "effective_billing_cadence",
-                                        "effective_first_cycle_proration",
-                                        "is_recurring",
-                                        "starts_on",
-                                        "ends_on",
-                                        "signed_at",
-                                        "retainer_minutes_per_period",
-                                        "retainer_minutes_per_month",
-                                        "retainer_amount_per_period",
-                                        "hourly_rate_amount",
-                                        "rollover_months",
-                                        "project",
-                                        "client_id",
-                                        "client_name",
-                                        "project_id",
-                                        "square_series_key",
-                                        "square_location_id"
-                                    ],
-                                    "properties": {
-                                        "version": {
-                                            "type": "string",
-                                            "minLength": 64,
-                                            "maxLength": 64
-                                        },
-                                        "id": {
-                                            "type": "string",
-                                            "format": "uuid"
-                                        },
-                                        "title": {
-                                            "type": "string",
-                                            "maxLength": 255
-                                        },
-                                        "status": {
-                                            "type": "string",
-                                            "maxLength": 64
-                                        },
-                                        "currency": {
-                                            "type": "string",
-                                            "minLength": 3,
-                                            "maxLength": 3
-                                        },
-                                        "billing_cadence": {
-                                            "type": [
-                                                "string",
-                                                "null"
-                                            ],
-                                            "maxLength": 32
-                                        },
-                                        "effective_billing_cadence": {
-                                            "type": [
-                                                "string",
-                                                "null"
-                                            ],
-                                            "enum": [
-                                                "monthly",
-                                                "quarterly",
-                                                "semi_annual",
-                                                "annual",
-                                                null
-                                            ]
-                                        },
-                                        "effective_first_cycle_proration": {
-                                            "type": [
-                                                "string",
-                                                "null"
-                                            ],
-                                            "enum": [
-                                                "prorate_hours",
-                                                "full_period",
-                                                "align_next_cycle",
-                                                null
-                                            ]
-                                        },
-                                        "is_recurring": {
-                                            "type": "boolean"
-                                        },
-                                        "starts_on": {
-                                            "type": "string",
-                                            "format": "date"
-                                        },
-                                        "ends_on": {
-                                            "type": [
-                                                "string",
-                                                "null"
-                                            ],
-                                            "format": "date"
-                                        },
-                                        "signed_at": {
-                                            "type": [
-                                                "string",
-                                                "null"
-                                            ],
-                                            "format": "date-time"
-                                        },
-                                        "retainer_minutes_per_period": {
-                                            "type": [
-                                                "integer",
-                                                "null"
-                                            ],
-                                            "minimum": 0
-                                        },
-                                        "retainer_minutes_per_month": {
-                                            "type": [
-                                                "integer",
-                                                "null"
-                                            ],
-                                            "minimum": 0
-                                        },
-                                        "retainer_amount_per_period": {
-                                            "type": [
-                                                "integer",
-                                                "null"
-                                            ],
-                                            "minimum": 0
-                                        },
-                                        "hourly_rate_amount": {
-                                            "type": [
-                                                "integer",
-                                                "null"
-                                            ],
-                                            "minimum": 0
-                                        },
-                                        "rollover_months": {
-                                            "type": [
-                                                "integer",
-                                                "null"
-                                            ],
-                                            "minimum": 0,
-                                            "maximum": 120
-                                        },
-                                        "project": {
-                                            "type": [
-                                                "string",
-                                                "null"
-                                            ],
-                                            "maxLength": 255
-                                        },
-                                        "client_id": {
-                                            "type": "string",
-                                            "format": "uuid"
-                                        },
-                                        "client_name": {
-                                            "type": "string",
-                                            "maxLength": 160
-                                        },
-                                        "project_id": {
-                                            "type": [
-                                                "string",
-                                                "null"
-                                            ],
-                                            "format": "uuid"
-                                        },
-                                        "square_series_key": {
-                                            "type": [
-                                                "string",
-                                                "null"
-                                            ],
-                                            "pattern": "^[0-9]{6}$"
-                                        },
-                                        "square_location_id": {
-                                            "type": [
-                                                "string",
-                                                "null"
-                                            ],
-                                            "maxLength": 192
-                                        }
-                                    }
+                                    "$ref": "#/$defs/Agreement"
                                 }
                             },
                             "meta": {
+                                "$ref": "#/$defs/PaginationMeta"
+                            }
+                        },
+                        "$defs": {
+                            "Agreement": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "version",
+                                    "id",
+                                    "title",
+                                    "status",
+                                    "currency",
+                                    "billing_cadence",
+                                    "effective_billing_cadence",
+                                    "effective_first_cycle_proration",
+                                    "is_recurring",
+                                    "starts_on",
+                                    "ends_on",
+                                    "signed_at",
+                                    "retainer_minutes_per_period",
+                                    "retainer_minutes_per_month",
+                                    "retainer_amount_per_period",
+                                    "hourly_rate_amount",
+                                    "rollover_months",
+                                    "project",
+                                    "client_id",
+                                    "client_name",
+                                    "project_id",
+                                    "square_series_key",
+                                    "square_location_id"
+                                ],
+                                "properties": {
+                                    "version": {
+                                        "type": "string",
+                                        "minLength": 64,
+                                        "maxLength": 64
+                                    },
+                                    "id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "title": {
+                                        "type": "string",
+                                        "maxLength": 255
+                                    },
+                                    "status": {
+                                        "type": "string",
+                                        "maxLength": 64
+                                    },
+                                    "currency": {
+                                        "type": "string",
+                                        "minLength": 3,
+                                        "maxLength": 3
+                                    },
+                                    "billing_cadence": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 32
+                                    },
+                                    "effective_billing_cadence": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "enum": [
+                                            "monthly",
+                                            "quarterly",
+                                            "semi_annual",
+                                            "annual",
+                                            null
+                                        ]
+                                    },
+                                    "effective_first_cycle_proration": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "enum": [
+                                            "prorate_hours",
+                                            "full_period",
+                                            "align_next_cycle",
+                                            null
+                                        ]
+                                    },
+                                    "is_recurring": {
+                                        "type": "boolean"
+                                    },
+                                    "starts_on": {
+                                        "type": "string",
+                                        "format": "date"
+                                    },
+                                    "ends_on": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date"
+                                    },
+                                    "signed_at": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date-time"
+                                    },
+                                    "retainer_minutes_per_period": {
+                                        "type": [
+                                            "integer",
+                                            "null"
+                                        ],
+                                        "minimum": 0
+                                    },
+                                    "retainer_minutes_per_month": {
+                                        "type": [
+                                            "integer",
+                                            "null"
+                                        ],
+                                        "minimum": 0
+                                    },
+                                    "retainer_amount_per_period": {
+                                        "type": [
+                                            "integer",
+                                            "null"
+                                        ],
+                                        "minimum": 0
+                                    },
+                                    "hourly_rate_amount": {
+                                        "type": [
+                                            "integer",
+                                            "null"
+                                        ],
+                                        "minimum": 0
+                                    },
+                                    "rollover_months": {
+                                        "type": [
+                                            "integer",
+                                            "null"
+                                        ],
+                                        "minimum": 0,
+                                        "maximum": 120
+                                    },
+                                    "project": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 255
+                                    },
+                                    "client_id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "client_name": {
+                                        "type": "string",
+                                        "maxLength": 160
+                                    },
+                                    "project_id": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "uuid"
+                                    },
+                                    "square_series_key": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "pattern": "^[0-9]{6}$",
+                                        "description": "Billed in Square: the Square series that bills this agreement. While set, SVC issues the agreement's invoices but never emails, charges or offers a payment link for them."
+                                    },
+                                    "square_location_id": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 192,
+                                        "description": "The Square location the series bills from: Square numbers invoices uniquely per location only, so the same prefix in another location is another series. Null with a series key for a marker set before markers named a location; it then matches the prefix in every location until the agreement is marked again."
+                                    }
+                                }
+                            },
+                            "PaginationMeta": {
                                 "type": "object",
                                 "additionalProperties": false,
                                 "required": [
@@ -1024,8 +1041,7 @@
                                         "type": [
                                             "string",
                                             "null"
-                                        ],
-                                        "maxLength": 2048
+                                        ]
                                     }
                                 }
                             }
@@ -4310,6 +4326,11 @@
                         ],
                         "properties": {
                             "data": {
+                                "$ref": "#/$defs/BillingSchedule"
+                            }
+                        },
+                        "$defs": {
+                            "BillingSchedule": {
                                 "type": "object",
                                 "additionalProperties": false,
                                 "required": [
@@ -4336,7 +4357,12 @@
                                     },
                                     "cadence": {
                                         "type": "string",
-                                        "maxLength": 32
+                                        "enum": [
+                                            "monthly",
+                                            "quarterly",
+                                            "semi_annual",
+                                            "annual"
+                                        ]
                                     },
                                     "next_run_on": {
                                         "type": "string",
@@ -4404,42 +4430,7 @@
                                 "type": "array",
                                 "maxItems": 100,
                                 "items": {
-                                    "type": "object",
-                                    "additionalProperties": false,
-                                    "required": [
-                                        "id",
-                                        "agreement_id",
-                                        "version",
-                                        "cadence",
-                                        "next_run_on",
-                                        "is_active"
-                                    ],
-                                    "properties": {
-                                        "id": {
-                                            "type": "string",
-                                            "format": "uuid"
-                                        },
-                                        "agreement_id": {
-                                            "type": "string",
-                                            "format": "uuid"
-                                        },
-                                        "version": {
-                                            "type": "string",
-                                            "minLength": 64,
-                                            "maxLength": 64
-                                        },
-                                        "cadence": {
-                                            "type": "string",
-                                            "maxLength": 32
-                                        },
-                                        "next_run_on": {
-                                            "type": "string",
-                                            "format": "date"
-                                        },
-                                        "is_active": {
-                                            "type": "boolean"
-                                        }
-                                    }
+                                    "$ref": "#/$defs/BillingSchedule"
                                 }
                             },
                             "meta": {
@@ -4455,6 +4446,51 @@
                                             "null"
                                         ],
                                         "maxLength": 2048
+                                    }
+                                }
+                            }
+                        },
+                        "$defs": {
+                            "BillingSchedule": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "id",
+                                    "agreement_id",
+                                    "version",
+                                    "cadence",
+                                    "next_run_on",
+                                    "is_active"
+                                ],
+                                "properties": {
+                                    "id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "agreement_id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "version": {
+                                        "type": "string",
+                                        "minLength": 64,
+                                        "maxLength": 64
+                                    },
+                                    "cadence": {
+                                        "type": "string",
+                                        "enum": [
+                                            "monthly",
+                                            "quarterly",
+                                            "semi_annual",
+                                            "annual"
+                                        ]
+                                    },
+                                    "next_run_on": {
+                                        "type": "string",
+                                        "format": "date"
+                                    },
+                                    "is_active": {
+                                        "type": "boolean"
                                     }
                                 }
                             }
@@ -29315,8 +29351,8 @@
             "tools": {
                 "agreements.activate": "2ed68823cfe43e76",
                 "agreements.create": "0c103b90e38bf275",
-                "agreements.get": "227556470734cbf2",
-                "agreements.list": "12938d500dc91862",
+                "agreements.get": "0a85d4ecd79bd2da",
+                "agreements.list": "58327dc29e892cb0",
                 "agreements.square_series.clear": "7bcd0a5dfbd9a90f",
                 "agreements.square_series.set": "028abd54f8daa892",
                 "agreements.terminate": "6270398e37fca50e",
@@ -29335,8 +29371,8 @@
                 "billing_audit.stale_and_missing": "fa4a2fdb8a8363aa",
                 "billing_schedules.create": "ce808d037fdc2ee7",
                 "billing_schedules.generate": "b1849c503fd5dc21",
-                "billing_schedules.get": "fbb225cb7a29d6a7",
-                "billing_schedules.list": "65119a3d21c1f920",
+                "billing_schedules.get": "5e063c9324f1fbd4",
+                "billing_schedules.list": "91723c13172dc456",
                 "capacity_ledger.get": "b58961097fbfe33e",
                 "clients.archive": "f71e1730f3513e31",
                 "clients.create": "3aa0fb3b53ea38cc",
@@ -30204,8 +30240,8 @@
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. This connection is read-only; use the SVC website for changes. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
-                "agreements.get": "227556470734cbf2",
-                "agreements.list": "12938d500dc91862",
+                "agreements.get": "0a85d4ecd79bd2da",
+                "agreements.list": "58327dc29e892cb0",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
                 "attachments.get": "f54affb3d9e104a3",
                 "attachments.list": "a8f522c87ae2083f",
@@ -30216,8 +30252,8 @@
                 "billing.audit_unplaceable_invoices": "5c425e0550c0d9c9",
                 "billing.preflight_schedule_generation": "f6486e5ee5242614",
                 "billing_audit.stale_and_missing": "fa4a2fdb8a8363aa",
-                "billing_schedules.get": "fbb225cb7a29d6a7",
-                "billing_schedules.list": "65119a3d21c1f920",
+                "billing_schedules.get": "5e063c9324f1fbd4",
+                "billing_schedules.list": "91723c13172dc456",
                 "capacity_ledger.get": "b58961097fbfe33e",
                 "clients.get": "22dd0d0a447730cc",
                 "clients.list": "5bc552fd02d811ad",
@@ -30313,8 +30349,8 @@
             },
             "instructions": "Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
-                "agreements.get": "227556470734cbf2",
-                "agreements.list": "12938d500dc91862",
+                "agreements.get": "0a85d4ecd79bd2da",
+                "agreements.list": "58327dc29e892cb0",
                 "agreements.square_series.clear": "7bcd0a5dfbd9a90f",
                 "agreements.square_series.set": "028abd54f8daa892",
                 "billing.audit_missing_billed_overage": "1ce496a1f94756c0",
@@ -30325,8 +30361,8 @@
                 "billing.preflight_schedule_generation": "f6486e5ee5242614",
                 "billing_audit.stale_and_missing": "fa4a2fdb8a8363aa",
                 "billing_schedules.create": "ce808d037fdc2ee7",
-                "billing_schedules.get": "fbb225cb7a29d6a7",
-                "billing_schedules.list": "65119a3d21c1f920",
+                "billing_schedules.get": "5e063c9324f1fbd4",
+                "billing_schedules.list": "91723c13172dc456",
                 "capacity_ledger.get": "b58961097fbfe33e",
                 "companies.payment_reminders.get": "99a82139f0137f28",
                 "companies.payment_reminders.set": "28000c3cf407054d",
@@ -30906,8 +30942,8 @@
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
-                "agreements.get": "227556470734cbf2",
-                "agreements.list": "12938d500dc91862",
+                "agreements.get": "0a85d4ecd79bd2da",
+                "agreements.list": "58327dc29e892cb0",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
                 "attachments.get": "f54affb3d9e104a3",
                 "attachments.list": "a8f522c87ae2083f",
@@ -30918,8 +30954,8 @@
                 "billing.audit_unplaceable_invoices": "5c425e0550c0d9c9",
                 "billing.preflight_schedule_generation": "f6486e5ee5242614",
                 "billing_audit.stale_and_missing": "fa4a2fdb8a8363aa",
-                "billing_schedules.get": "fbb225cb7a29d6a7",
-                "billing_schedules.list": "65119a3d21c1f920",
+                "billing_schedules.get": "5e063c9324f1fbd4",
+                "billing_schedules.list": "91723c13172dc456",
                 "capacity_ledger.get": "b58961097fbfe33e",
                 "clients.get": "22dd0d0a447730cc",
                 "clients.list": "5bc552fd02d811ad",
@@ -31070,8 +31106,8 @@
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
-                "agreements.get": "227556470734cbf2",
-                "agreements.list": "12938d500dc91862",
+                "agreements.get": "0a85d4ecd79bd2da",
+                "agreements.list": "58327dc29e892cb0",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
                 "attachments.get": "f54affb3d9e104a3",
                 "attachments.list": "a8f522c87ae2083f",
@@ -31082,8 +31118,8 @@
                 "billing.audit_unplaceable_invoices": "5c425e0550c0d9c9",
                 "billing.preflight_schedule_generation": "f6486e5ee5242614",
                 "billing_audit.stale_and_missing": "fa4a2fdb8a8363aa",
-                "billing_schedules.get": "fbb225cb7a29d6a7",
-                "billing_schedules.list": "65119a3d21c1f920",
+                "billing_schedules.get": "5e063c9324f1fbd4",
+                "billing_schedules.list": "91723c13172dc456",
                 "capacity_ledger.get": "b58961097fbfe33e",
                 "clients.get": "22dd0d0a447730cc",
                 "clients.list": "5bc552fd02d811ad",
@@ -31871,8 +31907,8 @@
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
-                "agreements.get": "227556470734cbf2",
-                "agreements.list": "12938d500dc91862",
+                "agreements.get": "0a85d4ecd79bd2da",
+                "agreements.list": "58327dc29e892cb0",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
                 "attachments.get": "f54affb3d9e104a3",
                 "attachments.list": "a8f522c87ae2083f",
@@ -31883,8 +31919,8 @@
                 "billing.audit_unplaceable_invoices": "5c425e0550c0d9c9",
                 "billing.preflight_schedule_generation": "f6486e5ee5242614",
                 "billing_audit.stale_and_missing": "fa4a2fdb8a8363aa",
-                "billing_schedules.get": "fbb225cb7a29d6a7",
-                "billing_schedules.list": "65119a3d21c1f920",
+                "billing_schedules.get": "5e063c9324f1fbd4",
+                "billing_schedules.list": "91723c13172dc456",
                 "capacity_ledger.get": "b58961097fbfe33e",
                 "clients.get": "22dd0d0a447730cc",
                 "clients.list": "5bc552fd02d811ad",
@@ -32033,8 +32069,8 @@
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
-                "agreements.get": "227556470734cbf2",
-                "agreements.list": "12938d500dc91862",
+                "agreements.get": "0a85d4ecd79bd2da",
+                "agreements.list": "58327dc29e892cb0",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
                 "attachments.get": "f54affb3d9e104a3",
                 "attachments.list": "a8f522c87ae2083f",
@@ -32045,8 +32081,8 @@
                 "billing.audit_unplaceable_invoices": "5c425e0550c0d9c9",
                 "billing.preflight_schedule_generation": "f6486e5ee5242614",
                 "billing_audit.stale_and_missing": "fa4a2fdb8a8363aa",
-                "billing_schedules.get": "fbb225cb7a29d6a7",
-                "billing_schedules.list": "65119a3d21c1f920",
+                "billing_schedules.get": "5e063c9324f1fbd4",
+                "billing_schedules.list": "91723c13172dc456",
                 "capacity_ledger.get": "b58961097fbfe33e",
                 "clients.get": "22dd0d0a447730cc",
                 "clients.list": "5bc552fd02d811ad",
@@ -32834,8 +32870,8 @@
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
-                "agreements.get": "227556470734cbf2",
-                "agreements.list": "12938d500dc91862",
+                "agreements.get": "0a85d4ecd79bd2da",
+                "agreements.list": "58327dc29e892cb0",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
                 "attachments.get": "f54affb3d9e104a3",
                 "attachments.list": "a8f522c87ae2083f",
@@ -32846,8 +32882,8 @@
                 "billing.audit_unplaceable_invoices": "5c425e0550c0d9c9",
                 "billing.preflight_schedule_generation": "f6486e5ee5242614",
                 "billing_audit.stale_and_missing": "fa4a2fdb8a8363aa",
-                "billing_schedules.get": "fbb225cb7a29d6a7",
-                "billing_schedules.list": "65119a3d21c1f920",
+                "billing_schedules.get": "5e063c9324f1fbd4",
+                "billing_schedules.list": "91723c13172dc456",
                 "capacity_ledger.get": "b58961097fbfe33e",
                 "clients.get": "22dd0d0a447730cc",
                 "clients.list": "5bc552fd02d811ad",
@@ -32998,8 +33034,8 @@
             },
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
-                "agreements.get": "227556470734cbf2",
-                "agreements.list": "12938d500dc91862",
+                "agreements.get": "0a85d4ecd79bd2da",
+                "agreements.list": "58327dc29e892cb0",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
                 "attachments.get": "f54affb3d9e104a3",
                 "attachments.list": "a8f522c87ae2083f",
@@ -33010,8 +33046,8 @@
                 "billing.audit_unplaceable_invoices": "5c425e0550c0d9c9",
                 "billing.preflight_schedule_generation": "f6486e5ee5242614",
                 "billing_audit.stale_and_missing": "fa4a2fdb8a8363aa",
-                "billing_schedules.get": "fbb225cb7a29d6a7",
-                "billing_schedules.list": "65119a3d21c1f920",
+                "billing_schedules.get": "5e063c9324f1fbd4",
+                "billing_schedules.list": "91723c13172dc456",
                 "capacity_ledger.get": "b58961097fbfe33e",
                 "clients.get": "22dd0d0a447730cc",
                 "clients.list": "5bc552fd02d811ad",
@@ -33764,8 +33800,8 @@
             "tools": {
                 "agreements.activate": "2ed68823cfe43e76",
                 "agreements.create": "0c103b90e38bf275",
-                "agreements.get": "227556470734cbf2",
-                "agreements.list": "12938d500dc91862",
+                "agreements.get": "0a85d4ecd79bd2da",
+                "agreements.list": "58327dc29e892cb0",
                 "agreements.square_series.clear": "7bcd0a5dfbd9a90f",
                 "agreements.square_series.set": "028abd54f8daa892",
                 "agreements.terminate": "6270398e37fca50e",
@@ -33782,8 +33818,8 @@
                 "billing.audit_unplaceable_invoices": "5c425e0550c0d9c9",
                 "billing.preflight_schedule_generation": "f6486e5ee5242614",
                 "billing_audit.stale_and_missing": "fa4a2fdb8a8363aa",
-                "billing_schedules.get": "fbb225cb7a29d6a7",
-                "billing_schedules.list": "65119a3d21c1f920",
+                "billing_schedules.get": "5e063c9324f1fbd4",
+                "billing_schedules.list": "91723c13172dc456",
                 "capacity_ledger.get": "b58961097fbfe33e",
                 "clients.archive": "f71e1730f3513e31",
                 "clients.create": "3aa0fb3b53ea38cc",
@@ -33928,8 +33964,8 @@
             "tools": {
                 "agreements.activate": "2ed68823cfe43e76",
                 "agreements.create": "0c103b90e38bf275",
-                "agreements.get": "227556470734cbf2",
-                "agreements.list": "12938d500dc91862",
+                "agreements.get": "0a85d4ecd79bd2da",
+                "agreements.list": "58327dc29e892cb0",
                 "agreements.square_series.clear": "7bcd0a5dfbd9a90f",
                 "agreements.square_series.set": "028abd54f8daa892",
                 "agreements.terminate": "6270398e37fca50e",
@@ -33946,8 +33982,8 @@
                 "billing.audit_unplaceable_invoices": "5c425e0550c0d9c9",
                 "billing.preflight_schedule_generation": "f6486e5ee5242614",
                 "billing_audit.stale_and_missing": "fa4a2fdb8a8363aa",
-                "billing_schedules.get": "fbb225cb7a29d6a7",
-                "billing_schedules.list": "65119a3d21c1f920",
+                "billing_schedules.get": "5e063c9324f1fbd4",
+                "billing_schedules.list": "91723c13172dc456",
                 "capacity_ledger.get": "b58961097fbfe33e",
                 "clients.archive": "f71e1730f3513e31",
                 "clients.create": "3aa0fb3b53ea38cc",
@@ -34778,8 +34814,8 @@
             "tools": {
                 "agreements.activate": "2ed68823cfe43e76",
                 "agreements.create": "0c103b90e38bf275",
-                "agreements.get": "227556470734cbf2",
-                "agreements.list": "12938d500dc91862",
+                "agreements.get": "0a85d4ecd79bd2da",
+                "agreements.list": "58327dc29e892cb0",
                 "agreements.square_series.clear": "7bcd0a5dfbd9a90f",
                 "agreements.square_series.set": "028abd54f8daa892",
                 "agreements.terminate": "6270398e37fca50e",
@@ -34794,8 +34830,8 @@
                 "billing.audit_unplaceable_invoices": "5c425e0550c0d9c9",
                 "billing.preflight_schedule_generation": "f6486e5ee5242614",
                 "billing_audit.stale_and_missing": "fa4a2fdb8a8363aa",
-                "billing_schedules.get": "fbb225cb7a29d6a7",
-                "billing_schedules.list": "65119a3d21c1f920",
+                "billing_schedules.get": "5e063c9324f1fbd4",
+                "billing_schedules.list": "91723c13172dc456",
                 "capacity_ledger.get": "b58961097fbfe33e",
                 "clients.archive": "f71e1730f3513e31",
                 "clients.create": "3aa0fb3b53ea38cc",
@@ -34940,8 +34976,8 @@
             "tools": {
                 "agreements.activate": "2ed68823cfe43e76",
                 "agreements.create": "0c103b90e38bf275",
-                "agreements.get": "227556470734cbf2",
-                "agreements.list": "12938d500dc91862",
+                "agreements.get": "0a85d4ecd79bd2da",
+                "agreements.list": "58327dc29e892cb0",
                 "agreements.square_series.clear": "7bcd0a5dfbd9a90f",
                 "agreements.square_series.set": "028abd54f8daa892",
                 "agreements.terminate": "6270398e37fca50e",
@@ -34956,8 +34992,8 @@
                 "billing.audit_unplaceable_invoices": "5c425e0550c0d9c9",
                 "billing.preflight_schedule_generation": "f6486e5ee5242614",
                 "billing_audit.stale_and_missing": "fa4a2fdb8a8363aa",
-                "billing_schedules.get": "fbb225cb7a29d6a7",
-                "billing_schedules.list": "65119a3d21c1f920",
+                "billing_schedules.get": "5e063c9324f1fbd4",
+                "billing_schedules.list": "91723c13172dc456",
                 "capacity_ledger.get": "b58961097fbfe33e",
                 "clients.archive": "f71e1730f3513e31",
                 "clients.create": "3aa0fb3b53ea38cc",
@@ -35709,8 +35745,8 @@
                 "billing_audit.stale_and_missing": "fa4a2fdb8a8363aa",
                 "billing_schedules.create": "ce808d037fdc2ee7",
                 "billing_schedules.generate": "b1849c503fd5dc21",
-                "billing_schedules.get": "fbb225cb7a29d6a7",
-                "billing_schedules.list": "65119a3d21c1f920",
+                "billing_schedules.get": "5e063c9324f1fbd4",
+                "billing_schedules.list": "91723c13172dc456",
                 "capacity_ledger.get": "b58961097fbfe33e",
                 "clients.archive": "f71e1730f3513e31",
                 "clients.create": "3aa0fb3b53ea38cc",
@@ -35872,8 +35908,8 @@
                 "billing_audit.stale_and_missing": "fa4a2fdb8a8363aa",
                 "billing_schedules.create": "ce808d037fdc2ee7",
                 "billing_schedules.generate": "b1849c503fd5dc21",
-                "billing_schedules.get": "fbb225cb7a29d6a7",
-                "billing_schedules.list": "65119a3d21c1f920",
+                "billing_schedules.get": "5e063c9324f1fbd4",
+                "billing_schedules.list": "91723c13172dc456",
                 "capacity_ledger.get": "b58961097fbfe33e",
                 "clients.archive": "f71e1730f3513e31",
                 "clients.create": "3aa0fb3b53ea38cc",
@@ -36672,8 +36708,8 @@
             "tools": {
                 "agreements.activate": "2ed68823cfe43e76",
                 "agreements.create": "0c103b90e38bf275",
-                "agreements.get": "227556470734cbf2",
-                "agreements.list": "12938d500dc91862",
+                "agreements.get": "0a85d4ecd79bd2da",
+                "agreements.list": "58327dc29e892cb0",
                 "agreements.square_series.clear": "7bcd0a5dfbd9a90f",
                 "agreements.square_series.set": "028abd54f8daa892",
                 "agreements.terminate": "6270398e37fca50e",
@@ -36692,8 +36728,8 @@
                 "billing_audit.stale_and_missing": "fa4a2fdb8a8363aa",
                 "billing_schedules.create": "ce808d037fdc2ee7",
                 "billing_schedules.generate": "b1849c503fd5dc21",
-                "billing_schedules.get": "fbb225cb7a29d6a7",
-                "billing_schedules.list": "65119a3d21c1f920",
+                "billing_schedules.get": "5e063c9324f1fbd4",
+                "billing_schedules.list": "91723c13172dc456",
                 "capacity_ledger.get": "b58961097fbfe33e",
                 "clients.archive": "f71e1730f3513e31",
                 "clients.create": "3aa0fb3b53ea38cc",
@@ -36834,8 +36870,8 @@
             "tools": {
                 "agreements.activate": "2ed68823cfe43e76",
                 "agreements.create": "0c103b90e38bf275",
-                "agreements.get": "227556470734cbf2",
-                "agreements.list": "12938d500dc91862",
+                "agreements.get": "0a85d4ecd79bd2da",
+                "agreements.list": "58327dc29e892cb0",
                 "agreements.square_series.clear": "7bcd0a5dfbd9a90f",
                 "agreements.square_series.set": "028abd54f8daa892",
                 "agreements.terminate": "6270398e37fca50e",
@@ -36854,8 +36890,8 @@
                 "billing_audit.stale_and_missing": "fa4a2fdb8a8363aa",
                 "billing_schedules.create": "ce808d037fdc2ee7",
                 "billing_schedules.generate": "b1849c503fd5dc21",
-                "billing_schedules.get": "fbb225cb7a29d6a7",
-                "billing_schedules.list": "65119a3d21c1f920",
+                "billing_schedules.get": "5e063c9324f1fbd4",
+                "billing_schedules.list": "91723c13172dc456",
                 "capacity_ledger.get": "b58961097fbfe33e",
                 "clients.archive": "f71e1730f3513e31",
                 "clients.create": "3aa0fb3b53ea38cc",
@@ -38487,8 +38523,8 @@
             "tools": {
                 "agreements.activate": "2ed68823cfe43e76",
                 "agreements.create": "0c103b90e38bf275",
-                "agreements.get": "227556470734cbf2",
-                "agreements.list": "12938d500dc91862",
+                "agreements.get": "0a85d4ecd79bd2da",
+                "agreements.list": "58327dc29e892cb0",
                 "agreements.square_series.clear": "7bcd0a5dfbd9a90f",
                 "agreements.square_series.set": "028abd54f8daa892",
                 "agreements.terminate": "6270398e37fca50e",
@@ -38507,8 +38543,8 @@
                 "billing_audit.stale_and_missing": "fa4a2fdb8a8363aa",
                 "billing_schedules.create": "ce808d037fdc2ee7",
                 "billing_schedules.generate": "b1849c503fd5dc21",
-                "billing_schedules.get": "fbb225cb7a29d6a7",
-                "billing_schedules.list": "65119a3d21c1f920",
+                "billing_schedules.get": "5e063c9324f1fbd4",
+                "billing_schedules.list": "91723c13172dc456",
                 "capacity_ledger.get": "b58961097fbfe33e",
                 "clients.archive": "f71e1730f3513e31",
                 "clients.create": "3aa0fb3b53ea38cc",
@@ -38652,8 +38688,8 @@
             "tools": {
                 "agreements.activate": "2ed68823cfe43e76",
                 "agreements.create": "0c103b90e38bf275",
-                "agreements.get": "227556470734cbf2",
-                "agreements.list": "12938d500dc91862",
+                "agreements.get": "0a85d4ecd79bd2da",
+                "agreements.list": "58327dc29e892cb0",
                 "agreements.square_series.clear": "7bcd0a5dfbd9a90f",
                 "agreements.square_series.set": "028abd54f8daa892",
                 "agreements.terminate": "6270398e37fca50e",
@@ -38672,8 +38708,8 @@
                 "billing_audit.stale_and_missing": "fa4a2fdb8a8363aa",
                 "billing_schedules.create": "ce808d037fdc2ee7",
                 "billing_schedules.generate": "b1849c503fd5dc21",
-                "billing_schedules.get": "fbb225cb7a29d6a7",
-                "billing_schedules.list": "65119a3d21c1f920",
+                "billing_schedules.get": "5e063c9324f1fbd4",
+                "billing_schedules.list": "91723c13172dc456",
                 "capacity_ledger.get": "b58961097fbfe33e",
                 "clients.archive": "f71e1730f3513e31",
                 "clients.create": "3aa0fb3b53ea38cc",

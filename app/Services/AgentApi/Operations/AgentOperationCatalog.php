@@ -1113,7 +1113,6 @@ final class AgentOperationCatalog
                 'mcp.read.agreements',
                 manager: true,
                 input: AgentInlineSchemas::agreementListInput(),
-                output: AgentInlineSchemas::agreementListOutput(),
             ),
             $this->tool(
                 'agreements.get',
@@ -1125,7 +1124,6 @@ final class AgentOperationCatalog
                 'mcp.read.agreements',
                 manager: true,
                 input: AgentInlineSchemas::agreementGetInput(),
-                output: AgentInlineSchemas::agreementOutput(),
             ),
             $this->tool(
                 'clients.list',
@@ -1354,7 +1352,6 @@ final class AgentOperationCatalog
                 'mcp.read.billing_schedules',
                 manager: true,
                 input: AgentInlineSchemas::billingScheduleListInput(),
-                output: AgentInlineSchemas::billingScheduleListOutput(),
             ),
             $this->tool(
                 'billing_schedules.get',
@@ -1366,7 +1363,6 @@ final class AgentOperationCatalog
                 'mcp.read.billing_schedules',
                 manager: true,
                 input: AgentInlineSchemas::billingScheduleGetInput(),
-                output: AgentInlineSchemas::billingScheduleOutput(),
             ),
             $this->tool(
                 'capacity_ledger.get',
@@ -1601,7 +1597,7 @@ final class AgentOperationCatalog
                 mcp: new McpBinding(handler: [AgentMcpFinanceTools::class, $method]),
                 input: isset($documented['request']) ? SchemaRef::requestOf($id) : null,
                 output: SchemaRef::responseOf($id),
-                extensions: $documented['extensions'] ?? [],
+                extensions: self::extensions($id, self::mcpSwitches($group, $id), true),
             );
         }
 
@@ -1640,7 +1636,7 @@ final class AgentOperationCatalog
                 ['identity:read'], 'mcp.read.context', $closed, SchemaRef::responseOf('context.get')),
             $this->mcpOnly('resources.agreement', 'Agreement', 'Read one canonical agreement representation visible to a workspace manager.',
                 new McpBinding('agreement', [AgentMcpAgreementResource::class, 'read'], McpKind::ResourceTemplate, 'svc://workspaces/{workspace_id}/agreements/{agreement_id}'),
-                ['billing:read'], 'mcp.read.agreements', AgentInlineSchemas::agreementGetInput(), AgentInlineSchemas::agreementOutput(), manager: true),
+                ['billing:read'], 'mcp.read.agreements', AgentInlineSchemas::agreementGetInput(), SchemaRef::openApi('AgreementResponse'), manager: true),
             $this->mcpOnly('prompts.log_time_across_projects', 'Log time across projects', 'Guide an authorized client through bounded, retry-safe time logging.',
                 new McpBinding('log-time-across-projects', [AgentMcpPrompts::class, 'logTimeAcrossProjects'], McpKind::Prompt),
                 ['identity:read', 'projects:read', 'time:write'], 'mcp.prompt.log_time_across_projects', $closed, AgentInlineSchemas::promptOutput(),
@@ -1710,7 +1706,7 @@ final class AgentOperationCatalog
             mcp: new McpBinding(handler: $handler),
             input: $input ?? ($write && $hasBody ? SchemaRef::requestOf($id) : null),
             output: $output ?? ($documented ? SchemaRef::responseOf($id) : null),
-            extensions: $documented ? (AgentRestDocumentation::operations()[$id]['extensions'] ?? []) : [],
+            extensions: $documented ? self::extensions($id, [...$cutovers, ...$availability], true) : [],
             deprecation: $deprecation,
         );
     }
@@ -1737,7 +1733,7 @@ final class AgentOperationCatalog
             rest: $this->rest($id),
             // A download answers with the file itself and 204 with nothing.
             output: $effect === Effect::Download || self::ROUTES[$id][2] === [204] ? null : SchemaRef::responseOf($id),
-            extensions: $documented['extensions'] ?? [],
+            extensions: self::extensions($id, $cutovers, false),
         );
     }
 
@@ -1779,6 +1775,20 @@ final class AgentOperationCatalog
         $description = AgentRestDocumentation::operations()[$id]['description'] ?? null;
 
         return is_string($description) ? $description : throw new LogicException("Operation [{$id}] documents no description.");
+    }
+
+    /**
+     * What SVC adds to each documented operation (#459 item 6), generated from
+     * the declaration rather than written beside it: the installation
+     * switches it depends on, outermost first, and the MCP tool that reaches
+     * it, if any: a tool's name is its operation's id.
+     *
+     * @param  list<string>  $flags
+     * @return array<string, mixed>
+     */
+    private static function extensions(string $id, array $flags, bool $tool): array
+    {
+        return ['x-svc-flags' => AgentDeploymentFlags::environmentSwitches($flags), ...($tool ? ['x-mcp-tool' => $id] : [])];
     }
 
     /** @return list<string> */

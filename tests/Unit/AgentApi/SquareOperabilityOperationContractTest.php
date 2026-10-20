@@ -41,8 +41,9 @@ final class SquareOperabilityOperationContractTest extends TestCase
                 'request' => 'InvoiceSquareReconcileRequest',
                 'response' => 'InvoiceSquareResponse',
                 'response_description' => 'The invoice after reconciliation',
-                'extensions' => ['x-mcp-tool' => $id, 'x-svc-flags' => ['AGENT_API_WRITES_ENABLED']],
             ], array_diff_key($documented, ['description' => true]));
+            // Generated from the declaration: the cutover it nests in, and the tool that reaches it.
+            $this->assertSame(['x-svc-flags' => ['AGENT_API_WRITES_ENABLED'], 'x-mcp-tool' => $id], $operation->extensions);
             $this->assertStringContainsString('Nothing is created, changed or paid in Square', $documented['description']);
         });
     }

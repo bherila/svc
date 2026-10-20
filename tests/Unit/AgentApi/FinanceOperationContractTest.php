@@ -88,7 +88,7 @@ final class FinanceOperationContractTest extends TestCase
             $this->assertStringEndsWith('The Sanctum finance token issued by svc:auth:issue-token is accepted too, its finance.read and finance.reconcile abilities standing for these scopes.', (string) $rest->description, $id);
             $this->assertSame($published['security'][0]['oauth2'], $operation->requirement->scopes, $id);
             $this->assertSame($id, $published['x-mcp-tool'], $id);
-            $this->assertSame(['x-mcp-tool' => $id], $operation->extensions, $id);
+            $this->assertSame(['x-svc-flags' => [], 'x-mcp-tool' => $id], $operation->extensions, $id);
             $this->assertSame($published['parameters'], array_map(
                 static fn (string|array $parameter): array => is_string($parameter) ? ['$ref' => '#/components/parameters/'.$parameter] : $parameter,
                 $rest->parameters ?? [],

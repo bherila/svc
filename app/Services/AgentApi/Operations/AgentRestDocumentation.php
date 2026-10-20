@@ -8,7 +8,8 @@ use App\Support\Square\SquareIdentifiers;
 /**
  * What the REST contract says about each agent operation beyond its schemas
  * (#408 item 3): method, scopes, prose, parameters, the request and response
- * schemas it names in the document, and SVC's own extensions.
+ * schemas it names in the document. SVC's own extensions (`x-svc-flags`,
+ * `x-mcp-tool`) are generated from the declaration ({@see AgentOperationCatalog}).
  *
  * {@see AgentOperationCatalog} turns each entry into the operation's REST
  * binding, and the registry generates `/api/openapi.json` from it. Schemas
@@ -203,7 +204,7 @@ final class AgentRestDocumentation
     public const OPENING_ROLLOVER_DEPRECATION = 'This audit sized the opening-rollover repair (#134), which is done. It will be removed after its deprecation window; see https://github.com/bherila/svc/issues/500. Nothing replaces it.';
 
     /**
-     * @return array<string, array{method: string, scopes: list<string>, description: string|false, parameters: list<string|array<string, mixed>>, request?: string, request_types?: list<string>, response?: string, response_description?: string, binary?: array{0: string, 1: string}, errors?: array<int, string>, extensions?: array<string, mixed>, deprecation?: string}>
+     * @return array<string, array{method: string, scopes: list<string>, description: string|false, parameters: list<string|array<string, mixed>>, request?: string, request_types?: list<string>, response?: string, response_description?: string, binary?: array{0: string, 1: string}, errors?: array<int, string>, deprecation?: string}>
      */
     public static function operations(): array
     {
@@ -216,10 +217,6 @@ final class AgentRestDocumentation
                 'request' => 'agreements_activateRequest',
                 'response' => 'AgreementResponse',
                 'response_description' => 'Authorized result',
-                'extensions' => [
-                    'x-mcp-tool' => 'agreements.activate',
-                    'x-svc-flags' => ['AGENT_API_WRITES_ENABLED', 'AGENT_API_CLIENT_WRITES_ENABLED'],
-                ],
             ],
             'agreements.create' => [
                 'method' => 'POST',
@@ -229,10 +226,6 @@ final class AgentRestDocumentation
                 'request' => 'agreements_createRequest',
                 'response' => 'AgreementResponse',
                 'response_description' => 'Authorized result',
-                'extensions' => [
-                    'x-mcp-tool' => 'agreements.create',
-                    'x-svc-flags' => ['AGENT_API_WRITES_ENABLED', 'AGENT_API_CLIENT_WRITES_ENABLED'],
-                ],
             ],
             'agreements.get' => [
                 'method' => 'GET',
@@ -241,7 +234,6 @@ final class AgentRestDocumentation
                 'parameters' => ['WorkspaceId', self::uuidPath('agreement')],
                 'response' => 'AgreementResponse',
                 'response_description' => 'Authorized result',
-                'extensions' => ['x-mcp-tool' => 'agreements.get', 'x-svc-flags' => []],
             ],
             'agreements.list' => [
                 'method' => 'GET',
@@ -255,7 +247,6 @@ final class AgentRestDocumentation
                 ],
                 'response' => 'AgreementListResponse',
                 'response_description' => 'Authorized result',
-                'extensions' => ['x-mcp-tool' => 'agreements.list', 'x-svc-flags' => []],
             ],
             'agreements.square_series.clear' => [
                 'method' => 'DELETE',
@@ -265,7 +256,6 @@ final class AgentRestDocumentation
                 'request' => 'AgreementSquareSeriesClearRequest',
                 'response' => 'AgreementResponse',
                 'response_description' => 'Agreement no longer billed in Square',
-                'extensions' => ['x-mcp-tool' => 'agreements.square_series.clear', 'x-svc-flags' => ['AGENT_API_WRITES_ENABLED', 'AGENT_API_CLIENT_WRITES_ENABLED']],
             ],
             'agreements.square_series.set' => [
                 'method' => 'PUT',
@@ -275,7 +265,6 @@ final class AgentRestDocumentation
                 'request' => 'AgreementSquareSeriesRequest',
                 'response' => 'AgreementResponse',
                 'response_description' => 'Agreement billed in Square',
-                'extensions' => ['x-mcp-tool' => 'agreements.square_series.set', 'x-svc-flags' => ['AGENT_API_WRITES_ENABLED', 'AGENT_API_CLIENT_WRITES_ENABLED']],
             ],
             'agreements.terminate' => [
                 'method' => 'POST',
@@ -285,10 +274,6 @@ final class AgentRestDocumentation
                 'request' => 'agreements_terminateRequest',
                 'response' => 'AgreementResponse',
                 'response_description' => 'Authorized result',
-                'extensions' => [
-                    'x-mcp-tool' => 'agreements.terminate',
-                    'x-svc-flags' => ['AGENT_API_WRITES_ENABLED', 'AGENT_API_CLIENT_WRITES_ENABLED'],
-                ],
             ],
             'agreements.update' => [
                 'method' => 'PATCH',
@@ -298,10 +283,6 @@ final class AgentRestDocumentation
                 'request' => 'agreements_updateRequest',
                 'response' => 'AgreementResponse',
                 'response_description' => 'Authorized result',
-                'extensions' => [
-                    'x-mcp-tool' => 'agreements.update',
-                    'x-svc-flags' => ['AGENT_API_WRITES_ENABLED', 'AGENT_API_CLIENT_WRITES_ENABLED'],
-                ],
             ],
             'attachments.delete' => [
                 'method' => 'DELETE',
@@ -435,7 +416,6 @@ final class AgentRestDocumentation
                 'parameters' => ['WorkspaceId'],
                 'response' => 'StaleAndMissingInvoiceAuditResponse',
                 'response_description' => 'Authorized result',
-                'extensions' => ['x-svc-flags' => [], 'x-mcp-tool' => 'billing_audit.stale_and_missing'],
             ],
             'billing.audit_missing_billed_overage' => [
                 'method' => 'GET',
@@ -445,7 +425,6 @@ final class AgentRestDocumentation
                 'response' => 'MissingBilledOverageAuditResponse',
                 'response_description' => 'Aggregate counts for the workspace',
                 'errors' => self::BILLING_AUDIT_ERRORS['audit'],
-                'extensions' => ['x-svc-flags' => [], 'x-mcp-tool' => 'billing.audit_missing_billed_overage'],
             ],
             'billing.audit_opening_rollover' => [
                 'method' => 'GET',
@@ -455,7 +434,6 @@ final class AgentRestDocumentation
                 'response' => 'OpeningRolloverAuditResponse',
                 'response_description' => 'Aggregate counts for the workspace',
                 'errors' => self::BILLING_AUDIT_ERRORS['audit'],
-                'extensions' => ['x-svc-flags' => [], 'x-mcp-tool' => 'billing.audit_opening_rollover'],
                 'deprecation' => self::OPENING_ROLLOVER_DEPRECATION,
             ],
             'billing.audit_undated_collectible_invoices' => [
@@ -466,7 +444,6 @@ final class AgentRestDocumentation
                 'response' => 'UndatedCollectibleInvoiceAuditResponse',
                 'response_description' => 'Aggregate counts for the workspace',
                 'errors' => self::BILLING_AUDIT_ERRORS['audit'],
-                'extensions' => ['x-svc-flags' => [], 'x-mcp-tool' => 'billing.audit_undated_collectible_invoices'],
             ],
             'billing.audit_unlinked_proposal_agreements' => [
                 'method' => 'GET',
@@ -476,7 +453,6 @@ final class AgentRestDocumentation
                 'response' => 'UnlinkedProposalAgreementAuditResponse',
                 'response_description' => 'Aggregate counts for the workspace',
                 'errors' => self::BILLING_AUDIT_ERRORS['audit'],
-                'extensions' => ['x-svc-flags' => [], 'x-mcp-tool' => 'billing.audit_unlinked_proposal_agreements'],
             ],
             'billing.audit_unplaceable_invoices' => [
                 'method' => 'GET',
@@ -486,7 +462,6 @@ final class AgentRestDocumentation
                 'response' => 'UnplaceableInvoiceAuditResponse',
                 'response_description' => 'Aggregate counts for the workspace',
                 'errors' => self::BILLING_AUDIT_ERRORS['audit'],
-                'extensions' => ['x-svc-flags' => [], 'x-mcp-tool' => 'billing.audit_unplaceable_invoices'],
             ],
             'billing.preflight_schedule_generation' => [
                 'method' => 'GET',
@@ -496,7 +471,6 @@ final class AgentRestDocumentation
                 'response' => 'ScheduleGenerationPreflightResponse',
                 'response_description' => 'Aggregate counts for the workspace',
                 'errors' => self::BILLING_AUDIT_ERRORS['preflight'],
-                'extensions' => ['x-svc-flags' => [], 'x-mcp-tool' => 'billing.preflight_schedule_generation'],
             ],
             'billing_schedules.create' => [
                 'method' => 'POST',
@@ -506,10 +480,6 @@ final class AgentRestDocumentation
                 'request' => 'BillingScheduleCreateRequest',
                 'response' => 'BillingScheduleMutationResponse',
                 'response_description' => 'Result',
-                'extensions' => [
-                    'x-mcp-tool' => 'billing_schedules.create',
-                    'x-svc-flags' => ['AGENT_API_WRITES_ENABLED', 'AGENT_API_INVOICE_WRITES_ENABLED'],
-                ],
             ],
             'billing_schedules.generate' => [
                 'method' => 'POST',
@@ -519,10 +489,6 @@ final class AgentRestDocumentation
                 'request' => 'BillingScheduleGenerateRequest',
                 'response' => 'BillingScheduleGenerateResponse',
                 'response_description' => 'Result',
-                'extensions' => [
-                    'x-mcp-tool' => 'billing_schedules.generate',
-                    'x-svc-flags' => ['AGENT_API_WRITES_ENABLED', 'AGENT_API_INVOICE_WRITES_ENABLED'],
-                ],
             ],
             'billing_schedules.get' => [
                 'method' => 'GET',
@@ -531,7 +497,6 @@ final class AgentRestDocumentation
                 'parameters' => ['WorkspaceId', self::uuidPath('schedule')],
                 'response' => 'BillingScheduleResponse',
                 'response_description' => 'Result',
-                'extensions' => ['x-mcp-tool' => 'billing_schedules.get'],
             ],
             'billing_schedules.list' => [
                 'method' => 'GET',
@@ -545,7 +510,6 @@ final class AgentRestDocumentation
                 ],
                 'response' => 'BillingScheduleListResponse',
                 'response_description' => 'Result',
-                'extensions' => ['x-mcp-tool' => 'billing_schedules.list'],
             ],
             'capacity_ledger.get' => [
                 'method' => 'GET',
@@ -558,7 +522,6 @@ final class AgentRestDocumentation
                 ],
                 'response' => 'CapacityLedgerResponse',
                 'response_description' => 'Result',
-                'extensions' => ['x-mcp-tool' => 'capacity_ledger.get'],
             ],
             'clients.archive' => [
                 'method' => 'POST',
@@ -568,10 +531,6 @@ final class AgentRestDocumentation
                 'request' => 'clients_archiveRequest',
                 'response' => 'ClientCompanyResponse',
                 'response_description' => 'Authorized result',
-                'extensions' => [
-                    'x-mcp-tool' => 'clients.archive',
-                    'x-svc-flags' => ['AGENT_API_WRITES_ENABLED', 'AGENT_API_CLIENT_WRITES_ENABLED'],
-                ],
             ],
             'clients.create' => [
                 'method' => 'POST',
@@ -581,10 +540,6 @@ final class AgentRestDocumentation
                 'request' => 'clients_createRequest',
                 'response' => 'ClientCompanyResponse',
                 'response_description' => 'Authorized result',
-                'extensions' => [
-                    'x-mcp-tool' => 'clients.create',
-                    'x-svc-flags' => ['AGENT_API_WRITES_ENABLED', 'AGENT_API_CLIENT_WRITES_ENABLED'],
-                ],
             ],
             'clients.get' => [
                 'method' => 'GET',
@@ -593,7 +548,6 @@ final class AgentRestDocumentation
                 'parameters' => ['WorkspaceId', self::uuidPath('client')],
                 'response' => 'ClientCompanyResponse',
                 'response_description' => 'Authorized result',
-                'extensions' => ['x-mcp-tool' => 'clients.get', 'x-svc-flags' => []],
             ],
             'clients.list' => [
                 'method' => 'GET',
@@ -609,7 +563,6 @@ final class AgentRestDocumentation
                 ],
                 'response' => 'ClientCompanyListResponse',
                 'response_description' => 'Authorized result',
-                'extensions' => ['x-mcp-tool' => 'clients.list', 'x-svc-flags' => []],
             ],
             'clients.portal_access.list' => [
                 'method' => 'GET',
@@ -619,7 +572,6 @@ final class AgentRestDocumentation
                 'response' => 'PortalContactListResponse',
                 'response_description' => 'Authorized result',
                 'errors' => self::PORTAL_ERRORS['access.list'],
-                'extensions' => ['x-mcp-tool' => 'clients.portal_access.list', 'x-svc-flags' => []],
             ],
             'clients.portal_access.grant' => [
                 'method' => 'POST',
@@ -630,7 +582,6 @@ final class AgentRestDocumentation
                 'response' => 'PortalContactResponse',
                 'response_description' => 'Authorized result',
                 'errors' => self::PORTAL_ERRORS['access.grant'],
-                'extensions' => ['x-mcp-tool' => 'clients.portal_access.grant', 'x-svc-flags' => ['AGENT_API_WRITES_ENABLED', 'AGENT_API_CLIENT_WRITES_ENABLED']],
             ],
             'clients.portal_access.update' => [
                 'method' => 'PATCH',
@@ -641,7 +592,6 @@ final class AgentRestDocumentation
                 'response' => 'PortalContactResponse',
                 'response_description' => 'Authorized result',
                 'errors' => self::PORTAL_ERRORS['access.update'],
-                'extensions' => ['x-mcp-tool' => 'clients.portal_access.update', 'x-svc-flags' => ['AGENT_API_WRITES_ENABLED', 'AGENT_API_CLIENT_WRITES_ENABLED']],
             ],
             'clients.portal_access.revoke' => [
                 'method' => 'DELETE',
@@ -652,7 +602,6 @@ final class AgentRestDocumentation
                 'response' => 'PortalAccessRevokedResponse',
                 'response_description' => 'Authorized result',
                 'errors' => self::PORTAL_ERRORS['access.revoke'],
-                'extensions' => ['x-mcp-tool' => 'clients.portal_access.revoke', 'x-svc-flags' => ['AGENT_API_WRITES_ENABLED', 'AGENT_API_CLIENT_WRITES_ENABLED']],
             ],
             'clients.portal_invitations.list' => [
                 'method' => 'GET',
@@ -662,7 +611,6 @@ final class AgentRestDocumentation
                 'response' => 'PortalInvitationListResponse',
                 'response_description' => 'Authorized result',
                 'errors' => self::PORTAL_ERRORS['invitations.list'],
-                'extensions' => ['x-mcp-tool' => 'clients.portal_invitations.list', 'x-svc-flags' => ['SVC_PORTAL_INVITATIONS_ENABLED']],
             ],
             'clients.portal_invitations.create' => [
                 'method' => 'POST',
@@ -673,7 +621,6 @@ final class AgentRestDocumentation
                 'response' => 'PortalInvitationResponse',
                 'response_description' => 'Authorized result',
                 'errors' => self::PORTAL_ERRORS['invitations.create'],
-                'extensions' => ['x-mcp-tool' => 'clients.portal_invitations.create', 'x-svc-flags' => ['AGENT_API_WRITES_ENABLED', 'AGENT_API_CLIENT_WRITES_ENABLED', 'SVC_PORTAL_INVITATIONS_ENABLED']],
             ],
             'clients.portal_invitations.resend' => [
                 'method' => 'POST',
@@ -684,7 +631,6 @@ final class AgentRestDocumentation
                 'response' => 'PortalInvitationResponse',
                 'response_description' => 'Authorized result',
                 'errors' => self::PORTAL_ERRORS['invitations.resend'],
-                'extensions' => ['x-mcp-tool' => 'clients.portal_invitations.resend', 'x-svc-flags' => ['AGENT_API_WRITES_ENABLED', 'AGENT_API_CLIENT_WRITES_ENABLED', 'SVC_PORTAL_INVITATIONS_ENABLED']],
             ],
             'clients.portal_invitations.revoke' => [
                 'method' => 'DELETE',
@@ -695,7 +641,6 @@ final class AgentRestDocumentation
                 'response' => 'PortalInvitationResponse',
                 'response_description' => 'Authorized result',
                 'errors' => self::PORTAL_ERRORS['invitations.revoke'],
-                'extensions' => ['x-mcp-tool' => 'clients.portal_invitations.revoke', 'x-svc-flags' => ['AGENT_API_WRITES_ENABLED', 'AGENT_API_CLIENT_WRITES_ENABLED', 'SVC_PORTAL_INVITATIONS_ENABLED']],
             ],
             'clients.restore' => [
                 'method' => 'POST',
@@ -705,10 +650,6 @@ final class AgentRestDocumentation
                 'request' => 'clients_restoreRequest',
                 'response' => 'ClientCompanyResponse',
                 'response_description' => 'Authorized result',
-                'extensions' => [
-                    'x-mcp-tool' => 'clients.restore',
-                    'x-svc-flags' => ['AGENT_API_WRITES_ENABLED', 'AGENT_API_CLIENT_WRITES_ENABLED'],
-                ],
             ],
             'clients.update' => [
                 'method' => 'PATCH',
@@ -718,10 +659,6 @@ final class AgentRestDocumentation
                 'request' => 'clients_updateRequest',
                 'response' => 'ClientCompanyResponse',
                 'response_description' => 'Authorized result',
-                'extensions' => [
-                    'x-mcp-tool' => 'clients.update',
-                    'x-svc-flags' => ['AGENT_API_WRITES_ENABLED', 'AGENT_API_CLIENT_WRITES_ENABLED'],
-                ],
             ],
             'companies.payment_reminders.get' => [
                 'method' => 'GET',
@@ -730,7 +667,6 @@ final class AgentRestDocumentation
                 'parameters' => ['WorkspaceId', self::uuidPath('client')],
                 'response' => 'CompanyPaymentRemindersResponse',
                 'response_description' => 'Authorized result',
-                'extensions' => ['x-mcp-tool' => 'companies.payment_reminders.get', 'x-svc-flags' => []],
             ],
             'companies.payment_reminders.set' => [
                 'method' => 'PUT',
@@ -740,7 +676,6 @@ final class AgentRestDocumentation
                 'request' => 'CompanyPaymentRemindersRequest',
                 'response' => 'CompanyPaymentRemindersResponse',
                 'response_description' => 'Cadence updated',
-                'extensions' => ['x-mcp-tool' => 'companies.payment_reminders.set', 'x-svc-flags' => ['AGENT_API_WRITES_ENABLED', 'AGENT_API_CLIENT_WRITES_ENABLED']],
             ],
             'companies.square_customer.clear' => [
                 'method' => 'DELETE',
@@ -750,7 +685,6 @@ final class AgentRestDocumentation
                 'request' => 'CompanySquareCustomerClearRequest',
                 'response' => 'CompanySquareStateResponse',
                 'response_description' => 'Square customer cleared',
-                'extensions' => ['x-mcp-tool' => 'companies.square_customer.clear', 'x-svc-flags' => ['AGENT_API_WRITES_ENABLED', 'AGENT_API_CLIENT_WRITES_ENABLED']],
             ],
             'companies.square_customer.get' => [
                 'method' => 'GET',
@@ -759,7 +693,6 @@ final class AgentRestDocumentation
                 'parameters' => ['WorkspaceId', self::uuidPath('client')],
                 'response' => 'CompanySquareStateResponse',
                 'response_description' => 'Authorized result',
-                'extensions' => ['x-mcp-tool' => 'companies.square_customer.get', 'x-svc-flags' => []],
             ],
             'companies.square_customer.set' => [
                 'method' => 'PUT',
@@ -769,7 +702,6 @@ final class AgentRestDocumentation
                 'request' => 'CompanySquareCustomerRequest',
                 'response' => 'CompanySquareStateResponse',
                 'response_description' => 'Square customer confirmed',
-                'extensions' => ['x-mcp-tool' => 'companies.square_customer.set', 'x-svc-flags' => ['AGENT_API_WRITES_ENABLED', 'AGENT_API_CLIENT_WRITES_ENABLED']],
             ],
             'connections.disconnect' => [
                 'method' => 'DELETE',
@@ -855,10 +787,6 @@ final class AgentRestDocumentation
                 'response' => 'DeletionResponse',
                 'response_description' => 'Draft expense soft-deleted',
                 'errors' => self::ROUTED_WRITE_ERRORS['expenses.delete'],
-                'extensions' => [
-                    'x-svc-flags' => ['AGENT_API_WRITES_ENABLED', 'AGENT_API_EXPENSE_WRITES_ENABLED'],
-                    'x-mcp-tool' => 'expenses.delete',
-                ],
             ],
             'expenses.list' => [
                 'method' => 'GET',
@@ -884,10 +812,6 @@ final class AgentRestDocumentation
                 'response' => 'ExpenseBatchResponse',
                 'response_description' => 'Draft expenses recorded or replayed',
                 'errors' => self::ROUTED_WRITE_ERRORS['expenses.log'],
-                'extensions' => [
-                    'x-svc-flags' => ['AGENT_API_WRITES_ENABLED', 'AGENT_API_EXPENSE_WRITES_ENABLED'],
-                    'x-mcp-tool' => 'expenses.log',
-                ],
             ],
             'expenses.receipts.content' => [
                 'method' => 'GET',
@@ -964,10 +888,6 @@ final class AgentRestDocumentation
                 'response' => 'ExpenseResponse',
                 'response_description' => 'Draft expense updated',
                 'errors' => self::ROUTED_WRITE_ERRORS['expenses.update'],
-                'extensions' => [
-                    'x-svc-flags' => ['AGENT_API_WRITES_ENABLED', 'AGENT_API_EXPENSE_WRITES_ENABLED'],
-                    'x-mcp-tool' => 'expenses.update',
-                ],
             ],
             ...self::finance(),
             'invoices.add_time' => [
@@ -978,10 +898,6 @@ final class AgentRestDocumentation
                 'request' => 'InvoiceAddTimeRequest',
                 'response' => 'InvoiceMutationResponse',
                 'response_description' => 'Authorized result',
-                'extensions' => [
-                    'x-svc-flags' => ['AGENT_API_WRITES_ENABLED', 'AGENT_API_INVOICE_WRITES_ENABLED'],
-                    'x-mcp-tool' => 'invoices.add_time',
-                ],
             ],
             'invoices.correct' => [
                 'method' => 'POST',
@@ -1016,7 +932,6 @@ final class AgentRestDocumentation
                 'description' => false,
                 'parameters' => ['WorkspaceId', self::uuidPath('invoice')],
                 'binary' => ['application/pdf', 'Authorized result'],
-                'extensions' => ['x-svc-flags' => []],
             ],
             'invoices.generate_period' => [
                 'method' => 'POST',
@@ -1026,10 +941,6 @@ final class AgentRestDocumentation
                 'request' => 'InvoiceGeneratePeriodRequest',
                 'response' => 'InvoiceMutationResponse',
                 'response_description' => 'Authorized result',
-                'extensions' => [
-                    'x-svc-flags' => ['AGENT_API_WRITES_ENABLED', 'AGENT_API_INVOICE_WRITES_ENABLED'],
-                    'x-mcp-tool' => 'invoices.generate_period',
-                ],
             ],
             'invoices.corrections.get' => [
                 'method' => 'GET', 'scopes' => ['billing:read'],
@@ -1053,10 +964,6 @@ final class AgentRestDocumentation
                 'request' => 'InvoiceDeliveryHoldRequest',
                 'response' => 'InvoiceMutationResponse',
                 'response_description' => 'Authorized result',
-                'extensions' => [
-                    'x-svc-flags' => ['AGENT_API_WRITES_ENABLED', 'AGENT_API_INVOICE_WRITES_ENABLED'],
-                    'x-mcp-tool' => 'invoices.hold_delivery',
-                ],
             ],
             'invoices.issue' => [
                 'method' => 'POST',
@@ -1067,10 +974,6 @@ final class AgentRestDocumentation
                 'response' => 'InvoiceIssueResponse',
                 'response_description' => 'Invoice issued, and paid when a payment was supplied',
                 'errors' => self::ROUTED_WRITE_ERRORS['invoices.issue'],
-                'extensions' => [
-                    'x-svc-flags' => ['AGENT_API_WRITES_ENABLED', 'AGENT_API_INVOICE_WRITES_ENABLED'],
-                    'x-mcp-tool' => 'invoices.issue',
-                ],
             ],
             'invoices.list' => [
                 'method' => 'GET',
@@ -1114,7 +1017,6 @@ final class AgentRestDocumentation
                 ],
                 'response' => 'InvoiceListResponse',
                 'response_description' => 'Authorized invoices',
-                'extensions' => ['x-mcp-tool' => 'invoices.list', 'x-svc-flags' => []],
             ],
             'invoices.preview_period' => [
                 'method' => 'GET',
@@ -1123,7 +1025,6 @@ final class AgentRestDocumentation
                 'parameters' => ['WorkspaceId', self::uuidPath('agreement'), ['name' => 'period_start', 'in' => 'query', 'required' => true, 'schema' => ['type' => 'string', 'format' => 'date']]],
                 'response' => 'InvoicePeriodPreviewResponse',
                 'response_description' => 'The draft generation would write; nothing is written',
-                'extensions' => ['x-svc-flags' => [], 'x-mcp-tool' => 'invoices.preview_period'],
             ],
             'invoices.pdf' => [
                 'method' => 'GET',
@@ -1132,7 +1033,6 @@ final class AgentRestDocumentation
                 'parameters' => ['WorkspaceId', self::uuidPath('invoice')],
                 'response' => 'InvoicePdfLinkResponse',
                 'response_description' => 'Authorized result',
-                'extensions' => ['x-svc-flags' => [], 'x-mcp-tool' => 'invoices.pdf'],
             ],
             'invoices.release_delivery' => [
                 'method' => 'POST',
@@ -1142,10 +1042,6 @@ final class AgentRestDocumentation
                 'request' => 'InvoiceDeliveryReleaseRequest',
                 'response' => 'InvoiceMutationResponse',
                 'response_description' => 'Authorized result',
-                'extensions' => [
-                    'x-svc-flags' => ['AGENT_API_WRITES_ENABLED', 'AGENT_API_INVOICE_WRITES_ENABLED'],
-                    'x-mcp-tool' => 'invoices.release_delivery',
-                ],
             ],
             'invoices.send' => [
                 'method' => 'POST',
@@ -1163,7 +1059,6 @@ final class AgentRestDocumentation
                 'parameters' => ['WorkspaceId', 'InvoiceId'],
                 'response' => 'InvoiceRemindersResponse',
                 'response_description' => 'Authorized result',
-                'extensions' => ['x-mcp-tool' => 'invoices.reminders.list', 'x-svc-flags' => []],
             ],
             'invoices.send_reminder' => [
                 'method' => 'POST',
@@ -1173,7 +1068,6 @@ final class AgentRestDocumentation
                 'request' => 'InvoiceReminderSendRequest',
                 'response' => 'InvoiceReminderResponse',
                 'response_description' => 'Reminder sent or attempted',
-                'extensions' => ['x-mcp-tool' => 'invoices.send_reminder', 'x-svc-flags' => ['AGENT_API_WRITES_ENABLED', 'AGENT_API_INVOICE_WRITES_ENABLED']],
             ],
             'invoices.square_link' => [
                 'method' => 'POST',
@@ -1183,7 +1077,6 @@ final class AgentRestDocumentation
                 'request' => 'InvoiceSquareLinkRequest',
                 'response' => 'InvoiceSquareResponse',
                 'response_description' => 'Invoice linked to Square',
-                'extensions' => ['x-mcp-tool' => 'invoices.square_link', 'x-svc-flags' => ['AGENT_API_WRITES_ENABLED', 'AGENT_API_INVOICE_WRITES_ENABLED']],
             ],
             'invoices.square_cover' => [
                 'method' => 'POST',
@@ -1193,7 +1086,6 @@ final class AgentRestDocumentation
                 'request' => 'InvoiceSquareCoverRequest',
                 'response' => 'InvoiceSquareResponse',
                 'response_description' => 'Square invoice recorded as covered',
-                'extensions' => ['x-mcp-tool' => 'invoices.square_cover', 'x-svc-flags' => ['AGENT_API_WRITES_ENABLED', 'AGENT_API_INVOICE_WRITES_ENABLED']],
             ],
             'invoices.square_uncover' => [
                 'method' => 'DELETE',
@@ -1203,7 +1095,6 @@ final class AgentRestDocumentation
                 'request' => 'InvoiceSquareUncoverRequest',
                 'response' => 'InvoiceSquareResponse',
                 'response_description' => 'Square invoice no longer covered',
-                'extensions' => ['x-mcp-tool' => 'invoices.square_uncover', 'x-svc-flags' => ['AGENT_API_WRITES_ENABLED', 'AGENT_API_INVOICE_WRITES_ENABLED']],
             ],
             'invoices.square_unlink' => [
                 'method' => 'DELETE',
@@ -1213,7 +1104,6 @@ final class AgentRestDocumentation
                 'request' => 'InvoiceSquareUnlinkRequest',
                 'response' => 'InvoiceSquareResponse',
                 'response_description' => 'Invoice unlinked from Square',
-                'extensions' => ['x-mcp-tool' => 'invoices.square_unlink', 'x-svc-flags' => ['AGENT_API_WRITES_ENABLED', 'AGENT_API_INVOICE_WRITES_ENABLED']],
             ],
             'invoices.update_details' => [
                 'method' => 'PATCH',
@@ -1462,10 +1352,6 @@ final class AgentRestDocumentation
                 'response' => 'TaskResponse',
                 'response_description' => 'Task created',
                 'errors' => self::ROUTED_WRITE_ERRORS['tasks.create'],
-                'extensions' => [
-                    'x-svc-flags' => ['AGENT_API_WRITES_ENABLED'],
-                    'x-mcp-tool' => 'tasks.create',
-                ],
             ],
             'tasks.get' => [
                 'method' => 'GET',
@@ -1497,10 +1383,6 @@ final class AgentRestDocumentation
                 'response' => 'TaskResponse',
                 'response_description' => 'Task updated',
                 'errors' => self::ROUTED_WRITE_ERRORS['tasks.update'],
-                'extensions' => [
-                    'x-svc-flags' => ['AGENT_API_WRITES_ENABLED'],
-                    'x-mcp-tool' => 'tasks.update',
-                ],
             ],
             'time_entries.approve' => [
                 'method' => 'POST',
@@ -1520,10 +1402,6 @@ final class AgentRestDocumentation
                 'response' => 'DeletionResponse',
                 'response_description' => 'Draft time soft-deleted',
                 'errors' => self::ROUTED_WRITE_ERRORS['time_entries.delete'],
-                'extensions' => [
-                    'x-svc-flags' => ['AGENT_API_TIME_ENTRY_WRITES_ENABLED'],
-                    'x-mcp-tool' => 'time_entries.delete',
-                ],
             ],
             'time_entries.list' => [
                 'method' => 'GET',
@@ -1564,10 +1442,6 @@ final class AgentRestDocumentation
                 'response' => 'TimeEntryBatchResponse',
                 'response_description' => 'Time entries logged or replayed',
                 'errors' => self::ROUTED_WRITE_ERRORS['time_entries.log'],
-                'extensions' => [
-                    'x-svc-flags' => ['AGENT_API_TIME_ENTRY_WRITES_ENABLED'],
-                    'x-mcp-tool' => 'time_entries.log',
-                ],
             ],
             'time_entries.unapprove' => [
                 'method' => 'POST',
@@ -1587,10 +1461,6 @@ final class AgentRestDocumentation
                 'response' => 'TimeEntryResponse',
                 'response_description' => 'Draft time updated',
                 'errors' => self::ROUTED_WRITE_ERRORS['time_entries.update'],
-                'extensions' => [
-                    'x-svc-flags' => ['AGENT_API_TIME_ENTRY_WRITES_ENABLED'],
-                    'x-mcp-tool' => 'time_entries.update',
-                ],
             ],
             'workspaces.create' => [
                 'method' => 'POST',
@@ -1611,7 +1481,7 @@ final class AgentRestDocumentation
      * never changed by it; these reads exist so an agent, which cannot reach
      * Square itself, can find Square records to link to svc's own.
      *
-     * @return array<string, array{method: string, scopes: list<string>, description: string, parameters: list<string|array<string, mixed>>, response: string, response_description: string, extensions: array<string, mixed>}>
+     * @return array<string, array{method: string, scopes: list<string>, description: string, parameters: list<string|array<string, mixed>>, response: string, response_description: string}>
      */
     private static function square(): array
     {
@@ -1696,7 +1566,6 @@ final class AgentRestDocumentation
                 'parameters' => $parameters,
                 'response' => $response,
                 'response_description' => 'Result',
-                'extensions' => ['x-mcp-tool' => $operationId],
             ];
         }
 
@@ -1765,7 +1634,6 @@ final class AgentRestDocumentation
                 'request' => 'SquareCustomerImportRequest',
                 'response' => 'SquareCustomerImportResponse',
                 'response_description' => 'Imported client and optional draft agreement',
-                'extensions' => ['x-mcp-tool' => 'square.import_customer', 'x-svc-flags' => ['AGENT_API_WRITES_ENABLED', 'AGENT_API_CLIENT_WRITES_ENABLED']],
             ],
             'invoices.square_reconcile' => [
                 'method' => 'POST',
@@ -1775,7 +1643,6 @@ final class AgentRestDocumentation
                 'request' => 'InvoiceSquareReconcileRequest',
                 'response' => 'InvoiceSquareResponse',
                 'response_description' => 'The invoice after reconciliation',
-                'extensions' => ['x-mcp-tool' => 'invoices.square_reconcile', 'x-svc-flags' => ['AGENT_API_WRITES_ENABLED']],
             ],
             'square.sync' => [
                 'method' => 'POST',
@@ -1794,7 +1661,7 @@ final class AgentRestDocumentation
      * token (`svc:auth:issue-token` with `finance.read` / `finance.reconcile`)
      * also calls, with the contract it has always had; see docs/finance-api.md.
      *
-     * @return array<string, array{method: string, scopes: list<string>, description: string, parameters: list<string|array<string, mixed>>, request?: string, response: string, response_description: string, errors: array<int, string>, extensions: array<string, mixed>}>
+     * @return array<string, array{method: string, scopes: list<string>, description: string, parameters: list<string|array<string, mixed>>, request?: string, response: string, response_description: string, errors: array<int, string>}>
      */
     private static function finance(): array
     {
@@ -1839,7 +1706,6 @@ final class AgentRestDocumentation
                     422 => 'A filter is invalid (`errors` names it): an unknown status, a malformed invoice id or date, received_to before received_from, per_page out of range, a watermark in the future, or page on a change-feed request. Also a cursor from another workspace, query or watermark.',
                     429 => 'Too many requests (retry after Retry-After).',
                 ],
-                'extensions' => ['x-mcp-tool' => 'finance.invoice_payments.list'],
             ],
             'finance.payouts.list' => [
                 'method' => 'GET',
@@ -1866,7 +1732,6 @@ final class AgentRestDocumentation
                     422 => 'A filter is invalid (`errors` names it): an unknown provider or status, a malformed date, arrival_to before arrival_from, per_page out of range, a watermark in the future, page or a filter other than provider on a change-feed request. Also a cursor from another workspace, query or watermark.',
                     429 => 'Too many requests (retry after Retry-After).',
                 ],
-                'extensions' => ['x-mcp-tool' => 'finance.payouts.list'],
             ],
             'finance.reconciliations.deactivate' => [
                 'method' => 'DELETE',
@@ -1879,7 +1744,6 @@ final class AgentRestDocumentation
                     'The workspace does not exist or the caller is not in it; the payment or allocation does not exist in this workspace; or the system or transaction is not a slug and a UUID.',
                     'external_system is longer than 80 characters (`errors` names external_system_slug).',
                 ),
-                'extensions' => ['x-mcp-tool' => 'finance.reconciliations.deactivate'],
             ],
             'finance.reconciliations.upsert' => [
                 'method' => 'PUT',
@@ -1893,7 +1757,6 @@ final class AgentRestDocumentation
                     'The workspace does not exist or the caller is not in it; the payment does not exist in this workspace; or the system or transaction is not a slug and a UUID.',
                     'A field is invalid (`errors` names it, or external_system_slug for the path), or the payment is not succeeded, its currency differs, or the active allocations would exceed its amount net of refunds.',
                 ),
-                'extensions' => ['x-mcp-tool' => 'finance.reconciliations.upsert'],
             ],
         ];
     }

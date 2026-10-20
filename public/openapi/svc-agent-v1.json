@@ -76,11 +76,11 @@
                     "confirm": true
                 },
                 "x-agent-mcp-tool": "agreements.activate",
-                "x-mcp-tool": "agreements.activate",
                 "x-svc-flags": [
                     "AGENT_API_WRITES_ENABLED",
                     "AGENT_API_CLIENT_WRITES_ENABLED"
-                ]
+                ],
+                "x-mcp-tool": "agreements.activate"
             }
         },
         "/workspaces/{workspace}/clients/{client}/agreements": {
@@ -147,11 +147,11 @@
                     "expected_version": true
                 },
                 "x-agent-mcp-tool": "agreements.create",
-                "x-mcp-tool": "agreements.create",
                 "x-svc-flags": [
                     "AGENT_API_WRITES_ENABLED",
                     "AGENT_API_CLIENT_WRITES_ENABLED"
-                ]
+                ],
+                "x-mcp-tool": "agreements.create"
             }
         },
         "/workspaces/{workspace}/agreements/{agreement}": {
@@ -199,8 +199,8 @@
                 "x-agent-effect": "read",
                 "x-agent-idempotent": true,
                 "x-agent-mcp-tool": "agreements.get",
-                "x-mcp-tool": "agreements.get",
-                "x-svc-flags": []
+                "x-svc-flags": [],
+                "x-mcp-tool": "agreements.get"
             },
             "patch": {
                 "operationId": "agreements.update",
@@ -265,11 +265,11 @@
                     "expected_version": true
                 },
                 "x-agent-mcp-tool": "agreements.update",
-                "x-mcp-tool": "agreements.update",
                 "x-svc-flags": [
                     "AGENT_API_WRITES_ENABLED",
                     "AGENT_API_CLIENT_WRITES_ENABLED"
-                ]
+                ],
+                "x-mcp-tool": "agreements.update"
             }
         },
         "/workspaces/{workspace}/agreements": {
@@ -328,8 +328,8 @@
                 "x-agent-effect": "read",
                 "x-agent-idempotent": true,
                 "x-agent-mcp-tool": "agreements.list",
-                "x-mcp-tool": "agreements.list",
-                "x-svc-flags": []
+                "x-svc-flags": [],
+                "x-mcp-tool": "agreements.list"
             }
         },
         "/workspaces/{workspace}/agreements/{agreement}/square-series": {
@@ -397,11 +397,11 @@
                     "confirm": true
                 },
                 "x-agent-mcp-tool": "agreements.square_series.clear",
-                "x-mcp-tool": "agreements.square_series.clear",
                 "x-svc-flags": [
                     "AGENT_API_WRITES_ENABLED",
                     "AGENT_API_CLIENT_WRITES_ENABLED"
-                ]
+                ],
+                "x-mcp-tool": "agreements.square_series.clear"
             },
             "put": {
                 "operationId": "agreements.square_series.set",
@@ -467,11 +467,11 @@
                     "confirm": true
                 },
                 "x-agent-mcp-tool": "agreements.square_series.set",
-                "x-mcp-tool": "agreements.square_series.set",
                 "x-svc-flags": [
                     "AGENT_API_WRITES_ENABLED",
                     "AGENT_API_CLIENT_WRITES_ENABLED"
-                ]
+                ],
+                "x-mcp-tool": "agreements.square_series.set"
             }
         },
         "/workspaces/{workspace}/agreements/{agreement}/terminate": {
@@ -539,11 +539,11 @@
                     "confirm": true
                 },
                 "x-agent-mcp-tool": "agreements.terminate",
-                "x-mcp-tool": "agreements.terminate",
                 "x-svc-flags": [
                     "AGENT_API_WRITES_ENABLED",
                     "AGENT_API_CLIENT_WRITES_ENABLED"
-                ]
+                ],
+                "x-mcp-tool": "agreements.terminate"
             }
         },
         "/workspaces/{workspace}/attachments/{attachment}": {
@@ -610,7 +610,12 @@
                     "expected_version": true,
                     "confirm": true
                 },
-                "x-agent-mcp-tool": "attachments.delete"
+                "x-agent-mcp-tool": "attachments.delete",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_FILE_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "attachments.delete"
             },
             "get": {
                 "operationId": "attachments.get",
@@ -656,7 +661,9 @@
                 },
                 "x-agent-effect": "read",
                 "x-agent-idempotent": true,
-                "x-agent-mcp-tool": "attachments.get"
+                "x-agent-mcp-tool": "attachments.get",
+                "x-svc-flags": [],
+                "x-mcp-tool": "attachments.get"
             }
         },
         "/workspaces/{workspace}/attachments/{attachment}/content": {
@@ -720,7 +727,8 @@
                     }
                 },
                 "x-agent-effect": "download",
-                "x-agent-idempotent": true
+                "x-agent-idempotent": true,
+                "x-svc-flags": []
             }
         },
         "/workspaces/{workspace}/attachments/{attachment}/download-url": {
@@ -768,7 +776,9 @@
                 },
                 "x-agent-effect": "read",
                 "x-agent-idempotent": true,
-                "x-agent-mcp-tool": "attachments.download_url"
+                "x-agent-mcp-tool": "attachments.download_url",
+                "x-svc-flags": [],
+                "x-mcp-tool": "attachments.download_url"
             }
         },
         "/workspaces/{workspace}/records/{recordType}/{recordPublicId}/attachments": {
@@ -832,7 +842,9 @@
                 },
                 "x-agent-effect": "read",
                 "x-agent-idempotent": true,
-                "x-agent-mcp-tool": "attachments.list"
+                "x-agent-mcp-tool": "attachments.list",
+                "x-svc-flags": [],
+                "x-mcp-tool": "attachments.list"
             }
         },
         "/workspaces/{workspace}/records/{recordType}/{recordPublicId}/attachments/upload": {
@@ -928,7 +940,11 @@
                 "x-agent-write-safety": {
                     "idempotency_key": "header",
                     "expected_version": true
-                }
+                },
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_FILE_WRITES_ENABLED"
+                ]
             }
         },
         "/workspaces/{workspace}/records/{recordType}/{recordPublicId}/attachments/upload-url": {
@@ -995,7 +1011,12 @@
                 "x-agent-write-safety": {
                     "note": "Authorizes a later upload; the upload itself requires an idempotency key and parent version."
                 },
-                "x-agent-mcp-tool": "attachments.upload_url"
+                "x-agent-mcp-tool": "attachments.upload_url",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_FILE_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "attachments.upload_url"
             }
         },
         "/workspaces/{workspace}/billing-audits/missing-billed-overage": {
@@ -1581,11 +1602,11 @@
                     "expected_version": true
                 },
                 "x-agent-mcp-tool": "billing_schedules.create",
-                "x-mcp-tool": "billing_schedules.create",
                 "x-svc-flags": [
                     "AGENT_API_WRITES_ENABLED",
                     "AGENT_API_INVOICE_WRITES_ENABLED"
-                ]
+                ],
+                "x-mcp-tool": "billing_schedules.create"
             },
             "get": {
                 "operationId": "billing_schedules.list",
@@ -1639,6 +1660,7 @@
                 "x-agent-effect": "read",
                 "x-agent-idempotent": true,
                 "x-agent-mcp-tool": "billing_schedules.list",
+                "x-svc-flags": [],
                 "x-mcp-tool": "billing_schedules.list"
             }
         },
@@ -1707,11 +1729,11 @@
                     "confirm": true
                 },
                 "x-agent-mcp-tool": "billing_schedules.generate",
-                "x-mcp-tool": "billing_schedules.generate",
                 "x-svc-flags": [
                     "AGENT_API_WRITES_ENABLED",
                     "AGENT_API_INVOICE_WRITES_ENABLED"
-                ]
+                ],
+                "x-mcp-tool": "billing_schedules.generate"
             }
         },
         "/workspaces/{workspace}/billing-schedules/{schedule}": {
@@ -1760,6 +1782,7 @@
                 "x-agent-effect": "read",
                 "x-agent-idempotent": true,
                 "x-agent-mcp-tool": "billing_schedules.get",
+                "x-svc-flags": [],
                 "x-mcp-tool": "billing_schedules.get"
             }
         },
@@ -1819,6 +1842,7 @@
                 "x-agent-effect": "read",
                 "x-agent-idempotent": true,
                 "x-agent-mcp-tool": "capacity_ledger.get",
+                "x-svc-flags": [],
                 "x-mcp-tool": "capacity_ledger.get"
             }
         },
@@ -1887,11 +1911,11 @@
                     "confirm": true
                 },
                 "x-agent-mcp-tool": "clients.archive",
-                "x-mcp-tool": "clients.archive",
                 "x-svc-flags": [
                     "AGENT_API_WRITES_ENABLED",
                     "AGENT_API_CLIENT_WRITES_ENABLED"
-                ]
+                ],
+                "x-mcp-tool": "clients.archive"
             }
         },
         "/workspaces/{workspace}/clients": {
@@ -1947,11 +1971,11 @@
                     "idempotency_key": "header_and_argument"
                 },
                 "x-agent-mcp-tool": "clients.create",
-                "x-mcp-tool": "clients.create",
                 "x-svc-flags": [
                     "AGENT_API_WRITES_ENABLED",
                     "AGENT_API_CLIENT_WRITES_ENABLED"
-                ]
+                ],
+                "x-mcp-tool": "clients.create"
             },
             "get": {
                 "operationId": "clients.list",
@@ -2011,8 +2035,8 @@
                 "x-agent-effect": "read",
                 "x-agent-idempotent": true,
                 "x-agent-mcp-tool": "clients.list",
-                "x-mcp-tool": "clients.list",
-                "x-svc-flags": []
+                "x-svc-flags": [],
+                "x-mcp-tool": "clients.list"
             }
         },
         "/workspaces/{workspace}/clients/{client}": {
@@ -2060,8 +2084,8 @@
                 "x-agent-effect": "read",
                 "x-agent-idempotent": true,
                 "x-agent-mcp-tool": "clients.get",
-                "x-mcp-tool": "clients.get",
-                "x-svc-flags": []
+                "x-svc-flags": [],
+                "x-mcp-tool": "clients.get"
             },
             "patch": {
                 "operationId": "clients.update",
@@ -2126,11 +2150,11 @@
                     "expected_version": true
                 },
                 "x-agent-mcp-tool": "clients.update",
-                "x-mcp-tool": "clients.update",
                 "x-svc-flags": [
                     "AGENT_API_WRITES_ENABLED",
                     "AGENT_API_CLIENT_WRITES_ENABLED"
-                ]
+                ],
+                "x-mcp-tool": "clients.update"
             }
         },
         "/workspaces/{workspace}/clients/{client}/portal-access": {
@@ -2256,11 +2280,11 @@
                     "confirm": true
                 },
                 "x-agent-mcp-tool": "clients.portal_access.grant",
-                "x-mcp-tool": "clients.portal_access.grant",
                 "x-svc-flags": [
                     "AGENT_API_WRITES_ENABLED",
                     "AGENT_API_CLIENT_WRITES_ENABLED"
-                ]
+                ],
+                "x-mcp-tool": "clients.portal_access.grant"
             },
             "get": {
                 "operationId": "clients.portal_access.list",
@@ -2363,8 +2387,8 @@
                 "x-agent-effect": "read",
                 "x-agent-idempotent": true,
                 "x-agent-mcp-tool": "clients.portal_access.list",
-                "x-mcp-tool": "clients.portal_access.list",
-                "x-svc-flags": []
+                "x-svc-flags": [],
+                "x-mcp-tool": "clients.portal_access.list"
             }
         },
         "/workspaces/{workspace}/clients/{client}/portal-access/{user}": {
@@ -2501,11 +2525,11 @@
                     "confirm": true
                 },
                 "x-agent-mcp-tool": "clients.portal_access.revoke",
-                "x-mcp-tool": "clients.portal_access.revoke",
                 "x-svc-flags": [
                     "AGENT_API_WRITES_ENABLED",
                     "AGENT_API_CLIENT_WRITES_ENABLED"
-                ]
+                ],
+                "x-mcp-tool": "clients.portal_access.revoke"
             },
             "patch": {
                 "operationId": "clients.portal_access.update",
@@ -2640,11 +2664,11 @@
                     "confirm": true
                 },
                 "x-agent-mcp-tool": "clients.portal_access.update",
-                "x-mcp-tool": "clients.portal_access.update",
                 "x-svc-flags": [
                     "AGENT_API_WRITES_ENABLED",
                     "AGENT_API_CLIENT_WRITES_ENABLED"
-                ]
+                ],
+                "x-mcp-tool": "clients.portal_access.update"
             }
         },
         "/workspaces/{workspace}/clients/{client}/portal-invitations": {
@@ -2780,12 +2804,12 @@
                     "confirm": true
                 },
                 "x-agent-mcp-tool": "clients.portal_invitations.create",
-                "x-mcp-tool": "clients.portal_invitations.create",
                 "x-svc-flags": [
                     "AGENT_API_WRITES_ENABLED",
                     "AGENT_API_CLIENT_WRITES_ENABLED",
                     "SVC_PORTAL_INVITATIONS_ENABLED"
-                ]
+                ],
+                "x-mcp-tool": "clients.portal_invitations.create"
             },
             "get": {
                 "operationId": "clients.portal_invitations.list",
@@ -2888,10 +2912,10 @@
                 "x-agent-effect": "read",
                 "x-agent-idempotent": true,
                 "x-agent-mcp-tool": "clients.portal_invitations.list",
-                "x-mcp-tool": "clients.portal_invitations.list",
                 "x-svc-flags": [
                     "SVC_PORTAL_INVITATIONS_ENABLED"
-                ]
+                ],
+                "x-mcp-tool": "clients.portal_invitations.list"
             }
         },
         "/workspaces/{workspace}/clients/{client}/portal-invitations/{invitation}/resend": {
@@ -3036,12 +3060,12 @@
                     "confirm": true
                 },
                 "x-agent-mcp-tool": "clients.portal_invitations.resend",
-                "x-mcp-tool": "clients.portal_invitations.resend",
                 "x-svc-flags": [
                     "AGENT_API_WRITES_ENABLED",
                     "AGENT_API_CLIENT_WRITES_ENABLED",
                     "SVC_PORTAL_INVITATIONS_ENABLED"
-                ]
+                ],
+                "x-mcp-tool": "clients.portal_invitations.resend"
             }
         },
         "/workspaces/{workspace}/clients/{client}/portal-invitations/{invitation}": {
@@ -3186,12 +3210,12 @@
                     "confirm": true
                 },
                 "x-agent-mcp-tool": "clients.portal_invitations.revoke",
-                "x-mcp-tool": "clients.portal_invitations.revoke",
                 "x-svc-flags": [
                     "AGENT_API_WRITES_ENABLED",
                     "AGENT_API_CLIENT_WRITES_ENABLED",
                     "SVC_PORTAL_INVITATIONS_ENABLED"
-                ]
+                ],
+                "x-mcp-tool": "clients.portal_invitations.revoke"
             }
         },
         "/workspaces/{workspace}/clients/{client}/restore": {
@@ -3258,11 +3282,11 @@
                     "expected_version": true
                 },
                 "x-agent-mcp-tool": "clients.restore",
-                "x-mcp-tool": "clients.restore",
                 "x-svc-flags": [
                     "AGENT_API_WRITES_ENABLED",
                     "AGENT_API_CLIENT_WRITES_ENABLED"
-                ]
+                ],
+                "x-mcp-tool": "clients.restore"
             }
         },
         "/workspaces/{workspace}/clients/{client}/payment-reminders": {
@@ -3311,8 +3335,8 @@
                 "x-agent-effect": "read",
                 "x-agent-idempotent": true,
                 "x-agent-mcp-tool": "companies.payment_reminders.get",
-                "x-mcp-tool": "companies.payment_reminders.get",
-                "x-svc-flags": []
+                "x-svc-flags": [],
+                "x-mcp-tool": "companies.payment_reminders.get"
             },
             "put": {
                 "operationId": "companies.payment_reminders.set",
@@ -3377,11 +3401,11 @@
                     "expected_version": true
                 },
                 "x-agent-mcp-tool": "companies.payment_reminders.set",
-                "x-mcp-tool": "companies.payment_reminders.set",
                 "x-svc-flags": [
                     "AGENT_API_WRITES_ENABLED",
                     "AGENT_API_CLIENT_WRITES_ENABLED"
-                ]
+                ],
+                "x-mcp-tool": "companies.payment_reminders.set"
             }
         },
         "/workspaces/{workspace}/clients/{client}/square-customer": {
@@ -3449,11 +3473,11 @@
                     "confirm": true
                 },
                 "x-agent-mcp-tool": "companies.square_customer.clear",
-                "x-mcp-tool": "companies.square_customer.clear",
                 "x-svc-flags": [
                     "AGENT_API_WRITES_ENABLED",
                     "AGENT_API_CLIENT_WRITES_ENABLED"
-                ]
+                ],
+                "x-mcp-tool": "companies.square_customer.clear"
             },
             "get": {
                 "operationId": "companies.square_customer.get",
@@ -3500,8 +3524,8 @@
                 "x-agent-effect": "read",
                 "x-agent-idempotent": true,
                 "x-agent-mcp-tool": "companies.square_customer.get",
-                "x-mcp-tool": "companies.square_customer.get",
-                "x-svc-flags": []
+                "x-svc-flags": [],
+                "x-mcp-tool": "companies.square_customer.get"
             },
             "put": {
                 "operationId": "companies.square_customer.set",
@@ -3567,11 +3591,11 @@
                     "confirm": true
                 },
                 "x-agent-mcp-tool": "companies.square_customer.set",
-                "x-mcp-tool": "companies.square_customer.set",
                 "x-svc-flags": [
                     "AGENT_API_WRITES_ENABLED",
                     "AGENT_API_CLIENT_WRITES_ENABLED"
-                ]
+                ],
+                "x-mcp-tool": "companies.square_customer.set"
             }
         },
         "/connection": {
@@ -3618,7 +3642,8 @@
                 "x-agent-idempotent": true,
                 "x-agent-write-safety": {
                     "note": "Revokes only the calling application's credentials for the calling person; repeating it is harmless."
-                }
+                },
+                "x-svc-flags": []
             }
         },
         "/connections/{token}": {
@@ -3649,7 +3674,8 @@
                 "x-agent-idempotent": true,
                 "x-agent-write-safety": {
                     "note": "Revokes only the calling connection; repeating it is harmless."
-                }
+                },
+                "x-svc-flags": []
             }
         },
         "/context": {
@@ -3683,7 +3709,9 @@
                 },
                 "x-agent-effect": "read",
                 "x-agent-idempotent": true,
-                "x-agent-mcp-tool": "context.get"
+                "x-agent-mcp-tool": "context.get",
+                "x-svc-flags": [],
+                "x-mcp-tool": "context.get"
             }
         },
         "/workspaces/{workspace}/expense-schedules": {
@@ -3740,7 +3768,12 @@
                     "idempotency_key": "header_and_argument",
                     "expected_version": true
                 },
-                "x-agent-mcp-tool": "expense_schedules.create"
+                "x-agent-mcp-tool": "expense_schedules.create",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_EXPENSE_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "expense_schedules.create"
             },
             "get": {
                 "operationId": "expense_schedules.list",
@@ -3791,7 +3824,9 @@
                 },
                 "x-agent-effect": "read",
                 "x-agent-idempotent": true,
-                "x-agent-mcp-tool": "expense_schedules.list"
+                "x-agent-mcp-tool": "expense_schedules.list",
+                "x-svc-flags": [],
+                "x-mcp-tool": "expense_schedules.list"
             }
         },
         "/workspaces/{workspace}/expense-schedules/{schedule}/generate": {
@@ -3858,7 +3893,12 @@
                     "expected_version": true,
                     "confirm": true
                 },
-                "x-agent-mcp-tool": "expense_schedules.generate"
+                "x-agent-mcp-tool": "expense_schedules.generate",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_EXPENSE_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "expense_schedules.generate"
             }
         },
         "/workspaces/{workspace}/expense-schedules/{schedule}": {
@@ -3924,7 +3964,12 @@
                     "idempotency_key": "header_and_argument",
                     "expected_version": true
                 },
-                "x-agent-mcp-tool": "expense_schedules.update"
+                "x-agent-mcp-tool": "expense_schedules.update",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_EXPENSE_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "expense_schedules.update"
             }
         },
         "/workspaces/{workspace}/expenses/{expense}/approve": {
@@ -3984,7 +4029,12 @@
                     "idempotency_key": "header_and_argument",
                     "expected_version": true
                 },
-                "x-agent-mcp-tool": "expenses.approve"
+                "x-agent-mcp-tool": "expenses.approve",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_EXPENSE_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "expenses.approve"
             }
         },
         "/workspaces/{workspace}/expenses/{expense}": {
@@ -4302,7 +4352,9 @@
                 },
                 "x-agent-effect": "read",
                 "x-agent-idempotent": true,
-                "x-agent-mcp-tool": "expenses.list"
+                "x-agent-mcp-tool": "expenses.list",
+                "x-svc-flags": [],
+                "x-mcp-tool": "expenses.list"
             },
             "post": {
                 "operationId": "expenses.log",
@@ -4487,7 +4539,8 @@
                     }
                 },
                 "x-agent-effect": "download",
-                "x-agent-idempotent": true
+                "x-agent-idempotent": true,
+                "x-svc-flags": []
             }
         },
         "/workspaces/{workspace}/expenses/{expense}/receipts/{receipt}": {
@@ -4538,7 +4591,9 @@
                 },
                 "x-agent-effect": "read",
                 "x-agent-idempotent": true,
-                "x-agent-mcp-tool": "expenses.receipts.download"
+                "x-agent-mcp-tool": "expenses.receipts.download",
+                "x-svc-flags": [],
+                "x-mcp-tool": "expenses.receipts.download"
             }
         },
         "/workspaces/{workspace}/expenses/{expense}/receipts": {
@@ -4580,7 +4635,9 @@
                 },
                 "x-agent-effect": "read",
                 "x-agent-idempotent": true,
-                "x-agent-mcp-tool": "expenses.receipts.list"
+                "x-agent-mcp-tool": "expenses.receipts.list",
+                "x-svc-flags": [],
+                "x-mcp-tool": "expenses.receipts.list"
             },
             "post": {
                 "operationId": "expenses.receipts.upload",
@@ -4637,7 +4694,11 @@
                 "x-agent-write-safety": {
                     "idempotency_key": "header",
                     "expected_version": true
-                }
+                },
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_EXPENSE_WRITES_ENABLED"
+                ]
             }
         },
         "/workspaces/{workspace}/expenses/{expense}/receipts/upload-url": {
@@ -4683,7 +4744,12 @@
                 "x-agent-write-safety": {
                     "note": "Authorizes a later upload; the upload itself requires an idempotency key and parent version."
                 },
-                "x-agent-mcp-tool": "expenses.receipts.upload_url"
+                "x-agent-mcp-tool": "expenses.receipts.upload_url",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_EXPENSE_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "expenses.receipts.upload_url"
             }
         },
         "/workspaces/{workspace}/expenses/{expense}/unapprove": {
@@ -4743,7 +4809,12 @@
                     "idempotency_key": "header_and_argument",
                     "expected_version": true
                 },
-                "x-agent-mcp-tool": "expenses.unapprove"
+                "x-agent-mcp-tool": "expenses.unapprove",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_EXPENSE_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "expenses.unapprove"
             }
         },
         "/workspaces/{workspace}/invoice-payments": {
@@ -4902,6 +4973,7 @@
                 "x-agent-effect": "read",
                 "x-agent-idempotent": true,
                 "x-agent-mcp-tool": "finance.invoice_payments.list",
+                "x-svc-flags": [],
                 "x-mcp-tool": "finance.invoice_payments.list"
             }
         },
@@ -5061,6 +5133,7 @@
                 "x-agent-effect": "read",
                 "x-agent-idempotent": true,
                 "x-agent-mcp-tool": "finance.payouts.list",
+                "x-svc-flags": [],
                 "x-mcp-tool": "finance.payouts.list"
             }
         },
@@ -5178,6 +5251,7 @@
                     "note": "Idempotent by its path (payment, external system, transaction): repeating it is the same write, so it takes no idempotency key."
                 },
                 "x-agent-mcp-tool": "finance.reconciliations.deactivate",
+                "x-svc-flags": [],
                 "x-mcp-tool": "finance.reconciliations.deactivate"
             },
             "put": {
@@ -5313,6 +5387,7 @@
                     "note": "Idempotent by its path (payment, external system, transaction): repeating it is the same write, so it takes no idempotency key."
                 },
                 "x-agent-mcp-tool": "finance.reconciliations.upsert",
+                "x-svc-flags": [],
                 "x-mcp-tool": "finance.reconciliations.upsert"
             }
         },
@@ -5443,7 +5518,12 @@
                     "expected_version": true,
                     "confirm": true
                 },
-                "x-agent-mcp-tool": "invoices.correct"
+                "x-agent-mcp-tool": "invoices.correct",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_INVOICE_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "invoices.correct"
             }
         },
         "/workspaces/{workspace}/invoices/{invoice}/corrections/{correction}": {
@@ -5494,7 +5574,9 @@
                 },
                 "x-agent-effect": "read",
                 "x-agent-idempotent": true,
-                "x-agent-mcp-tool": "invoices.corrections.get"
+                "x-agent-mcp-tool": "invoices.corrections.get",
+                "x-svc-flags": [],
+                "x-mcp-tool": "invoices.corrections.get"
             }
         },
         "/workspaces/{workspace}/invoices": {
@@ -5549,7 +5631,12 @@
                 "x-agent-write-safety": {
                     "idempotency_key": "header_and_argument"
                 },
-                "x-agent-mcp-tool": "invoices.create_draft"
+                "x-agent-mcp-tool": "invoices.create_draft",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_INVOICE_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "invoices.create_draft"
             },
             "get": {
                 "operationId": "invoices.list",
@@ -5691,8 +5778,8 @@
                 "x-agent-effect": "read",
                 "x-agent-idempotent": true,
                 "x-agent-mcp-tool": "invoices.list",
-                "x-mcp-tool": "invoices.list",
-                "x-svc-flags": []
+                "x-svc-flags": [],
+                "x-mcp-tool": "invoices.list"
             }
         },
         "/workspaces/{workspace}/invoices/{invoice}/discard": {
@@ -5751,7 +5838,12 @@
                     "expected_version": true,
                     "confirm": true
                 },
-                "x-agent-mcp-tool": "invoices.discard_draft"
+                "x-agent-mcp-tool": "invoices.discard_draft",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_INVOICE_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "invoices.discard_draft"
             }
         },
         "/workspaces/{workspace}/invoices/{invoice}/pdf": {
@@ -5912,7 +6004,9 @@
                 },
                 "x-agent-effect": "read",
                 "x-agent-idempotent": true,
-                "x-agent-mcp-tool": "invoices.get"
+                "x-agent-mcp-tool": "invoices.get",
+                "x-svc-flags": [],
+                "x-mcp-tool": "invoices.get"
             },
             "patch": {
                 "operationId": "invoices.update_draft",
@@ -5969,7 +6063,12 @@
                     "idempotency_key": "header_and_argument",
                     "expected_version": true
                 },
-                "x-agent-mcp-tool": "invoices.update_draft"
+                "x-agent-mcp-tool": "invoices.update_draft",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_INVOICE_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "invoices.update_draft"
             }
         },
         "/workspaces/{workspace}/invoices/{invoice}/automatic-delivery/hold": {
@@ -6398,8 +6497,8 @@
                 "x-agent-effect": "read",
                 "x-agent-idempotent": true,
                 "x-agent-mcp-tool": "invoices.reminders.list",
-                "x-mcp-tool": "invoices.reminders.list",
-                "x-svc-flags": []
+                "x-svc-flags": [],
+                "x-mcp-tool": "invoices.reminders.list"
             },
             "post": {
                 "operationId": "invoices.send_reminder",
@@ -6459,11 +6558,11 @@
                     "confirm": true
                 },
                 "x-agent-mcp-tool": "invoices.send_reminder",
-                "x-mcp-tool": "invoices.send_reminder",
                 "x-svc-flags": [
                     "AGENT_API_WRITES_ENABLED",
                     "AGENT_API_INVOICE_WRITES_ENABLED"
-                ]
+                ],
+                "x-mcp-tool": "invoices.send_reminder"
             }
         },
         "/workspaces/{workspace}/invoices/{invoice}/send": {
@@ -6523,7 +6622,12 @@
                     "expected_version": true,
                     "confirm": true
                 },
-                "x-agent-mcp-tool": "invoices.send"
+                "x-agent-mcp-tool": "invoices.send",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_INVOICE_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "invoices.send"
             }
         },
         "/workspaces/{workspace}/invoices/{invoice}/square-candidates": {
@@ -6582,7 +6686,9 @@
                 },
                 "x-agent-effect": "read",
                 "x-agent-idempotent": true,
-                "x-agent-mcp-tool": "invoices.square_candidates"
+                "x-agent-mcp-tool": "invoices.square_candidates",
+                "x-svc-flags": [],
+                "x-mcp-tool": "invoices.square_candidates"
             }
         },
         "/workspaces/{workspace}/invoices/{invoice}/square-coverage": {
@@ -6644,11 +6750,11 @@
                     "confirm": true
                 },
                 "x-agent-mcp-tool": "invoices.square_cover",
-                "x-mcp-tool": "invoices.square_cover",
                 "x-svc-flags": [
                     "AGENT_API_WRITES_ENABLED",
                     "AGENT_API_INVOICE_WRITES_ENABLED"
-                ]
+                ],
+                "x-mcp-tool": "invoices.square_cover"
             },
             "delete": {
                 "operationId": "invoices.square_uncover",
@@ -6708,11 +6814,11 @@
                     "confirm": true
                 },
                 "x-agent-mcp-tool": "invoices.square_uncover",
-                "x-mcp-tool": "invoices.square_uncover",
                 "x-svc-flags": [
                     "AGENT_API_WRITES_ENABLED",
                     "AGENT_API_INVOICE_WRITES_ENABLED"
-                ]
+                ],
+                "x-mcp-tool": "invoices.square_uncover"
             }
         },
         "/workspaces/{workspace}/invoices/{invoice}/square-link": {
@@ -6774,11 +6880,11 @@
                     "confirm": true
                 },
                 "x-agent-mcp-tool": "invoices.square_link",
-                "x-mcp-tool": "invoices.square_link",
                 "x-svc-flags": [
                     "AGENT_API_WRITES_ENABLED",
                     "AGENT_API_INVOICE_WRITES_ENABLED"
-                ]
+                ],
+                "x-mcp-tool": "invoices.square_link"
             },
             "delete": {
                 "operationId": "invoices.square_unlink",
@@ -6838,11 +6944,11 @@
                     "confirm": true
                 },
                 "x-agent-mcp-tool": "invoices.square_unlink",
-                "x-mcp-tool": "invoices.square_unlink",
                 "x-svc-flags": [
                     "AGENT_API_WRITES_ENABLED",
                     "AGENT_API_INVOICE_WRITES_ENABLED"
-                ]
+                ],
+                "x-mcp-tool": "invoices.square_unlink"
             }
         },
         "/workspaces/{workspace}/invoices/{invoice}/square-reconcile": {
@@ -6902,10 +7008,10 @@
                     "idempotency_key": "header_and_argument"
                 },
                 "x-agent-mcp-tool": "invoices.square_reconcile",
-                "x-mcp-tool": "invoices.square_reconcile",
                 "x-svc-flags": [
                     "AGENT_API_WRITES_ENABLED"
-                ]
+                ],
+                "x-mcp-tool": "invoices.square_reconcile"
             }
         },
         "/workspaces/{workspace}/invoices/{invoice}/details": {
@@ -6964,7 +7070,12 @@
                     "idempotency_key": "header_and_argument",
                     "expected_version": true
                 },
-                "x-agent-mcp-tool": "invoices.update_details"
+                "x-agent-mcp-tool": "invoices.update_details",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_INVOICE_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "invoices.update_details"
             }
         },
         "/workspaces/{workspace}/invoices/{invoice}/void": {
@@ -7023,7 +7134,12 @@
                     "expected_version": true,
                     "confirm": true
                 },
-                "x-agent-mcp-tool": "invoices.void"
+                "x-agent-mcp-tool": "invoices.void",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_INVOICE_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "invoices.void"
             }
         },
         "/workspaces/{workspace}/summary": {
@@ -7062,7 +7178,9 @@
                 },
                 "x-agent-effect": "read",
                 "x-agent-idempotent": true,
-                "x-agent-mcp-tool": "operations.summary"
+                "x-agent-mcp-tool": "operations.summary",
+                "x-svc-flags": [],
+                "x-mcp-tool": "operations.summary"
             }
         },
         "/workspaces/{workspace}/payments/{payment}": {
@@ -7123,7 +7241,12 @@
                     "expected_version": true,
                     "confirm": true
                 },
-                "x-agent-mcp-tool": "payments.correct"
+                "x-agent-mcp-tool": "payments.correct",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_PAYMENT_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "payments.correct"
             }
         },
         "/workspaces/{workspace}/payments": {
@@ -7184,7 +7307,9 @@
                 },
                 "x-agent-effect": "read",
                 "x-agent-idempotent": true,
-                "x-agent-mcp-tool": "payments.list"
+                "x-agent-mcp-tool": "payments.list",
+                "x-svc-flags": [],
+                "x-mcp-tool": "payments.list"
             },
             "post": {
                 "operationId": "payments.record",
@@ -7300,7 +7425,12 @@
                     "expected_version": true,
                     "confirm": true
                 },
-                "x-agent-mcp-tool": "payments.record"
+                "x-agent-mcp-tool": "payments.record",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_PAYMENT_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "payments.record"
             }
         },
         "/workspaces/{workspace}/payments/{payment}/refunds": {
@@ -7361,7 +7491,12 @@
                     "expected_version": true,
                     "confirm": true
                 },
-                "x-agent-mcp-tool": "payments.refund"
+                "x-agent-mcp-tool": "payments.refund",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_PAYMENT_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "payments.refund"
             }
         },
         "/workspaces/{workspace}/payments/{payment}/refunds/{refund}/reversal": {
@@ -7432,7 +7567,12 @@
                     "expected_version": true,
                     "confirm": true
                 },
-                "x-agent-mcp-tool": "payments.reverse_refund"
+                "x-agent-mcp-tool": "payments.reverse_refund",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_PAYMENT_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "payments.reverse_refund"
             }
         },
         "/workspaces/{workspace}/payments/{payment}/status": {
@@ -7493,7 +7633,12 @@
                     "expected_version": true,
                     "confirm": true
                 },
-                "x-agent-mcp-tool": "payments.set_status"
+                "x-agent-mcp-tool": "payments.set_status",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_PAYMENT_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "payments.set_status"
             }
         },
         "/workspaces/{workspace}/projects/{project}/archive": {
@@ -7553,7 +7698,12 @@
                     "expected_version": true,
                     "confirm": true
                 },
-                "x-agent-mcp-tool": "projects.archive"
+                "x-agent-mcp-tool": "projects.archive",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_PROJECT_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "projects.archive"
             }
         },
         "/workspaces/{workspace}/projects": {
@@ -7610,7 +7760,12 @@
                     "expected_version": true,
                     "confirm": true
                 },
-                "x-agent-mcp-tool": "projects.create"
+                "x-agent-mcp-tool": "projects.create",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_PROJECT_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "projects.create"
             },
             "get": {
                 "operationId": "projects.list",
@@ -7672,7 +7827,9 @@
                 },
                 "x-agent-effect": "read",
                 "x-agent-idempotent": true,
-                "x-agent-mcp-tool": "projects.list"
+                "x-agent-mcp-tool": "projects.list",
+                "x-svc-flags": [],
+                "x-mcp-tool": "projects.list"
             }
         },
         "/workspaces/{workspace}/projects/{project}": {
@@ -7714,7 +7871,9 @@
                 },
                 "x-agent-effect": "read",
                 "x-agent-idempotent": true,
-                "x-agent-mcp-tool": "projects.get"
+                "x-agent-mcp-tool": "projects.get",
+                "x-svc-flags": [],
+                "x-mcp-tool": "projects.get"
             },
             "patch": {
                 "operationId": "projects.update",
@@ -7772,7 +7931,12 @@
                     "expected_version": true,
                     "confirm": true
                 },
-                "x-agent-mcp-tool": "projects.update"
+                "x-agent-mcp-tool": "projects.update",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_PROJECT_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "projects.update"
             }
         },
         "/workspaces/{workspace}/projects/{project}/members": {
@@ -7819,7 +7983,9 @@
                 },
                 "x-agent-effect": "read",
                 "x-agent-idempotent": true,
-                "x-agent-mcp-tool": "projects.members.list"
+                "x-agent-mcp-tool": "projects.members.list",
+                "x-svc-flags": [],
+                "x-mcp-tool": "projects.members.list"
             },
             "put": {
                 "operationId": "projects.members.update",
@@ -7877,7 +8043,12 @@
                     "expected_version": true,
                     "confirm": true
                 },
-                "x-agent-mcp-tool": "projects.members.update"
+                "x-agent-mcp-tool": "projects.members.update",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_PROJECT_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "projects.members.update"
             }
         },
         "/workspaces/{workspace}/proposals/{proposal}/accept": {
@@ -7944,7 +8115,12 @@
                     "expected_version": true,
                     "confirm": true
                 },
-                "x-agent-mcp-tool": "proposals.accept"
+                "x-agent-mcp-tool": "proposals.accept",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_PROPOSAL_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "proposals.accept"
             }
         },
         "/workspaces/{workspace}/proposals": {
@@ -8001,7 +8177,12 @@
                     "idempotency_key": "header_and_argument",
                     "expected_version": true
                 },
-                "x-agent-mcp-tool": "proposals.create"
+                "x-agent-mcp-tool": "proposals.create",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_PROPOSAL_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "proposals.create"
             },
             "get": {
                 "operationId": "proposals.list",
@@ -8065,7 +8246,9 @@
                 },
                 "x-agent-effect": "read",
                 "x-agent-idempotent": true,
-                "x-agent-mcp-tool": "proposals.list"
+                "x-agent-mcp-tool": "proposals.list",
+                "x-svc-flags": [],
+                "x-mcp-tool": "proposals.list"
             }
         },
         "/workspaces/{workspace}/proposals/{proposal}": {
@@ -8112,7 +8295,9 @@
                 },
                 "x-agent-effect": "read",
                 "x-agent-idempotent": true,
-                "x-agent-mcp-tool": "proposals.get"
+                "x-agent-mcp-tool": "proposals.get",
+                "x-svc-flags": [],
+                "x-mcp-tool": "proposals.get"
             }
         },
         "/workspaces/{workspace}/proposals/{proposal}/send": {
@@ -8179,7 +8364,12 @@
                     "expected_version": true,
                     "confirm": true
                 },
-                "x-agent-mcp-tool": "proposals.send"
+                "x-agent-mcp-tool": "proposals.send",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_PROPOSAL_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "proposals.send"
             }
         },
         "/workspaces/{workspace}/search": {
@@ -8228,7 +8418,9 @@
                 },
                 "x-agent-effect": "read",
                 "x-agent-idempotent": true,
-                "x-agent-mcp-tool": "search"
+                "x-agent-mcp-tool": "search",
+                "x-svc-flags": [],
+                "x-mcp-tool": "search"
             }
         },
         "/workspaces/{workspace}/square/customers/{customer}": {
@@ -8279,6 +8471,7 @@
                 "x-agent-effect": "read",
                 "x-agent-idempotent": true,
                 "x-agent-mcp-tool": "square.customers.get",
+                "x-svc-flags": [],
                 "x-mcp-tool": "square.customers.get"
             }
         },
@@ -8332,6 +8525,7 @@
                 "x-agent-effect": "read",
                 "x-agent-idempotent": true,
                 "x-agent-mcp-tool": "square.customers.list",
+                "x-svc-flags": [],
                 "x-mcp-tool": "square.customers.list"
             }
         },
@@ -8415,6 +8609,7 @@
                 "x-agent-effect": "read",
                 "x-agent-idempotent": true,
                 "x-agent-mcp-tool": "square.customers.search",
+                "x-svc-flags": [],
                 "x-mcp-tool": "square.customers.search"
             }
         },
@@ -8471,7 +8666,9 @@
                 },
                 "x-agent-effect": "read",
                 "x-agent-idempotent": true,
-                "x-agent-mcp-tool": "square.customers.unlinked"
+                "x-agent-mcp-tool": "square.customers.unlinked",
+                "x-svc-flags": [],
+                "x-mcp-tool": "square.customers.unlinked"
             }
         },
         "/workspaces/{workspace}/square/customers/{customer}/import": {
@@ -8539,11 +8736,11 @@
                     "confirm": true
                 },
                 "x-agent-mcp-tool": "square.import_customer",
-                "x-mcp-tool": "square.import_customer",
                 "x-svc-flags": [
                     "AGENT_API_WRITES_ENABLED",
                     "AGENT_API_CLIENT_WRITES_ENABLED"
-                ]
+                ],
+                "x-mcp-tool": "square.import_customer"
             }
         },
         "/workspaces/{workspace}/square/invoices/{invoice}": {
@@ -8594,6 +8791,7 @@
                 "x-agent-effect": "read",
                 "x-agent-idempotent": true,
                 "x-agent-mcp-tool": "square.invoices.get",
+                "x-svc-flags": [],
                 "x-mcp-tool": "square.invoices.get"
             }
         },
@@ -8658,6 +8856,7 @@
                 "x-agent-effect": "read",
                 "x-agent-idempotent": true,
                 "x-agent-mcp-tool": "square.invoices.list",
+                "x-svc-flags": [],
                 "x-mcp-tool": "square.invoices.list"
             }
         },
@@ -8744,6 +8943,7 @@
                 "x-agent-effect": "read",
                 "x-agent-idempotent": true,
                 "x-agent-mcp-tool": "square.invoices.search",
+                "x-svc-flags": [],
                 "x-mcp-tool": "square.invoices.search"
             }
         },
@@ -8784,6 +8984,7 @@
                 "x-agent-effect": "read",
                 "x-agent-idempotent": true,
                 "x-agent-mcp-tool": "square.locations.list",
+                "x-svc-flags": [],
                 "x-mcp-tool": "square.locations.list"
             }
         },
@@ -8899,7 +9100,9 @@
                 },
                 "x-agent-effect": "read",
                 "x-agent-idempotent": true,
-                "x-agent-mcp-tool": "square.mirror.invoices.list"
+                "x-agent-mcp-tool": "square.mirror.invoices.list",
+                "x-svc-flags": [],
+                "x-mcp-tool": "square.mirror.invoices.list"
             }
         },
         "/workspaces/{workspace}/square/orders/{order}": {
@@ -8950,6 +9153,7 @@
                 "x-agent-effect": "read",
                 "x-agent-idempotent": true,
                 "x-agent-mcp-tool": "square.orders.get",
+                "x-svc-flags": [],
                 "x-mcp-tool": "square.orders.get"
             }
         },
@@ -9001,6 +9205,7 @@
                 "x-agent-effect": "read",
                 "x-agent-idempotent": true,
                 "x-agent-mcp-tool": "square.payments.get",
+                "x-svc-flags": [],
                 "x-mcp-tool": "square.payments.get"
             }
         },
@@ -9093,6 +9298,7 @@
                 "x-agent-effect": "read",
                 "x-agent-idempotent": true,
                 "x-agent-mcp-tool": "square.payments.list",
+                "x-svc-flags": [],
                 "x-mcp-tool": "square.payments.list"
             }
         },
@@ -9141,7 +9347,9 @@
                 },
                 "x-agent-effect": "read",
                 "x-agent-idempotent": true,
-                "x-agent-mcp-tool": "square.series.get"
+                "x-agent-mcp-tool": "square.series.get",
+                "x-svc-flags": [],
+                "x-mcp-tool": "square.series.get"
             }
         },
         "/workspaces/{workspace}/square/series": {
@@ -9213,7 +9421,9 @@
                 },
                 "x-agent-effect": "read",
                 "x-agent-idempotent": true,
-                "x-agent-mcp-tool": "square.series.list"
+                "x-agent-mcp-tool": "square.series.list",
+                "x-svc-flags": [],
+                "x-mcp-tool": "square.series.list"
             }
         },
         "/workspaces/{workspace}/square/sync": {
@@ -9268,7 +9478,11 @@
                 "x-agent-write-safety": {
                     "idempotency_key": "header_and_argument"
                 },
-                "x-agent-mcp-tool": "square.sync"
+                "x-agent-mcp-tool": "square.sync",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "square.sync"
             }
         },
         "/workspaces/{workspace}/projects/{project}/tasks": {
@@ -9431,7 +9645,9 @@
                 },
                 "x-agent-effect": "read",
                 "x-agent-idempotent": true,
-                "x-agent-mcp-tool": "tasks.get"
+                "x-agent-mcp-tool": "tasks.get",
+                "x-svc-flags": [],
+                "x-mcp-tool": "tasks.get"
             },
             "patch": {
                 "operationId": "tasks.update",
@@ -9604,7 +9820,9 @@
                 },
                 "x-agent-effect": "read",
                 "x-agent-idempotent": true,
-                "x-agent-mcp-tool": "tasks.list"
+                "x-agent-mcp-tool": "tasks.list",
+                "x-svc-flags": [],
+                "x-mcp-tool": "tasks.list"
             }
         },
         "/workspaces/{workspace}/time-entries/approve": {
@@ -9658,7 +9876,11 @@
                 "x-agent-write-safety": {
                     "idempotency_key": "header_and_argument"
                 },
-                "x-agent-mcp-tool": "time_entries.approve"
+                "x-agent-mcp-tool": "time_entries.approve",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "time_entries.approve"
             }
         },
         "/workspaces/{workspace}/time-entries/{entry}": {
@@ -10014,7 +10236,9 @@
                 },
                 "x-agent-effect": "read",
                 "x-agent-idempotent": true,
-                "x-agent-mcp-tool": "time_entries.list"
+                "x-agent-mcp-tool": "time_entries.list",
+                "x-svc-flags": [],
+                "x-mcp-tool": "time_entries.list"
             },
             "post": {
                 "operationId": "time_entries.log",
@@ -10202,7 +10426,12 @@
                     "idempotency_key": "header_and_argument",
                     "expected_version": true
                 },
-                "x-agent-mcp-tool": "time_entries.unapprove"
+                "x-agent-mcp-tool": "time_entries.unapprove",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_TIME_ENTRY_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "time_entries.unapprove"
             }
         },
         "/workspaces": {
@@ -10254,7 +10483,12 @@
                 "x-agent-write-safety": {
                     "idempotency_key": "header_and_argument"
                 },
-                "x-agent-mcp-tool": "workspaces.create"
+                "x-agent-mcp-tool": "workspaces.create",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_WORKSPACE_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "workspaces.create"
             }
         }
     },
@@ -10629,6 +10863,7 @@
                 "properties": {
                     "data": {
                         "type": "array",
+                        "maxItems": 100,
                         "items": {
                             "$ref": "#/components/schemas/Agreement"
                         }

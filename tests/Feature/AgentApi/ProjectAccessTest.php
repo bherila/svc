@@ -163,7 +163,7 @@ class ProjectAccessTest extends TestCase
                 'id' => $entry->public_id,
                 'expected_version' => AgentApiVersion::for($entry),
             ]],
-        ])->assertForbidden();
+        ])->assertNotFound(); // The workspace is no longer the caller's (#459 item 5).
 
         $this->assertDatabaseHas('client_tasks', ['id' => $task->id, 'title' => 'Existing task']);
         $this->assertDatabaseHas('client_time_entries', ['id' => $entry->id, 'minutes' => 30, 'status' => 'draft']);

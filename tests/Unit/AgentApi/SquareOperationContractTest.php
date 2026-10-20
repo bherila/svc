@@ -162,7 +162,7 @@ final class SquareOperationContractTest extends TestCase
                 $this->assertSame('agent-api.v1.square.'.$route, $operation->rest->routeName, $id);
                 $this->assertSame('/workspaces/{workspace}/square'.$path, $operation->rest->path, $id);
                 $this->assertSame([200], $operation->rest->successStatuses, $id);
-                $this->assertSame(['x-mcp-tool' => $id], $operation->extensions, $id);
+                $this->assertSame(['x-svc-flags' => [], 'x-mcp-tool' => $id], $operation->extensions, $id);
                 $this->assertStringEndsWith(self::COMMON, $operation->description, $id);
                 $this->assertNotSame(self::COMMON, $operation->description, $id);
                 $this->assertSame($operation->rest->description, $operation->description, $id);

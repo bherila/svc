@@ -2,7 +2,6 @@
 
 namespace App\Services\AgentApi\Operations;
 
-use App\Services\Mcp\AgentMcpAgreementSchema;
 use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
 use App\Support\Billing\PeriodRefusalReason;
 use App\Support\Billing\ScheduleDefect;
@@ -46,17 +45,6 @@ final class AgentInlineSchemas
     }
 
     /** @return array<string, mixed> */
-    public static function agreementOutput(): array
-    {
-        return [
-            'type' => 'object',
-            'additionalProperties' => false,
-            'required' => ['data'],
-            'properties' => ['data' => AgentMcpAgreementSchema::dto()],
-        ];
-    }
-
-    /** @return array<string, mixed> */
     public static function billingScheduleListInput(): array
     {
         return [
@@ -83,17 +71,6 @@ final class AgentInlineSchemas
                 'workspace_id' => ['type' => 'string', 'format' => 'uuid'],
                 'schedule_id' => ['type' => 'string', 'format' => 'uuid'],
             ],
-        ];
-    }
-
-    /** @return array<string, mixed> */
-    public static function billingScheduleOutput(): array
-    {
-        return [
-            'type' => 'object',
-            'additionalProperties' => false,
-            'required' => ['data'],
-            'properties' => ['data' => self::billingScheduleDto()],
         ];
     }
 
@@ -126,57 +103,6 @@ final class AgentInlineSchemas
             'additionalProperties' => false,
             'required' => ['workspace_id'],
             'properties' => ['workspace_id' => ['type' => 'string', 'format' => 'uuid']],
-        ];
-    }
-
-    /** @return array<string, mixed> */
-    public static function agreementListOutput(): array
-    {
-        return [
-            'type' => 'object',
-            'additionalProperties' => false,
-            'required' => ['data', 'meta'],
-            'properties' => [
-                'data' => ['type' => 'array', 'maxItems' => 100, 'items' => AgentMcpAgreementSchema::dto()],
-                'meta' => [
-                    'type' => 'object',
-                    'additionalProperties' => false,
-                    'required' => ['next_cursor'],
-                    'properties' => ['next_cursor' => ['type' => ['string', 'null'], 'maxLength' => 2048]],
-                ],
-            ],
-        ];
-    }
-
-    /** @return array<string, mixed> */
-    public static function billingScheduleListOutput(): array
-    {
-        return [
-            'type' => 'object',
-            'additionalProperties' => false,
-            'required' => ['data', 'meta'],
-            'properties' => [
-                'data' => ['type' => 'array', 'maxItems' => 100, 'items' => self::billingScheduleDto()],
-                'meta' => ['type' => 'object', 'additionalProperties' => false, 'required' => ['next_cursor'], 'properties' => ['next_cursor' => ['type' => ['string', 'null'], 'maxLength' => 2048]]],
-            ],
-        ];
-    }
-
-    /** @return array<string, mixed> */
-    public static function billingScheduleDto(): array
-    {
-        return [
-            'type' => 'object',
-            'additionalProperties' => false,
-            'required' => ['id', 'agreement_id', 'version', 'cadence', 'next_run_on', 'is_active'],
-            'properties' => [
-                'id' => ['type' => 'string', 'format' => 'uuid'],
-                'agreement_id' => ['type' => 'string', 'format' => 'uuid'],
-                'version' => ['type' => 'string', 'minLength' => 64, 'maxLength' => 64],
-                'cadence' => ['type' => 'string', 'maxLength' => 32],
-                'next_run_on' => ['type' => 'string', 'format' => 'date'],
-                'is_active' => ['type' => 'boolean'],
-            ],
         ];
     }
 
