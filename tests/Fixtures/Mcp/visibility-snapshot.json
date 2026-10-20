@@ -8732,6 +8732,15 @@
                                     },
                                     "can_delete": {
                                         "type": "boolean"
+                                    },
+                                    "external_finance_transaction_uuid": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "uuid",
+                                        "readOnly": true,
+                                        "description": "Creation-only finance transaction provenance. Returned only to workspace owners/admins; null for other readers."
                                     }
                                 }
                             },
@@ -8965,6 +8974,15 @@
                                     },
                                     "can_delete": {
                                         "type": "boolean"
+                                    },
+                                    "external_finance_transaction_uuid": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "uuid",
+                                        "readOnly": true,
+                                        "description": "Creation-only finance transaction provenance. Returned only to workspace owners/admins; null for other readers."
                                     }
                                 }
                             },
@@ -9059,6 +9077,14 @@
                                             "null"
                                         ],
                                         "format": "uuid"
+                                    },
+                                    "external_finance_transaction_uuid": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "uuid",
+                                        "description": "Optional creation-only finance transaction provenance. Retry identity remains the Idempotency-Key, not this reference."
                                     }
                                 }
                             }
@@ -9150,6 +9176,15 @@
                                     },
                                     "can_delete": {
                                         "type": "boolean"
+                                    },
+                                    "external_finance_transaction_uuid": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "uuid",
+                                        "readOnly": true,
+                                        "description": "Creation-only finance transaction provenance. Returned only to workspace owners/admins; null for other readers."
                                     }
                                 }
                             },
@@ -9502,6 +9537,15 @@
                                     },
                                     "can_delete": {
                                         "type": "boolean"
+                                    },
+                                    "external_finance_transaction_uuid": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "uuid",
+                                        "readOnly": true,
+                                        "description": "Creation-only finance transaction provenance. Returned only to workspace owners/admins; null for other readers."
                                     }
                                 }
                             },
@@ -9660,6 +9704,15 @@
                                     },
                                     "can_delete": {
                                         "type": "boolean"
+                                    },
+                                    "external_finance_transaction_uuid": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "uuid",
+                                        "readOnly": true,
+                                        "description": "Creation-only finance transaction provenance. Returned only to workspace owners/admins; null for other readers."
                                     }
                                 }
                             },
@@ -29398,15 +29451,15 @@
                 "expense_schedules.generate": "0ecf05f1b8467dd3",
                 "expense_schedules.list": "dd1832f42c8c0514",
                 "expense_schedules.update": "176a9b2059abe3ed",
-                "expenses.approve": "d9041628ec17baee",
+                "expenses.approve": "96a59e9037edf2ae",
                 "expenses.delete": "a7a0dbe01de0b03a",
-                "expenses.list": "444aff51ddc70e0d",
-                "expenses.log": "798cca1fb66d7551",
+                "expenses.list": "60ef6c71ed562963",
+                "expenses.log": "cce44b350041b9f6",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
                 "expenses.receipts.upload_url": "c53d1f0b0ac10262",
-                "expenses.unapprove": "ae21aae8d227dc06",
-                "expenses.update": "1e517d25f792bde9",
+                "expenses.unapprove": "1a6336e41cbeb890",
+                "expenses.update": "6469d827efb7a136",
                 "finance.invoice_payments.list": "25681f84faec8b6e",
                 "finance.payouts.list": "49fbdd79e642c84c",
                 "finance.reconciliations.deactivate": "41db4066d9b89d5c",
@@ -29618,7 +29671,7 @@
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects and prepare-invoice-safely prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
                 "context.get": "d36731571bd94125",
-                "expenses.list": "444aff51ddc70e0d",
+                "expenses.list": "60ef6c71ed562963",
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
@@ -29781,7 +29834,7 @@
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects and prepare-invoice-safely prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
                 "context.get": "d36731571bd94125",
-                "expenses.list": "444aff51ddc70e0d",
+                "expenses.list": "60ef6c71ed562963",
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
@@ -29944,7 +29997,7 @@
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects and prepare-invoice-safely prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
                 "context.get": "d36731571bd94125",
-                "expenses.list": "444aff51ddc70e0d",
+                "expenses.list": "60ef6c71ed562963",
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
@@ -30107,7 +30160,7 @@
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects and prepare-invoice-safely prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
                 "context.get": "d36731571bd94125",
-                "expenses.list": "444aff51ddc70e0d",
+                "expenses.list": "60ef6c71ed562963",
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
@@ -30263,7 +30316,7 @@
                 "companies.square_customer.get": "7368cf19c59ad6e7",
                 "context.get": "d36731571bd94125",
                 "expense_schedules.list": "dd1832f42c8c0514",
-                "expenses.list": "444aff51ddc70e0d",
+                "expenses.list": "60ef6c71ed562963",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
                 "finance.invoice_payments.list": "25681f84faec8b6e",
@@ -30551,7 +30604,7 @@
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. This connection is read-only; use the SVC website for changes. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
                 "context.get": "d36731571bd94125",
-                "expenses.list": "444aff51ddc70e0d",
+                "expenses.list": "60ef6c71ed562963",
                 "invoices.get": "feb0ddb235aabe60",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
@@ -30763,7 +30816,7 @@
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. This connection is read-only; use the SVC website for changes. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
                 "context.get": "d36731571bd94125",
-                "expenses.list": "444aff51ddc70e0d",
+                "expenses.list": "60ef6c71ed562963",
                 "invoices.get": "feb0ddb235aabe60",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
@@ -30964,7 +31017,7 @@
                 "companies.square_customer.get": "7368cf19c59ad6e7",
                 "context.get": "d36731571bd94125",
                 "expense_schedules.list": "dd1832f42c8c0514",
-                "expenses.list": "444aff51ddc70e0d",
+                "expenses.list": "60ef6c71ed562963",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
                 "finance.invoice_payments.list": "25681f84faec8b6e",
@@ -31128,7 +31181,7 @@
                 "companies.square_customer.get": "7368cf19c59ad6e7",
                 "context.get": "d36731571bd94125",
                 "expense_schedules.list": "dd1832f42c8c0514",
-                "expenses.list": "444aff51ddc70e0d",
+                "expenses.list": "60ef6c71ed562963",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
                 "finance.invoice_payments.list": "25681f84faec8b6e",
@@ -31302,7 +31355,7 @@
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
                 "context.get": "d36731571bd94125",
-                "expenses.list": "444aff51ddc70e0d",
+                "expenses.list": "60ef6c71ed562963",
                 "invoices.get": "feb0ddb235aabe60",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
@@ -31464,7 +31517,7 @@
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
                 "context.get": "d36731571bd94125",
-                "expenses.list": "444aff51ddc70e0d",
+                "expenses.list": "60ef6c71ed562963",
                 "invoices.get": "feb0ddb235aabe60",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
@@ -31626,7 +31679,7 @@
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
                 "context.get": "d36731571bd94125",
-                "expenses.list": "444aff51ddc70e0d",
+                "expenses.list": "60ef6c71ed562963",
                 "invoices.get": "feb0ddb235aabe60",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
@@ -31788,7 +31841,7 @@
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
                 "context.get": "d36731571bd94125",
-                "expenses.list": "444aff51ddc70e0d",
+                "expenses.list": "60ef6c71ed562963",
                 "invoices.get": "feb0ddb235aabe60",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
@@ -31930,7 +31983,7 @@
                 "companies.square_customer.get": "7368cf19c59ad6e7",
                 "context.get": "d36731571bd94125",
                 "expense_schedules.list": "dd1832f42c8c0514",
-                "expenses.list": "444aff51ddc70e0d",
+                "expenses.list": "60ef6c71ed562963",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
                 "finance.invoice_payments.list": "25681f84faec8b6e",
@@ -32092,7 +32145,7 @@
                 "companies.square_customer.get": "7368cf19c59ad6e7",
                 "context.get": "d36731571bd94125",
                 "expense_schedules.list": "dd1832f42c8c0514",
-                "expenses.list": "444aff51ddc70e0d",
+                "expenses.list": "60ef6c71ed562963",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
                 "finance.invoice_payments.list": "25681f84faec8b6e",
@@ -32279,7 +32332,7 @@
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. This connection is read-only; use the SVC website for changes. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
                 "context.get": "d36731571bd94125",
-                "expenses.list": "444aff51ddc70e0d",
+                "expenses.list": "60ef6c71ed562963",
                 "invoices.get": "feb0ddb235aabe60",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
@@ -32439,7 +32492,7 @@
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. This connection is read-only; use the SVC website for changes. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
                 "context.get": "d36731571bd94125",
-                "expenses.list": "444aff51ddc70e0d",
+                "expenses.list": "60ef6c71ed562963",
                 "invoices.get": "feb0ddb235aabe60",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
@@ -32599,7 +32652,7 @@
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. This connection is read-only; use the SVC website for changes. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
                 "context.get": "d36731571bd94125",
-                "expenses.list": "444aff51ddc70e0d",
+                "expenses.list": "60ef6c71ed562963",
                 "invoices.get": "feb0ddb235aabe60",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
@@ -32759,7 +32812,7 @@
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. This connection is read-only; use the SVC website for changes. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
                 "context.get": "d36731571bd94125",
-                "expenses.list": "444aff51ddc70e0d",
+                "expenses.list": "60ef6c71ed562963",
                 "invoices.get": "feb0ddb235aabe60",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
@@ -32893,7 +32946,7 @@
                 "companies.square_customer.get": "7368cf19c59ad6e7",
                 "context.get": "d36731571bd94125",
                 "expense_schedules.list": "dd1832f42c8c0514",
-                "expenses.list": "444aff51ddc70e0d",
+                "expenses.list": "60ef6c71ed562963",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
                 "finance.invoice_payments.list": "25681f84faec8b6e",
@@ -33057,7 +33110,7 @@
                 "companies.square_customer.get": "7368cf19c59ad6e7",
                 "context.get": "d36731571bd94125",
                 "expense_schedules.list": "dd1832f42c8c0514",
-                "expenses.list": "444aff51ddc70e0d",
+                "expenses.list": "60ef6c71ed562963",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
                 "finance.invoice_payments.list": "25681f84faec8b6e",
@@ -33246,7 +33299,7 @@
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
                 "context.get": "d36731571bd94125",
-                "expenses.list": "444aff51ddc70e0d",
+                "expenses.list": "60ef6c71ed562963",
                 "invoices.get": "feb0ddb235aabe60",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
@@ -33408,7 +33461,7 @@
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
                 "context.get": "d36731571bd94125",
-                "expenses.list": "444aff51ddc70e0d",
+                "expenses.list": "60ef6c71ed562963",
                 "invoices.get": "feb0ddb235aabe60",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
@@ -33570,7 +33623,7 @@
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
                 "context.get": "d36731571bd94125",
-                "expenses.list": "444aff51ddc70e0d",
+                "expenses.list": "60ef6c71ed562963",
                 "invoices.get": "feb0ddb235aabe60",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
@@ -33732,7 +33785,7 @@
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
                 "context.get": "d36731571bd94125",
-                "expenses.list": "444aff51ddc70e0d",
+                "expenses.list": "60ef6c71ed562963",
                 "invoices.get": "feb0ddb235aabe60",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
@@ -33845,15 +33898,15 @@
                 "expense_schedules.generate": "0ecf05f1b8467dd3",
                 "expense_schedules.list": "dd1832f42c8c0514",
                 "expense_schedules.update": "176a9b2059abe3ed",
-                "expenses.approve": "d9041628ec17baee",
+                "expenses.approve": "96a59e9037edf2ae",
                 "expenses.delete": "a7a0dbe01de0b03a",
-                "expenses.list": "444aff51ddc70e0d",
-                "expenses.log": "798cca1fb66d7551",
+                "expenses.list": "60ef6c71ed562963",
+                "expenses.log": "cce44b350041b9f6",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
                 "expenses.receipts.upload_url": "c53d1f0b0ac10262",
-                "expenses.unapprove": "ae21aae8d227dc06",
-                "expenses.update": "1e517d25f792bde9",
+                "expenses.unapprove": "1a6336e41cbeb890",
+                "expenses.update": "6469d827efb7a136",
                 "finance.invoice_payments.list": "25681f84faec8b6e",
                 "finance.payouts.list": "49fbdd79e642c84c",
                 "finance.reconciliations.deactivate": "41db4066d9b89d5c",
@@ -34009,15 +34062,15 @@
                 "expense_schedules.generate": "0ecf05f1b8467dd3",
                 "expense_schedules.list": "dd1832f42c8c0514",
                 "expense_schedules.update": "176a9b2059abe3ed",
-                "expenses.approve": "d9041628ec17baee",
+                "expenses.approve": "96a59e9037edf2ae",
                 "expenses.delete": "a7a0dbe01de0b03a",
-                "expenses.list": "444aff51ddc70e0d",
-                "expenses.log": "798cca1fb66d7551",
+                "expenses.list": "60ef6c71ed562963",
+                "expenses.log": "cce44b350041b9f6",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
                 "expenses.receipts.upload_url": "c53d1f0b0ac10262",
-                "expenses.unapprove": "ae21aae8d227dc06",
-                "expenses.update": "1e517d25f792bde9",
+                "expenses.unapprove": "1a6336e41cbeb890",
+                "expenses.update": "6469d827efb7a136",
                 "finance.invoice_payments.list": "25681f84faec8b6e",
                 "finance.payouts.list": "49fbdd79e642c84c",
                 "finance.reconciliations.deactivate": "41db4066d9b89d5c",
@@ -34219,7 +34272,7 @@
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
                 "context.get": "d36731571bd94125",
-                "expenses.list": "444aff51ddc70e0d",
+                "expenses.list": "60ef6c71ed562963",
                 "invoices.get": "feb0ddb235aabe60",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
@@ -34381,7 +34434,7 @@
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
                 "context.get": "d36731571bd94125",
-                "expenses.list": "444aff51ddc70e0d",
+                "expenses.list": "60ef6c71ed562963",
                 "invoices.get": "feb0ddb235aabe60",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
@@ -34543,7 +34596,7 @@
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
                 "context.get": "d36731571bd94125",
-                "expenses.list": "444aff51ddc70e0d",
+                "expenses.list": "60ef6c71ed562963",
                 "invoices.get": "feb0ddb235aabe60",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
@@ -34705,7 +34758,7 @@
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
                 "context.get": "d36731571bd94125",
-                "expenses.list": "444aff51ddc70e0d",
+                "expenses.list": "60ef6c71ed562963",
                 "invoices.get": "feb0ddb235aabe60",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
@@ -34854,7 +34907,7 @@
                 "companies.square_customer.set": "a9409bef2f9474ef",
                 "context.get": "d36731571bd94125",
                 "expense_schedules.list": "dd1832f42c8c0514",
-                "expenses.list": "444aff51ddc70e0d",
+                "expenses.list": "60ef6c71ed562963",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
                 "finance.invoice_payments.list": "25681f84faec8b6e",
@@ -35016,7 +35069,7 @@
                 "companies.square_customer.set": "a9409bef2f9474ef",
                 "context.get": "d36731571bd94125",
                 "expense_schedules.list": "dd1832f42c8c0514",
-                "expenses.list": "444aff51ddc70e0d",
+                "expenses.list": "60ef6c71ed562963",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
                 "finance.invoice_payments.list": "25681f84faec8b6e",
@@ -35201,7 +35254,7 @@
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. This connection is read-only; use the SVC website for changes. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
                 "context.get": "d36731571bd94125",
-                "expenses.list": "444aff51ddc70e0d",
+                "expenses.list": "60ef6c71ed562963",
                 "invoices.get": "feb0ddb235aabe60",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
@@ -35361,7 +35414,7 @@
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. This connection is read-only; use the SVC website for changes. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
                 "context.get": "d36731571bd94125",
-                "expenses.list": "444aff51ddc70e0d",
+                "expenses.list": "60ef6c71ed562963",
                 "invoices.get": "feb0ddb235aabe60",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
@@ -35521,7 +35574,7 @@
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. This connection is read-only; use the SVC website for changes. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
                 "context.get": "d36731571bd94125",
-                "expenses.list": "444aff51ddc70e0d",
+                "expenses.list": "60ef6c71ed562963",
                 "invoices.get": "feb0ddb235aabe60",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
@@ -35681,7 +35734,7 @@
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. This connection is read-only; use the SVC website for changes. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
                 "context.get": "d36731571bd94125",
-                "expenses.list": "444aff51ddc70e0d",
+                "expenses.list": "60ef6c71ed562963",
                 "invoices.get": "feb0ddb235aabe60",
                 "invoices.list": "c54f80f8f4c1bcda",
                 "invoices.pdf": "8c5fa3116a39fcc4",
@@ -35772,15 +35825,15 @@
                 "expense_schedules.generate": "0ecf05f1b8467dd3",
                 "expense_schedules.list": "dd1832f42c8c0514",
                 "expense_schedules.update": "176a9b2059abe3ed",
-                "expenses.approve": "d9041628ec17baee",
+                "expenses.approve": "96a59e9037edf2ae",
                 "expenses.delete": "a7a0dbe01de0b03a",
-                "expenses.list": "444aff51ddc70e0d",
-                "expenses.log": "798cca1fb66d7551",
+                "expenses.list": "60ef6c71ed562963",
+                "expenses.log": "cce44b350041b9f6",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
                 "expenses.receipts.upload_url": "c53d1f0b0ac10262",
-                "expenses.unapprove": "ae21aae8d227dc06",
-                "expenses.update": "1e517d25f792bde9",
+                "expenses.unapprove": "1a6336e41cbeb890",
+                "expenses.update": "6469d827efb7a136",
                 "finance.invoice_payments.list": "25681f84faec8b6e",
                 "finance.payouts.list": "49fbdd79e642c84c",
                 "finance.reconciliations.deactivate": "41db4066d9b89d5c",
@@ -35935,15 +35988,15 @@
                 "expense_schedules.generate": "0ecf05f1b8467dd3",
                 "expense_schedules.list": "dd1832f42c8c0514",
                 "expense_schedules.update": "176a9b2059abe3ed",
-                "expenses.approve": "d9041628ec17baee",
+                "expenses.approve": "96a59e9037edf2ae",
                 "expenses.delete": "a7a0dbe01de0b03a",
-                "expenses.list": "444aff51ddc70e0d",
-                "expenses.log": "798cca1fb66d7551",
+                "expenses.list": "60ef6c71ed562963",
+                "expenses.log": "cce44b350041b9f6",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
                 "expenses.receipts.upload_url": "c53d1f0b0ac10262",
-                "expenses.unapprove": "ae21aae8d227dc06",
-                "expenses.update": "1e517d25f792bde9",
+                "expenses.unapprove": "1a6336e41cbeb890",
+                "expenses.update": "6469d827efb7a136",
                 "finance.invoice_payments.list": "25681f84faec8b6e",
                 "finance.payouts.list": "49fbdd79e642c84c",
                 "finance.reconciliations.deactivate": "41db4066d9b89d5c",
@@ -36153,7 +36206,7 @@
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects and prepare-invoice-safely prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
                 "context.get": "d36731571bd94125",
-                "expenses.list": "444aff51ddc70e0d",
+                "expenses.list": "60ef6c71ed562963",
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
@@ -36316,7 +36369,7 @@
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects and prepare-invoice-safely prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
                 "context.get": "d36731571bd94125",
-                "expenses.list": "444aff51ddc70e0d",
+                "expenses.list": "60ef6c71ed562963",
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
@@ -36479,7 +36532,7 @@
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects and prepare-invoice-safely prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
                 "context.get": "d36731571bd94125",
-                "expenses.list": "444aff51ddc70e0d",
+                "expenses.list": "60ef6c71ed562963",
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
@@ -36642,7 +36695,7 @@
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects and prepare-invoice-safely prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
                 "context.get": "d36731571bd94125",
-                "expenses.list": "444aff51ddc70e0d",
+                "expenses.list": "60ef6c71ed562963",
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
@@ -36754,15 +36807,15 @@
                 "expense_schedules.generate": "0ecf05f1b8467dd3",
                 "expense_schedules.list": "dd1832f42c8c0514",
                 "expense_schedules.update": "176a9b2059abe3ed",
-                "expenses.approve": "d9041628ec17baee",
+                "expenses.approve": "96a59e9037edf2ae",
                 "expenses.delete": "a7a0dbe01de0b03a",
-                "expenses.list": "444aff51ddc70e0d",
-                "expenses.log": "798cca1fb66d7551",
+                "expenses.list": "60ef6c71ed562963",
+                "expenses.log": "cce44b350041b9f6",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
                 "expenses.receipts.upload_url": "c53d1f0b0ac10262",
-                "expenses.unapprove": "ae21aae8d227dc06",
-                "expenses.update": "1e517d25f792bde9",
+                "expenses.unapprove": "1a6336e41cbeb890",
+                "expenses.update": "6469d827efb7a136",
                 "finance.invoice_payments.list": "25681f84faec8b6e",
                 "finance.payouts.list": "49fbdd79e642c84c",
                 "finance.reconciliations.deactivate": "41db4066d9b89d5c",
@@ -36916,15 +36969,15 @@
                 "expense_schedules.generate": "0ecf05f1b8467dd3",
                 "expense_schedules.list": "dd1832f42c8c0514",
                 "expense_schedules.update": "176a9b2059abe3ed",
-                "expenses.approve": "d9041628ec17baee",
+                "expenses.approve": "96a59e9037edf2ae",
                 "expenses.delete": "a7a0dbe01de0b03a",
-                "expenses.list": "444aff51ddc70e0d",
-                "expenses.log": "798cca1fb66d7551",
+                "expenses.list": "60ef6c71ed562963",
+                "expenses.log": "cce44b350041b9f6",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
                 "expenses.receipts.upload_url": "c53d1f0b0ac10262",
-                "expenses.unapprove": "ae21aae8d227dc06",
-                "expenses.update": "1e517d25f792bde9",
+                "expenses.unapprove": "1a6336e41cbeb890",
+                "expenses.update": "6469d827efb7a136",
                 "finance.invoice_payments.list": "25681f84faec8b6e",
                 "finance.payouts.list": "49fbdd79e642c84c",
                 "finance.reconciliations.deactivate": "41db4066d9b89d5c",
@@ -37133,7 +37186,7 @@
             },
             "instructions": "Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
-                "expenses.list": "444aff51ddc70e0d",
+                "expenses.list": "60ef6c71ed562963",
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
@@ -37293,7 +37346,7 @@
             },
             "instructions": "Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
-                "expenses.list": "444aff51ddc70e0d",
+                "expenses.list": "60ef6c71ed562963",
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
@@ -37453,7 +37506,7 @@
             },
             "instructions": "Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
-                "expenses.list": "444aff51ddc70e0d",
+                "expenses.list": "60ef6c71ed562963",
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
@@ -37613,7 +37666,7 @@
             },
             "instructions": "Use only operations currently exposed in tools/list; missing tools are not authorized for this connection. Never guess a workspace or resource ID. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP.",
             "tools": {
-                "expenses.list": "444aff51ddc70e0d",
+                "expenses.list": "60ef6c71ed562963",
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
@@ -38566,15 +38619,15 @@
                 "expense_schedules.generate": "0ecf05f1b8467dd3",
                 "expense_schedules.list": "dd1832f42c8c0514",
                 "expense_schedules.update": "176a9b2059abe3ed",
-                "expenses.approve": "d9041628ec17baee",
+                "expenses.approve": "96a59e9037edf2ae",
                 "expenses.delete": "a7a0dbe01de0b03a",
-                "expenses.list": "444aff51ddc70e0d",
-                "expenses.log": "798cca1fb66d7551",
+                "expenses.list": "60ef6c71ed562963",
+                "expenses.log": "cce44b350041b9f6",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
                 "expenses.receipts.upload_url": "c53d1f0b0ac10262",
-                "expenses.unapprove": "ae21aae8d227dc06",
-                "expenses.update": "1e517d25f792bde9",
+                "expenses.unapprove": "1a6336e41cbeb890",
+                "expenses.update": "6469d827efb7a136",
                 "finance.invoice_payments.list": "25681f84faec8b6e",
                 "finance.payouts.list": "49fbdd79e642c84c",
                 "finance.reconciliations.deactivate": "41db4066d9b89d5c",
@@ -38731,15 +38784,15 @@
                 "expense_schedules.generate": "0ecf05f1b8467dd3",
                 "expense_schedules.list": "dd1832f42c8c0514",
                 "expense_schedules.update": "176a9b2059abe3ed",
-                "expenses.approve": "d9041628ec17baee",
+                "expenses.approve": "96a59e9037edf2ae",
                 "expenses.delete": "a7a0dbe01de0b03a",
-                "expenses.list": "444aff51ddc70e0d",
-                "expenses.log": "798cca1fb66d7551",
+                "expenses.list": "60ef6c71ed562963",
+                "expenses.log": "cce44b350041b9f6",
                 "expenses.receipts.download": "c8f57d500b304732",
                 "expenses.receipts.list": "3ed3185eeaba5793",
                 "expenses.receipts.upload_url": "c53d1f0b0ac10262",
-                "expenses.unapprove": "ae21aae8d227dc06",
-                "expenses.update": "1e517d25f792bde9",
+                "expenses.unapprove": "1a6336e41cbeb890",
+                "expenses.update": "6469d827efb7a136",
                 "finance.invoice_payments.list": "25681f84faec8b6e",
                 "finance.payouts.list": "49fbdd79e642c84c",
                 "finance.reconciliations.deactivate": "41db4066d9b89d5c",
@@ -38951,7 +39004,7 @@
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects and prepare-invoice-safely prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
                 "context.get": "d36731571bd94125",
-                "expenses.list": "444aff51ddc70e0d",
+                "expenses.list": "60ef6c71ed562963",
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
@@ -39114,7 +39167,7 @@
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects and prepare-invoice-safely prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
                 "context.get": "d36731571bd94125",
-                "expenses.list": "444aff51ddc70e0d",
+                "expenses.list": "60ef6c71ed562963",
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
@@ -39277,7 +39330,7 @@
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects and prepare-invoice-safely prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
                 "context.get": "d36731571bd94125",
-                "expenses.list": "444aff51ddc70e0d",
+                "expenses.list": "60ef6c71ed562963",
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
@@ -39440,7 +39493,7 @@
             "instructions": "First call context.get; select only workspace and resource IDs returned by SVC and never guess an ID. For time tracking, use projects.list to match projects, tasks.list only when available and needed, and time_entries.log for completed work with the exact date, whole minutes, description, and a stable idempotency key. Reuse a key only for an identical retry and never approve time unless the user asks. Read an existing record before updating or deleting it and supply its current opaque version. Authorized write tools are enabled for this connection. Read the current record before mutation and supply its opaque version when required. When the user asks to approve time they are logging, pass approve: true to time_entries.log instead of a separate approve call; with time:read and while time_entries.list remains enabled, it returns the rows as time_entries.list does, otherwise it returns the plain write shape. Obtain explicit user confirmation before issue, send, void, correct, activating an agreement, terminating an agreement, expense_schedules.generate, releasing automatic delivery, or generating a cadence draft. Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal. Authenticate using OAuth Authorization Code with S256 PKCE. Invoice responses provide a browser URL for any payment flow; SVC does not expose payments, card data or file uploads through MCP. Use the log-time-across-projects and prepare-invoice-safely prompts for complete guided workflows when the client exposes MCP prompts.",
             "tools": {
                 "context.get": "d36731571bd94125",
-                "expenses.list": "444aff51ddc70e0d",
+                "expenses.list": "60ef6c71ed562963",
                 "invoices.correct": "51b0c12ec9b5d762",
                 "invoices.create_draft": "5f3fc05e5571a7a3",
                 "invoices.discard_draft": "ab69a495454b6516",
