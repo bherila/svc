@@ -6,6 +6,23 @@ SVC. Amounts are integer minor units, identifiers are public UUIDs, and every
 request is restricted by both the credential's scope and the caller's workspace
 role.
 
+## Contract baseline
+
+Authenticated `context.get` (`GET /api/v1/context`, `identity:read`) publishes
+required integer `data.contract_version: 1`. This is the first explicit baseline
+of the published agent API contract. A finance consumer should check it when
+connecting and before syncing, accepting only the exact integer baseline it
+supports. Missing values, wrong types and unsupported integers are not version
+1, even if an older installation also serves `/api/v1` or advertises OpenAPI
+`info.version: 1.0.0`.
+
+The baseline is separate from the application's release, per-record HMAC
+`version` hashes, change-feed cursors and MCP protocol negotiation. It grants no
+scopes, workspace role or write cutover: consumers must still check current
+identity, capabilities and authorization on each operation. A future incompatible
+contract baseline needs a new integer and matching published schemas; a numeric
+range check is not compatibility negotiation.
+
 The operations are declared once on the operation registry
 (`AgentOperationCatalog`, #457), like every other `/api/v1` operation. Each is in
 the OpenAPI document (`public/openapi/svc-agent-v1.json`, served at

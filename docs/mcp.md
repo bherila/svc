@@ -5,6 +5,22 @@ general-availability work tracked by
 [#202](https://github.com/bherila/svc/issues/202). The feature tests in
 `tests/Feature/Mcp` are the executable compatibility contract.
 
+## Agent API contract baseline
+
+The authenticated `context.get` tool returns required integer
+`data.contract_version: 1`, the same field as `GET /api/v1/context`.
+`AgentApiContract::VERSION` names this first explicit published agent API
+baseline. Consumers must explicitly support the exact integer; missing,
+non-integer or unsupported values are not a supported baseline. Check the
+runtime context when connecting and before syncing rather than assuming the
+`/api/v1` path or OpenAPI `info.version: 1.0.0` establishes compatibility.
+
+This signal is independent of MCP's negotiated protocol version, the application
+release and each resource's HMAC `version`. It changes neither the caller's
+identity-provider subject nor scope, workspace-role or deployment-cutover checks.
+The same authorized caller still receives its own role-filtered context, and
+no additional operation or permission is introduced.
+
 ## Refused writes
 
 MCP tools that call REST writes preserve the API's user-facing message for

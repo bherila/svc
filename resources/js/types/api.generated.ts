@@ -2216,6 +2216,11 @@ export interface components {
             data: components['schemas']['CompanySquareState'];
         };
         Context: {
+            /**
+             * @description Published agent API contract baseline. A finance consumer must explicitly support this integer; it is independent of resource version hashes, the application release and the MCP protocol.
+             * @enum {integer}
+             */
+            contract_version: 1;
             id: components['schemas']['Uuid'];
             name: string;
             /** @description Your subject at the trusted identity provider, the same in every application it signs you in to; null when this account is not bound to it. Compare it with the subject the connecting application knows before trusting the connection. */
