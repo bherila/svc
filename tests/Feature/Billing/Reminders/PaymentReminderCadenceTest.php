@@ -63,8 +63,8 @@ final class PaymentReminderCadenceTest extends TestCase
         $this->assertSame(0, $service->dispatchAutomaticDue(), 'A second run sends the same step again');
 
         $this->at('2030-03-15 10:00');
-        $this->artisan('svc:billing:send-payment-reminders --limit=5')->assertSuccessful();
-        $this->artisan('svc:billing:send-payment-reminders --limit=5')->assertSuccessful();
+        $this->artisan('svc:billing:send-payment-reminders --apply --limit=5')->assertSuccessful();
+        $this->artisan('svc:billing:send-payment-reminders --apply --limit=5')->assertSuccessful();
 
         $steps = InvoiceReminderLog::query()->where('workspace_id', $workspace->id)->orderBy('id')->get();
         $this->assertSame(['due_minus_3', 'due'], $steps->map(fn (InvoiceReminderLog $row): ?string => $row->cadence_step?->value)->all());

@@ -58,6 +58,24 @@ final class WriteOptionsTest extends TestCase
         }
     }
 
+    public function test_only_legacy_flags_emit_a_deprecation_notice_in_text_output(): void
+    {
+        DB::shouldReceive('beginTransaction')->times(3);
+        DB::shouldReceive('rollBack')->times(3);
+        foreach ([[], ['--dry-run' => true], ['--pretend' => true]] as $options) {
+            $command = $this->command();
+            $output = new BufferedOutput;
+            $this->assertSame(0, $command->run(new ArrayInput($options), $output));
+            $text = $output->fetch();
+            if ($options === []) {
+                $this->assertStringNotContainsString('Deprecated:', $text);
+            } else {
+                $this->assertStringContainsString('Deprecated: --dry-run and --pretend', $text);
+            }
+            $this->assertSame(1, $command->calls);
+        }
+    }
+
     private function command(): MutationCommand
     {
         $command = new class extends MutationCommand

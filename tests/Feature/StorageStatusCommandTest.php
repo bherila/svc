@@ -29,6 +29,17 @@ class StorageStatusCommandTest extends TestCase
         Storage::disk('svc_files')->assertDirectoryEmpty('_health');
     }
 
+    public function test_the_deprecated_write_alias_still_runs_the_probe_and_conflicts_with_preview_flags(): void
+    {
+        Storage::fake('svc_files');
+        config(['svc.filesystem_disk' => 'svc_files']);
+        $this->artisan('svc:storage:status', ['--write' => true, '--format' => 'json'])
+            ->expectsOutput('{"configured":true,"write_probe":true,"cleanup":true}')->assertSuccessful();
+        Storage::disk('svc_files')->assertDirectoryEmpty('_health');
+        $this->artisan('svc:storage:status', ['--write' => true, '--pretend' => true])->assertExitCode(2);
+        Storage::disk('svc_files')->assertDirectoryEmpty('_health');
+    }
+
     public function test_status_fails_without_disclosing_an_invalid_disk_name(): void
     {
         config(['svc.filesystem_disk' => 'synthetic-missing-disk']);

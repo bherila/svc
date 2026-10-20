@@ -38,7 +38,7 @@ trait GuardsWrites
 
     protected function applying(): bool
     {
-        return (bool) $this->option('apply');
+        return $this->option('apply');
     }
 
     /**

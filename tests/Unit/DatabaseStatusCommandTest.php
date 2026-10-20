@@ -20,6 +20,7 @@ final class DatabaseStatusCommandTest extends TestCase
     /** @return iterable<string, array{string, string, bool}> */
     public static function compatibilityCases(): iterable
     {
+        yield 'case-insensitive server suffix' => ['mariadb', '10.6.28-mariadb', true];
         yield 'current production' => ['mariadb', '10.6.28-MariaDB', true];
         yield 'compatibility prefix' => ['mariadb', '5.5.5-10.6.28-MariaDB', true];
         yield 'native uuid boundary' => ['mariadb', '10.7.0-MariaDB', false];

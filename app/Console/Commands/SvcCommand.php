@@ -15,7 +15,6 @@ abstract class SvcCommand extends Command
 {
     protected function configureDefaults(): void
     {
-        parent::configureDefaults();
         if (! $this->getDefinition()->hasOption('format')) {
             $this->addOption('format', null, InputOption::VALUE_REQUIRED, 'Output text or json', 'text');
         }
@@ -57,6 +56,6 @@ abstract class SvcCommand extends Command
     /** @param array<string, mixed> $payload */
     protected function json(array $payload): void
     {
-        $this->output->writeln((string) json_encode($payload, JSON_THROW_ON_ERROR | JSON_PRESERVE_ZERO_FRACTION), OutputInterface::OUTPUT_RAW);
+        $this->output->writeln(json_encode($payload, JSON_THROW_ON_ERROR | JSON_PRESERVE_ZERO_FRACTION), OutputInterface::OUTPUT_RAW);
     }
 }
