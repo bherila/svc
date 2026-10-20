@@ -394,6 +394,63 @@ try {
 
             await capture(screen, 'initial', width, screen === 'operations');
 
+            if (screen === 'agreement' && backlogOnly) {
+                await page
+                    .getByRole('button', { name: 'Edit terms', exact: true })
+                    .click();
+                await expect(
+                    page.getByRole('switch', {
+                        name: 'Show deferred backlog to client',
+                        exact: true,
+                    }),
+                ).not.toBeChecked();
+                await capture(screen, 'portal-visibility-setting', width);
+                await page
+                    .getByRole('button', { name: 'Cancel', exact: true })
+                    .click();
+                await page
+                    .getByRole('spinbutton', { name: 'Target hours' })
+                    .fill('1');
+                await page
+                    .getByRole('switch', {
+                        name: 'Round up to the next whole entry',
+                    })
+                    .check();
+                await page
+                    .getByRole('button', {
+                        name: 'Preview deferred work',
+                        exact: true,
+                    })
+                    .click();
+                const createDraft = page.getByRole('button', {
+                    name: 'Create draft',
+                    exact: true,
+                });
+                await expect(createDraft).toBeEnabled();
+                await capture(screen, 'buydown-preview', width);
+                const backlogBefore = await page
+                    .getByTestId('deferred-backlog-line')
+                    .innerText();
+                await createDraft.click();
+                await expect(
+                    page.getByRole('link', { name: 'Open draft', exact: true }),
+                ).toBeVisible();
+
+                if (width === 1920) {
+                    await expect(
+                        page.getByText('No deferred work is waiting', {
+                            exact: false,
+                        }),
+                    ).toBeVisible();
+                } else {
+                    await expect(
+                        page.getByTestId('deferred-backlog-line'),
+                    ).not.toHaveText(backlogBefore);
+                }
+
+                await capture(screen, 'buydown-created', width);
+            }
+
             if (screen === 'reminder_invoice') {
                 await page
                     .getByRole('button', { name: 'Send reminder', exact: true })

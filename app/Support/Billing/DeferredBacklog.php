@@ -136,8 +136,8 @@ final readonly class DeferredBacklog
      */
     private static function trend(iterable $history, array $periods, CarbonImmutable $through): array
     {
-        /** @var array<string, array{0:int,1:int,2:int}> $months */
-        $months = array_fill_keys($periods, [0, 0, 0]);
+        /** @var array<string, array{0:int,1:int,2:int,3:int}> $months */
+        $months = array_fill_keys($periods, [0, 0, 0, 0]);
         foreach ($history as $entry) {
             if ($entry->worked_on->gt($through)) {
                 continue;
@@ -147,7 +147,8 @@ final readonly class DeferredBacklog
                 $months[$added][0] += $entry->minutes_worked;
             }
 
-            $left = match ($entry->deferredDisposition()) {
+            $disposition = $entry->deferredDisposition();
+            $left = match ($disposition) {
                 DeferredWorkDisposition::Waiting => null,
                 // Only agreement-rate work draws on a pool. A flat-hourly entry
                 // on its own subcontractor line was billed at its snapshot.
@@ -167,13 +168,16 @@ final readonly class DeferredBacklog
             $period = $on->format('Y-m');
             if (isset($months[$period])) {
                 $months[$period][$column] += $entry->minutes_worked;
+                if ($disposition === DeferredWorkDisposition::SettledOutsideRetainer) {
+                    $months[$period][3] += $entry->minutes_worked;
+                }
             }
         }
 
         $trend = [];
         foreach ($periods as $period) {
-            [$added, $applied, $billed] = $months[$period];
-            $trend[] = new DeferredBacklogMonth($period, $added, $applied, $billed);
+            [$added, $applied, $billed, $boughtDown] = $months[$period];
+            $trend[] = new DeferredBacklogMonth($period, $added, $applied, $billed, $boughtDown);
         }
 
         return $trend;

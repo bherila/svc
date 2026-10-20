@@ -626,3 +626,17 @@ otherwise applying and consuming it commit together. Producers never hold a pend
 waiting for a payment, so invoice reconciliation's retained billing locks cannot form the reverse
 cycle. `SquarePendingSettlement` follows the billing resources and precedes the final Square-link
 read in the lock registry.
+
+### Deferred buy-down reservation
+
+`DeferredBuyDownAction::create` follows the enforced registry, whose agreement
+lock precedes numbering, time entries and pivot claims. The company is scoped
+and read here, not locked before the agreement: the current registry places
+company locks after billing rows. The agreement lock is the serialisation point
+shared with cadence regeneration. Selected entries are locked in id order, their
+revisions are rechecked, and a current locking pivot read refuses allocation-only
+changes even under REPEATABLE READ. Draft discard takes that agreement lock too.
+The interleaving tests cover both reservation orders, and the existing lock-order
+recorder checks the new writer's acquisition order. These single-connection tests
+establish refusal/reservation semantics and lock order, not an independent
+multi-process database stress test.

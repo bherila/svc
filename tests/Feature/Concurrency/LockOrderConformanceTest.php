@@ -22,6 +22,7 @@ use App\Services\AgentApi\TimeEntryMutationService;
 use App\Services\Billing\AllocationService;
 use App\Services\Billing\BillingScheduleService;
 use App\Services\Billing\ClientInvoicingService;
+use App\Services\Billing\DeferredBuyDownAction;
 use App\Services\Billing\InterimOverageGenerator;
 use App\Services\Billing\InvoiceFromTimeService;
 use App\Services\Billing\InvoiceLifecycleService;
@@ -36,6 +37,7 @@ use App\Support\Access\AccessMutationContext;
 use App\Support\Access\PortalAccessScope;
 use App\Support\Access\StaffRole;
 use App\Support\AgentApi\AgentApiVersion;
+use App\Support\Billing\DeferredBuyDownRequest;
 use App\Support\Concurrency\LockMode;
 use App\Support\Concurrency\LockOrderRecorder;
 use App\Support\Concurrency\LockResource;
@@ -110,6 +112,7 @@ final class LockOrderConformanceTest extends TestCase
         'App\\Services\\AgentApi\\TimeEntryMutationService::approve',
         'App\\Services\\AgentApi\\TimeEntryMutationService::serialized',
         'App\\Services\\Billing\\AllocationService::group',
+        'App\\Services\\Billing\\DeferredBuyDownAction::create',
         'App\\Services\\Billing\\InterimOverageGenerator::timeFingerprint',
         'App\\Services\\Billing\\InvoiceFromTimeService::prepareLines',
         'App\\Services\\Billing\\InvoiceFromTimeService::regenerateDraftSelection',
@@ -161,6 +164,7 @@ final class LockOrderConformanceTest extends TestCase
         LockOrderRecorder::start();
 
         $this->driveTheConcurrentWriters();
+        $this->driveDeferredBuyDown();
 
         $sequences = LockOrderRecorder::sequences();
 
@@ -620,6 +624,21 @@ final class LockOrderConformanceTest extends TestCase
             'completed_at' => $completedOn,
             'milestone_price_amount' => 25000,
         ]);
+    }
+
+    private function driveDeferredBuyDown(): void
+    {
+        [$company, $project] = $this->secondaryCompany('deferred-buydown');
+        $agreement = $this->agreement('monthly', $company);
+        app(AgreementWorkflow::class)->activate($agreement);
+        $agreement->refresh();
+        $entry = $this->approvedEntry('2026-09-14', 60, $company, $project);
+        $entry->update(['is_deferred' => true]);
+        $request = DeferredBuyDownRequest::from(['hours' => 1]);
+        $billing = app(DeferredBuyDownAction::class);
+        $preview = $billing->preview($this->workspace, $agreement, $request);
+        $draft = $billing->create($this->workspace, $agreement, $request, $preview->version);
+        app(InvoiceLifecycleService::class)->discardDraft($draft, $this->workspace, 'Synthetic reservation release');
     }
 
     private function agreement(string $cadence = 'monthly', ?ClientCompany $company = null): ClientAgreement

@@ -67,6 +67,25 @@ final class AgreementDeferredBacklogPageTest extends TestCase
                 ->where('deferred_backlog.issue_detail', fn (string $detail): bool => str_contains($detail, 'SVC-SYN-LEDGER-REFUSAL')));
     }
 
+    public function test_portal_backlog_is_off_by_default_and_requires_the_agreements_explicit_opt_in(): void
+    {
+        $this->travelTo(Carbon::parse('2026-05-20 12:00:00'));
+        [, $client, , $company, $agreement] = $this->tenant();
+        $path = "/portal/{$company->public_id}/agreements/{$agreement->public_id}";
+        $this->actingAs($client)->get($path)->assertOk()->assertInertia(fn (Assert $page) => $page->where('deferred_backlog', null));
+        $this->assertFalse($agreement->fresh()->show_deferred_backlog_to_client);
+        $agreement->update(['show_deferred_backlog_to_client' => true]);
+        $this->get($path)->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->where('deferred_backlog.hours', 2.5)
+            ->where('deferred_backlog.amount_at_hourly_rate', ['currency' => 'USD', 'amount' => 37500])
+            ->where('deferred_backlog.issue_detail', null)
+            ->where('actions.deferred_buydown', null)
+            ->where('agreement.show_deferred_backlog_to_client', null)
+            ->missing('deferred_backlog.entry_ids'));
+        $agreement->update(['show_deferred_backlog_to_client' => false]);
+        $this->get($path)->assertOk()->assertInertia(fn (Assert $page) => $page->where('deferred_backlog', null));
+    }
+
     public function test_a_member_without_management_and_a_portal_client_receive_none(): void
     {
         [, $clientUser, $workspace, $company, $agreement, $project] = $this->tenant();

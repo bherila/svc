@@ -16,6 +16,7 @@ enum InvoiceKind: string
     case InterimOverage = 'interim_overage';
     case Terminal = 'terminal';
     case AdHoc = 'ad_hoc';
+    case DeferredBuyDown = 'deferred_buydown';
 
     /**
      * Whether an invoice of this kind is a claim about a span of time, and so
@@ -54,9 +55,15 @@ enum InvoiceKind: string
     public function requiresCompleteServicePeriod(): bool
     {
         return match ($this) {
-            self::CadencePeriod, self::InterimOverage, self::Terminal => true,
+            self::CadencePeriod, self::InterimOverage, self::Terminal, self::DeferredBuyDown => true,
             self::AdHoc => false,
         };
+    }
+
+    /** @return list<string> Explicit settlements retain their lines and claims during replay. */
+    public static function preservedHistoryValues(): array
+    {
+        return [self::AdHoc->value, self::DeferredBuyDown->value];
     }
 
     /**
@@ -67,7 +74,7 @@ enum InvoiceKind: string
      */
     public static function cycleGuardExclusions(): array
     {
-        return [self::InterimOverage->value, self::AdHoc->value];
+        return [self::InterimOverage->value, self::AdHoc->value, self::DeferredBuyDown->value];
     }
 
     /**

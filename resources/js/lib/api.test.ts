@@ -14,6 +14,27 @@ function respond(status: number, body: unknown) {
 describe('apiRequest refusals', () => {
     afterEach(() => vi.unstubAllGlobals());
 
+    it('encodes read filters without a mutation header or request body', async () => {
+        respond(200, { data: { minutes: 90 } });
+        expect(
+            await apiRequest('GET', '/api/v1/finished?existing=kept', {
+                hours: 1.5,
+                round_up: false,
+                discount_reason: null,
+            }),
+        ).toMatchObject({ ok: true, data: { minutes: 90 } });
+        const [destination, init] = vi.mocked(fetch).mock.calls[0];
+        const url = new URL(String(destination));
+        expect(url.pathname).toBe('/api/v1/finished');
+        expect(Object.fromEntries(url.searchParams)).toEqual({
+            existing: 'kept',
+            hours: '1.5',
+            round_up: '0',
+        });
+        expect(init?.body).toBeUndefined();
+        expect(init?.headers).not.toHaveProperty('Idempotency-Key');
+    });
+
     it('accepts the hidden-by-default task request without an explicit visibility field', async () => {
         const body: ApiSchema<'TaskCreateRequest'> = {
             title: 'Synthetic hidden task',

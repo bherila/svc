@@ -289,6 +289,7 @@ foreach ([
 // fixture's capacity or invoices change. Oversized on purpose - an unbroken
 // client and agreement name, and a shelf priced in the millions.
 $backlogAgreementPath = null;
+$backlogCreatePath = null;
 if (getenv('SVC_LAYOUT_DEFERRED_BACKLOG') === '1') {
     $backlogCompany = ClientCompany::query()->create([
         'workspace_id' => $workspace->id, 'name' => str_repeat('SyntheticBacklog', 5),
@@ -317,10 +318,12 @@ if (getenv('SVC_LAYOUT_DEFERRED_BACKLOG') === '1') {
         ]);
     }
     $backlogAgreementPath = route('clients.agreement', [$workspace, $backlogCompany, $backlogAgreement], absolute: false);
+    $backlogCreatePath = route('agent-api.v1.agreements.deferred-backlog.create', [$workspace, $backlogAgreement], absolute: false);
 }
 
 file_put_contents($runtime.'/fixture.json', json_encode([
     'agreement' => $backlogAgreementPath,
+    'buydown_create' => $backlogCreatePath,
     'reminder_invoice' => route('clients.invoice', [$workspace, $company, $reminderInvoice], absolute: false),
     'square_explore' => route('square.explore', $workspace, absolute: false),
     'square_invoice' => route('clients.invoice', [$workspace, $company, $squareInvoice], absolute: false),

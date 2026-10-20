@@ -32,7 +32,8 @@ $scheduleWrite = is_string($requestPath) && (
             || ($method === 'POST' && str_ends_with($requestPath, '/generate'))))
 );
 $draftWrite = in_array($requestPath, $fixture['draft_writes'][$method] ?? [], true);
-if ($method !== 'GET' && ! $scheduleWrite && ! $draftWrite) {
+$buydownWrite = $method === 'POST' && is_string($fixture['buydown_create'] ?? null) && $requestPath === $fixture['buydown_create'];
+if ($method !== 'GET' && ! $scheduleWrite && ! $draftWrite && ! $buydownWrite) {
     http_response_code(403);
     exit('Layout harness write refused.');
 }

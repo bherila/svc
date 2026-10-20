@@ -646,6 +646,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    '/workspaces/{workspace}/agreements/{agreement}/deferred-backlog/preview': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Manager-only FIFO whole-entry deferred settlement quote. Supply exactly one of hours or amount (gross minor units before discount). round_up optionally includes the next entry. Contract rates are unchanged; any discount requires a reason. Entry-backed deferred work only; carried ledger balances remain for termination. No writes. */
+        get: operations['deferred_backlog.preview'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     '/workspaces/{workspace}/expense-schedules': {
         parameters: {
             query?: never;
@@ -932,6 +949,23 @@ export interface paths {
         get: operations['invoices.corrections.get'];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/agreements/{agreement}/deferred-backlog/invoices': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Manager-only deferred buy-down draft. Reserves whole entries using the same target and pricing as preview. Requires expected_backlog_version and Idempotency-Key; a changed shelf is 409. A discount is a negative adjustment with a reason. No automatic issue or delivery; ordinary issue/send confirmations apply. Void or discard releases the entries. */
+        post: operations['invoices.create_deferred_buydown'];
         delete?: never;
         options?: never;
         head?: never;
@@ -1941,6 +1975,8 @@ export interface components {
             square_series_key: string | null;
             /** @description The Square location the series bills from: Square numbers invoices uniquely per location only, so the same prefix in another location is another series. Null with a series key for a marker set before markers named a location; it then matches the prefix in every location until the agreement is marked again. */
             square_location_id: string | null;
+            /** @description Whether this agreement exposes its deferred backlog in the client portal; off by default. */
+            show_deferred_backlog_to_client: boolean;
         };
         AgreementHandoverAudit: {
             count: number;
@@ -2296,6 +2332,33 @@ export interface components {
             hours_applied: number;
             /** @description Deferred work that left the shelf this month at an hourly price instead: on termination, as flat-hourly work, or by a buy-down. */
             hours_billed: number;
+            /** @description Buy-down subset of hours_billed, excluded from retainer usage and not deducted twice from net shelf growth. */
+            hours_bought_down: number;
+        };
+        DeferredBuyDownCreateRequest: {
+            hours?: number;
+            amount?: number;
+            /** @default false */
+            round_up: boolean;
+            /** @default 0 */
+            discount_amount: number;
+            discount_reason?: string | null;
+            expected_backlog_version: string;
+        } & (unknown | unknown);
+        DeferredBuyDownPreview: {
+            backlog_version: string;
+            currency: string;
+            entry_ids: string[];
+            minutes: number;
+            hours: number;
+            amount_before_discount: number;
+            discount_amount: number;
+            discount_reason: string | null;
+            total_amount: number;
+            round_up: boolean;
+        };
+        DeferredBuyDownPreviewResponse: {
+            data: components['schemas']['DeferredBuyDownPreview'];
         };
         DeletionReceipt: {
             deleted_id: components['schemas']['Uuid'];
@@ -2912,7 +2975,11 @@ export interface components {
         };
         /** @enum {string} */
         InvoiceKind:
-            'cadence_period' | 'interim_overage' | 'terminal' | 'ad_hoc';
+            | 'cadence_period'
+            | 'interim_overage'
+            | 'terminal'
+            | 'ad_hoc'
+            | 'deferred_buydown';
         InvoiceLine: {
             id: components['schemas']['Uuid'];
             /** Format: uuid */
@@ -4767,6 +4834,7 @@ export interface components {
             hourly_rate_amount?: number | null;
             retainer_amount?: number | null;
             retainer_minutes?: number | null;
+            show_deferred_backlog_to_client?: boolean;
         };
         agreements_terminateRequest: {
             /** @constant */
@@ -4800,6 +4868,7 @@ export interface components {
             first_cycle_proration?:
                 'prorate_hours' | 'full_period' | 'align_next_cycle' | null;
             bill_overage_interim?: boolean | null;
+            show_deferred_backlog_to_client?: boolean;
         };
         clients_archiveRequest: {
             expected_version: string;
@@ -6922,6 +6991,36 @@ export interface operations {
             default: components['responses']['Error'];
         };
     };
+    'deferred_backlog.preview': {
+        parameters: {
+            query?: {
+                hours?: number;
+                amount?: number;
+                round_up?: boolean;
+                discount_amount?: number;
+                discount_reason?: string;
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                agreement: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Selection and backlog version */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['DeferredBuyDownPreviewResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
     'expense_schedules.list': {
         parameters: {
             query?: {
@@ -7916,6 +8015,36 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['InvoiceCorrectionResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'invoices.create_deferred_buydown': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                agreement: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['DeferredBuyDownCreateRequest'];
+            };
+        };
+        responses: {
+            /** @description Reserved draft */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['InvoiceMutationResponse'];
                 };
             };
             default: components['responses']['Error'];

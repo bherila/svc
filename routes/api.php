@@ -24,6 +24,7 @@ use App\Http\Controllers\Api\V1\AgentSquareMirrorController;
 use App\Http\Controllers\Api\V1\AgentTaskMutationController;
 use App\Http\Controllers\Api\V1\AgentTimeEntryMutationController;
 use App\Http\Controllers\Api\V1\AgentWorkspaceMiscController;
+use App\Http\Controllers\Api\V1\DeferredBuyDownController;
 use App\Http\Controllers\Api\V1\FinanceReconciliationController;
 use App\Http\Controllers\SquareWebhookController;
 use App\Http\Middleware\AuthenticateFirstPartySession;
@@ -205,6 +206,8 @@ Route::prefix('v1')
             ->whereUuid('invoice');
         $workspaceOperation('invoices.add_time', [AgentInvoiceOperationsController::class, 'addTime'])
             ->whereUuid('invoice');
+        $workspaceOperation('deferred_backlog.preview', [DeferredBuyDownController::class, 'preview'])->whereUuid('agreement');
+        $workspaceOperation('invoices.create_deferred_buydown', [DeferredBuyDownController::class, 'create'])->whereUuid('agreement');
         $workspaceOperation('invoices.generate_period', [AgentInvoiceOperationsController::class, 'generate'])
             ->whereUuid('agreement');
         $workspaceOperation('invoices.preview_period', [AgentInvoiceOperationsController::class, 'preview'])

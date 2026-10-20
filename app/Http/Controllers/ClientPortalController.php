@@ -15,6 +15,7 @@ use App\Models\User;
 use App\Queries\ClientHome\PortalClientHomeQuery;
 use App\Services\Authorization\PortalAccess;
 use App\Services\Authorization\PortalInvoiceQuery;
+use App\Services\Billing\DeferredBacklogReadService;
 use App\Services\Square\Mirror\SquareInvoicePage;
 use App\Support\Billing\InvoiceLineDetail;
 use App\Support\Billing\InvoiceStatus;
@@ -186,6 +187,7 @@ class ClientPortalController extends Controller
             'actions' => [
                 'update' => null,
                 'upload_file' => null,
+                'deferred_buydown' => null,
             ],
             // The files themselves are the client's to read - a countersigned
             // copy of their own agreement is the obvious one. `false` withholds
@@ -226,6 +228,7 @@ class ClientPortalController extends Controller
                 'period_retainer_amount' => null,
                 'agreement_text' => null,
                 'is_visible_to_client' => null,
+                'show_deferred_backlog_to_client' => null,
             ],
             'recurring_items' => $items->map(fn ($item): array => [
                 'id' => $item->public_id,
@@ -240,7 +243,8 @@ class ClientPortalController extends Controller
             ])->values()->all(),
             // Not shown to a client until the agreement opts in (#366, a
             // later slice). Null rather than omitted: one payload shape.
-            'deferred_backlog' => null,
+            'deferred_backlog' => $clientAgreement->show_deferred_backlog_to_client
+                ? array_replace(app(DeferredBacklogReadService::class)->trailing($clientCompany->workspace, $clientAgreement), ['issue_detail' => null]) : null,
         ]);
     }
 

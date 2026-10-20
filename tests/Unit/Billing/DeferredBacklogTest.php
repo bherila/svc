@@ -276,11 +276,11 @@ final class DeferredBacklogTest extends TestCase
         );
 
         $this->assertSame([
-            ['2026-01', 90, 0, 0, 90],
-            ['2026-02', 155, 30, 15, 110],
-            ['2026-03', 0, 45, 140, -185],
+            ['2026-01', 90, 0, 0, 0, 90],
+            ['2026-02', 155, 30, 15, 15, 110],
+            ['2026-03', 0, 45, 140, 0, -185],
         ], array_map(static fn (DeferredBacklogMonth $month): array => [
-            $month->period, $month->minutesAdded, $month->minutesApplied, $month->minutesBilled, $month->netMinutes(),
+            $month->period, $month->minutesAdded, $month->minutesApplied, $month->minutesBilled, $month->minutesBoughtDown, $month->netMinutes(),
         ], $backlog->trend));
         // (90 + 110 - 185) minutes over three months.
         $this->assertSame(round(15 / 60 / 3, 4), $backlog->netHoursPerMonth());

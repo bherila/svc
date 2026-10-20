@@ -3714,6 +3714,99 @@
                 "x-mcp-tool": "context.get"
             }
         },
+        "/workspaces/{workspace}/agreements/{agreement}/deferred-backlog/preview": {
+            "get": {
+                "operationId": "deferred_backlog.preview",
+                "description": "Manager-only FIFO whole-entry deferred settlement quote. Supply exactly one of hours or amount (gross minor units before discount). round_up optionally includes the next entry. Contract rates are unchanged; any discount requires a reason. Entry-backed deferred work only; carried ledger balances remain for termination. No writes.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "billing:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "agreement",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "hours",
+                        "in": "query",
+                        "schema": {
+                            "type": "number",
+                            "exclusiveMinimum": 0,
+                            "maximum": 1000000
+                        }
+                    },
+                    {
+                        "name": "amount",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 2147483647
+                        }
+                    },
+                    {
+                        "name": "round_up",
+                        "in": "query",
+                        "schema": {
+                            "type": "boolean",
+                            "default": false
+                        }
+                    },
+                    {
+                        "name": "discount_amount",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 2147483647
+                        }
+                    },
+                    {
+                        "name": "discount_reason",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 1000
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Selection and backlog version",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/DeferredBuyDownPreviewResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "read",
+                "x-agent-idempotent": true,
+                "x-agent-mcp-tool": "deferred_backlog.preview",
+                "x-svc-flags": [],
+                "x-mcp-tool": "deferred_backlog.preview"
+            }
+        },
         "/workspaces/{workspace}/expense-schedules": {
             "post": {
                 "operationId": "expense_schedules.create",
@@ -5577,6 +5670,77 @@
                 "x-agent-mcp-tool": "invoices.corrections.get",
                 "x-svc-flags": [],
                 "x-mcp-tool": "invoices.corrections.get"
+            }
+        },
+        "/workspaces/{workspace}/agreements/{agreement}/deferred-backlog/invoices": {
+            "post": {
+                "operationId": "invoices.create_deferred_buydown",
+                "description": "Manager-only deferred buy-down draft. Reserves whole entries using the same target and pricing as preview. Requires expected_backlog_version and Idempotency-Key; a changed shelf is 409. A discount is a negative adjustment with a reason. No automatic issue or delivery; ordinary issue/send confirmations apply. Void or discard releases the entries.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "billing:write",
+                            "billing:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/DeferredBuyDownCreateRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "agreement",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Reserved draft",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/InvoiceMutationResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "local_write",
+                "x-agent-idempotent": true,
+                "x-agent-write-safety": {
+                    "idempotency_key": "header_and_argument",
+                    "expected_version": true
+                },
+                "x-agent-mcp-tool": "invoices.create_deferred_buydown",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_INVOICE_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "invoices.create_deferred_buydown"
             }
         },
         "/workspaces/{workspace}/invoices": {
@@ -10699,7 +10863,8 @@
                     "client_name",
                     "project_id",
                     "square_series_key",
-                    "square_location_id"
+                    "square_location_id",
+                    "show_deferred_backlog_to_client"
                 ],
                 "properties": {
                     "version": {
@@ -10850,6 +11015,10 @@
                         ],
                         "maxLength": 192,
                         "description": "The Square location the series bills from: Square numbers invoices uniquely per location only, so the same prefix in another location is another series. Null with a series key for a marker set before markers named a location; it then matches the prefix in every location until the agreement is marked again."
+                    },
+                    "show_deferred_backlog_to_client": {
+                        "type": "boolean",
+                        "description": "Whether this agreement exposes its deferred backlog in the client portal; off by default."
                     }
                 }
             },
@@ -12189,7 +12358,8 @@
                     "period",
                     "hours_added",
                     "hours_applied",
-                    "hours_billed"
+                    "hours_billed",
+                    "hours_bought_down"
                 ],
                 "properties": {
                     "period": {
@@ -12211,6 +12381,150 @@
                         "type": "number",
                         "minimum": 0,
                         "description": "Deferred work that left the shelf this month at an hourly price instead: on termination, as flat-hourly work, or by a buy-down."
+                    },
+                    "hours_bought_down": {
+                        "type": "number",
+                        "minimum": 0,
+                        "description": "Buy-down subset of hours_billed, excluded from retainer usage and not deducted twice from net shelf growth."
+                    }
+                }
+            },
+            "DeferredBuyDownCreateRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "expected_backlog_version"
+                ],
+                "properties": {
+                    "hours": {
+                        "type": "number",
+                        "exclusiveMinimum": 0,
+                        "maximum": 1000000
+                    },
+                    "amount": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 2147483647
+                    },
+                    "round_up": {
+                        "type": "boolean",
+                        "default": false
+                    },
+                    "discount_amount": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 2147483647,
+                        "default": 0
+                    },
+                    "discount_reason": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 1000
+                    },
+                    "expected_backlog_version": {
+                        "type": "string",
+                        "minLength": 64,
+                        "maxLength": 64
+                    }
+                },
+                "oneOf": [
+                    {
+                        "required": [
+                            "hours"
+                        ],
+                        "not": {
+                            "required": [
+                                "amount"
+                            ]
+                        }
+                    },
+                    {
+                        "required": [
+                            "amount"
+                        ],
+                        "not": {
+                            "required": [
+                                "hours"
+                            ]
+                        }
+                    }
+                ]
+            },
+            "DeferredBuyDownPreview": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "backlog_version",
+                    "currency",
+                    "entry_ids",
+                    "minutes",
+                    "hours",
+                    "amount_before_discount",
+                    "discount_amount",
+                    "discount_reason",
+                    "total_amount",
+                    "round_up"
+                ],
+                "properties": {
+                    "backlog_version": {
+                        "type": "string",
+                        "minLength": 64,
+                        "maxLength": 64
+                    },
+                    "currency": {
+                        "type": "string",
+                        "minLength": 3,
+                        "maxLength": 3
+                    },
+                    "entry_ids": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    "minutes": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "hours": {
+                        "type": "number",
+                        "minimum": 0
+                    },
+                    "amount_before_discount": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "discount_amount": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "discount_reason": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "total_amount": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "round_up": {
+                        "type": "boolean"
+                    }
+                }
+            },
+            "DeferredBuyDownPreviewResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data"
+                ],
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/DeferredBuyDownPreview"
                     }
                 }
             },
@@ -14449,7 +14763,8 @@
                     "cadence_period",
                     "interim_overage",
                     "terminal",
-                    "ad_hoc"
+                    "ad_hoc",
+                    "deferred_buydown"
                 ]
             },
             "InvoiceLine": {
@@ -22190,6 +22505,9 @@
                             "null"
                         ],
                         "minimum": 0
+                    },
+                    "show_deferred_backlog_to_client": {
+                        "type": "boolean"
                     }
                 }
             },
@@ -22345,6 +22663,9 @@
                             "boolean",
                             "null"
                         ]
+                    },
+                    "show_deferred_backlog_to_client": {
+                        "type": "boolean"
                     }
                 }
             },
