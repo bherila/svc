@@ -65,7 +65,7 @@ final class BillingAuditOperationContractTest extends TestCase
                 $documented = AgentRestDocumentation::operations()[$id];
                 $this->assertSame(['WorkspaceId'], $documented['parameters'], $id);
                 $this->assertSame($response, $documented['response'], $id);
-                $this->assertSame(['x-svc-flags' => [], 'x-mcp-tool' => $id], $documented['extensions'], $id);
+                $this->assertSame(['x-svc-flags' => [], 'x-mcp-tool' => $id], $operation->extensions, $id);
                 $this->assertSame([401, 403, 404, 429], array_keys($documented['errors']), $id);
                 $this->assertStringStartsWith('Workspace managers only.', $documented['description'], $id);
             }

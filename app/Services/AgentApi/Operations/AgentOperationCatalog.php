@@ -1589,6 +1589,7 @@ final class AgentOperationCatalog
         ] as $id => [$title, $method, $effect, $group]) {
             $this->managerOnly[$id] = true;
             $documented = AgentRestDocumentation::operations()[$id];
+            $binding = new McpBinding(handler: [AgentMcpFinanceTools::class, $method]);
             $operations[] = new Operation(
                 id: $id,
                 title: $title,
@@ -1598,10 +1599,10 @@ final class AgentOperationCatalog
                 idempotent: true,
                 safety: new WriteSafety(note: $effect->readOnly() ? null : 'Idempotent by its path (payment, external system, transaction): repeating it is the same write, so it takes no idempotency key.'),
                 rest: $this->rest($id),
-                mcp: new McpBinding(handler: [AgentMcpFinanceTools::class, $method]),
+                mcp: $binding,
                 input: isset($documented['request']) ? SchemaRef::requestOf($id) : null,
                 output: SchemaRef::responseOf($id),
-                extensions: $documented['extensions'] ?? [],
+                extensions: self::extensions($id, self::mcpSwitches($group, $id), $binding),
             );
         }
 
@@ -1692,6 +1693,7 @@ final class AgentOperationCatalog
         // client reads, as the OpenAPI document does for REST (see
         // docs/mcp.md, "Deprecations").
         $deprecation = $documented ? (AgentRestDocumentation::operations()[$id]['deprecation'] ?? null) : null;
+        $binding = new McpBinding(handler: $handler);
 
         return new Operation(
             id: $id,
@@ -1707,10 +1709,10 @@ final class AgentOperationCatalog
                 ? new WriteSafety(IdempotencyKey::HeaderAndArgument, expectedVersion: $this->takesVersion($id), confirm: $this->takesConfirmation($id))
                 : new WriteSafety(note: $write ? 'Authorizes a later upload; the upload itself requires an idempotency key and parent version.' : null),
             rest: $documented ? $this->rest($id) : null,
-            mcp: new McpBinding(handler: $handler),
+            mcp: $binding,
             input: $input ?? ($write && $hasBody ? SchemaRef::requestOf($id) : null),
             output: $output ?? ($documented ? SchemaRef::responseOf($id) : null),
-            extensions: $documented ? (AgentRestDocumentation::operations()[$id]['extensions'] ?? []) : [],
+            extensions: $documented ? self::extensions($id, [...$cutovers, ...$availability], $binding) : [],
             deprecation: $deprecation,
         );
     }
@@ -1737,7 +1739,7 @@ final class AgentOperationCatalog
             rest: $this->rest($id),
             // A download answers with the file itself and 204 with nothing.
             output: $effect === Effect::Download || self::ROUTES[$id][2] === [204] ? null : SchemaRef::responseOf($id),
-            extensions: $documented['extensions'] ?? [],
+            extensions: self::extensions($id, $cutovers, null),
         );
     }
 
@@ -1779,6 +1781,20 @@ final class AgentOperationCatalog
         $description = AgentRestDocumentation::operations()[$id]['description'] ?? null;
 
         return is_string($description) ? $description : throw new LogicException("Operation [{$id}] documents no description.");
+    }
+
+    /**
+     * What SVC adds to each documented operation (#459 item 6), generated from
+     * the declaration rather than written beside it: the installation
+     * switches it depends on, outermost first, and the MCP tool that reaches
+     * it, if any.
+     *
+     * @param  list<string>  $flags
+     * @return array<string, mixed>
+     */
+    private static function extensions(string $id, array $flags, ?McpBinding $mcp): array
+    {
+        return ['x-svc-flags' => AgentDeploymentFlags::environmentSwitches($flags), ...($mcp === null ? [] : ['x-mcp-tool' => $mcp->name ?? $id])];
     }
 
     /** @return list<string> */

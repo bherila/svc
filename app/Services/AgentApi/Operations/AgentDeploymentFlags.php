@@ -80,6 +80,25 @@ final class AgentDeploymentFlags implements DeploymentFlags
         self::PORTAL_INVITATION_WRITES => ['key' => 'svc.portal_invitations.enabled', 'parents' => [self::CLIENTS]],
     ];
 
+    /**
+     * The environment variable behind each cutover's configuration key, as
+     * the OpenAPI document names it in `x-svc-flags`.
+     */
+    private const array ENVIRONMENT = [
+        self::WRITES => 'AGENT_API_WRITES_ENABLED',
+        self::TIME_ENTRIES => 'AGENT_API_TIME_ENTRY_WRITES_ENABLED',
+        self::INVOICES => 'AGENT_API_INVOICE_WRITES_ENABLED',
+        self::PAYMENTS => 'AGENT_API_PAYMENT_WRITES_ENABLED',
+        self::EXPENSES => 'AGENT_API_EXPENSE_WRITES_ENABLED',
+        self::CLIENTS => 'AGENT_API_CLIENT_WRITES_ENABLED',
+        self::PROJECTS => 'AGENT_API_PROJECT_WRITES_ENABLED',
+        self::PROPOSALS => 'AGENT_API_PROPOSAL_WRITES_ENABLED',
+        self::WORKSPACES => 'AGENT_API_WORKSPACE_WRITES_ENABLED',
+        self::FILES => 'AGENT_API_FILE_WRITES_ENABLED',
+        self::PORTAL_INVITATIONS => 'SVC_PORTAL_INVITATIONS_ENABLED',
+        self::PORTAL_INVITATION_WRITES => 'SVC_PORTAL_INVITATIONS_ENABLED',
+    ];
+
     private function __construct(
         private readonly ConfigDeploymentFlags $cutovers,
         private readonly ?McpFeatureFlags $mcp,
@@ -101,6 +120,44 @@ final class AgentDeploymentFlags implements DeploymentFlags
     public static function cutovers(): array
     {
         return array_keys(self::CUTOVERS);
+    }
+
+    /**
+     * The environment switches an operation's declared flags depend on, each
+     * cutover after the ones it nests inside (#459 item 6): what the document
+     * lists as `x-svc-flags`. MCP switches and the Square precondition are not
+     * installation cutovers and are left out.
+     *
+     * @param  list<string>  $flags
+     * @return list<string>
+     */
+    public static function environmentSwitches(array $flags): array
+    {
+        $switches = [];
+        foreach ($flags as $flag) {
+            foreach (self::lineage($flag) as $cutover) {
+                $switches[] = self::ENVIRONMENT[$cutover];
+            }
+        }
+
+        return array_values(array_unique($switches));
+    }
+
+    /**
+     * A cutover after every cutover it nests inside; nothing for a flag that
+     * is not a cutover.
+     *
+     * @return list<string>
+     */
+    private static function lineage(string $flag): array
+    {
+        $declared = self::CUTOVERS[$flag] ?? null;
+        if ($declared === null) {
+            return [];
+        }
+        $parents = is_array($declared) ? ($declared['parents'] ?? []) : [];
+
+        return [...array_merge(...array_map(self::lineage(...), $parents)), $flag];
     }
 
     public static function isMcpSwitch(string $flag): bool

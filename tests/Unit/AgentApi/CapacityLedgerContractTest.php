@@ -21,7 +21,6 @@ final class CapacityLedgerContractTest extends TestCase
         $this->assertSame('GET', $rest['method']);
         $this->assertSame(['billing:read'], $rest['scopes']);
         $this->assertSame('CapacityLedgerResponse', $rest['response']);
-        $this->assertSame(['x-mcp-tool' => 'capacity_ledger.get'], $rest['extensions']);
         $this->assertSame([
             'WorkspaceId',
             ['name' => 'agreement', 'in' => 'path', 'required' => true, 'schema' => $mcp['properties']['agreement_id']],

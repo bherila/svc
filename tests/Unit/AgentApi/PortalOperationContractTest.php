@@ -41,7 +41,7 @@ final class PortalOperationContractTest extends TestCase
                 $this->assertSame('/workspaces/{workspace}/clients/{client}/portal-access'.(in_array($kind, ['update', 'revoke'], true) ? '/{user}' : ''), $operation->rest->path);
                 $this->assertSame($statuses, $operation->rest->successStatuses);
                 $this->assertContains('WorkspaceId', $operation->rest->parameters);
-                $this->assertSame(['x-mcp-tool' => $id, 'x-svc-flags' => $kind === 'list' ? [] : ['AGENT_API_WRITES_ENABLED', 'AGENT_API_CLIENT_WRITES_ENABLED']], $operation->extensions);
+                $this->assertSame(['x-svc-flags' => $kind === 'list' ? [] : ['AGENT_API_WRITES_ENABLED', 'AGENT_API_CLIENT_WRITES_ENABLED'], 'x-mcp-tool' => $id], $operation->extensions);
                 $this->assertSame($kind === 'list' ? ['clients:read'] : ($kind === 'grant' ? ['clients:write'] : ['clients:write', 'clients:read']), $operation->requirement->scopes);
                 $this->assertSame($kind === 'list' ? ['mcp', 'mcp.switch:mcp.read.clients', 'mcp.switch:'.$id] : [AgentDeploymentFlags::CLIENTS, 'mcp', 'mcp.switch:mcp.write.clients', 'mcp.switch:'.$id], $operation->requirement->flags);
                 $this->assertSame($kind === 'list' ? IdempotencyKey::None : IdempotencyKey::HeaderAndArgument, $operation->safety->idempotencyKey);

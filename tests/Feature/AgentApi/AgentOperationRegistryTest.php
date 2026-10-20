@@ -154,43 +154,30 @@ final class AgentOperationRegistryTest extends TestCase
         $this->assertSame(array_values($restOperations), $bound);
     }
 
-    /** Where the document records an operation's cutovers, the declaration agrees. */
+    /**
+     * Every documented operation publishes the switches its declaration
+     * depends on (#459 item 6), generated rather than written beside it.
+     */
     public function test_declared_cutovers_agree_with_the_documented_flags(): void
     {
         $document = json_decode((string) file_get_contents(public_path('openapi/svc-agent-v1.json')), true, flags: JSON_THROW_ON_ERROR);
-        $names = [
-            'AGENT_API_WRITES_ENABLED' => AgentDeploymentFlags::WRITES,
-            'AGENT_API_INVOICE_WRITES_ENABLED' => AgentDeploymentFlags::INVOICES,
-            'AGENT_API_CLIENT_WRITES_ENABLED' => AgentDeploymentFlags::CLIENTS,
-            'AGENT_API_EXPENSE_WRITES_ENABLED' => AgentDeploymentFlags::EXPENSES,
-            'AGENT_API_TIME_ENTRY_WRITES_ENABLED' => AgentDeploymentFlags::TIME_ENTRIES,
-        ];
+        $registry = app(OperationRegistry::class);
         $checked = 0;
         foreach ($document['paths'] as $operations) {
             foreach ($operations as $documented) {
-                if (! is_array($documented) || ! array_key_exists('x-svc-flags', $documented)) {
+                if (! is_array($documented) || ! isset($documented['operationId'])) {
                     continue;
                 }
-                $operation = app(OperationRegistry::class)->find($documented['operationId']);
+                $operation = $registry->find($documented['operationId']);
                 $this->assertNotNull($operation);
-                $declared = array_values(array_filter($operation->requirement->flags, static fn (string $flag): bool => ! AgentDeploymentFlags::isMcpSwitch($flag) && ! AgentDeploymentFlags::isAvailabilityPrecondition($flag)));
-                // The document lists the outer cutover too; the declaration names
-                // the innermost one, which nests inside it.
-                $flags = $documented['x-svc-flags'];
-                $innermost = $flags === [] ? null : $flags[array_key_last($flags)];
-                // Portal invitations' switch is a product flag: alone it gates
-                // the listing, and nested inside the client-write cutovers it
-                // gates the writes (#430).
-                $expected = match (true) {
-                    $innermost === null => [],
-                    $innermost === 'SVC_PORTAL_INVITATIONS_ENABLED' => [count($flags) === 1 ? AgentDeploymentFlags::PORTAL_INVITATIONS : AgentDeploymentFlags::PORTAL_INVITATION_WRITES],
-                    default => [$names[$innermost]],
-                };
-                $this->assertSame($expected, $declared, $documented['operationId']);
+                $this->assertSame(AgentDeploymentFlags::environmentSwitches($operation->requirement->flags), $documented['x-svc-flags'], $operation->id);
+                $this->assertSame($operation->mcpName(), $documented['x-mcp-tool'] ?? null, $operation->id);
                 $checked++;
             }
         }
-        $this->assertSame(61, $checked);
+        $this->assertSame(count(array_filter($registry->all(), static fn ($operation): bool => $operation->rest !== null)), $checked);
+        // The client-write and invitation cutovers nest as their switches do.
+        $this->assertSame(['AGENT_API_WRITES_ENABLED', 'AGENT_API_CLIENT_WRITES_ENABLED', 'SVC_PORTAL_INVITATIONS_ENABLED'], $document['paths']['/workspaces/{workspace}/clients/{client}/portal-invitations']['post']['x-svc-flags']);
     }
 
     public function test_an_under_scoped_rest_call_is_refused_by_the_gate_with_its_reason(): void
