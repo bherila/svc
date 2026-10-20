@@ -14,7 +14,11 @@ use App\Support\Billing\ScheduleDefect;
  */
 final class AgentInlineSchemas
 {
-    /** The preview takes the creation request's selection, without its write version. @return array<string, mixed> */
+    /**
+     * The preview takes the creation request's selection, without its write version.
+     *
+     * @return array<string, mixed>
+     */
     public static function deferredBuyDownPreviewInput(): array
     {
         $schema = AgentApiResponseSchemaCatalog::schema('DeferredBuyDownCreateRequest');
