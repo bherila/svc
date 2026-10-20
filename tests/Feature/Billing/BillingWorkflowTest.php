@@ -286,6 +286,9 @@ class BillingWorkflowTest extends TestCase
         $schedules = collect(['First', 'Second'])->map(function (string $name) use ($workspace, $company): ClientBillingSchedule {
             $agreement = ClientAgreement::query()->create([
                 'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'title' => "Synthetic {$name} agreement",
+                // Concurrent retainers cover independent projects, not replacements.
+                'client_project_id' => ClientProject::query()->create(['workspace_id' => $workspace->id,
+                    'client_company_id' => $company->id, 'name' => "Synthetic {$name} project"])->id,
                 'currency' => 'USD', 'billing_cadence' => 'monthly', 'status' => 'active', 'starts_on' => '2026-01-01',
             ]);
 
@@ -492,6 +495,9 @@ class BillingWorkflowTest extends TestCase
         $schedules = collect(['First', 'Second'])->map(function (string $name) use ($workspace, $company): ClientBillingSchedule {
             $agreement = ClientAgreement::query()->create([
                 'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'title' => "Synthetic {$name} agreement",
+                // Concurrent retainers cover independent projects, not replacements.
+                'client_project_id' => ClientProject::query()->create(['workspace_id' => $workspace->id,
+                    'client_company_id' => $company->id, 'name' => "Synthetic {$name} project"])->id,
                 'currency' => 'USD', 'billing_cadence' => 'monthly', 'status' => 'active', 'starts_on' => '2026-01-01',
             ]);
 
@@ -1971,6 +1977,8 @@ class BillingWorkflowTest extends TestCase
     {
         return ClientAgreement::query()->create([
             'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'title' => $title.' agreement',
+            'client_project_id' => ClientProject::query()->create(['workspace_id' => $workspace->id,
+                'client_company_id' => $company->id, 'name' => $title.' project'])->id,
             'currency' => 'USD', 'billing_cadence' => 'monthly', 'status' => 'active', 'starts_on' => '2026-01-01',
         ]);
     }

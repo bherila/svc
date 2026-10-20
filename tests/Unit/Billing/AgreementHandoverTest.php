@@ -14,6 +14,7 @@ final class AgreementHandoverTest extends TestCase
         $this->assertFalse($handover->overlaps('2026-01-01', '2026-01-14'));
         $this->assertTrue($handover->overlaps('2026-01-01', '2026-01-15'));
         $this->assertTrue($handover->overlaps('2026-01-15', '2026-01-31'));
+        $this->assertTrue($handover->overlaps('2026-01-15', '2026-01-15'));
         $this->assertFalse($handover->overlaps('2026-01-15', '2026-01-14'));
         $this->assertFalse($handover->overlaps('2026-01-01', '2026-01-31', true));
         $this->assertFalse($handover->overlaps('2026-02-01', '2026-02-28', true));
