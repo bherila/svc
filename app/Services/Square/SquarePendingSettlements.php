@@ -92,6 +92,20 @@ final class SquarePendingSettlements
         });
     }
 
+    /** One bounded prune pass; newer reports arriving after selection are retained. */
+    public function prune(Workspace $workspace): int
+    {
+        $days = (int) config('services.square.pending_settlement_retention_days', 30);
+        if ($days < 1) {
+            throw new LogicException('Pending Square settlement retention must be at least one day.');
+        }
+        $expired = DB::table('square_pending_settlements')->where('workspace_id', $workspace->id)
+            ->where('received_at', '<', $this->clock->now()->utc()->subDays($days));
+        $ids = (clone $expired)->orderBy('id')->limit(1000)->pluck('id')->all();
+
+        return $ids === [] ? 0 : $expired->whereIn('id', $ids)->delete();
+    }
+
     private function forPayment(Workspace $workspace, string $paymentId): Builder
     {
         return DB::table('square_pending_settlements')->where('workspace_id', $workspace->id)->where('payment_identifier', $paymentId);

@@ -42,6 +42,16 @@ successful or already-current delivery consumes the entry with the payment updat
 transaction. Newer reports replace older waiting facts, and the recorder still prevents a stale
 report from replacing newer payment facts. Dry runs create or consume no entries. No queue worker
 or repeat delivery of an already-completed webhook is needed.
+
+Some payout charges are non-invoice sales that will never be recorded here. The daily
+`svc:square:prune-pending-settlements` command removes at most 1,000 waiting entries older than
+30 days for the configured workspace; a larger backlog continues on later daily runs or manual
+invocations. `SQUARE_PENDING_SETTLEMENT_RETENTION_DAYS` changes this positive-day retention.
+A newer accepted report resets the retention time; a duplicate or stale report does not.
+After retention expires, late-recorded payments still use the explicit recovery command
+`svc:finance:backfill-payouts --provider=square --apply` to reread their payout history. This
+bounded retention is accepted for the single-operator workload; unbounded late invoice recording
+would need a longer configured window or a separate recovery process.
 No raw webhook body or signature key is stored in a receipt.
 
 `svc:square:reconcile-payments` runs every fifteen minutes without overlapping.

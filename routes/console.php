@@ -37,3 +37,6 @@ Schedule::command('svc:billing:send-payment-reminders --limit=50')->everyFifteen
 Schedule::command('svc:square:sync')->everyFifteenMinutes()->withoutOverlapping(30);
 Schedule::command('svc:square:reconcile-payments')->everyFifteenMinutes()->withoutOverlapping(30);
 Schedule::command('svc:square:prune-webhook-receipts')->daily()->withoutOverlapping(30);
+
+// Non-invoice Square charges need not wait forever for a local payment (#495).
+Schedule::command('svc:square:prune-pending-settlements')->daily()->withoutOverlapping(30);
