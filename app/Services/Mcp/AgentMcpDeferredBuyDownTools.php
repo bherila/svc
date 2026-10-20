@@ -12,8 +12,7 @@ final class AgentMcpDeferredBuyDownTools
 
     /** @return array<string, mixed> */
     public function preview(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $agreement_id,
-        RequestContext $request,
-        ?float $hours = null, ?int $amount = null, bool $round_up = false, int $discount_amount = 0, ?string $discount_reason = null): array
+        RequestContext $request): array
     {
         return $this->rest->call('deferred_backlog.preview', ['workspace' => $workspace_id, 'agreement' => $agreement_id],
             query: $this->provided($request));

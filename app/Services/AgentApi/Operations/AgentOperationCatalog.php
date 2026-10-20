@@ -800,7 +800,7 @@ final class AgentOperationCatalog
             $this->tool(
                 'deferred_backlog.preview', 'Preview deferred work settlement',
                 'Preview FIFO whole-entry settlement of deferred work at termination rates, without using retainer capacity. Choose hours or a gross amount target; round_up optionally includes the next whole entry. A discount is an explicit adjustment with a reason. Returns the backlog version required to reserve the selection as a draft. Managers only.',
-                [AgentMcpDeferredBuyDownTools::class, 'preview'], Effect::Read, true, 'mcp.read', manager: true,
+                [AgentMcpDeferredBuyDownTools::class, 'preview'], Effect::Read, true, 'mcp.read', manager: true, input: AgentInlineSchemas::deferredBuyDownPreviewInput(),
             ),
             $this->tool(
                 'invoices.create_deferred_buydown', 'Create deferred work settlement draft',
