@@ -306,7 +306,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Workspace managers only. Classify every period each of the workspace's active billing schedules is due to bill through today, without writing, and count how many schedules would halt and why, as svc:billing:preflight-schedule-generation does for every workspace. Counts only. It examines at most 60 periods per schedule (the command examines 240), and complete is false when a backlog was longer, so the result is inconclusive rather than clean. A workspace gets 5 per ten minutes, then 429 with Retry-After. */
+        /** @description Workspace managers only. Classify every period each of the workspace's active billing schedules is due to bill through today, without writing, and count how many schedules would halt and why, as svc:billing:preflight-schedule-generation does for every workspace. Counts only, including agreement_handover_overlap schedule defects. It examines at most 60 periods per schedule (the command examines 240), and complete is false when a backlog was longer, so the result is inconclusive rather than clean. A workspace gets 5 per ten minutes, then 429 with Retry-After. */
         get: operations['billing.preflight_schedule_generation'];
         put?: never;
         post?: never;
@@ -323,7 +323,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Workspace managers only. A stale draft is a draft whose due date or scheduled issue date is before today in the workspace's calendar; a missing period is the started current period of an active recurring agreement with no non-void invoice. Where Square serves the workspace, square_payment_mismatches lists invoices paid outside Square while Square is still open, and square_billing_audit flags billed series periods with no linked svc invoice, Square payments svc has not recorded, unlinked Square customers with an open balance, and series whose cadence, currency or amount drifted from the agreement, from svc's mirror as of its last sync. This read only flags them: nothing issues, sends or generates an invoice, and nothing is written to Square. */
+        /** @description Workspace managers only. A stale draft is a draft whose due date or scheduled issue date is before today in the workspace's calendar; a missing period is the started current period of an active recurring agreement with no non-void invoice. Where Square serves the workspace, square_payment_mismatches lists invoices paid outside Square while Square is still open, and square_billing_audit flags billed series periods with no linked svc invoice, Square payments svc has not recorded, unlinked Square customers with an open balance, and series whose cadence, currency or amount drifted from the agreement, from svc's mirror as of its last sync. agreement_handovers reports up to 100 issued cadence invoices whose stored coverage overlaps a successor, including potentially prorated invoices requiring review. This read only flags them: nothing issues, sends or generates an invoice, and nothing is written to Square. */
         get: operations['billing_audit.stale_and_missing'];
         put?: never;
         post?: never;
@@ -343,7 +343,7 @@ export interface paths {
         /** @description Manager-only bounded billing schedules with opaque current revisions. */
         get: operations['billing_schedules.list'];
         put?: never;
-        /** @description Create a schedule without issuing. expected_version is the parent agreement revision. Workspace managers only. */
+        /** @description Create a schedule without issuing. Refuses a first period overlapping a successor agreement with 422; no automatic proration. expected_version is the parent agreement revision. Workspace managers only. */
         post: operations['billing_schedules.create'];
         delete?: never;
         options?: never;
@@ -360,7 +360,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Generate and issue due invoices through today using the schedule revision. Explicit confirmation required. Normal automatic client delivery settings apply. Atomic preflight and idempotent replay. */
+        /** @description Generate and issue due invoices through today using the schedule revision. Explicit confirmation required. Normal automatic client delivery settings apply. Atomic preflight and idempotent replay. Refuses successor agreement coverage overlaps with 422 before writing any invoice. */
         post: operations['billing_schedules.generate'];
         delete?: never;
         options?: never;
@@ -1942,6 +1942,22 @@ export interface components {
             /** @description The Square location the series bills from: Square numbers invoices uniquely per location only, so the same prefix in another location is another series. Null with a series key for a marker set before markers named a location; it then matches the prefix in every location until the agreement is marked again. */
             square_location_id: string | null;
         };
+        AgreementHandoverAudit: {
+            count: number;
+            invoices: {
+                /** Format: uuid */
+                invoice_id: string;
+                /** Format: uuid */
+                successor_id: string;
+                /** Format: date */
+                successor_starts_on: string;
+                /** Format: date */
+                coverage_start: string;
+                /** Format: date */
+                coverage_end: string;
+            }[];
+            truncated: boolean;
+        };
         AgreementListResponse: {
             data: components['schemas']['Agreement'][];
             meta: components['schemas']['PaginationMeta'];
@@ -2220,7 +2236,7 @@ export interface components {
              * @description Published agent API contract baseline. A finance consumer must explicitly support this integer; it is independent of resource version hashes, the application release and the MCP protocol.
              * @enum {integer}
              */
-            contract_version: 1;
+            contract_version: 2;
             id: components['schemas']['Uuid'];
             name: string;
             /** @description Your subject at the trusted identity provider, the same in every application it signs you in to; null when this account is not bound to it. Compare it with the subject the connecting application knows before trusting the connection. */
@@ -3728,6 +3744,7 @@ export interface components {
             defects_by_kind: {
                 unreadable_cadence: number;
                 unreadable_line_template: number;
+                agreement_handover_overlap: number;
             };
         };
         ScheduleGenerationPreflightResponse: {
@@ -4463,6 +4480,7 @@ export interface components {
             missing_periods_truncated: boolean;
             square_payment_mismatches: components['schemas']['SquarePaymentMismatchAudit'];
             square_billing_audit: components['schemas']['SquareBillingAudit'];
+            agreement_handovers: components['schemas']['AgreementHandoverAudit'];
         };
         StaleAndMissingInvoiceAuditResponse: {
             data: components['schemas']['StaleAndMissingInvoiceAudit'];

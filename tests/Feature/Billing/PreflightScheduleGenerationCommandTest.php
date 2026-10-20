@@ -131,6 +131,7 @@ final class PreflightScheduleGenerationCommandTest extends TestCase
             'defects_by_kind' => [
                 'unreadable_cadence' => 0,
                 'unreadable_line_template' => 0,
+                'agreement_handover_overlap' => 0,
             ],
         ], $decoded['summary']);
     }

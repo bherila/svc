@@ -6,6 +6,7 @@ use App\Models\ClientAgreement;
 use App\Models\ClientBillingSchedule;
 use App\Models\ClientInvoice;
 use App\Support\AgentApi\AgentApiVersion;
+use App\Support\Billing\AgreementHandover;
 use App\Support\Billing\BillingPeriod;
 use App\Support\Billing\BillingScheduleLineTemplate;
 use App\Support\Billing\PeriodClaim;
@@ -22,6 +23,7 @@ final class BillingScheduleService
         private readonly InvoiceLifecycleService $invoices,
         private readonly BillingPeriodCollisionResolver $collisions,
         private readonly ExpenseInvoiceAllocations $expenses,
+        private readonly AgreementHandoverRepository $handovers = new AgreementHandoverRepository,
     ) {}
 
     /**
@@ -71,7 +73,7 @@ final class BillingScheduleService
             // cannot reject the pair, because the other path writes a null
             // schedule id. The registry ranks schedules before agreements, so
             // this is an acquisition in order, not a new pair.
-            ClientAgreement::query()
+            $agreement = ClientAgreement::query()
                 ->where('workspace_id', $locked->workspace_id)
                 ->where('client_company_id', $locked->client_company_id)
                 ->whereKey($locked->client_agreement_id)
@@ -86,7 +88,7 @@ final class BillingScheduleService
             // an issued invoice for nothing.
             $template = BillingScheduleLineTemplate::normalize($locked->getAttribute('line_template'));
 
-            [$plan, $nextRun] = $this->plan($locked, $through);
+            [$plan, $nextRun] = $this->plan($locked, $through, $this->handovers->forAgreement($agreement));
             if ($plan === []) {
                 return [];
             }
@@ -124,13 +126,14 @@ final class BillingScheduleService
      *
      * @throws DomainException if any due period cannot be decided.
      */
-    private function plan(ClientBillingSchedule $schedule, CarbonImmutable $through): array
+    private function plan(ClientBillingSchedule $schedule, CarbonImmutable $through, ?AgreementHandover $handover): array
     {
         $plan = [];
         $nextRun = CarbonImmutable::parse((string) $schedule->next_run_on);
 
         while ($nextRun->lte($through)) {
             $period = BillingPeriod::beginningAt($nextRun, (string) $schedule->cadence);
+            $handover?->assertClear($period->start->toDateString(), $period->end->toDateString());
 
             // Whether this period is already covered, and by whose invoice,
             // is decided by `BillingPeriodCollisionResolver`. It used to be

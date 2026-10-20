@@ -2894,6 +2894,8 @@ final class ReplayInvoicesTest extends TestCase
         $other = ClientAgreement::query()->create([
             'workspace_id' => $this->workspace->id,
             'client_company_id' => $this->company->id,
+            'client_project_id' => ClientProject::query()->create(['workspace_id' => $this->workspace->id,
+                'client_company_id' => $this->company->id, 'name' => 'Synthetic independent attribution scope'])->id,
             'title' => 'Another agreement',
             'status' => 'active',
             'currency' => 'USD',

@@ -412,7 +412,7 @@ final class AgentRestDocumentation
             'billing_audit.stale_and_missing' => [
                 'method' => 'GET',
                 'scopes' => ['billing:read'],
-                'description' => 'Workspace managers only. A stale draft is a draft whose due date or scheduled issue date is before today in the workspace\'s calendar; a missing period is the started current period of an active recurring agreement with no non-void invoice. Where Square serves the workspace, square_payment_mismatches lists invoices paid outside Square while Square is still open, and square_billing_audit flags billed series periods with no linked svc invoice, Square payments svc has not recorded, unlinked Square customers with an open balance, and series whose cadence, currency or amount drifted from the agreement, from svc\'s mirror as of its last sync. This read only flags them: nothing issues, sends or generates an invoice, and nothing is written to Square.',
+                'description' => 'Workspace managers only. A stale draft is a draft whose due date or scheduled issue date is before today in the workspace\'s calendar; a missing period is the started current period of an active recurring agreement with no non-void invoice. Where Square serves the workspace, square_payment_mismatches lists invoices paid outside Square while Square is still open, and square_billing_audit flags billed series periods with no linked svc invoice, Square payments svc has not recorded, unlinked Square customers with an open balance, and series whose cadence, currency or amount drifted from the agreement, from svc\'s mirror as of its last sync. agreement_handovers reports up to 100 issued cadence invoices whose stored coverage overlaps a successor, including potentially prorated invoices requiring review. This read only flags them: nothing issues, sends or generates an invoice, and nothing is written to Square.',
                 'parameters' => ['WorkspaceId'],
                 'response' => 'StaleAndMissingInvoiceAuditResponse',
                 'response_description' => 'Authorized result',
@@ -466,7 +466,7 @@ final class AgentRestDocumentation
             'billing.preflight_schedule_generation' => [
                 'method' => 'GET',
                 'scopes' => ['billing:read'],
-                'description' => 'Workspace managers only. Classify every period each of the workspace\'s active billing schedules is due to bill through today, without writing, and count how many schedules would halt and why, as svc:billing:preflight-schedule-generation does for every workspace. Counts only. It examines at most 60 periods per schedule (the command examines 240), and complete is false when a backlog was longer, so the result is inconclusive rather than clean. A workspace gets 5 per ten minutes, then 429 with Retry-After.',
+                'description' => 'Workspace managers only. Classify every period each of the workspace\'s active billing schedules is due to bill through today, without writing, and count how many schedules would halt and why, as svc:billing:preflight-schedule-generation does for every workspace. Counts only, including agreement_handover_overlap schedule defects. It examines at most 60 periods per schedule (the command examines 240), and complete is false when a backlog was longer, so the result is inconclusive rather than clean. A workspace gets 5 per ten minutes, then 429 with Retry-After.',
                 'parameters' => ['WorkspaceId'],
                 'response' => 'ScheduleGenerationPreflightResponse',
                 'response_description' => 'Aggregate counts for the workspace',
@@ -475,7 +475,7 @@ final class AgentRestDocumentation
             'billing_schedules.create' => [
                 'method' => 'POST',
                 'scopes' => ['billing:write', 'billing:read'],
-                'description' => 'Create a schedule without issuing. expected_version is the parent agreement revision. Workspace managers only.',
+                'description' => 'Create a schedule without issuing. Refuses a first period overlapping a successor agreement with 422; no automatic proration. expected_version is the parent agreement revision. Workspace managers only.',
                 'parameters' => ['WorkspaceId', 'IdempotencyKey'],
                 'request' => 'BillingScheduleCreateRequest',
                 'response' => 'BillingScheduleMutationResponse',
@@ -484,7 +484,7 @@ final class AgentRestDocumentation
             'billing_schedules.generate' => [
                 'method' => 'POST',
                 'scopes' => ['billing:deliver', 'billing:read'],
-                'description' => 'Generate and issue due invoices through today using the schedule revision. Explicit confirmation required. Normal automatic client delivery settings apply. Atomic preflight and idempotent replay.',
+                'description' => 'Generate and issue due invoices through today using the schedule revision. Explicit confirmation required. Normal automatic client delivery settings apply. Atomic preflight and idempotent replay. Refuses successor agreement coverage overlaps with 422 before writing any invoice.',
                 'parameters' => ['WorkspaceId', self::uuidPath('schedule'), 'IdempotencyKey'],
                 'request' => 'BillingScheduleGenerateRequest',
                 'response' => 'BillingScheduleGenerateResponse',

@@ -832,7 +832,7 @@ final class ScheduleGenerationPreflightTest extends TestCase
     {
         return ClientAgreement::query()->create([
             'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'title' => $title,
-            'status' => 'active', 'currency' => 'USD', 'starts_on' => '2026-01-01', 'retainer_minutes' => 600,
+            'status' => 'active', 'currency' => 'USD', 'starts_on' => $title === 'Retainer' ? '2026-01-01' : '2027-01-01', 'retainer_minutes' => 600,
         ]);
     }
 

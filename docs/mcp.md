@@ -8,9 +8,9 @@ general-availability work tracked by
 ## Agent API contract baseline
 
 The authenticated `context.get` tool returns required integer
-`data.contract_version: 1`, the same field as `GET /api/v1/context`.
-`AgentApiContract::VERSION` names this first explicit published agent API
-baseline. Consumers must explicitly support the exact integer; missing,
+`data.contract_version: 2`, the same field as `GET /api/v1/context`.
+`AgentApiContract::VERSION` names the published agent API baseline. Version 2 adds handover refusals and
+the required handover audit fields; consumers must explicitly support version 2. Consumers must explicitly support the exact integer; missing,
 non-integer or unsupported values are not a supported baseline. Check the
 runtime context when connecting and before syncing rather than assuming the
 `/api/v1` path or OpenAPI `info.version: 1.0.0` establishes compatibility.
@@ -1562,3 +1562,22 @@ filters, the series, the sync status and a **Sync now** control that calls
   readable `error` (Square unavailable, rate limited, an unreadable response,
   a refused credential, or a run a dead process abandoned). A failed run is a
   200 answer, not an error: the mirror keeps what earlier runs stored.
+
+### Agreement handovers
+
+Agreement succession follows `(workspace, company, project)` and `starts_on`, then
+internal id for same-day replacements. Draft agreements do not replace active terms.
+Generation refuses a period that sells coverage on or after its successor starts
+(422). Cadence generation still uses the existing `ends_on` proration; edit the
+outgoing terms to end the day before the successor when appropriate. Schedule
+line templates charge a fixed amount and do not acquire automatic proration, so
+their period must end before the successor. No automatic truncation is introduced.
+
+`billing.preflight_schedule_generation` counts these as the schedule defect
+`agreement_handover_overlap`, using the same coverage policy as generation.
+`billing_audit.stale_and_missing.agreement_handovers` reports issued cadence
+invoice coverage crossing a handover, with a total count and at most 100 rows.
+Stored dates are evidence to review: a row may already have been prorated, and
+this audit neither infers a financial overcharge nor rewrites an issued invoice.
+The operator equivalent is `svc:billing:audit-handovers --workspace=<public-id>
+--format=json`; omitting the workspace audits all tenants as an operator.
