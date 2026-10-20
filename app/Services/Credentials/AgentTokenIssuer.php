@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Support\Auth\PersonalAccessTokenIdentity;
 use App\Support\WorkspaceClock;
 use BWH\Auth\OAuth\Credentials\CredentialOwnerRefused;
+use BWH\Auth\OAuth\Server\CredentialLineages;
 use BWH\Auth\OAuth\Server\OAuthResourceIndicator;
 use BWH\Auth\OAuth\Server\ProviderIdentityTokens;
 use BWH\Auth\OAuth\Session\ProviderStatusUnavailable;
@@ -18,6 +19,7 @@ use Illuminate\Support\Facades\Cache;
 use Laravel\Passport\ClientRepository;
 use Laravel\Passport\Passport;
 use League\OAuth2\Server\AuthorizationServer;
+use League\OAuth2\Server\Exception\OAuthServerException;
 use Psr\Log\LoggerInterface;
 use RuntimeException;
 
@@ -78,23 +80,30 @@ final readonly class AgentTokenIssuer
         $principal = AgentPrincipal::query()->whereKey($person->getKey())->firstOrFail();
         $resource = OAuthResourceIndicator::resource($request->resource);
         try {
-            $providerStamp = $this->providerStamp($person);
-            $issued = $this->withLifetime($request->ttlMinutes, fn (): array => $this->create($principal, $request, $resource, $providerStamp));
+            $issued = $this->container->make(CredentialLineages::class)->duringIssue(function () use ($person, $principal, $request, $resource): array {
+                $providerStamp = $this->providerStamp($person);
+
+                return $this->withLifetime($request->ttlMinutes, fn (): array => $this->create($principal, $request, $resource, $providerStamp));
+            });
+        } catch (OAuthServerException $refused) {
+            if ($refused->getErrorType() !== 'invalid_grant') {
+                throw $refused;
+            }
+            throw new AgentTokenRefused('The credential was revoked during issuance. Retry with a fresh authorization.', previous: $refused);
         } catch (CredentialOwnerRefused) {
             throw new AgentTokenRefused('This account cannot hold API credentials.');
         }
 
         $row = Passport::token()->newQuery()->whereKey($issued['id'])->firstOrFail(['expires_at', 'revoked']);
-        // A revocation of this person's credentials is under way, and its
-        // fence revoked the token as Passport persisted it.
+        // A revocation may have committed immediately after persistence.
         if ((bool) $row->getAttribute('revoked')) {
-            throw new AgentTokenRefused('A revocation of this person\'s agent credentials is in progress, so the token was revoked as it was issued. Retry after '.AgentCredentialFence::SECONDS.' seconds.');
+            throw new AgentTokenRefused('The credential was revoked during issuance. Retry with a fresh authorization.');
         }
         $expiresAt = CarbonImmutable::parse($row->getAttribute('expires_at'));
         // Passport reads the lifetime from shared state when it builds its
         // server; never hand out a credential that outlives what was asked.
         if ($expiresAt->greaterThan($this->clock->now()->addMinutes($request->ttlMinutes + 1))) {
-            $this->revoker->revoke(AgentCredentialSelection::token($principal, $issued['id'], fence: false), $request->kind->actor());
+            $this->revoker->revoke(AgentCredentialSelection::token($principal, $issued['id']), $request->kind->actor());
 
             throw new AgentTokenRefused('The token was issued with a longer lifetime than requested and has been revoked.');
         }
@@ -174,7 +183,7 @@ final readonly class AgentTokenIssuer
             ->where('resource_uri', $resource)
             ->exists();
         if (! $bound) {
-            $this->revoker->revoke(AgentCredentialSelection::token($principal, (string) $issued->accessTokenId, fence: false), $request->kind->actor());
+            $this->revoker->revoke(AgentCredentialSelection::token($principal, (string) $issued->accessTokenId), $request->kind->actor());
 
             throw new AgentTokenRefused('The token was not issued from the expected client and resource, and has been revoked. Retry.');
         }

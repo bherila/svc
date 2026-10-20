@@ -27,8 +27,6 @@ final readonly class AgentCredentialSelection
         public ?string $storedName = null,
         public ?string $clientId = null,
         public ?int $atMost = null,
-        /** Whether to raise an {@see AgentCredentialFence} for what this selects. */
-        public bool $fence = false,
     ) {
         /**
          * @infection-ignore-all Both casts are equivalent mutants: this file is not strict, so the
@@ -38,16 +36,10 @@ final readonly class AgentCredentialSelection
         [$this->ownerId, $this->ownerPublicId] = [(int) $owner->getKey(), (string) $owner->public_id];
     }
 
-    /**
-     * One unrevoked access token of this owner, by id, and its refresh tokens,
-     * fencing its lineage (what a refresh of it persists next) unless `$fence`
-     * is false - for a token the caller has just minted itself, which no grant
-     * can be racing. Keyed on the id, the fence needs no row, so a purge in
-     * between cannot lift it.
-     */
-    public static function token(User|AgentPrincipal $owner, string $tokenId, bool $fence = true): self
+    /** End this owner's connection and every durable tracked rotation of it. */
+    public static function token(User|AgentPrincipal $owner, string $tokenId): self
     {
-        return new self($owner, AgentCredentialScope::Token, tokenId: $tokenId, fence: $fence);
+        return new self($owner, AgentCredentialScope::Token, tokenId: $tokenId);
     }
 
     /**
@@ -64,11 +56,11 @@ final readonly class AgentCredentialSelection
      * token (including one whose access token was purged) and each pending
      * authorization code - or only those issued to one OAuth client.
      */
-    public static function connections(User|AgentPrincipal $owner, ?string $clientId = null, bool $fence = true): self
+    public static function connections(User|AgentPrincipal $owner, ?string $clientId = null): self
     {
-        // Passport stores client ids in lower case and announces them so; a fence
+        // Passport stores client ids in lower case and announces them so; a guard
         // keyed on another casing would never match, though a case-insensitive
         // collation would still select the rows.
-        return new self($owner, AgentCredentialScope::Connections, clientId: $clientId === null ? null : strtolower($clientId), fence: $fence);
+        return new self($owner, AgentCredentialScope::Connections, clientId: $clientId === null ? null : strtolower($clientId));
     }
 }

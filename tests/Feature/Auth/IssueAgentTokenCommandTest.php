@@ -5,16 +5,19 @@ namespace Tests\Feature\Auth;
 use App\Models\AgentPrincipal;
 use App\Models\User;
 use App\Models\Workspace;
-use App\Services\Credentials\AgentCredentialFence;
+use App\Services\Credentials\AgentCredentialSelection;
 use App\Services\Credentials\AgentTokenKind;
+use App\Services\Credentials\CredentialRevoker;
 use App\Support\AgentApi\AgentApiScopes;
 use BWH\Auth\OAuth\Server\OAuthResourceIndicator;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Factory;
 use Illuminate\Log\Events\MessageLogged;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Laravel\Passport\ClientRepository;
 use Laravel\Passport\Passport;
@@ -389,28 +392,44 @@ final class IssueAgentTokenCommandTest extends TestCase
         }
     }
 
-    /**
-     * An operator token issued for a person while their connections are being
-     * cut off is fenced like any other credential: refused, and its row revoked.
-     */
-    public function test_an_operator_token_issued_inside_a_revocation_fence_is_refused_and_revoked(): void
+    /** A fresh decision after revocation does not wait for a cache TTL. */
+    public function test_fresh_operator_issuance_after_revocation_is_allowed_immediately(): void
     {
-        [$user] = $this->member('fenced-operator');
-        [$stranger] = $this->member('fenced-stranger');
+        [$user] = $this->member('revoked-operator');
+        [$stranger] = $this->member('other-operator');
+        $before = $this->decode($this->issue($user, 'Before revocation', [AgentApiScopes::IDENTITY_READ])[1]);
         $this->assertSame(0, Artisan::call('svc:auth:revoke-connections', ['--apply' => true, 'user_public_id' => $user->public_id]));
-
-        [$exit, $output] = $this->issue($user, 'Inside fence', [AgentApiScopes::IDENTITY_READ]);
-        $this->assertSame(1, $exit);
-        $this->assertStringNotContainsString('"token"', $output);
-        $this->assertTrue((bool) Passport::token()->newQuery()->where('user_id', $user->id)->sole()->revoked);
-        // Another person is not fenced.
-        $this->assertSame(0, $this->issue($stranger, 'Unfenced', [AgentApiScopes::IDENTITY_READ])[0]);
-
-        $this->travel(AgentCredentialFence::SECONDS + 1)->seconds();
-        $this->assertSame(0, $this->issue($user, 'After fence', [AgentApiScopes::IDENTITY_READ])[0]);
+        $this->assertSame(0, $this->issue($user, 'Fresh authorization', [AgentApiScopes::IDENTITY_READ])[0]);
+        $this->assertSame(0, $this->issue($stranger, 'Other person', [AgentApiScopes::IDENTITY_READ])[0]);
+        $this->bearer($before['token'])->getJson('/api/v1/context')->assertUnauthorized();
+        $this->assertSame(1, Passport::token()->newQuery()->where('user_id', $user->id)->where('revoked', false)->count());
     }
 
-    public function test_a_revocation_preview_leaves_credentials_live_and_does_not_install_a_fence(): void
+    public function test_revocation_during_the_issuers_remote_identity_check_refuses_persistence(): void
+    {
+        $this->fakeProviderIdentity(enforced: true);
+        $user = $this->boundUser('operator-race');
+        $raced = false;
+        Http::swap(new Factory);
+        Http::preventStrayRequests();
+        Http::fake(function () use ($user, &$raced) {
+            if (! $raced) {
+                $raced = true;
+                app(CredentialRevoker::class)->revoke(AgentCredentialSelection::connections($user), 'test');
+                $this->travel(1)->days();
+            }
+
+            return Http::response(['contract_version' => 1, 'active' => true, 'subject' => 'operator-race', 'credential_version' => 1]);
+        });
+        [$exit, $output] = $this->issue($user, 'Interrupted issuance', [AgentApiScopes::IDENTITY_READ]);
+        $this->assertTrue($raced);
+        $this->assertSame(1, $exit);
+        $this->assertStringContainsString('revoked during issuance', $output);
+        $this->assertStringNotContainsString('"token"', $output);
+        $this->assertSame(0, Passport::token()->newQuery()->count());
+    }
+
+    public function test_a_revocation_preview_leaves_credentials_live_and_does_not_raise_a_barrier(): void
     {
         [$user] = $this->member('preview-revocation');
         $this->assertSame(0, $this->issue($user, 'Before preview', [AgentApiScopes::IDENTITY_READ])[0]);

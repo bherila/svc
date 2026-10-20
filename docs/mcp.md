@@ -203,13 +203,15 @@ by a connection disconnecting itself, the smoke's cleanup, and the emergency
 one transaction on Passport's connection that locks the access-token rows,
 revokes their refresh tokens before the access tokens themselves (through
 Passport's repository, so revocation listeners hear of each), never deletes a row,
-and logs one `agent_token.revoked` entry after it commits. A revocation also raises a
-two-minute fence, counted from its commit, (`AgentCredentialFence`) on the person and client: an access token
-(OAuth or personal) or authorization code Passport persists inside it - the replacement a refresh already in flight
-mints - is revoked as it is created, as is any refresh token whose access token is
-already revoked. A connection disconnecting itself fences only its own lineage (what a
-refresh of one of its refresh tokens persists), never the person's other connections to
-the same client.
+and logs one `agent_token.revoked` entry after it commits. Owner/client and
+connection revocations use the auth package's durable `CredentialLineages`
+guard in that same transaction. A code exchange or refresh that already passed
+validation cannot persist a child of a revoked lineage, however long it stalls.
+Self-disconnect follows that connection's tracked rotations and preserves
+same-client sibling connections. Fresh authorization after a broad revocation
+is allowed immediately. The canonical issuer captures its decision before its
+remote identity check, so it cannot adopt a revocation that happened meanwhile.
+No cache TTL, cache flush or Passport purge lifts the guard.
 
 Revoke by name, which takes effect on the next request:
 
@@ -263,7 +265,7 @@ credential acts for a person.
 A REST connection disconnects itself with `DELETE /api/v1/connection`
 (`connections.disconnect`, any REST credential): every credential the person
 holds for the calling OAuth client - pending authorization codes, refresh
-tokens, then access tokens - is revoked through `CredentialRevoker` and fenced,
+tokens, then access tokens - is revoked through `CredentialRevoker` and the durable guard,
 so a first-party application turned off by the person cannot act or refresh
 again. Other applications' connections, and other people's connections to the
 same application, are untouched; a personal API token, which shares one client

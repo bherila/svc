@@ -5,6 +5,7 @@ namespace App\Services\Credentials;
 use App\Models\User;
 use App\Support\Concurrency\Locks;
 use App\Support\WorkspaceClock;
+use BWH\Auth\OAuth\Server\CredentialLineages;
 use BWH\Auth\OAuth\Server\ProviderIdentityTokens;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
@@ -13,7 +14,6 @@ use Laravel\Passport\Passport;
 use Laravel\Passport\RefreshToken;
 use Laravel\Passport\Token;
 use Psr\Log\LoggerInterface;
-use Throwable;
 
 /**
  * The one place SVC revokes a credential: a connection disconnecting itself
@@ -37,7 +37,7 @@ final readonly class CredentialRevoker
         private AccessTokenRepository $accessTokens,
         private LoggerInterface $log,
         private WorkspaceClock $clock,
-        private AgentCredentialFence $fence,
+        private CredentialLineages $lineages,
     ) {}
 
     /**
@@ -45,49 +45,50 @@ final readonly class CredentialRevoker
      */
     public function revoke(AgentCredentialSelection $selection, string $actor): AgentRevocation
     {
+        return match ($selection->scope) {
+            AgentCredentialScope::Connections => $this->lineages->revokingOwner($selection->ownerId, $selection->clientId, fn (): AgentRevocation => $this->revokeRows($selection, $actor, [])),
+            AgentCredentialScope::Token => $this->lineages->revokingConnection($selection->ownerId, (string) $selection->tokenId, fn (array $family): AgentRevocation => $this->revokeRows($selection, $actor, $family)),
+            AgentCredentialScope::Name => Passport::token()->getConnection()->transaction(fn (): AgentRevocation => $this->revokeRows($selection, $actor, [])),
+        };
+    }
+
+    /** @param list<string> $family */
+    private function revokeRows(AgentCredentialSelection $selection, string $actor, array $family): AgentRevocation
+    {
         $connection = Passport::token()->getConnection();
-        $family = $this->family($selection);
-        // Raised first, so a grant that persists while this runs is caught too.
-        $this->raiseFences($selection, $family);
+        $ids = array_values($this->accessTokenQuery($selection, $family)
+            ->tap(Locks::forUpdate())
+            ->pluck('id')
+            ->map(static fn (mixed $id): string => (string) $id)
+            ->all());
+        if ($selection->atMost !== null && count($ids) > $selection->atMost) {
+            throw new AmbiguousRevocation(count($ids));
+        }
 
-        return $connection->transaction(function () use ($selection, $actor, $connection, $family): AgentRevocation {
-            // Raised again once this commits, so the whole window follows the
-            // revocation however long the transaction took.
-            $connection->afterCommit(fn () => $this->raiseFences($selection, $family));
-            $ids = array_values($this->accessTokenQuery($selection, $family)
-                ->tap(Locks::forUpdate())
-                ->pluck('id')
-                ->map(static fn (mixed $id): string => (string) $id)
-                ->all());
-            if ($selection->atMost !== null && count($ids) > $selection->atMost) {
-                throw new AmbiguousRevocation(count($ids));
-            }
+        // Refresh tokens first: revoking the access token alone would leave
+        // the connection able to mint its replacement.
+        $refreshTokens = $this->revokeRefreshTokens($selection, $ids);
+        $authorizationCodes = $selection->scope === AgentCredentialScope::Connections
+            ? $this->revokeAuthorizationCodes($selection)
+            : 0;
+        foreach ($ids as $id) {
+            $this->accessTokens->revokeAccessToken($id);
+        }
 
-            // Refresh tokens first: revoking the access token alone would leave
-            // the connection able to mint its replacement.
-            $refreshTokens = $this->revokeRefreshTokens($selection, $ids);
-            $authorizationCodes = $selection->scope === AgentCredentialScope::Connections
-                ? $this->revokeAuthorizationCodes($selection)
-                : 0;
-            foreach ($ids as $id) {
-                $this->accessTokens->revokeAccessToken($id);
-            }
+        $revocation = new AgentRevocation(CredentialFingerprint::all($ids), $refreshTokens, $authorizationCodes);
+        $connection->afterCommit(fn () => $this->log->info('agent_token.revoked', array_filter([
+            'actor' => $actor,
+            'subject_id' => $selection->ownerPublicId,
+            'selection' => $selection->scope->value,
+            'name' => $selection->label,
+            'client_id' => $selection->clientId,
+            'revoked' => $revocation->accessTokens(),
+            'refresh_tokens_revoked' => $refreshTokens,
+            'authorization_codes_revoked' => $authorizationCodes,
+            'credential_fingerprints' => $revocation->fingerprints,
+        ], static fn (mixed $value): bool => $value !== null)));
 
-            $revocation = new AgentRevocation(CredentialFingerprint::all($ids), $refreshTokens, $authorizationCodes);
-            $connection->afterCommit(fn () => $this->log->info('agent_token.revoked', array_filter([
-                'actor' => $actor,
-                'subject_id' => $selection->ownerPublicId,
-                'selection' => $selection->scope->value,
-                'name' => $selection->label,
-                'client_id' => $selection->clientId,
-                'revoked' => $revocation->accessTokens(),
-                'refresh_tokens_revoked' => $refreshTokens,
-                'authorization_codes_revoked' => $authorizationCodes,
-                'credential_fingerprints' => $revocation->fingerprints,
-            ], static fn (mixed $value): bool => $value !== null)));
-
-            return $revocation;
-        });
+        return $revocation;
     }
 
     /**
@@ -106,7 +107,7 @@ final readonly class CredentialRevoker
      * to, which is exactly what cannot be known - so a containment that must
      * not miss one can close them. Each such connection authorizes again.
      *
-     * Only while OAuth issuance is off: no fence can name the owner of a
+     * Only while OAuth issuance is off: legacy rows cannot name the owner of a
      * token nobody can attribute, so a refresh already in flight would
      * otherwise persist a live replacement after this revokes its parent.
      *
@@ -121,40 +122,6 @@ final readonly class CredentialRevoker
         $this->log->info('agent_token.unattributed_refresh_tokens_revoked', ['actor' => $actor, 'revoked' => $revoked]);
 
         return $revoked;
-    }
-
-    /**
-     * A person's connections fence the person and client (or every client).
-     * One connection disconnecting itself fences only its own lineage: a
-     * refresh of this token that passed its check may already have revoked it
-     * (a refresh grant revokes the old access token before issuing the new
-     * one), may be waiting on the lock, or may race a purge of the row, and
-     * persists its replacement after this whichever it is. Keyed on the token
-     * id, it needs no row, and another connection the same person holds with
-     * the same client keeps refreshing.
-     */
-    /** @param  list<string>  $family */
-    private function raiseFences(AgentCredentialSelection $selection, array $family): void
-    {
-        if (! $selection->fence) {
-            return;
-        }
-        // The fence is a backstop: a cache it cannot reach must never stop the
-        // revocation itself. Fail open on the fence alone, and say so.
-        try {
-            match ($selection->scope) {
-                AgentCredentialScope::Connections => $this->fence->raise($selection->ownerId, $selection->clientId),
-                AgentCredentialScope::Token => array_map($this->fence->raiseLineage(...), $family),
-                AgentCredentialScope::Name => null,
-            };
-        } catch (Throwable $unavailable) {
-            $this->log->warning('agent_token.fence_unavailable', [
-                'subject_id' => $selection->ownerPublicId,
-                'selection' => $selection->scope->value,
-                'client_id' => $selection->clientId,
-                'error' => $unavailable::class,
-            ]);
-        }
     }
 
     /** Whether {@see revokeUnattributedRefreshTokens()} may run: only with OAuth issuance (and so refresh) off. */
@@ -207,38 +174,6 @@ final readonly class CredentialRevoker
 
             return $deleted;
         });
-    }
-
-    /**
-     * A token selection's refresh family: the token, then each access token a
-     * refresh rotated it into within the fence's window. A refresh that
-     * completed between the caller authenticating and this revocation left
-     * the caller's token revoked and a live successor; the family reaches it.
-     * Bounded, and empty of successors if the cache cannot be read.
-     *
-     * @return list<string>
-     */
-    private function family(AgentCredentialSelection $selection): array
-    {
-        if ($selection->scope !== AgentCredentialScope::Token) {
-            return [];
-        }
-        // Breadth first, every branch: concurrent refreshes of one refresh token
-        // can each mint a successor.
-        $family = [(string) $selection->tokenId];
-        try {
-            for ($at = 0; $at < count($family) && count($family) < 16; $at++) {
-                foreach ($this->fence->successorsOf($family[$at]) as $next) {
-                    if (! in_array($next, $family, true)) {
-                        $family[] = $next;
-                    }
-                }
-            }
-        } catch (Throwable) {
-            // The successors are a backstop, like the fence.
-        }
-
-        return $family;
     }
 
     /**
