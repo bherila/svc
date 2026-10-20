@@ -117,6 +117,10 @@ enum LockResource: string
     // Payment reminders (#438) follow the same shape: claimed and resolved
     // under the invoice lock, then the reminder row.
     case InvoiceReminderLog = 'invoice_reminder_logs';
+    // Pending Square settlement delivery takes payment first, after any billing locks already
+    // held by invoice reconciliation. Producers hold only this lock in a separate transaction.
+    case SquarePendingSettlement = 'square_pending_settlements';
+
     // Reconciling one Square-linked invoice (#458) re-reads its link under a
     // share lock after the invoice lock, so a re-link committed meanwhile is
     // seen; link changes themselves lock only the invoice.

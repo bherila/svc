@@ -614,3 +614,15 @@ after the invitation was sent leaves it `not_applied` or the project dropped.
 
 `LockOrderConformanceTest` drives every one of these writers. As elsewhere, the
 assertions run on one connection and prove ordering, not contention.
+
+### Square payout entries waiting for a payment (#495)
+
+Payout webhooks and payout backfills store waiting facts in a short producer transaction that
+locks only `square_pending_settlements`; it commits before attempting delivery. Delivery takes
+the existing billing-maintenance share lock, the workspace's invoice payment, then its pending
+settlement. The pending read is current even inside invoice reconciliation's outer transaction.
+The recorder re-enters the already-held payment lock. A missing payment leaves the entry durable;
+otherwise applying and consuming it commit together. Producers never hold a pending row while
+waiting for a payment, so invoice reconciliation's retained billing locks cannot form the reverse
+cycle. `SquarePendingSettlement` follows the billing resources and precedes the final Square-link
+read in the lock registry.
