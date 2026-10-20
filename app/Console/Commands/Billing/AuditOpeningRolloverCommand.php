@@ -2,10 +2,16 @@
 
 namespace App\Console\Commands\Billing;
 
+use App\Services\AgentApi\Operations\AgentRestDocumentation;
 use App\Services\Billing\OpeningRolloverAuditor;
 use Illuminate\Console\Command;
 
 /**
+ * Deprecated (#460): it sized the population #134 would change, and #134 is
+ * done. It, `billing.audit_opening_rollover` and its REST route stay through a
+ * deprecation window and are removed by #500; see
+ * {@see AgentRestDocumentation::OPENING_ROLLOVER_DEPRECATION}.
+ *
  * Size the population #134 would change, before changing it.
  *
  * `InvoiceLedgerBuilder` seeds a month of opening capacity from an agreement's
@@ -40,7 +46,7 @@ final class AuditOpeningRolloverCommand extends Command
     protected $signature = 'svc:billing:audit-opening-rollover
         {--format=text : Output text or json}';
 
-    protected $description = 'Count agreements whose ledger would change if the opening rollover seed were repaired';
+    protected $description = 'Deprecated (removal: #500). Count agreements whose ledger takes an opening rollover seed (#134)';
 
     public function handle(OpeningRolloverAuditor $auditor): int
     {
@@ -50,6 +56,11 @@ final class AuditOpeningRolloverCommand extends Command
             $this->error('The --format option must be text or json.');
 
             return self::INVALID;
+        }
+
+        // Text only: the JSON shape is a contract until the command is removed.
+        if ($format === 'text') {
+            $this->components->warn('Deprecated: '.AgentRestDocumentation::OPENING_ROLLOVER_DEPRECATION);
         }
 
         $counts = $auditor->count();
@@ -74,15 +85,9 @@ final class AuditOpeningRolloverCommand extends Command
 
         $this->newLine();
 
-        if ($counts->affected === 0) {
-            $this->components->info(
-                'No agreement would change. The repair is a latent-defect fix with no effect on what any client is charged.'
-            );
-        } else {
-            $this->components->warn(
-                $counts->affected.' agreement(s) would receive opening capacity they do not currently get, lowering overage on the next invoice each generates.'
-            );
-        }
+        // #134 built the seed, so these agreements already receive the
+        // capacity; the count no longer describes a pending change.
+        $this->components->info($counts->affected.' agreement(s) receive opening capacity from an initial rollover.');
 
         // Always a clean exit. Unlike the tenant-key audit this is not a gate on
         // anything - a non-zero count here is a number to read before merging

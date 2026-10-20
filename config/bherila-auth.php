@@ -95,6 +95,10 @@ return [
             'last_used_at_column' => 'last_used_at',
             'scopes_column' => 'scopes',
             'enforce_registered_scopes' => true,
+            // Days an unused self-registered client is kept before
+            // `bherila-auth:prune-dynamic-clients` removes it (#460). Read from
+            // SVC's existing setting so a deployment needs no new variable.
+            'retention_days' => (int) env('AGENT_API_DYNAMIC_CLIENT_RETENTION_DAYS', 30),
         ],
         // RFC 9207: every authorization response (code or error, from the
         // consent screen or a first-party client that skips it) names this

@@ -5,13 +5,15 @@ namespace Tests\Feature\Billing;
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\Workspace;
+use App\Services\AgentApi\Operations\AgentRestDocumentation;
 use App\Services\Billing\OpeningRolloverAuditor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Tests\TestCase;
 
 /**
- * The audit that sizes #134 before it is fixed.
+ * The audit that sized #134 before it was fixed. Deprecated (#460); removed
+ * by #500.
  *
  * Three conditions decide whether an agreement is affected, and each of them is
  * asserted here by its own exclusion rather than by one happy path: an audit
@@ -133,6 +135,18 @@ class AuditOpeningRolloverCommandTest extends TestCase
         $this->assertSame(1, $counts->affected);
         $this->assertSame(600, $counts->capacityAtStakeMinutes);
         $this->assertSame(1, $counts->longestRolloverMonths);
+    }
+
+    public function test_the_command_is_marked_deprecated_in_its_help_and_text_output_only(): void
+    {
+        $this->assertStringStartsWith('Deprecated (removal: #500).', Artisan::all()['svc:billing:audit-opening-rollover']->getDescription());
+
+        $this->assertSame(0, Artisan::call('svc:billing:audit-opening-rollover'));
+        $this->assertStringContainsString('Deprecated: '.AgentRestDocumentation::OPENING_ROLLOVER_DEPRECATION, Artisan::output());
+
+        // The JSON shape is a contract until #500 removes the command.
+        $this->assertSame(0, Artisan::call('svc:billing:audit-opening-rollover', ['--format' => 'json']));
+        $this->assertSame(['summary'], array_keys(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)));
     }
 
     public function test_an_unknown_format_is_refused(): void

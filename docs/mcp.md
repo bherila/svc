@@ -401,7 +401,7 @@ resolves authenticated context, validates its DTO, and maps the result.
 | `billing.audit_unplaceable_invoices`              | `svc:billing:audit-unplaceable-invoices`; `AgentBillingAuditReadService` over `UnplaceableInvoiceAuditor`                 | `billing:read`; manager; workspace-scoped audit                                     | No record identifiers or raw amounts beyond aggregate, per-workspace totals; no pagination                                                                                      | `mcp.read.billing.audit_unplaceable_invoices`; aggregate/redaction and authorization tests                            |
 | `billing.audit_undated_collectible_invoices`      | `svc:billing:audit-undated-collectible-invoices`; `AgentBillingAuditReadService` over `UndatedCollectibleInvoiceAuditor`  | `billing:read`; manager; workspace-scoped audit                                     | Aggregate counts and bounded per-currency integer balances only; no record identifiers                                                                                          | `mcp.read.billing.audit_undated_collectible_invoices`; aggregate/redaction and authorization tests                    |
 | `billing.audit_missing_billed_overage`            | `svc:billing:audit-missing-billed-overage`; `AgentBillingAuditReadService` over `MissingBilledOverageAuditor`             | `billing:read`; manager; workspace-scoped audit                                     | Aggregate counts only; no record identifiers or raw models                                                                                                                      | `mcp.read.billing.audit_missing_billed_overage`; aggregate/redaction and authorization tests                          |
-| `billing.audit_opening_rollover`                  | `svc:billing:audit-opening-rollover`; `AgentBillingAuditReadService` over the shared `OpeningRolloverAuditor`             | `billing:read`; manager; workspace-scoped audit                                     | Aggregate counts and capacity minutes only; immutable DTO cannot carry record identifiers                                                                                       | `mcp.read.billing.audit_opening_rollover`; CLI parity, aggregate/redaction, authorization, and tenant-isolation tests |
+| `billing.audit_opening_rollover` (deprecated, #500) | `svc:billing:audit-opening-rollover`; `AgentBillingAuditReadService` over the shared `OpeningRolloverAuditor`             | `billing:read`; manager; workspace-scoped audit                                     | Aggregate counts and capacity minutes only; immutable DTO cannot carry record identifiers                                                                                       | `mcp.read.billing.audit_opening_rollover`; CLI parity, aggregate/redaction, authorization, and tenant-isolation tests |
 | `billing.preflight_schedule_generation`           | `svc:billing:preflight-schedule-generation`; `AgentBillingAuditReadService` over `ScheduleGenerationPreflight`            | `billing:read`; manager; the caller's workspace only                                | Counts per refusal reason and schedule defect, through the workspace's today, at most 60 periods per schedule and 5 calls per ten minutes; `complete` false when a backlog was not fully examined | `mcp.read.billing.preflight_schedule_generation`; parity and tenant-isolation tests                                   |
 | `billing.audit_unlinked_proposal_agreements`      | `svc:engagement:audit-unlinked-proposal-agreements`; `AgentBillingAuditReadService` over `UnlinkedProposalAgreementAuditor` | `billing:read`; manager; the caller's workspace only                              | Counts only; nothing is repaired or guessed                                                                                                                                     | `mcp.read.billing.audit_unlinked_proposal_agreements`; parity and tenant-isolation tests                              |
 | Duplicate-time diagnostics                        | No checked-in workflow/service establishes the grouping key                                                               | Deferred from read GA                                                               | Not implemented: a canonical application query, grouping contract, bounded DTO, and privacy review must exist before MCP can adapt it                                           | No flag or release cohort                                                                                             |
@@ -414,6 +414,25 @@ tool ordering, schema shapes, safe error messages, OAuth/PKCE discovery, and
 credential-bound sessions. Additive capabilities must not rename, remove, or
 weaken these contracts. A future replacement must retain an alias and an
 explicit deprecation window.
+
+### Deprecations
+
+An operation is deprecated before it is removed, never removed outright. Its
+`AgentRestDocumentation` entry carries a `deprecation` reason that names the
+removal issue, and that one entry marks every door:
+
+- the OpenAPI operation gets `deprecated: true` and a `Deprecated:` paragraph in
+  its description;
+- the MCP tool description ends with the same `Deprecated:` paragraph, and the
+  tool keeps its name, schema and behaviour;
+- the console twin says `Deprecated` in its help and prints the notice in text
+  output (JSON output keeps its shape).
+
+The operation is removed only by its removal issue, after the deprecation window.
+
+| Deprecated                                        | Since | Removal | Replacement |
+| ------------------------------------------------- | ----- | ------- | ----------- |
+| `billing.audit_opening_rollover` (`GET /workspaces/{workspace}/billing-audits/opening-rollover`, `svc:billing:audit-opening-rollover`) | #460 | #500 | None: the #134 repair it sized is done |
 
 Current coverage includes initialization, scope-filtered discovery, prompts,
 tool schema closure, input and output validation, REST parity, credential

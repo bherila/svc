@@ -196,7 +196,14 @@ final class AgentRestDocumentation
     ];
 
     /**
-     * @return array<string, array{method: string, scopes: list<string>, description: string|false, parameters: list<string|array<string, mixed>>, request?: string, request_types?: list<string>, response?: string, response_description?: string, binary?: array{0: string, 1: string}, errors?: array<int, string>, extensions?: array<string, mixed>}>
+     * Why the opening-rollover audit is deprecated and where its removal is
+     * tracked (#460). The same text marks the REST operation, the MCP tool and
+     * `svc:billing:audit-opening-rollover`, so every door says the same thing.
+     */
+    public const OPENING_ROLLOVER_DEPRECATION = 'This audit sized the opening-rollover repair (#134), which is done. It will be removed after its deprecation window; see https://github.com/bherila/svc/issues/500. Nothing replaces it.';
+
+    /**
+     * @return array<string, array{method: string, scopes: list<string>, description: string|false, parameters: list<string|array<string, mixed>>, request?: string, request_types?: list<string>, response?: string, response_description?: string, binary?: array{0: string, 1: string}, errors?: array<int, string>, extensions?: array<string, mixed>, deprecation?: string}>
      */
     public static function operations(): array
     {
@@ -449,6 +456,7 @@ final class AgentRestDocumentation
                 'response_description' => 'Aggregate counts for the workspace',
                 'errors' => self::BILLING_AUDIT_ERRORS['audit'],
                 'extensions' => ['x-svc-flags' => [], 'x-mcp-tool' => 'billing.audit_opening_rollover'],
+                'deprecation' => self::OPENING_ROLLOVER_DEPRECATION,
             ],
             'billing.audit_undated_collectible_invoices' => [
                 'method' => 'GET',

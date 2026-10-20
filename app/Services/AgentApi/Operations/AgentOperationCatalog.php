@@ -1688,11 +1688,15 @@ final class AgentOperationCatalog
         }
         $write = ! $effect->readOnly();
         $hasBody = $documented && isset(AgentRestDocumentation::operations()[$id]['request']);
+        // A deprecated operation says so in the tool description an MCP
+        // client reads, as the OpenAPI document does for REST (see
+        // docs/mcp.md, "Deprecations").
+        $deprecation = $documented ? (AgentRestDocumentation::operations()[$id]['deprecation'] ?? null) : null;
 
         return new Operation(
             id: $id,
             title: $title,
-            description: $description,
+            description: $deprecation === null ? $description : "{$description}\n\nDeprecated: {$deprecation}",
             effect: $effect,
             requirement: new Requirement(
                 scopes: $scopes ?? AgentRestDocumentation::operations()[$id]['scopes'],
@@ -1707,6 +1711,7 @@ final class AgentOperationCatalog
             input: $input ?? ($write && $hasBody ? SchemaRef::requestOf($id) : null),
             output: $output ?? ($documented ? SchemaRef::responseOf($id) : null),
             extensions: $documented ? (AgentRestDocumentation::operations()[$id]['extensions'] ?? []) : [],
+            deprecation: $deprecation,
         );
     }
 

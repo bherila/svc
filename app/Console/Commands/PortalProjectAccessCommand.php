@@ -23,6 +23,10 @@ use Symfony\Component\HttpKernel\Exception\HttpException;
  * contact's current version (printed by `--show`) and explicit confirmation -
  * run as the system actor, still bound by the access boundary's tenant
  * scoping, locks and audit trail.
+ *
+ * Kept as a break-glass tool by owner decision (#460): the settings page is
+ * the everyday way to make this change, and this is for when no workspace
+ * manager can reach it.
  */
 final class PortalProjectAccessCommand extends Command
 {

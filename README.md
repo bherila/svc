@@ -232,7 +232,8 @@ endpoint have their own, separate list (`oauth_server.cors` in `config/bherila-a
 which admits the hosted agents' browser origins.
 Dynamic public-client registrations are marked at creation, updated when used, and
 pruned after 30 inactive days by the scheduled
-`svc:oauth:prune-dynamic-clients` command (the retention is configurable).
+`bherila-auth:prune-dynamic-clients` command (`AGENT_API_DYNAMIC_CLIENT_RETENTION_DAYS`
+sets the retention; `svc:oauth:prune-dynamic-clients` remains as an alias).
 Expired Passport tokens and authorization codes are purged daily, 31 days past
 their expiry, by a scheduled `passport:purge --expired --hours=744`; see
 [Token retention](docs/mcp-operations.md#token-retention) for why revoked rows
