@@ -22,6 +22,7 @@
     tmpDir: "storage/framework/cache/infection-diff",
     logs: {
         summaryJson: "storage/framework/cache/infection-diff/summary.json",
+        text: "storage/framework/cache/infection-diff/mutations.log",
     },
     ignoreMsiWithNoMutations: true,
     timeoutsAsEscaped: true,
