@@ -119,6 +119,7 @@ class StripeWebhookTest extends TestCase
                 'currency' => 'usd',
             ]],
         ], JSON_THROW_ON_ERROR);
+        $this->fakeStripeRefunds([['id' => 're_initial_fixture', 'object' => 'refund', 'amount' => 400, 'currency' => 'usd', 'status' => 'succeeded', 'charge' => 'ch_synthetic_refund']]);
         $this->webhookPost($refund, $this->signature($refund))->assertOk();
 
         $this->assertSame(400, $invoice->fresh()->balance_amount);
@@ -172,6 +173,7 @@ class StripeWebhookTest extends TestCase
         $refund = $this->eventPayload('evt_reconciled_full_refund', 'charge.refunded', [
             'id' => 'ch_reconciled_full_refund', 'payment_intent' => 'pi_synthetic_billing', 'amount_refunded' => 1000, 'currency' => 'usd',
         ], 100);
+        $this->fakeStripeRefunds([['id' => 're_initial_fixture', 'object' => 'refund', 'amount' => 1000, 'currency' => 'usd', 'status' => 'succeeded', 'charge' => 'ch_reconciled_full_refund']]);
         $this->webhookPost($refund, $this->signature($refund))->assertOk()->assertJsonPath('duplicate', false);
 
         $fresh = $payment->fresh();
@@ -247,6 +249,7 @@ class StripeWebhookTest extends TestCase
         $refund = $this->eventPayload('evt_failing_refund_created', 'charge.refunded', [
             'id' => 'ch_failing_refund', 'payment_intent' => 'pi_synthetic_billing', 'amount_refunded' => 400, 'currency' => 'usd',
         ], 100);
+        $this->fakeStripeRefunds([['id' => 're_initial_fixture', 'object' => 'refund', 'amount' => 400, 'currency' => 'usd', 'status' => 'succeeded', 'charge' => 'ch_failing_refund']]);
         $this->webhookPost($refund, $this->signature($refund))->assertOk();
         $this->assertSame(400, $payment->fresh()?->refunded_amount);
         $this->assertSame(400, $invoice->fresh()->balance_amount);
@@ -287,6 +290,7 @@ class StripeWebhookTest extends TestCase
         $refund = $this->eventPayload('evt_stale_read_refund', 'charge.refunded', [
             'id' => 'ch_stale_read', 'payment_intent' => 'pi_synthetic_billing', 'amount_refunded' => 400, 'currency' => 'usd',
         ], 100);
+        $this->fakeStripeRefunds([['id' => 're_initial_fixture', 'object' => 'refund', 'amount' => 400, 'currency' => 'usd', 'status' => 'succeeded', 'charge' => 'ch_stale_read']]);
         $this->webhookPost($refund, $this->signature($refund))->assertOk();
 
         // While Stripe is being read, a newer refund is recorded on the payment.
@@ -319,6 +323,7 @@ class StripeWebhookTest extends TestCase
         $refund = $this->eventPayload('evt_two_refunds', 'charge.refunded', [
             'id' => 'ch_two_refunds', 'payment_intent' => 'pi_synthetic_billing', 'amount_refunded' => 700, 'currency' => 'usd',
         ], 100);
+        $this->fakeStripeRefunds([['id' => 're_initial_fixture', 'object' => 'refund', 'amount' => 700, 'currency' => 'usd', 'status' => 'succeeded', 'charge' => 'ch_two_refunds']]);
         $this->webhookPost($refund, $this->signature($refund))->assertOk();
 
         $this->fakeStripeRefunds([
@@ -341,8 +346,10 @@ class StripeWebhookTest extends TestCase
         $refund = $this->eventPayload('evt_reference_refund', 'charge.refunded', [
             'id' => 'ch_reference_refund', 'payment_intent' => 'pi_synthetic_billing', 'amount_refunded' => 400, 'currency' => 'usd',
         ], 100);
+        $this->fakeStripeRefunds([['id' => 're_initial_fixture', 'object' => 'refund', 'amount' => 400, 'currency' => 'usd', 'status' => 'succeeded', 'charge' => 'ch_reference_refund']]);
         $this->webhookPost($refund, $this->signature($refund))->assertOk();
         $this->fakeStripeRefunds([]);
+        $this->stripeRequests = []; // Measure only this unrelated refund update.
 
         $updated = $this->eventPayload('evt_reference_refund_updated', 'charge.refund.updated', [
             'id' => 're_reference', 'object' => 'refund', 'amount' => 400, 'currency' => 'usd', 'status' => 'succeeded',
@@ -360,6 +367,7 @@ class StripeWebhookTest extends TestCase
         $refund = $this->eventPayload('evt_disputed_refund', 'charge.refunded', [
             'id' => 'ch_disputed_refund', 'payment_intent' => 'pi_synthetic_billing', 'amount_refunded' => 400, 'currency' => 'usd',
         ], 100);
+        $this->fakeStripeRefunds([['id' => 're_initial_fixture', 'object' => 'refund', 'amount' => 400, 'currency' => 'usd', 'status' => 'succeeded', 'charge' => 'ch_disputed_refund']]);
         $this->webhookPost($refund, $this->signature($refund))->assertOk();
         $dispute = $this->eventPayload('evt_disputed_refund_dispute', 'charge.dispute.created', [
             'id' => 'dp_disputed_refund', 'charge' => 'ch_disputed_refund', 'payment_intent' => 'pi_synthetic_billing', 'amount' => 1000, 'currency' => 'usd',
@@ -389,6 +397,7 @@ class StripeWebhookTest extends TestCase
         $refund = $this->eventPayload('evt_late_reversal_refund', 'charge.refunded', [
             'id' => 'ch_late_reversal', 'payment_intent' => 'pi_synthetic_billing', 'amount_refunded' => 400, 'currency' => 'usd',
         ], 100);
+        $this->fakeStripeRefunds([['id' => 're_initial_fixture', 'object' => 'refund', 'amount' => 400, 'currency' => 'usd', 'status' => 'succeeded', 'charge' => 'ch_late_reversal']]);
         $this->webhookPost($refund, $this->signature($refund))->assertOk();
         $dispute = $this->eventPayload('evt_late_reversal_dispute', 'charge.dispute.created', [
             'id' => 'dp_late_reversal', 'charge' => 'ch_late_reversal', 'payment_intent' => 'pi_synthetic_billing', 'amount' => 1000, 'currency' => 'usd',
@@ -854,6 +863,7 @@ class StripeWebhookTest extends TestCase
         $refund = $this->eventPayload('evt_zero_refund', 'charge.refunded', [
             'id' => 'ch_zero_refund', 'payment_intent' => 'pi_synthetic_billing', 'amount_refunded' => 0, 'currency' => 'usd',
         ], time() + 60);
+        $this->fakeStripeRefunds([]);
         $this->webhookPost($refund, $this->signature($refund))->assertOk();
 
         $fresh = $payment->fresh();

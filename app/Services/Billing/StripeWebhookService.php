@@ -18,9 +18,15 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Stripe\Event;
+use Stripe\Exception\ApiErrorException;
 
 final class StripeWebhookService
 {
+    /** Local bounds: an incomplete refund snapshot must never release recorded money. */
+    private const int REFUND_MAX_PAGES = 100;
+
+    private const int REFUND_PAGE_SIZE = 100;
+
     /**
      * Events that report a change to one refund. `charge.refund.updated` is
      * Stripe's older name, `refund.updated` and `refund.failed` the current
@@ -161,14 +167,12 @@ final class StripeWebhookService
         if (str_starts_with($type, 'payment_intent.') || str_starts_with($type, 'charge.') || in_array($type, self::REFUND_UPDATES, true)) {
             $probe = $this->paymentQuery($object)->first(['workspace_id', 'lock_version']);
             $paymentWorkspaceId = $probe !== null && $probe->workspace_id > 0 ? $probe->workspace_id : null;
-            // A refund that failed or was canceled is no longer refunded, and
-            // the event names only that one refund. What still stands is read
-            // from Stripe, outside the business transaction, so the same
-            // failure reported twice - or under both of its names - is applied
-            // once. The payment's revision is read first, so a write that lands
-            // while Stripe is being read is noticed under the lock.
-            if ($probe !== null && $paymentWorkspaceId !== null && $this->isUndoneRefund($type, $object)) {
-                $standingRefunds = [...$this->standingRefundTotal($object), 'version' => $probe->lock_version];
+            // Every refund correction is read from the current refund list,
+            // including charge.refunded: Stripe does not promise that its
+            // aggregate excludes a refund that later failed. Capture the local
+            // revision before HTTP, then refuse a read overtaken by a write.
+            if ($probe !== null && $paymentWorkspaceId !== null && ($type === 'charge.refunded' || $this->isUndoneRefund($type, $object))) {
+                $standingRefunds = [...$this->standingRefundTotal($object, $type === 'charge.refunded'), 'version' => $probe->lock_version];
             }
         }
 
@@ -226,7 +230,7 @@ final class StripeWebhookService
 
     /**
      * @param  array<string, mixed>  $object
-     * @param  array{amount: int, currency: string, version: int}|null  $standingRefunds  for a refund that failed or was canceled, what Stripe still holds refunded on its charge, and the payment's revision read before Stripe was asked
+     * @param  array{amount: int, currency: string, version: int}|null  $standingRefunds  current standing refunds for a charge.refunded or undone-refund event, and the payment revision read before Stripe was asked
      */
     private function handleInvoiceEvent(Event $event, array $object, ClientStripeEvent $ledger, ?int $paymentWorkspaceId, ?array $standingRefunds): void
     {
@@ -248,26 +252,11 @@ final class StripeWebhookService
             default => null,
         };
 
-        if ($event->type === 'charge.refunded' && $payment !== null) {
-            if ($this->isOlderPaymentEvent($payment, $providerCreatedAt, 'refunded')) {
-                $ledger->workspace_id = $payment->workspace_id;
-
-                return;
-            }
-            $currency = strtoupper((string) ($object['currency'] ?? ''));
-            $refundedAmount = (int) ($object['amount_refunded'] ?? 0);
-            if ($currency !== $payment->currency) {
-                throw new \DomainException('Stripe refund currency does not match the invoice payment.');
-            }
-            $this->invoices->setRefundedAmount($payment, $refundedAmount);
-            $this->recordPaymentEvent($payment, $providerCreatedAt, (string) $event->id);
+        if (($event->type === 'charge.refunded' || in_array($event->type, self::REFUND_UPDATES, true)) && $payment !== null) {
             $ledger->workspace_id = $payment->workspace_id;
-        } elseif (in_array($event->type, self::REFUND_UPDATES, true) && $payment !== null) {
-            $ledger->workspace_id = $payment->workspace_id;
-            // Any other refund update - a trace reference, metadata - leaves
-            // the refunded total where `charge.refunded` put it, and is not
-            // recorded as the payment's latest event: that would make the
-            // `charge.refunded` it may have overtaken look older and skip it.
+            // An update unrelated to a failure - a trace reference, metadata -
+            // leaves the refund total alone and is not recorded as the latest
+            // payment event: it is not evidence of a money change.
             if ($standingRefunds === null) {
                 return;
             }
@@ -356,28 +345,70 @@ final class StripeWebhookService
      * The refunds on the event's charge that still stand - every one that has
      * not failed or been canceled - totalled, as Stripe reports them now.
      *
-     * @param  array<string, mixed>  $object  the refund the event reported
+     * @param  array<string, mixed>  $object  the charge or refund the event reported
      * @return array{amount: int, currency: string}
+     *
+     * @see https://docs.stripe.com/refunds#handle-failed-refunds
+     * @see https://docs.stripe.com/api/refunds/list
      */
-    private function standingRefundTotal(array $object): array
+    private function standingRefundTotal(array $object, bool $chargeEvent): array
     {
-        $charge = $object['charge'] ?? null;
+        $charge = $chargeEvent ? ($object['id'] ?? null) : ($object['charge'] ?? null);
         $chargeId = is_array($charge) ? ($charge['id'] ?? null) : $charge;
         if (! is_string($chargeId) || $chargeId === '') {
             throw new \DomainException('The Stripe refund does not identify its charge.');
         }
         $currency = is_string($object['currency'] ?? null) ? strtoupper($object['currency']) : '';
         $total = 0;
-        foreach ($this->gateway->client()->refunds->all(['charge' => $chargeId, 'limit' => 100])->autoPagingIterator() as $refund) {
-            if (strtoupper($refund->currency) !== $currency) {
-                throw new \DomainException('Stripe refunds on one charge disagree about its currency.');
+        $cursor = null;
+        $seen = [];
+        try {
+            for ($page = 0; $page < self::REFUND_MAX_PAGES; $page++) {
+                $params = ['charge' => $chargeId, 'limit' => self::REFUND_PAGE_SIZE];
+                if ($cursor !== null) {
+                    $params['starting_after'] = $cursor;
+                }
+                $body = $this->gateway->client()->refunds->all($params)->toArray();
+                $refunds = $body['data'] ?? null;
+                $hasMore = $body['has_more'] ?? null;
+                if (($body['object'] ?? null) !== 'list' || ! is_bool($hasMore)
+                    || ! is_array($refunds) || ! array_is_list($refunds)
+                    || count($refunds) > self::REFUND_PAGE_SIZE || ($hasMore && $refunds === [])) {
+                    throw new StripeEventMustBeRetried('Stripe refunds did not form a complete readable list; retry the event.');
+                }
+                foreach ($refunds as $refund) {
+                    $id = is_array($refund) ? ($refund['id'] ?? null) : null;
+                    $amount = is_array($refund) ? ($refund['amount'] ?? null) : null;
+                    $status = is_array($refund) ? ($refund['status'] ?? null) : null;
+                    $refundCurrency = is_array($refund) ? ($refund['currency'] ?? null) : null;
+                    $refundCharge = is_array($refund) ? ($refund['charge'] ?? null) : null;
+                    $refundCharge = is_array($refundCharge) ? ($refundCharge['id'] ?? null) : $refundCharge;
+                    if (! is_array($refund) || ($refund['object'] ?? null) !== 'refund'
+                        || ! is_string($id) || preg_match('/^[A-Za-z0-9][A-Za-z0-9:_-]{0,254}$/D', $id) !== 1
+                        || isset($seen[$id]) || ! is_int($amount) || $amount < 1
+                        || ! is_string($status) || $status === '' || strlen($status) > 64
+                        || ! is_string($refundCurrency) || strtoupper($refundCurrency) !== $currency
+                        || $refundCharge !== $chargeId) {
+                        throw new StripeEventMustBeRetried('Stripe refunds did not form a complete readable list; retry the event.');
+                    }
+                    $seen[$id] = true;
+                    $cursor = $id;
+                    if (StripeRefundStatus::stillStands($status)) {
+                        if ($amount > PHP_INT_MAX - $total) {
+                            throw new StripeEventMustBeRetried('Stripe refunds exceed the supported amount; retry the event.');
+                        }
+                        $total += $amount;
+                    }
+                }
+                if (! $hasMore) {
+                    return ['amount' => $total, 'currency' => $currency];
+                }
             }
-            if (StripeRefundStatus::stillStands($refund->status ?? '')) {
-                $total += max(0, $refund->amount);
-            }
+        } catch (ApiErrorException|\RuntimeException) {
+            throw new StripeEventMustBeRetried('Stripe refunds could not be read; retry the event.');
         }
 
-        return ['amount' => $total, 'currency' => $currency];
+        throw new StripeEventMustBeRetried('Stripe refunds exceed the complete-list page bound; retry the event.');
     }
 
     private function isOlderPaymentEvent(

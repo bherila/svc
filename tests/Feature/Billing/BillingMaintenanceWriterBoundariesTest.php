@@ -22,15 +22,18 @@ use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\DataProvider;
 use RuntimeException;
 use Stripe\Event;
+use Tests\Concerns\FakesStripeApi;
 use Tests\TestCase;
 
 final class BillingMaintenanceWriterBoundariesTest extends TestCase
 {
+    use FakesStripeApi;
     use RefreshDatabase;
 
     protected function tearDown(): void
     {
         LockOrderRecorder::stop();
+        $this->restoreStripeApi();
         parent::tearDown();
     }
 
@@ -64,6 +67,11 @@ final class BillingMaintenanceWriterBoundariesTest extends TestCase
         $data = ['id' => 'evt_synthetic_maintenance', 'type' => $type, 'created' => 200,
             'data' => ['object' => ['id' => $type === 'charge.refunded' ? 'ch_synthetic_maintenance' : 'pi_synthetic_maintenance',
                 'payment_intent' => 'pi_synthetic_maintenance', 'amount_received' => 1000, 'amount_refunded' => 100, 'currency' => 'usd']]];
+        if ($type === 'charge.refunded') {
+            $this->fakeStripeApi(fn (): array => [self::stripeList('/v1/refunds', [
+                ['id' => 're_synthetic_maintenance', 'object' => 'refund', 'amount' => 100, 'currency' => 'usd', 'status' => 'succeeded', 'charge' => 'ch_synthetic_maintenance'],
+            ])]);
+        }
         LockOrderRecorder::start();
         $this->assertTrue(app(StripeWebhookService::class)->process(Event::constructFrom($data), json_encode($data, JSON_THROW_ON_ERROR)));
         $this->assertShareBeforeBilling();

@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Testing\TestResponse;
 use Tests\Concerns\AssertsEventOrderingInvariance;
+use Tests\Concerns\FakesStripeApi;
 use Tests\TestCase;
 
 /**
@@ -49,6 +50,7 @@ use Tests\TestCase;
 class StripeLifecyclePermutationTest extends TestCase
 {
     use AssertsEventOrderingInvariance;
+    use FakesStripeApi;
     use RefreshDatabase;
 
     private const LEGAL_PAYMENT_STATUSES = ['pending', 'succeeded', 'failed', 'canceled', 'disputed', 'refunded'];
@@ -87,6 +89,12 @@ class StripeLifecyclePermutationTest extends TestCase
 
         $this->seedForeignWorkspace();
         $this->foreignWorkspaceBaselineFingerprint = $this->foreignWorkspaceFingerprint();
+    }
+
+    protected function tearDown(): void
+    {
+        $this->restoreStripeApi();
+        parent::tearDown();
     }
 
     /**
@@ -247,11 +255,16 @@ class StripeLifecyclePermutationTest extends TestCase
      * timestamp baseline is unset), then two progressively larger partial
      * refunds and a stale failure arrive in every order. `succeeded` blocks
      * `failed` outright (StripeWebhookService::isStalePaymentTransition), so
-     * the failure must never apply no matter when it is delivered; the two
-     * refunds must still converge on whichever carries the larger timestamp.
+     * the failure must never apply no matter when it is delivered; the refunds
+     * converge on the current provider list while event timestamps remain monotonic.
      */
     public function test_refund_progression_converges_and_a_stale_failure_never_applies(): void
     {
+        // Every event is only a hint: Stripe currently holds both refunds,
+        // irrespective of which historical notification arrives first.
+        $this->fakeStripeApi(fn (): array => [self::stripeList('/v1/refunds', [
+            ['id' => 're_permutation_current', 'object' => 'refund', 'amount' => 700, 'currency' => 'usd', 'status' => 'succeeded', 'charge' => 'ch_permutation_c'],
+        ])]);
         $paymentId = 'pi_permutation_c';
         $chargeId = 'ch_permutation_c';
         $failed = ['ts' => 100, 'always_refused' => true, 'payload' => $this->paymentEvent('evt_perm_c_failed', 'payment_intent.payment_failed', $paymentId, 100)];
