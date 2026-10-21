@@ -130,6 +130,7 @@ final class AgentOperationCatalog
         'finance.invoice_payments.list' => ['invoice-payments.index', '/workspaces/{workspace}/invoice-payments', [200]],
         'finance.payouts.list' => ['payouts.index', '/workspaces/{workspace}/payouts', [200]],
         'finance.processor_movements.list' => ['processor-movements.index', '/workspaces/{workspace}/processor-movements', [200]],
+        'finance.reconciliations.acknowledge' => ['payment-reconciliations.acknowledge', '/workspaces/{workspace}/invoice-payments/{payment}/reconciliations/{external_system}/{transaction}/acknowledgement', [200]],
         'finance.reconciliations.deactivate' => ['payment-reconciliations.destroy', '/workspaces/{workspace}/invoice-payments/{payment}/reconciliations/{external_system}/{transaction}', [200]],
         'finance.reconciliations.upsert' => ['payment-reconciliations.upsert', '/workspaces/{workspace}/invoice-payments/{payment}/reconciliations/{external_system}/{transaction}', [200, 201]],
         'invoices.add_time' => ['invoices.add_time', '/workspaces/{workspace}/invoices/{invoice}/time', [200]],
@@ -1597,6 +1598,7 @@ final class AgentOperationCatalog
             'finance.payouts.list' => ['List processor payouts for finance reconciliation', 'payouts', Effect::Read, 'mcp.read'],
             'finance.processor_movements.list' => ['Read signed processor movements', 'movements', Effect::Read, 'mcp.read'],
             'finance.reconciliations.upsert' => ['Set a finance reconciliation allocation', 'upsert', Effect::LocalWrite, 'mcp.write'],
+            'finance.reconciliations.acknowledge' => ['Acknowledge the current finance allocation review', 'acknowledge', Effect::LocalWrite, 'mcp.write'],
             'finance.reconciliations.deactivate' => ['Deactivate a finance reconciliation allocation', 'deactivate', Effect::LocalWrite, 'mcp.write'],
         ] as $id => [$title, $method, $effect, $group]) {
             $this->managerOnly[$id] = true;
@@ -1608,7 +1610,9 @@ final class AgentOperationCatalog
                 effect: $effect,
                 requirement: new Requirement(scopes: $documented['scopes'], flags: self::mcpSwitches($group, $id)),
                 idempotent: true,
-                safety: new WriteSafety(note: $effect->readOnly() ? null : 'Idempotent by its path (payment, external system, transaction): repeating it is the same write, so it takes no idempotency key.'),
+                safety: $id === 'finance.reconciliations.acknowledge'
+                    ? new WriteSafety(expectedVersion: true, confirm: true, note: 'Conditional acknowledgement of the exact payment revision, review reason and instant. No idempotency key: stale or already-cleared reviews return 409 and require a fresh read; repeated requests never clear a newer review.')
+                    : new WriteSafety(note: $effect->readOnly() ? null : 'Idempotent by its path (payment, external system, transaction): repeating it is the same write, so it takes no idempotency key.'),
                 rest: $this->rest($id),
                 mcp: new McpBinding(handler: [AgentMcpFinanceTools::class, $method]),
                 input: isset($documented['request']) ? SchemaRef::requestOf($id) : null,

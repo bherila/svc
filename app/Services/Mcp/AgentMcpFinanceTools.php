@@ -104,6 +104,24 @@ final class AgentMcpFinanceTools
     }
 
     /** @return array<string, mixed> */
+    public function acknowledge(
+        #[Schema(format: 'uuid')] string $workspace_id,
+        #[Schema(format: 'uuid')] string $payment_id,
+        #[Schema(maxLength: ReconciliationTarget::SYSTEM_MAX_LENGTH, pattern: self::SYSTEM)] string $external_system,
+        #[Schema(format: 'uuid')] string $transaction_id,
+        #[Schema(pattern: '^[a-f0-9]{64}$')] string $expected_payment_version,
+        #[Schema(enum: ['processor_refund', 'processor_dispute'])] string $expected_review_reason,
+        #[Schema(format: 'date-time')] string $expected_review_flagged_at,
+        bool $confirm,
+    ): array {
+        return $this->rest->call(
+            'finance.reconciliations.acknowledge',
+            $this->allocation($workspace_id, $payment_id, $external_system, $transaction_id),
+            compact('expected_payment_version', 'expected_review_reason', 'expected_review_flagged_at', 'confirm'),
+        );
+    }
+
+    /** @return array<string, mixed> */
     public function deactivate(
         #[Schema(format: 'uuid')] string $workspace_id,
         #[Schema(format: 'uuid')] string $payment_id,

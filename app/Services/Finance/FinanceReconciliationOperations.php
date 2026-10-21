@@ -12,17 +12,20 @@ use App\Models\ProcessorPayout;
 use App\Models\Workspace;
 use App\Services\AgentApi\AgentMutationExecutor;
 use App\Support\AgentApi\ChangeFeedPage;
+use App\Support\AgentApi\ExplicitConfirmation;
 use App\Support\Billing\InvoicePaymentStatus;
 use App\Support\Finance\FinanceCaller;
 use App\Support\Finance\FinancePaymentQuery;
 use App\Support\Finance\FinancePayoutQuery;
 use App\Support\Finance\FinanceProcessorMovementQuery;
 use App\Support\Finance\ReconciliationAllocation;
+use App\Support\Finance\ReconciliationReviewAcknowledgement;
 use App\Support\Finance\ReconciliationTarget;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Validator;
 
 /**
  * The finance reconciliation operations (#457), one implementation behind
@@ -50,6 +53,8 @@ final class FinanceReconciliationOperations
 
     public const string DEACTIVATE = 'finance.reconciliations.deactivate';
 
+    public const string ACKNOWLEDGE = 'finance.reconciliations.acknowledge';
+
     public const string PAYOUTS = 'finance.payouts.list';
 
     public const string MOVEMENTS = 'finance.processor_movements.list';
@@ -57,6 +62,7 @@ final class FinanceReconciliationOperations
     public function __construct(
         private readonly PaymentReconciliationService $reconciliations,
         private readonly AgentMutationExecutor $mutations,
+        private readonly ReconciliationReviewAcknowledgementService $acknowledgements,
     ) {}
 
     /**
@@ -252,6 +258,22 @@ final class FinanceReconciliationOperations
             function () use ($caller, $workspace, $target, $allocation, &$written): array {
                 $payment = $this->payment($caller, $workspace, $target);
                 $written = $this->reconciliations->upsert($workspace, $payment, $caller->user, $allocation->attributesFor($target));
+
+                return [(string) $written->public_id];
+            });
+
+        /** @var PaymentReconciliation $written */
+        return $written;
+    }
+
+    /** Affirm only the exact current review; a stale or cleared review requires a fresh read. */
+    public function acknowledge(FinanceCaller $caller, Workspace $workspace, ReconciliationTarget $target, ReconciliationReviewAcknowledgement $proof, mixed $confirm): PaymentReconciliation
+    {
+        $written = null;
+        $this->mutations->runIdempotentByPath($caller->user, $workspace, $caller->credential, self::ACKNOWLEDGE,
+            function () use ($caller, $workspace, $target, $proof, $confirm, &$written): array {
+                Validator::make(['confirm' => $confirm], ['confirm' => ['required', new ExplicitConfirmation]])->validate();
+                $written = $this->acknowledgements->acknowledge($caller, $workspace, $target, $proof);
 
                 return [(string) $written->public_id];
             });

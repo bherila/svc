@@ -1776,6 +1776,18 @@ final class AgentRestDocumentation
                     429 => 'Too many requests (retry after Retry-After).',
                 ],
             ],
+            'finance.reconciliations.acknowledge' => [
+                'method' => 'PUT',
+                'scopes' => ['finance:reconcile'],
+                'description' => 'Explicitly affirm that the allocation remains correct after its processor refund or dispute review. Requires confirm: true, the current payment version from finance.invoice_payments.list, and the exact review reason and timestamp shown on the allocation. Clears only that current review; allocated money and active state are retained even above payment net or on a disputed/refunded payment. Does not resolve a dispute, restore a payment, issue credit or move money. The payment version advances so synchronizers see the cleared flag. Conditional and idempotent by effect: no Idempotency-Key or replay receipt; repeating the original request, any stale payment version, a changed review, or an already-cleared flag returns 409 and requires a fresh read. Owner/admin only.'.$token,
+                'parameters' => $allocation,
+                'request' => 'FinanceReconciliationAcknowledgementRequest',
+                'response' => 'FinanceReconciliationResponse',
+                'response_description' => 'The unchanged allocation with its current review cleared',
+                'errors' => $writeErrors('The workspace, payment or allocation is not visible in this workspace.', 'Confirmation is not boolean true, review proof is missing or invalid, or an unknown body field is supplied.') + [
+                    409 => 'The payment revision or review proof changed, or the review is already clear; refresh before acknowledging.',
+                ],
+            ],
             'finance.reconciliations.deactivate' => [
                 'method' => 'DELETE',
                 'scopes' => ['finance:reconcile'],

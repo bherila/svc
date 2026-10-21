@@ -5390,6 +5390,146 @@
                 "x-mcp-tool": "finance.processor_movements.list"
             }
         },
+        "/workspaces/{workspace}/invoice-payments/{payment}/reconciliations/{external_system}/{transaction}/acknowledgement": {
+            "put": {
+                "operationId": "finance.reconciliations.acknowledge",
+                "description": "Explicitly affirm that the allocation remains correct after its processor refund or dispute review. Requires confirm: true, the current payment version from finance.invoice_payments.list, and the exact review reason and timestamp shown on the allocation. Clears only that current review; allocated money and active state are retained even above payment net or on a disputed/refunded payment. Does not resolve a dispute, restore a payment, issue credit or move money. The payment version advances so synchronizers see the cleared flag. Conditional and idempotent by effect: no Idempotency-Key or replay receipt; repeating the original request, any stale payment version, a changed review, or an already-cleared flag returns 409 and requires a fresh read. Owner/admin only. The Sanctum finance token issued by svc:auth:issue-token is accepted too, its finance.read and finance.reconcile abilities standing for these scopes.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "finance:reconcile"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/FinanceReconciliationAcknowledgementRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/PaymentId"
+                    },
+                    {
+                        "name": "external_system",
+                        "in": "path",
+                        "required": true,
+                        "description": "The external finance system, as a lowercase slug.",
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 80,
+                            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+                        }
+                    },
+                    {
+                        "name": "transaction",
+                        "in": "path",
+                        "required": true,
+                        "description": "The external finance system's transaction UUID.",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The unchanged allocation with its current review cleared",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/FinanceReconciliationResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Not signed in, or the token is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The caller is not a workspace owner or admin, or the token lacks finance:reconcile (the finance token, finance.reconcile).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace, payment or allocation is not visible in this workspace.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Confirmation is not boolean true, review proof is missing or invalid, or an unknown body field is supplied.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "The payment revision or review proof changed, or the review is already clear; refresh before acknowledging.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "local_write",
+                "x-agent-idempotent": true,
+                "x-agent-write-safety": {
+                    "expected_version": true,
+                    "confirm": true,
+                    "note": "Conditional acknowledgement of the exact payment revision, review reason and instant. No idempotency key: stale or already-cleared reviews return 409 and require a fresh read; repeated requests never clear a newer review."
+                },
+                "x-agent-mcp-tool": "finance.reconciliations.acknowledge",
+                "x-svc-flags": [],
+                "x-mcp-tool": "finance.reconciliations.acknowledge"
+            }
+        },
         "/workspaces/{workspace}/invoice-payments/{payment}/reconciliations/{external_system}/{transaction}": {
             "delete": {
                 "operationId": "finance.reconciliations.deactivate",
@@ -14114,6 +14254,37 @@
                             "null"
                         ],
                         "format": "date-time"
+                    }
+                }
+            },
+            "FinanceReconciliationAcknowledgementRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "expected_payment_version",
+                    "expected_review_reason",
+                    "expected_review_flagged_at",
+                    "confirm"
+                ],
+                "properties": {
+                    "expected_payment_version": {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{64}$"
+                    },
+                    "expected_review_reason": {
+                        "type": "string",
+                        "enum": [
+                            "processor_refund",
+                            "processor_dispute"
+                        ]
+                    },
+                    "expected_review_flagged_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "confirm": {
+                        "type": "boolean",
+                        "const": true
                     }
                 }
             },

@@ -36,6 +36,7 @@ and each is an MCP tool and a console command of the same name, all running one
 | `finance.processor_movements.list` | `GET /api/v1/workspaces/{workspace}/processor-movements` | `finance:read` | `svc:finance:processor-movements` |
 | `finance.payouts.list`               | `GET /api/v1/workspaces/{workspace}/payouts`              | `finance:read`      | `svc:finance:payouts`      |
 | `finance.reconciliations.upsert`     | `PUT …/invoice-payments/{payment}/reconciliations/{external-system}/{transaction-uuid}` | `finance:reconcile` | `svc:finance:reconcile`    |
+| `finance.reconciliations.acknowledge` | `PUT …/invoice-payments/{payment}/reconciliations/{external-system}/{transaction-uuid}/acknowledgement` | `finance:reconcile` | `svc:finance:acknowledge-reconciliation` |
 | `finance.reconciliations.deactivate` | `DELETE` the same path                                    | `finance:reconcile` | `svc:finance:unreconcile`  |
 
 ## Billable expense provenance
@@ -497,3 +498,49 @@ failure reports what it did and exits non-zero; running it again resumes, since
 stored payouts are unchanged and the charge pass revisits only payments still
 missing facts. `--workspace` keeps every write to one workspace. Output is
 counts only.
+
+## Acknowledge an allocation review
+
+`finance.reconciliations.acknowledge` is an explicit finance API action for a
+reviewed allocation that remains correct after a processor refund or dispute.
+There is no browser acknowledgement screen. REST, MCP and the console use the
+same service and owner/admin policy. OAuth requires `finance:reconcile`;
+Sanctum requires `finance.reconcile`.
+
+Send `PUT` to the allocation's natural path with `/acknowledgement` appended.
+The closed body requires:
+
+- `expected_payment_version`: the payment's current opaque `version` from
+  `finance.invoice_payments.list` (include non-succeeded payments when reading);
+- `expected_review_reason`: its allocation's current `processor_refund` or
+  `processor_dispute` reason;
+- `expected_review_flagged_at`: that allocation's exact review instant, including
+  timezone (equivalent offsets identify the same instant);
+- `confirm`: the JSON boolean `true`, after explicitly reviewing the allocation.
+
+Under the existing billing, payment and allocation locks, the action checks the
+payment revision before checking the review proof, then clears only
+`review_reason` and `review_flagged_at`. Allocated amount, currency, activity,
+reconciliation date and payment amount/status are retained, even if the allocation
+now exceeds payment net or the payment is disputed or refunded. The payment's
+version advances, and the operation is audited through the existing finance
+mutation path. The response is `FinanceReconciliationResponse`.
+
+This is conditional and idempotent by effect, without an idempotency key or
+receipt. Repeating the original request returns 409, including after a successful
+clear. A stale revision, changed proof or already-cleared review also returns
+409: refetch the payment and allocation instead of replaying a stale decision.
+A newer review is never cleared by an earlier acknowledgement. Missing or
+invalid proof, non-boolean confirmation and unknown fields return 422.
+Acknowledgement does not change any credit policy, resolve a processor dispute,
+restore a payment or move money.
+
+```bash
+php artisan svc:finance:acknowledge-reconciliation PAYMENT_UUID synthetic-ledger TRANSACTION_UUID \
+  --workspace=WORKSPACE_UUID --user=USER_UUID --expected-payment-version=OPAQUE_VERSION \
+  --expected-review-reason=processor_dispute --expected-review-flagged-at=UTC_INSTANT \
+  --confirm --format=json
+```
+
+The console previews by default and rolls back the acknowledgement and its audit.
+Add `--apply` to persist it; stale proof is refused in either mode.

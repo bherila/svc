@@ -22,7 +22,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * `review_reason` and `review_flagged_at` are not fillable: a processor's
  * refund or dispute sets them ({@see InvoiceLifecycleService})
  * and a finance write that fits the payment clears them
- * ({@see PaymentReconciliationService::upsert()}).
+ * ({@see PaymentReconciliationService::upsert()}). Explicit acknowledgement
+ * of the current payment revision and review clears only those flags,
+ * preserving the allocation even when a fitting upsert is unavailable.
  *
  * @property CarbonImmutable|null $reconciled_on
  * @property ReconciliationReviewReason|null $review_reason

@@ -11258,6 +11258,175 @@
                     }
                 },
                 {
+                    "name": "finance.reconciliations.acknowledge",
+                    "title": "Acknowledge the current finance allocation review",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "workspace_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "payment_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "external_system": {
+                                "type": "string",
+                                "maxLength": 80,
+                                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+                            },
+                            "transaction_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "expected_payment_version": {
+                                "type": "string",
+                                "pattern": "^[a-f0-9]{64}$"
+                            },
+                            "expected_review_reason": {
+                                "type": "string",
+                                "enum": [
+                                    "processor_refund",
+                                    "processor_dispute"
+                                ]
+                            },
+                            "expected_review_flagged_at": {
+                                "type": "string",
+                                "format": "date-time"
+                            },
+                            "confirm": {
+                                "type": "boolean",
+                                "const": true
+                            }
+                        },
+                        "required": [
+                            "workspace_id",
+                            "payment_id",
+                            "external_system",
+                            "transaction_id",
+                            "expected_payment_version",
+                            "expected_review_reason",
+                            "expected_review_flagged_at",
+                            "confirm"
+                        ],
+                        "additionalProperties": false
+                    },
+                    "description": "Explicitly affirm that the allocation remains correct after its processor refund or dispute review. Requires confirm: true, the current payment version from finance.invoice_payments.list, and the exact review reason and timestamp shown on the allocation. Clears only that current review; allocated money and active state are retained even above payment net or on a disputed/refunded payment. Does not resolve a dispute, restore a payment, issue credit or move money. The payment version advances so synchronizers see the cleared flag. Conditional and idempotent by effect: no Idempotency-Key or replay receipt; repeating the original request, any stale payment version, a changed review, or an already-cleared flag returns 409 and requires a fresh read. Owner/admin only. The Sanctum finance token issued by svc:auth:issue-token is accepted too, its finance.read and finance.reconcile abilities standing for these scopes.",
+                    "annotations": {
+                        "readOnlyHint": false,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": false
+                    },
+                    "outputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "data"
+                        ],
+                        "properties": {
+                            "data": {
+                                "$ref": "#/$defs/FinanceReconciliation"
+                            }
+                        },
+                        "$defs": {
+                            "FinanceReconciliation": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "id",
+                                    "external_system",
+                                    "external_transaction_id",
+                                    "allocated_amount",
+                                    "currency",
+                                    "reconciled_on",
+                                    "is_active",
+                                    "needs_review",
+                                    "review_reason",
+                                    "review_flagged_at",
+                                    "created_at",
+                                    "updated_at"
+                                ],
+                                "properties": {
+                                    "id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "external_system": {
+                                        "type": "string",
+                                        "maxLength": 80,
+                                        "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                                        "description": "The external finance system, as a lowercase slug."
+                                    },
+                                    "external_transaction_id": {
+                                        "type": "string",
+                                        "format": "uuid",
+                                        "description": "The external finance system's transaction UUID."
+                                    },
+                                    "allocated_amount": {
+                                        "type": "integer",
+                                        "minimum": 1,
+                                        "description": "Minor units of the payment this transaction covers."
+                                    },
+                                    "currency": {
+                                        "type": "string",
+                                        "pattern": "^[A-Z]{3}$"
+                                    },
+                                    "reconciled_on": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date"
+                                    },
+                                    "is_active": {
+                                        "type": "boolean",
+                                        "description": "Whether it counts toward the payment's reconciled amount. An inactive allocation is kept with its history."
+                                    },
+                                    "needs_review": {
+                                        "type": "boolean",
+                                        "description": "Active and flagged because the payment processor refunded or disputed the payment after this allocation was written. Cleared by the next write that fits the payment, or by deactivating it."
+                                    },
+                                    "review_reason": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "enum": [
+                                            "processor_refund",
+                                            "processor_dispute",
+                                            null
+                                        ],
+                                        "description": "Why it was last flagged."
+                                    },
+                                    "review_flagged_at": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date-time"
+                                    },
+                                    "created_at": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date-time"
+                                    },
+                                    "updated_at": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date-time"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                {
                     "name": "finance.reconciliations.deactivate",
                     "title": "Deactivate a finance reconciliation allocation",
                     "inputSchema": {
@@ -30229,6 +30398,7 @@
                 "finance.invoice_payments.list": "25681f84faec8b6e",
                 "finance.payouts.list": "49fbdd79e642c84c",
                 "finance.processor_movements.list": "770475b882b8312b",
+                "finance.reconciliations.acknowledge": "5936b72dfdb60830",
                 "finance.reconciliations.deactivate": "41db4066d9b89d5c",
                 "finance.reconciliations.upsert": "75cfbd94043071d2",
                 "invoices.add_time": "ee27431f3eebdb38",
@@ -30379,6 +30549,7 @@
                     "finance.invoice_payments.list role",
                     "finance.payouts.list role",
                     "finance.processor_movements.list role",
+                    "finance.reconciliations.acknowledge role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time role",
@@ -30545,6 +30716,7 @@
                     "finance.invoice_payments.list role",
                     "finance.payouts.list role",
                     "finance.processor_movements.list role",
+                    "finance.reconciliations.acknowledge role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time role",
@@ -30711,6 +30883,7 @@
                     "finance.invoice_payments.list role",
                     "finance.payouts.list role",
                     "finance.processor_movements.list role",
+                    "finance.reconciliations.acknowledge role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time role",
@@ -30877,6 +31050,7 @@
                     "finance.invoice_payments.list role",
                     "finance.payouts.list role",
                     "finance.processor_movements.list role",
+                    "finance.reconciliations.acknowledge role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time role",
@@ -31015,6 +31189,7 @@
                     "expenses.receipts.upload_url scope_not_granted expenses:write",
                     "expenses.unapprove scope_not_granted expenses:write",
                     "expenses.update scope_not_granted expenses:write",
+                    "finance.reconciliations.acknowledge scope_not_granted finance:reconcile",
                     "finance.reconciliations.deactivate scope_not_granted finance:reconcile",
                     "finance.reconciliations.upsert scope_not_granted finance:reconcile",
                     "invoices.add_time scope_not_granted billing:write",
@@ -31313,6 +31488,7 @@
                     "finance.invoice_payments.list role",
                     "finance.payouts.list role",
                     "finance.processor_movements.list role",
+                    "finance.reconciliations.acknowledge scope_not_granted finance:reconcile",
                     "finance.reconciliations.deactivate scope_not_granted finance:reconcile",
                     "finance.reconciliations.upsert scope_not_granted finance:reconcile",
                     "invoices.add_time scope_not_granted billing:write",
@@ -31528,6 +31704,7 @@
                     "finance.invoice_payments.list role",
                     "finance.payouts.list role",
                     "finance.processor_movements.list role",
+                    "finance.reconciliations.acknowledge scope_not_granted finance:reconcile",
                     "finance.reconciliations.deactivate scope_not_granted finance:reconcile",
                     "finance.reconciliations.upsert scope_not_granted finance:reconcile",
                     "invoices.add_time scope_not_granted billing:write",
@@ -31816,6 +31993,7 @@
                 "finance.invoice_payments.list": "25681f84faec8b6e",
                 "finance.payouts.list": "49fbdd79e642c84c",
                 "finance.processor_movements.list": "770475b882b8312b",
+                "finance.reconciliations.acknowledge": "5936b72dfdb60830",
                 "finance.reconciliations.deactivate": "41db4066d9b89d5c",
                 "finance.reconciliations.upsert": "75cfbd94043071d2",
                 "invoices.corrections.get": "aa93da895756b80b",
@@ -31983,6 +32161,7 @@
                 "finance.invoice_payments.list": "25681f84faec8b6e",
                 "finance.payouts.list": "49fbdd79e642c84c",
                 "finance.processor_movements.list": "770475b882b8312b",
+                "finance.reconciliations.acknowledge": "5936b72dfdb60830",
                 "finance.reconciliations.deactivate": "41db4066d9b89d5c",
                 "finance.reconciliations.upsert": "75cfbd94043071d2",
                 "invoices.corrections.get": "aa93da895756b80b",
@@ -32079,6 +32258,7 @@
                     "finance.invoice_payments.list role",
                     "finance.payouts.list role",
                     "finance.processor_movements.list role",
+                    "finance.reconciliations.acknowledge role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time deployment_disabled",
@@ -32244,6 +32424,7 @@
                     "finance.invoice_payments.list role",
                     "finance.payouts.list role",
                     "finance.processor_movements.list role",
+                    "finance.reconciliations.acknowledge role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time deployment_disabled",
@@ -32409,6 +32590,7 @@
                     "finance.invoice_payments.list role",
                     "finance.payouts.list role",
                     "finance.processor_movements.list role",
+                    "finance.reconciliations.acknowledge role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time deployment_disabled",
@@ -32574,6 +32756,7 @@
                     "finance.invoice_payments.list role",
                     "finance.payouts.list role",
                     "finance.processor_movements.list role",
+                    "finance.reconciliations.acknowledge role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time deployment_disabled",
@@ -32800,6 +32983,7 @@
                 "finance.invoice_payments.list": "25681f84faec8b6e",
                 "finance.payouts.list": "49fbdd79e642c84c",
                 "finance.processor_movements.list": "770475b882b8312b",
+                "finance.reconciliations.acknowledge": "5936b72dfdb60830",
                 "finance.reconciliations.deactivate": "41db4066d9b89d5c",
                 "finance.reconciliations.upsert": "75cfbd94043071d2",
                 "invoices.corrections.get": "aa93da895756b80b",
@@ -32965,6 +33149,7 @@
                 "finance.invoice_payments.list": "25681f84faec8b6e",
                 "finance.payouts.list": "49fbdd79e642c84c",
                 "finance.processor_movements.list": "770475b882b8312b",
+                "finance.reconciliations.acknowledge": "5936b72dfdb60830",
                 "finance.reconciliations.deactivate": "41db4066d9b89d5c",
                 "finance.reconciliations.upsert": "75cfbd94043071d2",
                 "invoices.corrections.get": "aa93da895756b80b",
@@ -33071,6 +33256,7 @@
                     "finance.invoice_payments.list role",
                     "finance.payouts.list role",
                     "finance.processor_movements.list role",
+                    "finance.reconciliations.acknowledge role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time deployment_disabled",
@@ -33234,6 +33420,7 @@
                     "finance.invoice_payments.list role",
                     "finance.payouts.list role",
                     "finance.processor_movements.list role",
+                    "finance.reconciliations.acknowledge role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time deployment_disabled",
@@ -33397,6 +33584,7 @@
                     "finance.invoice_payments.list role",
                     "finance.payouts.list role",
                     "finance.processor_movements.list role",
+                    "finance.reconciliations.acknowledge role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time deployment_disabled",
@@ -33560,6 +33748,7 @@
                     "finance.invoice_payments.list role",
                     "finance.payouts.list role",
                     "finance.processor_movements.list role",
+                    "finance.reconciliations.acknowledge role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time deployment_disabled",
@@ -33781,6 +33970,7 @@
                 "finance.invoice_payments.list": "25681f84faec8b6e",
                 "finance.payouts.list": "49fbdd79e642c84c",
                 "finance.processor_movements.list": "770475b882b8312b",
+                "finance.reconciliations.acknowledge": "5936b72dfdb60830",
                 "finance.reconciliations.deactivate": "41db4066d9b89d5c",
                 "finance.reconciliations.upsert": "75cfbd94043071d2",
                 "invoices.corrections.get": "aa93da895756b80b",
@@ -33948,6 +34138,7 @@
                 "finance.invoice_payments.list": "25681f84faec8b6e",
                 "finance.payouts.list": "49fbdd79e642c84c",
                 "finance.processor_movements.list": "770475b882b8312b",
+                "finance.reconciliations.acknowledge": "5936b72dfdb60830",
                 "finance.reconciliations.deactivate": "41db4066d9b89d5c",
                 "finance.reconciliations.upsert": "75cfbd94043071d2",
                 "invoices.corrections.get": "aa93da895756b80b",
@@ -34059,6 +34250,7 @@
                     "finance.invoice_payments.list role",
                     "finance.payouts.list role",
                     "finance.processor_movements.list role",
+                    "finance.reconciliations.acknowledge role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time deployment_disabled",
@@ -34224,6 +34416,7 @@
                     "finance.invoice_payments.list role",
                     "finance.payouts.list role",
                     "finance.processor_movements.list role",
+                    "finance.reconciliations.acknowledge role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time deployment_disabled",
@@ -34389,6 +34582,7 @@
                     "finance.invoice_payments.list role",
                     "finance.payouts.list role",
                     "finance.processor_movements.list role",
+                    "finance.reconciliations.acknowledge role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time deployment_disabled",
@@ -34554,6 +34748,7 @@
                     "finance.invoice_payments.list role",
                     "finance.payouts.list role",
                     "finance.processor_movements.list role",
+                    "finance.reconciliations.acknowledge role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time deployment_disabled",
@@ -34757,6 +34952,7 @@
                 "finance.invoice_payments.list": "25681f84faec8b6e",
                 "finance.payouts.list": "49fbdd79e642c84c",
                 "finance.processor_movements.list": "770475b882b8312b",
+                "finance.reconciliations.acknowledge": "5936b72dfdb60830",
                 "finance.reconciliations.deactivate": "41db4066d9b89d5c",
                 "finance.reconciliations.upsert": "75cfbd94043071d2",
                 "invoices.corrections.get": "aa93da895756b80b",
@@ -34924,6 +35120,7 @@
                 "finance.invoice_payments.list": "25681f84faec8b6e",
                 "finance.payouts.list": "49fbdd79e642c84c",
                 "finance.processor_movements.list": "770475b882b8312b",
+                "finance.reconciliations.acknowledge": "5936b72dfdb60830",
                 "finance.reconciliations.deactivate": "41db4066d9b89d5c",
                 "finance.reconciliations.upsert": "75cfbd94043071d2",
                 "invoices.corrections.get": "aa93da895756b80b",
@@ -35055,6 +35252,7 @@
                     "finance.invoice_payments.list role",
                     "finance.payouts.list role",
                     "finance.processor_movements.list role",
+                    "finance.reconciliations.acknowledge role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time deployment_disabled",
@@ -35220,6 +35418,7 @@
                     "finance.invoice_payments.list role",
                     "finance.payouts.list role",
                     "finance.processor_movements.list role",
+                    "finance.reconciliations.acknowledge role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time deployment_disabled",
@@ -35385,6 +35584,7 @@
                     "finance.invoice_payments.list role",
                     "finance.payouts.list role",
                     "finance.processor_movements.list role",
+                    "finance.reconciliations.acknowledge role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time deployment_disabled",
@@ -35550,6 +35750,7 @@
                     "finance.invoice_payments.list role",
                     "finance.payouts.list role",
                     "finance.processor_movements.list role",
+                    "finance.reconciliations.acknowledge role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time deployment_disabled",
@@ -35670,6 +35871,7 @@
                     "expenses.receipts.upload_url deployment_disabled",
                     "expenses.unapprove deployment_disabled",
                     "expenses.update deployment_disabled",
+                    "finance.reconciliations.acknowledge deployment_disabled",
                     "finance.reconciliations.deactivate deployment_disabled",
                     "finance.reconciliations.upsert deployment_disabled",
                     "invoices.add_time deployment_disabled",
@@ -35835,6 +36037,7 @@
                     "expenses.receipts.upload_url deployment_disabled",
                     "expenses.unapprove deployment_disabled",
                     "expenses.update deployment_disabled",
+                    "finance.reconciliations.acknowledge deployment_disabled",
                     "finance.reconciliations.deactivate deployment_disabled",
                     "finance.reconciliations.upsert deployment_disabled",
                     "invoices.add_time deployment_disabled",
@@ -36047,6 +36250,7 @@
                     "finance.invoice_payments.list role",
                     "finance.payouts.list role",
                     "finance.processor_movements.list role",
+                    "finance.reconciliations.acknowledge deployment_disabled",
                     "finance.reconciliations.deactivate deployment_disabled",
                     "finance.reconciliations.upsert deployment_disabled",
                     "invoices.add_time deployment_disabled",
@@ -36210,6 +36414,7 @@
                     "finance.invoice_payments.list role",
                     "finance.payouts.list role",
                     "finance.processor_movements.list role",
+                    "finance.reconciliations.acknowledge deployment_disabled",
                     "finance.reconciliations.deactivate deployment_disabled",
                     "finance.reconciliations.upsert deployment_disabled",
                     "invoices.add_time deployment_disabled",
@@ -36373,6 +36578,7 @@
                     "finance.invoice_payments.list role",
                     "finance.payouts.list role",
                     "finance.processor_movements.list role",
+                    "finance.reconciliations.acknowledge deployment_disabled",
                     "finance.reconciliations.deactivate deployment_disabled",
                     "finance.reconciliations.upsert deployment_disabled",
                     "invoices.add_time deployment_disabled",
@@ -36536,6 +36742,7 @@
                     "finance.invoice_payments.list role",
                     "finance.payouts.list role",
                     "finance.processor_movements.list role",
+                    "finance.reconciliations.acknowledge deployment_disabled",
                     "finance.reconciliations.deactivate deployment_disabled",
                     "finance.reconciliations.upsert deployment_disabled",
                     "invoices.add_time deployment_disabled",
@@ -36719,6 +36926,7 @@
                 "finance.invoice_payments.list": "25681f84faec8b6e",
                 "finance.payouts.list": "49fbdd79e642c84c",
                 "finance.processor_movements.list": "770475b882b8312b",
+                "finance.reconciliations.acknowledge": "5936b72dfdb60830",
                 "finance.reconciliations.deactivate": "41db4066d9b89d5c",
                 "finance.reconciliations.upsert": "75cfbd94043071d2",
                 "invoices.add_time": "ee27431f3eebdb38",
@@ -36885,6 +37093,7 @@
                 "finance.invoice_payments.list": "25681f84faec8b6e",
                 "finance.payouts.list": "49fbdd79e642c84c",
                 "finance.processor_movements.list": "770475b882b8312b",
+                "finance.reconciliations.acknowledge": "5936b72dfdb60830",
                 "finance.reconciliations.deactivate": "41db4066d9b89d5c",
                 "finance.reconciliations.upsert": "75cfbd94043071d2",
                 "invoices.add_time": "ee27431f3eebdb38",
@@ -37033,6 +37242,7 @@
                     "finance.invoice_payments.list role",
                     "finance.payouts.list role",
                     "finance.processor_movements.list role",
+                    "finance.reconciliations.acknowledge role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time role",
@@ -37199,6 +37409,7 @@
                     "finance.invoice_payments.list role",
                     "finance.payouts.list role",
                     "finance.processor_movements.list role",
+                    "finance.reconciliations.acknowledge role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time role",
@@ -37365,6 +37576,7 @@
                     "finance.invoice_payments.list role",
                     "finance.payouts.list role",
                     "finance.processor_movements.list role",
+                    "finance.reconciliations.acknowledge role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time role",
@@ -37531,6 +37743,7 @@
                     "finance.invoice_payments.list role",
                     "finance.payouts.list role",
                     "finance.processor_movements.list role",
+                    "finance.reconciliations.acknowledge role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time role",
@@ -37719,6 +37932,7 @@
                 "finance.invoice_payments.list": "25681f84faec8b6e",
                 "finance.payouts.list": "49fbdd79e642c84c",
                 "finance.processor_movements.list": "770475b882b8312b",
+                "finance.reconciliations.acknowledge": "5936b72dfdb60830",
                 "finance.reconciliations.deactivate": "41db4066d9b89d5c",
                 "finance.reconciliations.upsert": "75cfbd94043071d2",
                 "invoices.add_time": "ee27431f3eebdb38",
@@ -37884,6 +38098,7 @@
                 "finance.invoice_payments.list": "25681f84faec8b6e",
                 "finance.payouts.list": "49fbdd79e642c84c",
                 "finance.processor_movements.list": "770475b882b8312b",
+                "finance.reconciliations.acknowledge": "5936b72dfdb60830",
                 "finance.reconciliations.deactivate": "41db4066d9b89d5c",
                 "finance.reconciliations.upsert": "75cfbd94043071d2",
                 "invoices.add_time": "ee27431f3eebdb38",
@@ -38030,6 +38245,7 @@
                     "finance.invoice_payments.list role",
                     "finance.payouts.list role",
                     "finance.processor_movements.list role",
+                    "finance.reconciliations.acknowledge role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time role",
@@ -38193,6 +38409,7 @@
                     "finance.invoice_payments.list role",
                     "finance.payouts.list role",
                     "finance.processor_movements.list role",
+                    "finance.reconciliations.acknowledge role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time role",
@@ -38356,6 +38573,7 @@
                     "finance.invoice_payments.list role",
                     "finance.payouts.list role",
                     "finance.processor_movements.list role",
+                    "finance.reconciliations.acknowledge role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time role",
@@ -38519,6 +38737,7 @@
                     "finance.invoice_payments.list role",
                     "finance.payouts.list role",
                     "finance.processor_movements.list role",
+                    "finance.reconciliations.acknowledge role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time role",
@@ -38685,6 +38904,7 @@
                     "finance.invoice_payments.list deployment_disabled",
                     "finance.payouts.list deployment_disabled",
                     "finance.processor_movements.list deployment_disabled",
+                    "finance.reconciliations.acknowledge deployment_disabled",
                     "finance.reconciliations.deactivate deployment_disabled",
                     "finance.reconciliations.upsert deployment_disabled",
                     "invoices.add_time deployment_disabled",
@@ -38829,6 +39049,7 @@
                     "finance.invoice_payments.list deployment_disabled",
                     "finance.payouts.list deployment_disabled",
                     "finance.processor_movements.list deployment_disabled",
+                    "finance.reconciliations.acknowledge deployment_disabled",
                     "finance.reconciliations.deactivate deployment_disabled",
                     "finance.reconciliations.upsert deployment_disabled",
                     "invoices.add_time deployment_disabled",
@@ -38973,6 +39194,7 @@
                     "finance.invoice_payments.list deployment_disabled",
                     "finance.payouts.list deployment_disabled",
                     "finance.processor_movements.list deployment_disabled",
+                    "finance.reconciliations.acknowledge deployment_disabled",
                     "finance.reconciliations.deactivate deployment_disabled",
                     "finance.reconciliations.upsert deployment_disabled",
                     "invoices.add_time deployment_disabled",
@@ -39117,6 +39339,7 @@
                     "finance.invoice_payments.list deployment_disabled",
                     "finance.payouts.list deployment_disabled",
                     "finance.processor_movements.list deployment_disabled",
+                    "finance.reconciliations.acknowledge deployment_disabled",
                     "finance.reconciliations.deactivate deployment_disabled",
                     "finance.reconciliations.upsert deployment_disabled",
                     "invoices.add_time deployment_disabled",
@@ -39261,6 +39484,7 @@
                     "finance.invoice_payments.list deployment_disabled",
                     "finance.payouts.list deployment_disabled",
                     "finance.processor_movements.list deployment_disabled",
+                    "finance.reconciliations.acknowledge deployment_disabled",
                     "finance.reconciliations.deactivate deployment_disabled",
                     "finance.reconciliations.upsert deployment_disabled",
                     "invoices.add_time deployment_disabled",
@@ -39405,6 +39629,7 @@
                     "finance.invoice_payments.list deployment_disabled",
                     "finance.payouts.list deployment_disabled",
                     "finance.processor_movements.list deployment_disabled",
+                    "finance.reconciliations.acknowledge deployment_disabled",
                     "finance.reconciliations.deactivate deployment_disabled",
                     "finance.reconciliations.upsert deployment_disabled",
                     "invoices.add_time deployment_disabled",
@@ -39567,6 +39792,7 @@
                 "finance.invoice_payments.list": "25681f84faec8b6e",
                 "finance.payouts.list": "49fbdd79e642c84c",
                 "finance.processor_movements.list": "770475b882b8312b",
+                "finance.reconciliations.acknowledge": "5936b72dfdb60830",
                 "finance.reconciliations.deactivate": "41db4066d9b89d5c",
                 "finance.reconciliations.upsert": "75cfbd94043071d2",
                 "invoices.add_time": "ee27431f3eebdb38",
@@ -39735,6 +39961,7 @@
                 "finance.invoice_payments.list": "25681f84faec8b6e",
                 "finance.payouts.list": "49fbdd79e642c84c",
                 "finance.processor_movements.list": "770475b882b8312b",
+                "finance.reconciliations.acknowledge": "5936b72dfdb60830",
                 "finance.reconciliations.deactivate": "41db4066d9b89d5c",
                 "finance.reconciliations.upsert": "75cfbd94043071d2",
                 "invoices.add_time": "ee27431f3eebdb38",
@@ -39885,6 +40112,7 @@
                     "finance.invoice_payments.list role",
                     "finance.payouts.list role",
                     "finance.processor_movements.list role",
+                    "finance.reconciliations.acknowledge role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time role",
@@ -40051,6 +40279,7 @@
                     "finance.invoice_payments.list role",
                     "finance.payouts.list role",
                     "finance.processor_movements.list role",
+                    "finance.reconciliations.acknowledge role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time role",
@@ -40217,6 +40446,7 @@
                     "finance.invoice_payments.list role",
                     "finance.payouts.list role",
                     "finance.processor_movements.list role",
+                    "finance.reconciliations.acknowledge role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time role",
@@ -40383,6 +40613,7 @@
                     "finance.invoice_payments.list role",
                     "finance.payouts.list role",
                     "finance.processor_movements.list role",
+                    "finance.reconciliations.acknowledge role",
                     "finance.reconciliations.deactivate role",
                     "finance.reconciliations.upsert role",
                     "invoices.add_time role",

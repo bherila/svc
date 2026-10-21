@@ -724,6 +724,26 @@
             "mcp.switch:finance.payouts.list"
         ]
     },
+    "finance.processor_movements.list": {
+        "scopes": [
+            "finance:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:finance.processor_movements.list"
+        ]
+    },
+    "finance.reconciliations.acknowledge": {
+        "scopes": [
+            "finance:reconcile"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:finance.reconciliations.acknowledge"
+        ]
+    },
     "finance.reconciliations.deactivate": {
         "scopes": [
             "finance:reconcile"

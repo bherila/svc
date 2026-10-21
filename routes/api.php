@@ -330,7 +330,7 @@ Route::prefix('v1')
         foreach (['finance.invoice_payments.list' => 'index', 'finance.payouts.list' => 'payouts', 'finance.processor_movements.list' => 'movements'] as $operationId => $action) {
             $workspaceOperation($operationId, [FinanceReconciliationController::class, $action]);
         }
-        foreach (['finance.reconciliations.upsert' => 'upsert', 'finance.reconciliations.deactivate' => 'destroy'] as $operationId => $action) {
+        foreach (['finance.reconciliations.upsert' => 'upsert', 'finance.reconciliations.deactivate' => 'destroy', 'finance.reconciliations.acknowledge' => 'acknowledge'] as $operationId => $action) {
             $workspaceOperation($operationId, [FinanceReconciliationController::class, $action])
                 ->whereUuid('payment')
                 ->where('external_system', ReconciliationTarget::SYSTEM_PATTERN)

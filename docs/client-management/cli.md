@@ -384,3 +384,15 @@ watermark as `--updated-since` for the next inclusive pass. Optional filters are
 `--watermark` can fix an earlier snapshot. There is no numbered page or mutable
 review-status filter. See the [signed movement contract](../finance-api.md#signed-processor-movements)
 for money signs, public fields and deduplication.
+
+## Acknowledge a finance allocation review
+
+`svc:finance:acknowledge-reconciliation PAYMENT SYSTEM TRANSACTION` is the
+console twin of `finance.reconciliations.acknowledge`. Supply `--workspace`,
+`--user` (owner/admin), `--expected-payment-version`, `--expected-review-reason`,
+`--expected-review-flagged-at` and `--confirm`. It previews by default; `--apply`
+persists the acknowledgement and audit. Only the current review is cleared;
+allocated money and active state stay unchanged, including an allocation above
+payment net. A stale revision or cleared review fails and requires refetching,
+so the same confirmation never clears a later review. There is no browser action.
+See the [finance acknowledgement contract](../finance-api.md#acknowledge-an-allocation-review).

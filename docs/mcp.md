@@ -830,7 +830,7 @@ Operators use the same rules without the agent gates through
 ### Finance reconciliation (#457)
 
 `finance.invoice_payments.list`, `finance.payouts.list`,
-`finance.processor_movements.list`,
+`finance.processor_movements.list`, `finance.reconciliations.acknowledge`,
 `finance.reconciliations.upsert` and `finance.reconciliations.deactivate` are
 the finance reconciliation routes (`/api/v1/workspaces/{workspace}/invoice-payments…`
 and `…/payouts`, see
@@ -1620,3 +1620,12 @@ and accepts only immutable provider, kind, payment and occurrence-date filters.
 Its closed signed-money records contain no account keys or raw source objects;
 see [signed processor movements](finance-api.md#signed-processor-movements) for
 the field list, signs and inclusive watermark protocol.
+
+`finance.reconciliations.acknowledge` is the explicit manager-only write for an
+allocation that is still correct after a processor review. It requires the
+existing `finance:reconcile` scope, `confirm: true`, `expected_payment_version`,
+`expected_review_reason` and `expected_review_flagged_at`, alongside the natural
+allocation path arguments. It only clears the exact current review; stale or
+already-cleared proof returns a conflict requiring a fresh read. There is no
+idempotency key or replay receipt. See [allocation review acknowledgement](finance-api.md#acknowledge-an-allocation-review)
+for the effect-idempotent retry contract and unchanged money/activity rules.
