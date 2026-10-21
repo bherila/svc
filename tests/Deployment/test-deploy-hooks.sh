@@ -67,13 +67,6 @@ case "${!#}" in
     https://svc.bherila.net/.well-known/oauth-authorization-server)
         case ${FIXTURE_OAUTH_RESPONSE:-ready} in
             ready) printf '%s\n' '200 application/json' ;;
-            paused-once)
-                if [ -e "$FIXTURE_OAUTH_READY_FILE" ]; then
-                    printf '%s\n' '200 application/json; charset=utf-8'
-                else
-                    touch "$FIXTURE_OAUTH_READY_FILE"
-                    printf '%s\n' '404 application/json'
-                fi ;;
             transport-failure) exit 7 ;;
             *) printf '%s\n' "$FIXTURE_OAUTH_RESPONSE" ;;
         esac ;;
@@ -139,7 +132,7 @@ run_live_verify() {
         DEPLOY_LIVE_COMMIT=fixture-commit DEPLOY_LIVE_STATE=serving \
         FIXTURE_HOME_RESPONSE="$1" FIXTURE_SSH_LOG="$temporary/ssh.log" \
         FIXTURE_NODE_LOG="$temporary/node.log" \
-        bash -c 'cd "$1" && bash scripts/deploy/verify-live.sh' _ "$repository"
+        timeout 10s bash -c 'cd "$1" && bash scripts/deploy/verify-live.sh' _ "$repository"
 }
 
 for response in '500 text/html' '302 text/html' '200 application/json'; do
@@ -167,32 +160,28 @@ grep -Fq -- '--revoke' "$temporary/ssh.log" || fail 'successful verification ski
 [ -f "$temporary/node.log" ] || fail 'successful home probe skipped MCP smoke'
 grep -Fq 'bash -s -- svc-laravel /fixture/php' "$temporary/ssh.log" || fail 'verification skipped the cron audit'
 
-# Issuance stays paused until the coordinator re-enables the selected release.
-# A failed readiness check cannot mint a token or reach the authenticated smoke.
+# Issuance must resume with the action's serve step. A failed readiness check
+# cannot wait for a person, mint a token or reach the authenticated smoke.
 for response in '404 application/json' '200 text/html' '500 application/json' transport-failure; do
     rm -f "$temporary/ssh.log" "$temporary/node.log"
-    if SVC_DEPLOY_OAUTH_WAIT_SECONDS=0 FIXTURE_OAUTH_RESPONSE="$response" \
-        run_live_verify '200 text/html' >"$temporary/output" 2>&1; then
+    status=0
+    FIXTURE_OAUTH_RESPONSE="$response" \
+        run_live_verify '200 text/html' >"$temporary/output" 2>&1 || status=$?
+    if [ "$status" -eq 0 ]; then
         fail "OAuth readiness accepted '$response'"
     fi
+    [ "$status" -ne 124 ] || fail 'OAuth verification waited for a human handoff'
     grep -Fq -- '--ttl=15' "$temporary/ssh.log" && fail 'credentials issued before OAuth readiness'
     grep -Fq -- '--revoke' "$temporary/ssh.log" && fail 'credential cleanup ran before issuance was attempted'
     grep -qx smoke "$temporary/node.log" && fail 'authenticated smoke ran before OAuth readiness'
 done
-for timeout in -1 invalid 601; do
-    if SVC_DEPLOY_OAUTH_WAIT_SECONDS="$timeout" run_live_verify '200 text/html' >/dev/null 2>&1; then
-        fail "unbounded/malformed OAuth readiness timeout '$timeout' was accepted"
-    fi
-done
 rm -f "$temporary/ssh.log" "$temporary/node.log"
-SVC_DEPLOY_OAUTH_WAIT_SECONDS=5 FIXTURE_OAUTH_RESPONSE=paused-once \
-    FIXTURE_OAUTH_READY_FILE="$temporary/oauth-ready" \
+FIXTURE_OAUTH_RESPONSE='200 application/json; charset=utf-8' \
     run_live_verify '200 text/html' >"$temporary/output" 2>&1 \
-    || fail 'OAuth verification did not resume after issuance was re-enabled'
-grep -Fq 'waiting for coordination' "$temporary/output" || fail 'OAuth readiness did not announce the coordination boundary'
+    || fail 'OAuth verification did not accept ready issuance'
 grep -Fq -- '--ttl=15' "$temporary/ssh.log" || fail 're-enabled issuance skipped the smoke credentials'
 grep -Fq -- '--revoke' "$temporary/ssh.log" || fail 're-enabled issuance skipped cleanup'
-grep -qx smoke "$temporary/node.log" || fail 're-enabled issuance skipped the authenticated smoke'
+grep -qx smoke "$temporary/node.log" || fail 'ready issuance skipped the authenticated smoke'
 
 # The scheduler is the only background runner: no line, a duplicate or a legacy line must stop the
 # deployment before it is healthy and before any credential is issued.
