@@ -2,10 +2,12 @@
 
 namespace App\Support\Finance;
 
+use Tests\Unit\Finance\ProcessorReadBudgetTest;
+
 /** Test-only monotonic clock; every other test retains the native clock. */
 function hrtime(bool $as_number = false): array|int|float|false
 {
-    $ticks = \Tests\Unit\Finance\ProcessorReadBudgetTest::$nanoseconds;
+    $ticks = ProcessorReadBudgetTest::$nanoseconds;
     if ($ticks === null) {
         return \hrtime($as_number);
     }
