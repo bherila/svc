@@ -94,7 +94,7 @@ final class SquareProcessorMovementFacts
         };
         if (in_array($kind, [ProcessorMovementKind::Fee, ProcessorMovementKind::FeeReversal], true)) {
             $principal = 0;
-            $fee = - $net;
+            $fee = -$net;
         }
         $payout = $entry['payout_id'] ?? null;
         try {
@@ -167,7 +167,7 @@ final class SquareProcessorMovementFacts
 
     private static function minor(#[SensitiveParameter] mixed $value): int
     {
-        if (! is_int($value) || $value < - ProcessorMovementFacts::MAX_MINOR || $value > ProcessorMovementFacts::MAX_MINOR) {
+        if (! is_int($value) || $value < -ProcessorMovementFacts::MAX_MINOR || $value > ProcessorMovementFacts::MAX_MINOR) {
             throw self::unreadable();
         }
 

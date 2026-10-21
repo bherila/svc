@@ -6,8 +6,8 @@ use App\Models\ClientCompany;
 use App\Models\ClientInvoicePayment;
 use App\Models\ProcessorMovement;
 use App\Models\Workspace;
-use App\Services\Finance\StripeProcessorMovementSync;
 use App\Services\Billing\InvoiceLifecycleService;
+use App\Services\Finance\StripeProcessorMovementSync;
 use App\Support\Billing\StripeEventMustBeRetried;
 use App\Support\Finance\ProcessorReadBudget;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -33,6 +33,7 @@ final class StripeProcessorMovementSyncTest extends TestCase
         $this->travelTo('2030-01-20 12:00:00');
         $this->fakeStripeApi(function (string $method, string $path, array $params): array {
             $this->assertSame('get', $method);
+
             return match ($path) {
                 '/v1/account' => [['id' => 'acct_synthetic_movements', 'object' => 'account']],
                 '/v1/disputes' => [self::stripeList($path, $this->disputes)],
@@ -150,6 +151,7 @@ final class StripeProcessorMovementSyncTest extends TestCase
         $service->issue($invoice, $workspace);
         $payment = $service->applyPayment($invoice, ['amount' => 1000, 'currency' => 'USD', 'method' => 'stripe', 'status' => 'succeeded',
             'provider' => 'stripe', 'provider_payment_identifier' => 'pi_synthetic_movements', 'received_on' => '2029-12-01'], $workspace);
+
         return [$workspace, $payment];
     }
 
@@ -159,6 +161,7 @@ final class StripeProcessorMovementSyncTest extends TestCase
         $entry = ['id' => 'txn_synthetic_refund', 'object' => 'balance_transaction', 'type' => 'refund', 'amount' => -100,
             'fee' => 0, 'net' => -100, 'currency' => 'usd', 'created' => 1893457800, 'source' => 're_synthetic_movements'];
         $credit = [...$entry, 'id' => 'txn_synthetic_refund_failure', 'type' => 'refund_failure', 'amount' => 100, 'net' => 100, 'created' => 1893585600];
+
         return ['id' => 're_synthetic_movements', 'object' => 'refund', 'payment_intent' => 'pi_synthetic_movements',
             'charge' => 'ch_synthetic_movements', 'amount' => 100, 'currency' => 'usd', 'status' => 'failed',
             'balance_transaction' => $entry, 'failure_balance_transaction' => $credit];

@@ -135,7 +135,7 @@ final class SquareProcessorMovementSync
     }
 
     /**
-     * @param list<string> $locations
+     * @param  list<string>  $locations
      * @return array{entries_read: int, created: int, unchanged: int, enriched: int, conflict: int, deferred: int, ignored: int}
      */
     private function payoutInAccount(#[SensitiveParameter] Workspace $workspace, #[SensitiveParameter] string $payoutId, bool $apply, ProcessorReadBudget $budget, #[SensitiveParameter] string $accountKey, array $locations, ?string $expectedLocation = null): array
@@ -282,7 +282,7 @@ final class SquareProcessorMovementSync
      * Resolve only an actual entry reference when its payment ID is absent.
      * Invalid references are left for the adapter's fixed unreadable hold.
      *
-     * @param array<string, mixed> $entry
+     * @param  array<string, mixed>  $entry
      * @return array{string, string}|null
      */
     private function sourceRequest(#[SensitiveParameter] array $entry): ?array
