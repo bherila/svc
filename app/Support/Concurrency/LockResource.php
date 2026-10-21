@@ -121,6 +121,10 @@ enum LockResource: string
     // held by invoice reconciliation. Producers hold only this lock in a separate transaction.
     case SquarePendingSettlement = 'square_pending_settlements';
 
+    // Movement ingestion locks its owned payment before the immutable child entry.
+    // It does not return to invoice or other billing writes after this lock.
+    case ProcessorMovement = 'processor_movements';
+
     // Reconciling one Square-linked invoice (#458) re-reads its link under a
     // share lock after the invoice lock, so a re-link committed meanwhile is
     // seen; link changes themselves lock only the invoice.

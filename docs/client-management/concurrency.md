@@ -640,3 +640,13 @@ The interleaving tests cover both reservation orders, and the existing lock-orde
 recorder checks the new writer's acquisition order. These single-connection tests
 establish refusal/reservation semantics and lock order, not an independent
 multi-process database stress test.
+
+### Processor movement facts
+
+The movement recorder takes the existing billing-maintenance share lock, re-reads the
+workspace-owned payment under its row lock, then locks the provider/account/entry tuple in
+`processor_movements`. The new child resource follows the late billing resources; recording
+a movement takes no invoice lock and does not return to payment or invoice mutations after
+locking the child. The payment lock serializes delivery for the same payment, and the unique
+workspace/provider/account/entry index refuses a second binding to a different payment.
+This preserves the existing order rather than changing any existing lock's rank.
