@@ -246,6 +246,8 @@ final class AgentMcpContractTest extends TestCase
             'expenses.update' => ['expenses:write'],
             'finance.invoice_payments.list' => ['finance:read'],
             'finance.payouts.list' => ['finance:read'],
+            'finance.processor_movements.list' => ['finance:read'],
+            'finance.reconciliations.acknowledge' => ['finance:reconcile'],
             'finance.reconciliations.deactivate' => ['finance:reconcile'],
             'finance.reconciliations.upsert' => ['finance:reconcile'],
             'invoices.add_time' => ['billing:write', 'billing:read'],
@@ -418,6 +420,31 @@ final class AgentMcpContractTest extends TestCase
                 $this->assertStringContainsString('upload itself requires an idempotency key and parent version', $definition->safety->note);
                 $this->assertNotContains('#/components/parameters/IdempotencyKey', $parameterRefs);
                 $this->assertNotContains('idempotency_key', $input['required'] ?? []);
+
+                continue;
+            }
+            if ($definition->id === 'finance.reconciliations.acknowledge') {
+                // The exact payment/review proof is a single-use CAS, rather
+                // than a receipt-backed replay of an earlier acknowledgement.
+                $this->assertSame(IdempotencyKey::None, $definition->safety->idempotencyKey);
+                $this->assertTrue($definition->isIdempotent());
+                $this->assertTrue($definition->safety->expectedVersion);
+                $this->assertTrue($definition->safety->confirm);
+                $this->assertSame('PUT', $definition->rest?->method);
+                $this->assertTrue($operation['x-agent-write-safety']['expected_version']);
+                $this->assertTrue($operation['x-agent-write-safety']['confirm']);
+                $this->assertStringContainsString('stale or already-cleared reviews return 409', (string) $definition->safety->note);
+                $this->assertArrayHasKey('409', $operation['responses']);
+                $body = AgentApiResponseSchemaCatalog::requestForOperation($definition->id);
+                $required = ['expected_payment_version', 'expected_review_reason', 'expected_review_flagged_at', 'confirm'];
+                $this->assertSame($required, $body['required']);
+                $this->assertFalse($body['additionalProperties']);
+                foreach ($required as $name) {
+                    $this->assertContains($name, $input['required']);
+                }
+                $this->assertTrue($input['properties']['confirm']['const']);
+                $this->assertNotContains('#/components/parameters/IdempotencyKey', $parameterRefs);
+                $this->assertArrayNotHasKey('idempotency_key', $input['properties']);
 
                 continue;
             }
