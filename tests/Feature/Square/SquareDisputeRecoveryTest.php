@@ -121,6 +121,89 @@ final class SquareDisputeRecoveryTest extends TestCase
         yield 'oversized page' => [['' => ['disputes' => array_fill(0, 101, [])]]];
     }
 
+    #[DataProvider('errorBearingPages')]
+    public function test_error_bearing_dispute_pages_preserve_every_existing_payment_and_invoice_row(string $transport, bool $laterPage, mixed $errors): void
+    {
+        [$workspace, , , $invoice] = $this->paymentFixture();
+        $reconciler = app(SquarePaymentReconciler::class);
+        $reconciler->invoice($workspace, 'inv_fixture_1');
+        $this->squareDisputes = ['dispute_fixture_a' => self::squareDispute('dispute_fixture_a', 'pay_fixture_1', 'EVIDENCE_REQUIRED', 345)];
+        $reconciler->disputes($workspace);
+        $this->assertSame('disputed', $invoice->payments()->sole()->status);
+        $this->assertSame(345, $invoice->fresh()->balance_amount);
+        $before = $this->financialRows();
+        // The partial result omits the still-open dispute and returns only a
+        // newer resolved one. Treating it as complete would release the hold.
+        $won = [...self::squareDispute('dispute_fixture_b', 'pay_fixture_1', 'WON', 200), 'updated_at' => '2030-02-02T11:00:00Z'];
+        $this->squareDisputes = ['dispute_fixture_b' => $won];
+        $this->squareDisputePages = $laterPage
+            ? ['' => ['disputes' => [$won], 'cursor' => 'error_page_fixture'], 'error_page_fixture' => ['disputes' => [], 'errors' => $errors]]
+            : ['' => ['disputes' => [$won], 'errors' => $errors]];
+
+        if ($transport === 'sweep') {
+            $this->artisan('svc:square:reconcile-payments', ['--apply' => true, '--format' => 'json'])
+                ->expectsOutput('{"failed":1}')->doesntExpectOutputToContain('synthetic_private_error')->assertFailed();
+        } else {
+            $payload = json_encode(['event_id' => 'evt_error_page_fixture', 'type' => 'dispute.state.updated', 'data' => ['id' => 'dispute_fixture_b']], JSON_THROW_ON_ERROR);
+            $signature = base64_encode(hash_hmac('sha256', 'https://svc.example.test/api/webhooks/square'.$payload, 'fixture-signature-key', true));
+            $this->call('POST', '/api/webhooks/square', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_X_SQUARE_HMACSHA256_SIGNATURE' => $signature], content: $payload)
+                ->assertStatus(503)->assertExactJson(['message' => 'Webhook reconciliation must be retried.']);
+        }
+        $this->assertSame($before, $this->financialRows());
+        $this->assertSame('disputed', $invoice->payments()->sole()->status);
+        $this->assertSame(345, $invoice->payments()->sole()->disputed_amount);
+        $this->assertSame(345, $invoice->fresh()->balance_amount);
+    }
+
+    /** @return iterable<string, array{string, bool, mixed}> */
+    public static function errorBearingPages(): iterable
+    {
+        $cases = [
+            'reported error list' => [['category' => 'API_ERROR', 'code' => 'INTERNAL_SERVER_ERROR', 'detail' => 'synthetic_private_error']],
+            'malformed named errors' => ['detail' => 'synthetic_private_error'],
+            'malformed error string' => 'synthetic_private_error',
+            'malformed error integer' => 1,
+            'malformed error boolean' => true,
+            'malformed error member' => [null],
+        ];
+        foreach (['sweep', 'webhook'] as $transport) {
+            foreach ([false, true] as $laterPage) {
+                foreach ($cases as $name => $errors) {
+                    yield $transport.' '.($laterPage ? 'later' : 'first').' '.$name => [$transport, $laterPage, $errors];
+                }
+            }
+        }
+    }
+
+    #[DataProvider('transports')]
+    public function test_empty_errors_on_every_dispute_page_do_not_refuse_a_complete_snapshot(string $transport): void
+    {
+        [$workspace, , , $invoice] = $this->paymentFixture();
+        $reconciler = app(SquarePaymentReconciler::class);
+        $reconciler->invoice($workspace, 'inv_fixture_1');
+        $this->squareDisputes = ['dispute_fixture_a' => self::squareDispute('dispute_fixture_a', 'pay_fixture_1', 'EVIDENCE_REQUIRED', 345)];
+        $reconciler->disputes($workspace);
+        $won = [...self::squareDispute('dispute_fixture_a', 'pay_fixture_1', 'WON', 345), 'updated_at' => '2030-02-02T11:00:00Z'];
+        $this->squareDisputes = ['dispute_fixture_a' => $won];
+        $this->squareDisputePages = ['' => ['disputes' => [$won], 'errors' => [], 'cursor' => 'empty_errors_fixture'],
+            'empty_errors_fixture' => ['disputes' => [], 'errors' => []]];
+
+        $this->recover($transport);
+        $this->assertSame('succeeded', $invoice->payments()->sole()->status);
+        $this->assertSame(0, $invoice->fresh()->balance_amount);
+    }
+
+    /** @return array<string, list<array<string, mixed>>> */
+    private function financialRows(): array
+    {
+        $rows = [];
+        foreach (['client_invoice_payments', 'client_invoices', 'client_invoice_lines', 'payment_reconciliations'] as $table) {
+            $rows[$table] = DB::table($table)->orderBy('id')->get()->map(static fn (object $row): array => (array) $row)->all();
+        }
+
+        return $rows;
+    }
+
     public function test_page_bound_is_a_failed_sweep_instead_of_silent_completion(): void
     {
         $this->paymentFixture();

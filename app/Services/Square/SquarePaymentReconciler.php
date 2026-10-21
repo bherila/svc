@@ -194,7 +194,7 @@ final class SquarePaymentReconciler
         for ($page = 0; $page < self::DISPUTE_MAX_PAGES; $page++) {
             $response = $this->client->listDisputes($cursor);
             $records = array_key_exists('disputes', $response) ? $response['disputes'] : [];
-            if (! is_array($records) || ! array_is_list($records) || count($records) > self::DISPUTE_MAX_RECORDS_PER_PAGE) {
+            if (! is_array($records) || ! array_is_list($records) || count($records) > self::DISPUTE_MAX_RECORDS_PER_PAGE || ! empty($response['errors'])) {
                 throw SquareRequestFailed::unreadable(SquareReadFailureReason::MalformedRecords);
             }
             foreach ($records as $record) {
