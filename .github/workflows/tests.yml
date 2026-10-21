@@ -263,6 +263,7 @@ jobs:
           bash tests/Deployment/test-preflight.sh
           bash tests/Deployment/test-oauth-lifecycle.sh
           bash tests/Deployment/test-failure-report.sh
+          bash tests/Deployment/test-mutation-scope.sh
           bash tests/Deployment/test-cron-audit.sh
           rm -rf .shared-cpanel-deployment
           node --test tests/Deployment/verify-oauth-redirect.test.mjs tests/Deployment/verify-hashed-assets.test.mjs

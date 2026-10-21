@@ -26,6 +26,20 @@ summary=storage/framework/cache/infection-diff/summary.json
 # A leftover summary from an earlier run must not be mistaken for this one.
 rm -f "$summary"
 
+# Match the hosted gate and infection.diff.json5: scripts, tests and views are
+# not application mutation sources. Do not turn an invalid Git comparison or
+# an Infection run that measured nothing into a successful application gate.
+scope_base=$(git merge-base "$mutation_base" HEAD)
+scope_status=0
+git -c diff.renames=false diff --quiet --diff-filter=AM "$scope_base" HEAD -- \
+    ':(glob)app/**/*.php' || scope_status=$?
+if [ "$scope_status" -eq 0 ]; then
+    echo 'Mutation gate not applicable: no added, modified or renamed PHP application source under app/.'
+    exit 0
+elif [ "$scope_status" -ne 1 ]; then
+    exit "$scope_status"
+fi
+
 # Infection's exit code judges the score; the gate judges whether anything was
 # measured (#443). Run both and fail on either, so a run in which every mutant
 # timed out cannot pass. CI runs the same gate script.
