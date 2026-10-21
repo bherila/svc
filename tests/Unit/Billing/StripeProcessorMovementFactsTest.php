@@ -186,6 +186,159 @@ final class StripeProcessorMovementFactsTest extends TestCase
         StripeProcessorMovementFacts::refund($refund, $this->entry());
     }
 
+    /** @return iterable<string, array{mixed}> */
+    public static function invalidParentIdentifiers(): iterable
+    {
+        yield 'missing' => [null];
+        yield 'empty' => [''];
+        yield 'non-string' => [123];
+        yield 'leading punctuation' => ['!re_synthetic'];
+        yield 'trailing punctuation' => ['re_synthetic!'];
+        yield 'terminal newline' => ["re_synthetic\n"];
+        yield 'over width' => [str_repeat('r', 256)];
+        yield 'leading underscore' => ['_re_synthetic'];
+    }
+
+    #[DataProvider('invalidParentIdentifiers')]
+    public function test_parent_identity_is_required_even_when_no_movement_is_published(mixed $identifier): void
+    {
+        foreach (['refund', 'dispute'] as $object) {
+            $parent = ['id' => $identifier, 'object' => $object, 'balance_transactions' => []];
+            try {
+                $object === 'refund'
+                    ? StripeProcessorMovementFacts::refund($parent, null)
+                    : StripeProcessorMovementFacts::dispute($parent);
+                $this->fail('A malformed parent identity was accepted.');
+            } catch (DomainException $exception) {
+                $this->assertSame('The Stripe processor movement is unreadable.', $exception->getMessage());
+            }
+        }
+    }
+
+    public function test_parent_object_is_checked_before_an_empty_history_is_accepted(): void
+    {
+        foreach (['refund', 'dispute'] as $object) {
+            $parent = ['id' => 'parent_synthetic', 'object' => 'charge', 'balance_transactions' => []];
+            try {
+                $object === 'refund'
+                    ? StripeProcessorMovementFacts::refund($parent, null)
+                    : StripeProcessorMovementFacts::dispute($parent);
+                $this->fail('A foreign parent object was accepted.');
+            } catch (DomainException $exception) {
+                $this->assertSame('The Stripe processor movement is unreadable.', $exception->getMessage());
+            }
+        }
+    }
+
+    public function test_dispute_members_must_be_a_bounded_list_before_any_entry_is_accepted(): void
+    {
+        $entry = array_replace($this->entry(), ['source' => 'dp_synthetic', 'type' => 'adjustment']);
+        foreach ([[1 => $entry], [$entry, array_replace($entry, ['id' => 'txn_second']), array_replace($entry, ['id' => 'txn_third'])]] as $members) {
+            try {
+                StripeProcessorMovementFacts::dispute(['id' => 'dp_synthetic', 'charge' => 'ch_synthetic', 'balance_transactions' => $members], $entry);
+                $this->fail('An unbounded or non-list dispute history was accepted.');
+            } catch (DomainException $exception) {
+                $this->assertSame('The Stripe processor movement is unreadable.', $exception->getMessage());
+            }
+        }
+    }
+
+    public function test_a_valid_entry_still_requires_an_actual_matching_dispute_member(): void
+    {
+        $entry = array_replace($this->entry(), ['source' => 'dp_synthetic', 'type' => 'adjustment']);
+        $member = array_replace($entry, ['id' => 'txn_other_synthetic']);
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('The Stripe processor movement is unreadable.');
+        StripeProcessorMovementFacts::dispute(['id' => 'dp_synthetic', 'charge' => 'ch_synthetic', 'balance_transactions' => [$member]], $entry);
+    }
+
+    /** @return iterable<string, array{array<string, mixed>}> */
+    public static function invalidDisputeEntries(): iterable
+    {
+        yield 'zero principal' => [['amount' => 0, 'fee' => 0, 'net' => 0]];
+        yield 'numeric string principal' => [['amount' => '-100']];
+        yield 'float principal' => [['amount' => -100.0]];
+        yield 'foreign ledger type' => [['type' => 'charge']];
+    }
+
+    /** @param array<string, mixed> $changes */
+    #[DataProvider('invalidDisputeEntries')]
+    public function test_matching_dispute_entries_still_require_signed_integer_principal_and_dispute_type(array $changes): void
+    {
+        $entry = array_replace($this->entry(), ['source' => 'dp_synthetic', 'type' => 'adjustment'], $changes);
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('The Stripe processor movement is unreadable.');
+        StripeProcessorMovementFacts::dispute(['id' => 'dp_synthetic', 'charge' => 'ch_synthetic', 'balance_transactions' => [$entry]], $entry);
+    }
+
+    public function test_a_one_minor_unit_dispute_debit_remains_valid(): void
+    {
+        $entry = array_replace($this->entry(), ['source' => 'dp_synthetic', 'type' => 'payment_reversal', 'amount' => -1, 'fee' => 0, 'net' => -1]);
+        $facts = StripeProcessorMovementFacts::dispute(['id' => 'dp_synthetic', 'charge' => 'ch_synthetic', 'balance_transactions' => [$entry]], $entry);
+        $this->assertNotNull($facts);
+        $this->assertSame(ProcessorMovementKind::DisputeDebit, $facts->kind);
+        $this->assertSame([-1, 0, -1], [$facts->principalMinor, $facts->feeMinor, $facts->netMinor]);
+    }
+
+    public function test_expanded_pointer_principal_alone_cannot_disagree_with_the_retrieved_entry(): void
+    {
+        $refund = $this->refund();
+        $refund['balance_transaction'] = array_replace($this->entry(), ['amount' => -101]);
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('The Stripe processor movement is unreadable.');
+        StripeProcessorMovementFacts::refund($refund, $this->entry());
+    }
+
+    /** @return iterable<string, array{mixed}> */
+    public static function malformedCurrencies(): iterable
+    {
+        yield 'leading punctuation' => ['!usd'];
+        yield 'trailing punctuation' => ['usd!'];
+        yield 'terminal newline' => ["usd\n"];
+        yield 'array' => [['usd']];
+        yield 'boolean' => [true];
+    }
+
+    #[DataProvider('malformedCurrencies')]
+    public function test_malformed_currency_is_refused_with_the_safe_adapter_exception(mixed $currency): void
+    {
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('The Stripe processor movement is unreadable.');
+        StripeProcessorMovementFacts::refund($this->refund(), array_replace($this->entry(), ['currency' => $currency]));
+    }
+
+    public function test_payout_identifier_has_the_same_provider_identity_rules_as_other_references(): void
+    {
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('The Stripe processor movement is unreadable.');
+        StripeProcessorMovementFacts::refund($this->refund(), $this->entry(), payoutIdentifier: 'po_synthetic!');
+    }
+
+    /** @return iterable<string, array{int, string}> */
+    public static function timestampBounds(): iterable
+    {
+        yield 'epoch' => [0, '1970-01-01T00:00:00+00:00'];
+        yield 'last supported second' => [253402300799, '9999-12-31T23:59:59+00:00'];
+    }
+
+    #[DataProvider('timestampBounds')]
+    public function test_exact_timestamp_boundaries_are_preserved_in_utc(int $timestamp, string $formatted): void
+    {
+        $facts = StripeProcessorMovementFacts::refund($this->refund(), array_replace($this->entry(), ['created' => $timestamp, 'available_on' => $timestamp]));
+        $this->assertNotNull($facts);
+        $this->assertSame($timestamp, $facts->occurredAt->getTimestamp());
+        $this->assertSame($timestamp, $facts->availableOn?->getTimestamp());
+        $this->assertSame($formatted, $facts->occurredAt->toIso8601String());
+        $this->assertSame($formatted, $facts->availableOn?->toIso8601String());
+        $this->assertSame('UTC', $facts->occurredAt->getTimezone()->getName());
+    }
+
+    public function test_maximum_length_parent_identity_is_valid_without_published_money(): void
+    {
+        $this->assertNull(StripeProcessorMovementFacts::refund(['id' => str_repeat('r', 255)], null));
+        $this->assertNull(StripeProcessorMovementFacts::dispute(['id' => str_repeat('d', 255), 'balance_transactions' => []]));
+    }
+
     /** @return array<string, mixed> */
     private function refund(): array
     {
