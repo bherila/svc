@@ -21,8 +21,8 @@ final class StripeProcessorMovementFacts
      * A missing pointer means no published movement; an unresolved pointer is
      * refused. Failed refunds keep the initial debit and separate failure credit.
      *
-     * @param array<string, mixed> $refund
-     * @param array<string, mixed>|null $balanceTransaction
+     * @param  array<string, mixed>  $refund
+     * @param  array<string, mixed>|null  $balanceTransaction
      */
     public static function refund(#[SensitiveParameter] array $refund, #[SensitiveParameter] ?array $balanceTransaction, bool $failure = false, #[SensitiveParameter] ?string $payoutIdentifier = null): ?ProcessorMovementFacts
     {
@@ -47,8 +47,8 @@ final class StripeProcessorMovementFacts
      * The supplied entry must appear in this dispute's actual balance array.
      * Its signed principal distinguishes withdrawal from reinstatement.
      *
-     * @param array<string, mixed> $dispute
-     * @param array<string, mixed>|null $balanceTransaction
+     * @param  array<string, mixed>  $dispute
+     * @param  array<string, mixed>|null  $balanceTransaction
      */
     public static function dispute(#[SensitiveParameter] array $dispute, #[SensitiveParameter] ?array $balanceTransaction = null, #[SensitiveParameter] ?string $payoutIdentifier = null): ?ProcessorMovementFacts
     {
@@ -85,7 +85,7 @@ final class StripeProcessorMovementFacts
         return self::facts($dispute, $balanceTransaction, $amount < 0 ? ProcessorMovementKind::DisputeDebit : ProcessorMovementKind::DisputeCredit, $payoutIdentifier);
     }
 
-    /** @param array<string, mixed> $parent */
+    /** @param  array<string, mixed>  $parent */
     private static function parent(#[SensitiveParameter] array &$parent, string $object): void
     {
         self::id($parent['id'] ?? null);
@@ -96,8 +96,8 @@ final class StripeProcessorMovementFacts
     }
 
     /**
-     * @param array<string, mixed> $transaction
-     * @param array<string, mixed> $parent
+     * @param  array<string, mixed>  $transaction
+     * @param  array<string, mixed>  $parent
      */
     private static function assertPointer(#[SensitiveParameter] mixed $pointer, #[SensitiveParameter] array $transaction, #[SensitiveParameter] array $parent): void
     {
@@ -115,8 +115,8 @@ final class StripeProcessorMovementFacts
     }
 
     /**
-     * @param array<string, mixed> $parent
-     * @param array<string, mixed> $transaction
+     * @param  array<string, mixed>  $parent
+     * @param  array<string, mixed>  $transaction
      */
     private static function facts(#[SensitiveParameter] array $parent, #[SensitiveParameter] array $transaction, ProcessorMovementKind $kind, #[SensitiveParameter] ?string $payoutIdentifier): ProcessorMovementFacts
     {
@@ -151,7 +151,7 @@ final class StripeProcessorMovementFacts
     }
 
     /**
-     * @param array<string, mixed> $parent
+     * @param  array<string, mixed>  $parent
      * @return array<string, string>
      */
     private static function boundReferences(#[SensitiveParameter] array $parent, #[SensitiveParameter] mixed $source): array
@@ -173,11 +173,12 @@ final class StripeProcessorMovementFacts
                 }
             }
         }
+
         return $references;
     }
 
     /**
-     * @param array<string, mixed> $source
+     * @param  array<string, mixed>  $source
      * @return array<string, string>
      */
     private static function paymentReferences(#[SensitiveParameter] array $source): array

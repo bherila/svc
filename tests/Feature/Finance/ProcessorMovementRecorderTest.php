@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Finance;
 
+use App\Exceptions\WorkspaceOwnershipImmutable;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoicePayment;
@@ -332,7 +333,7 @@ final class ProcessorMovementRecorderTest extends TestCase
         app(ProcessorMovementRecorder::class)->record($workspace, $payment->id, $this->facts($payment), 'synthetic_account', true);
         $stored = ProcessorMovement::query()->sole();
         $stored->workspace_id = $foreign->id;
-        $this->expectException(\App\Exceptions\WorkspaceOwnershipImmutable::class);
+        $this->expectException(WorkspaceOwnershipImmutable::class);
         $stored->save();
     }
 

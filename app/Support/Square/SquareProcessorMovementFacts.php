@@ -43,8 +43,8 @@ final class SquareProcessorMovementFacts
      * A supplied source must be the refund/dispute actually named by this entry;
      * it cannot supply an arbitrary payment binding chosen by the caller.
      *
-     * @param array<string, mixed> $entry
-     * @param array<string, mixed>|null $source
+     * @param  array<string, mixed>  $entry
+     * @param  array<string, mixed>|null  $source
      */
     public static function from(#[SensitiveParameter] array $entry, #[SensitiveParameter] ?array $source = null): ?ProcessorMovementFacts
     {
@@ -94,7 +94,7 @@ final class SquareProcessorMovementFacts
         };
         if (in_array($kind, [ProcessorMovementKind::Fee, ProcessorMovementKind::FeeReversal], true)) {
             $principal = 0;
-            $fee = -$net;
+            $fee = - $net;
         }
         $payout = $entry['payout_id'] ?? null;
         try {
@@ -115,7 +115,7 @@ final class SquareProcessorMovementFacts
      * Any two published components determine the third exactly via net=gross-fee.
      * One component alone never means that the missing fee was zero.
      *
-     * @param array<string, mixed> $entry
+     * @param  array<string, mixed>  $entry
      * @return array{int, int, int, string}
      */
     private static function money(#[SensitiveParameter] array $entry): array
@@ -167,7 +167,7 @@ final class SquareProcessorMovementFacts
 
     private static function minor(#[SensitiveParameter] mixed $value): int
     {
-        if (! is_int($value) || $value < -ProcessorMovementFacts::MAX_MINOR || $value > ProcessorMovementFacts::MAX_MINOR) {
+        if (! is_int($value) || $value < - ProcessorMovementFacts::MAX_MINOR || $value > ProcessorMovementFacts::MAX_MINOR) {
             throw self::unreadable();
         }
 
