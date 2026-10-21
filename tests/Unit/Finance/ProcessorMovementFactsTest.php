@@ -118,6 +118,7 @@ final class ProcessorMovementFactsTest extends TestCase
         yield 'lower currency' => [['currency' => 'usd']];
         yield 'invalid currency' => [['currency' => 'US1']];
         yield 'wrong currency width' => [['currency' => 'USDD']];
+        yield 'currency trailing newline' => [['currency' => "USD\n"]];
         yield 'wrong date basis' => [['dateBasis' => 'square_effective_at']];
         yield 'wrong square date basis' => [['provider' => 'square']];
         yield 'unknown date basis' => [['dateBasis' => 'synthetic_now']];
@@ -125,6 +126,10 @@ final class ProcessorMovementFactsTest extends TestCase
         yield 'raw available date' => [['availableOn' => '2030-01-01']];
         yield 'raw kind' => [['kind' => 'refund']];
         yield 'net does not reconcile' => [['netMinor' => -99]];
+        yield 'unsafe negative net exactly reconciles' => [['principalMinor' => -9007199254740991, 'feeMinor' => 1, 'netMinor' => -9007199254740992]];
+        yield 'unsafe positive net exactly reconciles' => [['kind' => ProcessorMovementKind::RefundReversal, 'principalMinor' => 9007199254740991, 'feeMinor' => -1, 'netMinor' => 9007199254740992]];
+        yield 'unsafe negative principal exactly reconciles' => [['principalMinor' => -9007199254740992, 'netMinor' => -9007199254740992]];
+        yield 'unsafe negative fee exactly reconciles' => [['principalMinor' => -1, 'feeMinor' => -9007199254740992, 'netMinor' => 9007199254740991]];
         yield 'unsafe derived negative net' => [['principalMinor' => -9007199254740991, 'feeMinor' => 1, 'netMinor' => -9007199254740991]];
         yield 'unsafe derived positive net' => [['principalMinor' => 9007199254740991, 'feeMinor' => -1, 'netMinor' => 9007199254740991]];
         foreach (['principalMinor', 'feeMinor', 'netMinor'] as $field) {
