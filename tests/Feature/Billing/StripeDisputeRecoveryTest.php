@@ -103,6 +103,26 @@ final class StripeDisputeRecoveryTest extends TestCase
         $this->assertSame('du_fixture_a', $this->stripeCalls[1]['params']['starting_after'] ?? null);
     }
 
+    public function test_an_unchanged_group_records_its_revision_timestamp_in_utc(): void
+    {
+        [$workspace, $invoice] = $this->invoice();
+        $payment = $this->record($workspace, $invoice);
+        $this->pages[''] = self::stripeList('/v1/disputes', [self::dispute('du_fixture_a', 'won', 100)]);
+        $service = app(StripeDisputeRecovery::class);
+        $snapshot = $service->read($workspace, $payment->id);
+        $originalTimezone = date_default_timezone_get();
+        try {
+            date_default_timezone_set('Pacific/Auckland');
+            $service->apply($workspace, $snapshot, true);
+        } finally {
+            date_default_timezone_set($originalTimezone);
+        }
+        $this->assertSame('2030-01-20 12:00:00', $payment->fresh()->getRawOriginal('updated_at'));
+        $this->assertSame($snapshot->version + 1, $payment->fresh()->lock_version);
+        $this->assertSame('succeeded', $payment->fresh()->status);
+        $this->assertSame(0, $invoice->fresh()->balance_amount);
+    }
+
     public function test_multiple_disputes_are_summed_and_a_separate_win_does_not_release_an_open_hold(): void
     {
         [$workspace, $invoice] = $this->invoice();

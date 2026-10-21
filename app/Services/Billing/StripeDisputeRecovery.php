@@ -10,6 +10,7 @@ use App\Support\Billing\StripeEventMustBeRetried;
 use App\Support\Concurrency\Locks;
 use App\Support\Finance\ProcessorMovementFacts;
 use App\Support\Finance\ProcessorReadBudget;
+use App\Support\WorkspaceClock;
 use DomainException;
 use Illuminate\Support\Facades\DB;
 use SensitiveParameter;
@@ -39,7 +40,7 @@ final class StripeDisputeRecovery
         'prevented' => true,
     ];
 
-    public function __construct(private readonly StripeGateway $gateway, private readonly InvoiceLifecycleService $invoices) {}
+    public function __construct(private readonly StripeGateway $gateway, private readonly InvoiceLifecycleService $invoices, private readonly WorkspaceClock $clock = new WorkspaceClock) {}
 
     public function recover(Workspace $workspace, int $paymentId, bool $apply = false, ?ProcessorReadBudget $budget = null): StripeDisputeSnapshot
     {
@@ -58,7 +59,7 @@ final class StripeDisputeRecovery
         if ($payment === null || $payment->provider !== 'stripe' || ! is_string($identifier)
             || preg_match('/^(pi|ch)_[A-Za-z0-9_]{1,252}$/D', $identifier) !== 1
             || $payment->amount < 1 || $payment->amount > ProcessorMovementFacts::MAX_MINOR
-            || ! is_string($payment->currency) || preg_match('/^[A-Z]{3}$/D', $payment->currency) !== 1) {
+            || preg_match('/^[A-Z]{3}$/D', $payment->currency) !== 1) {
             throw new DomainException('The Stripe dispute payment is unavailable.');
         }
         $version = $payment->lock_version;
@@ -170,7 +171,7 @@ final class StripeDisputeRecovery
                 // the revision; only the no-op path still matches this value.
                 ClientInvoicePayment::query()->where('workspace_id', $workspace->id)->whereKey($payment->id)
                     ->where('lock_version', $snapshot->version)->update([
-                        'lock_version' => DB::raw('lock_version + 1'), 'updated_at' => now(),
+                        'lock_version' => DB::raw('lock_version + 1'), 'updated_at' => $this->clock->now('UTC'),
                     ]);
             }
         });
