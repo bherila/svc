@@ -9,6 +9,8 @@ final class ProcessorReadBudget
 {
     private int $used = 0;
 
+    private bool $refused = false;
+
     private readonly float $deadline;
 
     public function __construct(private readonly int $limit = 200, int $maxSeconds = 600)
@@ -25,9 +27,17 @@ final class ProcessorReadBudget
     public function consume(): void
     {
         if ($this->used >= $this->limit || hrtime(true) >= $this->deadline) {
+            $this->refused = true;
+
             throw new DomainException('The processor read budget is exhausted; continue the sync in another run.');
         }
         $this->used++;
+    }
+
+    /** Only an actual denied consume sets this; using the final allowed call does not. */
+    public function refused(): bool
+    {
+        return $this->refused;
     }
 
     public function used(): int

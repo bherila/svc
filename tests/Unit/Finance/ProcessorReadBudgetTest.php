@@ -37,6 +37,26 @@ final class ProcessorReadBudgetTest extends TestCase
         }
     }
 
+    public function test_refused_is_set_only_by_an_actual_consume_denial(): void
+    {
+        $budget = new ProcessorReadBudget(1);
+        $this->assertFalse($budget->refused());
+        $budget->consume();
+        $this->assertFalse($budget->refused());
+        try {
+            $budget->consume();
+        } catch (DomainException) {
+            $this->assertTrue($budget->refused());
+        }
+        $expired = new ProcessorReadBudget(1, maxSeconds: 0);
+        $this->assertFalse($expired->refused());
+        try {
+            $expired->consume();
+        } catch (DomainException) {
+            $this->assertTrue($expired->refused());
+        }
+    }
+
     public function test_a_zero_or_excessive_limit_is_refused(): void
     {
         foreach ([0, -1, 1001] as $limit) {

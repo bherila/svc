@@ -112,7 +112,18 @@ final class SquareProcessorMovementSync
                     throw SquareRequestFailed::unreadable();
                 }
                 foreach ($ids as $id) {
-                    yield $this->payoutInAccount($workspace, $id, $apply, $budget, $accountKey, $locations, $location);
+                    try {
+                        $result = $this->payoutInAccount($workspace, $id, $apply, $budget, $accountKey, $locations, $location);
+                    } catch (SquareRequestFailed $failure) {
+                        if (! $failure->isRecordSpecific()) {
+                            throw $failure;
+                        }
+                        // All provider reads precede this payout's first write.
+                        // A refused old record is incomplete, not a reason to
+                        // starve later payouts in the same bounded window.
+                        $result = ['entries_read' => 0, 'created' => 0, 'unchanged' => 0, 'enriched' => 0, 'conflict' => 0, 'deferred' => 1, 'ignored' => 0];
+                    }
+                    yield $result;
                 }
                 if ($next === null || $next === '') {
                     break;

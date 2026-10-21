@@ -40,3 +40,8 @@ Schedule::command('svc:square:prune-webhook-receipts --apply')->daily()->without
 
 // Non-invoice Square charges need not wait forever for a local payment (#495).
 Schedule::command('svc:square:prune-pending-settlements --apply')->daily()->withoutOverlapping(30);
+
+// Independent provider runs avoid starving either lane under the shared
+// command budget. No queue worker is required; both run synchronously.
+Schedule::command('svc:finance:sync-processor-movements --provider=stripe --apply')->dailyAt('02:10')->withoutOverlapping(30);
+Schedule::command('svc:finance:sync-processor-movements --provider=square --apply')->dailyAt('02:25')->withoutOverlapping(30);

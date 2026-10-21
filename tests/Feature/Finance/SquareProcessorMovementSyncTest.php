@@ -483,14 +483,13 @@ final class SquareProcessorMovementSyncTest extends TestCase
         $this->locations[] = self::squareLocation('LOCFIXTURE02');
         $this->discoveryPages = ['LOCFIXTURE01|' => ['payouts' => [$this->payout]]];
         $this->payout['location_id'] = 'LOCFIXTURE02';
-        try {
-            iterator_to_array(app(SquareProcessorMovementSync::class)->payouts($workspace, CarbonImmutable::parse('2020-01-01'), true));
-            $this->fail('The detail changed the location proven by discovery.');
-        } catch (SquareRequestFailed $failure) {
-            $this->assertSame(502, $failure->getStatusCode());
-        }
+        $results = iterator_to_array(app(SquareProcessorMovementSync::class)->payouts($workspace, CarbonImmutable::parse('2020-01-01'), true), false);
+        $this->assertCount(1, $results);
+        $this->assertSame(1, $results[0]['deferred']);
+        $this->assertSame(0, $results[0]['created']);
         $this->assertDatabaseCount('processor_movements', 0);
-        Http::assertSentCount(3);
+        Http::assertNotSent(static fn (Request $request): bool => str_contains($request->url(), '/po_synthetic/payout-entries'));
+        Http::assertSentCount(4);
     }
 
     public function test_discovery_page_limit_cannot_report_a_truncated_inventory_as_complete(): void
