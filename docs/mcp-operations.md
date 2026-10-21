@@ -200,13 +200,27 @@ secrets. Their migration deliberately preserves them on rollback. Keep
 ### Durable revocation rollout (#474)
 
 Upgrade to the released `bherila/auth-laravel` v0.27.0 (`^0.27.0`, exact
-reference committed in `composer.lock`). Pause issuance and drain old grant
-requests before the migration. The migration registers existing identifiable
+reference committed in `composer.lock`). Pause OAuth issuance before deployment
+and use the standard maintenance and Artisan drain. A coordinated web-grant
+drain is not required: late old-process credentials stay unregistered and
+require fresh authorization. The migration registers existing identifiable
 code/access/refresh rows in bounded batches, including attributable refreshes
 whose access rows were already purged, at sequence zero. It records completion
 once and never enrolls later rows on replay. New package repositories register
 all subsequent credentials atomically with persistence. SVC enables the guard
 in `bherila-auth.oauth_server.revocation.enabled`.
+
+For the coordinated rollout, leave issuance paused until the new release has
+migrated and is selected. The live verifier announces this boundary and polls
+OAuth server metadata for up to 300 seconds before issuing any smoke token.
+The coordinator re-enables issuance in the server-held deployment environment
+and the selected release, and rebuilds its configuration cache. Verification
+then runs the normal authenticated MCP smoke and revokes its credentials.
+A timeout leaves the deployment failed under its existing maintenance policy;
+no smoke check is skipped. Late unregistered old-process grants require fresh
+authorization. Check the website integration and any affected clients after
+issuance is re-enabled.
+
 
 An older process's late, unregistered writes are refused by the new guard,
 rather than adopted as a new connection. Unknown legacy owners/clients also

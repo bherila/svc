@@ -101,9 +101,9 @@ final class DeploySmokeCredentialsCommand extends MutationCommand
 
         // Any token from a previous run is dead to us the moment we mint a new
         // pair, and leaving it live would mean a failed cleanup silently
-        // accumulating valid credentials one deploy at a time. Unfenced, here
-        // and in cleanup: the principal holds no OAuth connection to race, and
-        // a fence would revoke the pair this issues next.
+        // accumulating valid credentials one deploy at a time. The durable
+        // revocation ends its previous lineages; the fresh pair captures the
+        // new sequence and can be issued immediately.
         $revoker->revoke(AgentCredentialSelection::connections($user), $kind->actor());
 
         try {
