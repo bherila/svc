@@ -50,6 +50,15 @@ final class ProcessorMovementRecorder
             $query = ProcessorMovement::query()->where('workspace_id', $workspace->id)->where('provider', $facts->provider)
                 ->where('account_key', $accountKey)->where('provider_entry_identifier', $facts->identifier);
             $stored = (clone $query)->tap(Locks::forUpdate())->first();
+            // Provider settlement currency is not evidence of a conversion for
+            // this payment. Recheck under its lock and preserve existing facts.
+            if ($payment->currency !== $facts->currency) {
+                if ($apply && $stored !== null && ! $stored->needs_review) {
+                    $stored->forceFill(['needs_review' => true, 'review_reason' => 'immutable_facts_changed'])->save();
+                }
+
+                return ProcessorMovementRecordOutcome::Conflict;
+            }
             if ($stored === null) {
                 $timezone = Workspace::query()->whereKey($workspace->id)->value('timezone');
                 if (! is_string($timezone) || strlen($timezone) > 64

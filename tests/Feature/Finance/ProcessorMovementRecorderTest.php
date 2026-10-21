@@ -59,6 +59,62 @@ final class ProcessorMovementRecorderTest extends TestCase
         $this->assertNotEmpty($stored->public_id);
     }
 
+    /** @return iterable<string, array{string, bool}> */
+    public static function currencyMismatchCases(): iterable
+    {
+        foreach (['stripe', 'square'] as $provider) {
+            foreach ([false, true] as $apply) {
+                yield $provider.($apply ? ' apply' : ' preview') => [$provider, $apply];
+            }
+        }
+    }
+
+    #[DataProvider('currencyMismatchCases')]
+    public function test_a_movement_cannot_bind_to_a_payment_in_another_currency(string $provider, bool $apply): void
+    {
+        [$workspace, $payment] = $this->fixture();
+        $payment->update(['provider' => $provider]);
+        $facts = $this->facts($payment, ['provider' => $provider, 'dateBasis' => $provider === 'stripe' ? 'stripe_balance_created' : 'square_effective_at']);
+        // A previously loaded payment is deliberately stale at the recorder boundary.
+        DB::table('client_invoice_payments')->where('workspace_id', $workspace->id)->where('id', $payment->id)->update(['currency' => 'EUR']);
+        $before = [$this->table('client_invoice_payments'), $this->table('client_invoices')];
+        $this->assertSame(ProcessorMovementRecordOutcome::Conflict,
+            app(ProcessorMovementRecorder::class)->record($workspace, $payment->id, $facts, 'synthetic_account', $apply));
+        $this->assertDatabaseCount('processor_movements', 0);
+        $this->assertSame($before, [$this->table('client_invoice_payments'), $this->table('client_invoices')]);
+    }
+
+    #[DataProvider('currencyMismatchCases')]
+    public function test_a_later_payment_currency_change_holds_the_original_movement_without_rewriting_it(string $provider, bool $apply): void
+    {
+        [$workspace, $payment] = $this->fixture();
+        $payment->update(['provider' => $provider]);
+        $facts = $this->facts($payment, ['provider' => $provider, 'dateBasis' => $provider === 'stripe' ? 'stripe_balance_created' : 'square_effective_at']);
+        $recorder = app(ProcessorMovementRecorder::class);
+        $recorder->record($workspace, $payment->id, $facts, 'synthetic_account', true);
+        $before = ProcessorMovement::query()->sole()->getAttributes();
+        $payment->update(['currency' => 'EUR']);
+        $paymentBefore = $this->table('client_invoice_payments');
+        $this->assertSame(ProcessorMovementRecordOutcome::Conflict,
+            $recorder->record($workspace, $payment->id, $facts, 'synthetic_account', $apply));
+        $stored = ProcessorMovement::query()->sole();
+        if (! $apply) {
+            $this->assertSame($before, $stored->getAttributes());
+        } else {
+            $this->assertTrue($stored->needs_review);
+            $this->assertSame('immutable_facts_changed', $stored->review_reason);
+            $this->assertSame(2, $stored->lock_version);
+            $this->assertSame(array_diff_key($before, array_flip(['needs_review', 'review_reason', 'lock_version', 'updated_at'])),
+                array_diff_key($stored->getAttributes(), array_flip(['needs_review', 'review_reason', 'lock_version', 'updated_at'])));
+            $payment->update(['currency' => 'USD']);
+            $paymentBefore = $this->table('client_invoice_payments');
+            $this->assertSame(ProcessorMovementRecordOutcome::Conflict,
+                $recorder->record($workspace, $payment->id, $facts, 'synthetic_account', true));
+            $this->assertSame($stored->getAttributes(), $stored->fresh()?->getAttributes());
+        }
+        $this->assertSame($paymentBefore, $this->table('client_invoice_payments'));
+    }
+
     public function test_the_local_day_and_its_timezone_are_captured_once(): void
     {
         [$workspace, $payment] = $this->fixture();
