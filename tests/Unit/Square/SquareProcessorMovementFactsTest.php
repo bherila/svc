@@ -2,6 +2,7 @@
 
 namespace Tests\Unit\Square;
 
+use App\Support\Finance\ProcessorMovementFacts;
 use App\Support\Finance\ProcessorMovementKind;
 use App\Support\Square\SquareProcessorMovementFacts;
 use DomainException;
@@ -159,9 +160,90 @@ final class SquareProcessorMovementFactsTest extends TestCase
         $this->assertSame('2030-01-01T12:00:00+00:00', $facts->occurredAt->toIso8601String());
     }
 
+    /** @return iterable<string, array{string, int, array{int, int, int}}> */
+    public static function inclusiveMoneyLimits(): iterable
+    {
+        $limit = ProcessorMovementFacts::MAX_MINOR;
+        yield 'maximum refund debit' => ['REFUND', -$limit, [-$limit, 0, -$limit]];
+        yield 'maximum refund reversal' => ['REFUND', $limit, [$limit, 0, $limit]];
+        yield 'maximum fee charge' => ['FEE', -$limit, [0, $limit, -$limit]];
+        yield 'maximum fee reversal' => ['FEE', $limit, [0, -$limit, $limit]];
+    }
+
+    /** @param  array{int, int, int}  $expected */
+    #[DataProvider('inclusiveMoneyLimits')]
+    public function test_every_signed_money_component_preserves_the_inclusive_safe_integer_limit(string $type, int $net, array $expected): void
+    {
+        $entry = $this->entry();
+        $entry['type'] = $type;
+        $entry['type_fee_details'] = ['payment_id' => 'payment_synthetic'];
+        $entry['gross_amount_money'] = $this->money($net);
+        $entry['fee_amount_money'] = $this->money(0);
+        $entry['net_amount_money'] = $this->money($net);
+        $facts = SquareProcessorMovementFacts::from($entry);
+        $this->assertNotNull($facts);
+        $this->assertSame($expected, [$facts->principalMinor, $facts->feeMinor, $facts->netMinor]);
+    }
+
+    /** @return iterable<string, array{string, string}> */
+    public static function timestampBoundaries(): iterable
+    {
+        yield 'lowest supported year' => ['1000-01-01T00:00:00Z', '1000-01-01T00:00:00.000000+00:00'];
+        yield 'highest supported year' => ['9999-12-31T23:59:59Z', '9999-12-31T23:59:59.000000+00:00'];
+        yield 'leap day keeps actual year' => ['2024-02-29T12:34:56Z', '2024-02-29T12:34:56.000000+00:00'];
+        yield 'last wall clock minute and second' => ['2030-01-01T23:59:59Z', '2030-01-01T23:59:59.000000+00:00'];
+        yield 'maximum positive offset' => ['2030-01-02T23:59:59+23:59', '2030-01-02T00:00:59.000000+00:00'];
+        yield 'maximum negative offset' => ['2030-01-01T00:00:00-23:59', '2030-01-01T23:59:00.000000+00:00'];
+        yield 'one fractional digit' => ['2030-01-01T00:00:00.1Z', '2030-01-01T00:00:00.100000+00:00'];
+        yield 'five fractional digits' => ['2030-01-01T00:00:00.12345Z', '2030-01-01T00:00:00.123450+00:00'];
+        yield 'nanoseconds truncate without rounding' => ['2030-01-01T00:00:00.999999999Z', '2030-01-01T00:00:00.999999+00:00'];
+    }
+
+    #[DataProvider('timestampBoundaries')]
+    public function test_actual_timestamps_preserve_supported_calendar_offset_and_fraction_boundaries(string $timestamp, string $expected): void
+    {
+        $entry = $this->entry();
+        $entry['effective_at'] = $timestamp;
+        $facts = SquareProcessorMovementFacts::from($entry);
+        $this->assertNotNull($facts);
+        $this->assertSame($expected, $facts->occurredAt->format('Y-m-d\TH:i:s.uP'));
+    }
+
     /** @return iterable<string, array{array<string, mixed>}> */
     public static function invalidEntries(): iterable
     {
+        yield 'nonarray details object' => [['type_refund_details' => (object) ['payment_id' => 'payment_synthetic']]];
+        yield 'nonarray details string' => [['type_refund_details' => 'synthetic_not_details']];
+        yield 'identity trailing newline' => [['id' => "poe_synthetic\n"]];
+        yield 'payment identity trailing newline' => [['type_refund_details' => ['payment_id' => "payment_synthetic\n"]]];
+        yield 'payout identity trailing newline' => [['payout_id' => "payout_synthetic\n"]];
+        yield 'source identity trailing newline' => [['type_refund_details' => ['payment_id' => 'payment_synthetic', 'refund_id' => "refund_synthetic\n"]]];
+        yield 'date prefix' => [['effective_at' => 'synthetic-prefix2030-01-01T00:00:00Z']];
+        yield 'date suffix' => [['effective_at' => '2030-01-01T00:00:00Zsynthetic-suffix']];
+        yield 'date trailing newline' => [['effective_at' => "2030-01-01T00:00:00Z\n"]];
+        yield 'next day hour normalization' => [['effective_at' => '2030-01-01T24:00:00Z']];
+        yield 'minute normalization' => [['effective_at' => '2030-01-01T00:60:00Z']];
+        yield 'leap second normalization' => [['effective_at' => '2030-01-01T00:00:60Z']];
+        yield 'offset positive hour overflow' => [['effective_at' => '2030-01-01T00:00:00.000000+24:00']];
+        yield 'offset negative hour overflow' => [['effective_at' => '2030-01-01T00:00:00.000000-24:00']];
+        yield 'offset positive minute overflow' => [['effective_at' => '2030-01-01T00:00:00.000000+00:60']];
+        yield 'offset negative minute overflow' => [['effective_at' => '2030-01-01T00:00:00.000000-00:60']];
+        yield 'nonleap century day' => [['effective_at' => '2100-02-29T00:00:00Z']];
+        yield 'nonarray money' => [['gross_amount_money' => 'synthetic_not_money']];
+        yield 'array currency' => [['gross_amount_money' => ['amount' => -100, 'currency' => ['USD']]]];
+        yield 'object currency' => [['gross_amount_money' => ['amount' => -100, 'currency' => (object) ['code' => 'USD']]]];
+        yield 'no money components' => [['gross_amount_money' => null, 'fee_amount_money' => null, 'net_amount_money' => null]];
+        yield 'unsafe normalized fee inputs' => [['type' => 'FEE', 'type_fee_details' => ['payment_id' => 'payment_synthetic'],
+            'gross_amount_money' => ['amount' => ProcessorMovementFacts::MAX_MINOR + 1, 'currency' => 'USD'],
+            'fee_amount_money' => ['amount' => ProcessorMovementFacts::MAX_MINOR + 2, 'currency' => 'USD'],
+            'net_amount_money' => ['amount' => -1, 'currency' => 'USD']]];
+        yield 'inconsistent normalized fee inputs' => [['type' => 'FEE', 'type_fee_details' => ['payment_id' => 'payment_synthetic'],
+            'gross_amount_money' => ['amount' => -25, 'currency' => 'USD'], 'fee_amount_money' => ['amount' => 0, 'currency' => 'USD'],
+            'net_amount_money' => ['amount' => -24, 'currency' => 'USD']]];
+        foreach (['xUSD', 'USDx', "USD\n", 'usd'] as $index => $unit) {
+            yield 'strict currency spelling '.$index => [['gross_amount_money' => ['amount' => -100, 'currency' => $unit],
+                'fee_amount_money' => ['amount' => -3, 'currency' => $unit], 'net_amount_money' => ['amount' => -97, 'currency' => $unit]]];
+        }
         yield 'missing type' => [['type' => null]];
         yield 'invented reversal type' => [['type' => 'DISPUTE_REVERSAL']];
         yield 'unknown type' => [['type' => 'SYNTHETIC_UNKNOWN']];
