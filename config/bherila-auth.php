@@ -62,6 +62,7 @@ return [
     // page may be confidential). Every URL derives from APP_URL. What follows
     // is only where SVC differs from the profile.
     'oauth_server' => AgentOAuthServer::config(AgentApiScopes::descriptions(), [
+        'revocation' => ['enabled' => true],
         // Existing resource-bound credentials remain valid when issuance is
         // disabled; metadata, registration, authorization, and token routes do not.
         'enabled' => (bool) env('AGENT_API_OAUTH_SERVER_ENABLED', true),

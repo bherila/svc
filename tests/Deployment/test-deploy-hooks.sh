@@ -64,6 +64,20 @@ cat >"$temporary/bin/curl" <<'MOCK'
 case "${!#}" in
     https://svc.bherila.net/) printf '%s\n' "$FIXTURE_HOME_RESPONSE" ;;
     https://svc.bherila.net/oauth/redirect) printf '%s\n' 'https://id.bherila.net/oauth/authorize?client_id=fixture' ;;
+    https://svc.bherila.net/.well-known/oauth-authorization-server)
+        case ${FIXTURE_OAUTH_RESPONSE:-ready} in
+            ready) printf '%s\n' '200 application/json' ;;
+            paused-once)
+                if [ -e "$FIXTURE_OAUTH_READY_FILE" ]; then
+                    printf '%s\n' '200 application/json; charset=utf-8'
+                else
+                    touch "$FIXTURE_OAUTH_READY_FILE"
+                    printf '%s\n' '404 application/json'
+                fi ;;
+            transport-failure) exit 7 ;;
+            *) printf '%s\n' "$FIXTURE_OAUTH_RESPONSE" ;;
+        esac ;;
+
     *) exit 1 ;;
 esac
 MOCK
@@ -152,6 +166,33 @@ grep -Fq -- '--ttl=15' "$temporary/ssh.log" || fail 'successful home probe skipp
 grep -Fq -- '--revoke' "$temporary/ssh.log" || fail 'successful verification skipped credential cleanup'
 [ -f "$temporary/node.log" ] || fail 'successful home probe skipped MCP smoke'
 grep -Fq 'bash -s -- svc-laravel /fixture/php' "$temporary/ssh.log" || fail 'verification skipped the cron audit'
+
+# Issuance stays paused until the coordinator re-enables the selected release.
+# A failed readiness check cannot mint a token or reach the authenticated smoke.
+for response in '404 application/json' '200 text/html' '500 application/json' transport-failure; do
+    rm -f "$temporary/ssh.log" "$temporary/node.log"
+    if SVC_DEPLOY_OAUTH_WAIT_SECONDS=0 FIXTURE_OAUTH_RESPONSE="$response" \
+        run_live_verify '200 text/html' >"$temporary/output" 2>&1; then
+        fail "OAuth readiness accepted '$response'"
+    fi
+    grep -Fq -- '--ttl=15' "$temporary/ssh.log" && fail 'credentials issued before OAuth readiness'
+    grep -Fq -- '--revoke' "$temporary/ssh.log" && fail 'credential cleanup ran before issuance was attempted'
+    grep -qx smoke "$temporary/node.log" && fail 'authenticated smoke ran before OAuth readiness'
+done
+for timeout in -1 invalid 601; do
+    if SVC_DEPLOY_OAUTH_WAIT_SECONDS="$timeout" run_live_verify '200 text/html' >/dev/null 2>&1; then
+        fail "unbounded/malformed OAuth readiness timeout '$timeout' was accepted"
+    fi
+done
+rm -f "$temporary/ssh.log" "$temporary/node.log"
+SVC_DEPLOY_OAUTH_WAIT_SECONDS=5 FIXTURE_OAUTH_RESPONSE=paused-once \
+    FIXTURE_OAUTH_READY_FILE="$temporary/oauth-ready" \
+    run_live_verify '200 text/html' >"$temporary/output" 2>&1 \
+    || fail 'OAuth verification did not resume after issuance was re-enabled'
+grep -Fq 'waiting for coordination' "$temporary/output" || fail 'OAuth readiness did not announce the coordination boundary'
+grep -Fq -- '--ttl=15' "$temporary/ssh.log" || fail 're-enabled issuance skipped the smoke credentials'
+grep -Fq -- '--revoke' "$temporary/ssh.log" || fail 're-enabled issuance skipped cleanup'
+grep -qx smoke "$temporary/node.log" || fail 're-enabled issuance skipped the authenticated smoke'
 
 # The scheduler is the only background runner: no line, a duplicate or a legacy line must stop the
 # deployment before it is healthy and before any credential is issued.

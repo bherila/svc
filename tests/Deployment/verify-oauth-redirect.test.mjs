@@ -130,7 +130,7 @@ test('live verification rejects an invalid contract before credential issuance',
     try {
         writeFileSync(
             path.join(fixture, 'curl'),
-            '#!/usr/bin/env bash\ncase "${!#}" in\n  */oauth/redirect) printf "%s" "$FIXTURE_REDIRECT" ;;\n  */) printf "200 text/html" ;;\n  *) exit 92 ;;\nesac\n',
+            '#!/usr/bin/env bash\ncase "${!#}" in\n  */oauth/redirect) printf "%s" "$FIXTURE_REDIRECT" ;;\n  */.well-known/oauth-authorization-server) printf "200 application/json" ;;\n  */) printf "200 text/html" ;;\n  *) exit 92 ;;\nesac\n',
             { mode: 0o700 },
         );
         writeFileSync(

@@ -40,7 +40,7 @@ final class AgentConnectionController extends Controller
     /**
      * `connections.disconnect`: the calling REST credential's application is
      * disconnected from the calling person - every credential the person holds
-     * for that OAuth client, through the same revoker and fence. A personal
+     * for that OAuth client, through the same revoker and durable guard. A personal
      * API token shares one client with the person's other personal tokens, so
      * it ends only itself. The website's own session holds no token and has
      * nothing to disconnect.

@@ -75,33 +75,17 @@ php artisan svc:auth:revoke-connections USER_PUBLIC_UUID --client=OAUTH_CLIENT_I
    it. Rows are revoked, never deleted, so they
    remain for the investigation. Another person's credentials are never
    selected, even for the same client.
-4. A refresh or code exchange already in flight can pass its own check just
-   before the revocation and persist its replacement just after. For
-   `AgentCredentialFence::SECONDS` (two minutes, counted from the commit) after any revocation, every
-   access token Passport persists for that person (and client, or
-   every client) is revoked as it is created, as is every authorization code
-   (a consent approved just before the revocation cannot be exchanged later)
-   and any refresh token whose access token is already revoked; the racing
-   connector receives credentials that are already dead. Each is audited:
-   access tokens as `agent_token.revoked` with `actor: revocation-fence`,
-   codes and refresh tokens as `agent_token.revoked_in_fence`. Personal tokens are fenced too: `svc:auth:issue-agent-token` for the
-   person inside the window is refused, its row revoked. A person who
-   reconnects inside the window must reconnect again once it lapses - one more
-   reason to keep issuance off until the investigation allows it. A connection
-   that disconnects itself through `connections.revoke` fences only its own
-   lineage: a refresh redeeming one of its refresh tokens is caught, while
-   another connection the same person holds with the same client keeps
-   refreshing. Each refresh is remembered for the same window, so a
-   connection that disconnects itself with a token a refresh had just
-   replaced also revokes the replacement.
-
-   The fence lives in the application cache. It is a backstop, never a
-   precondition: if the cache cannot be written the revocation still happens
-   in full and logs a `agent_token.fence_unavailable` warning, and only the
-   fence is missing. Likewise `php artisan cache:clear` (or a cache flush or
-   eviction) inside the window lifts the fence early. If either happens
-   during an incident, keep OAuth issuance off (step 1) and run the command
-   again once the cache is back.
+4. The auth package's durable lineage guard serializes revocation with
+   authorization-code, access-token and refresh-token persistence on Passport's
+   connection. A grant already validated before revocation cannot persist a live
+   replacement, even after an arbitrarily long pause. OAuth refuses it with
+   `invalid_grant`; it does not return a new dead credential. A fresh
+   authorization after revocation is allowed immediately, although issuance
+   stays off during containment until the operator deliberately enables it.
+   Self-disconnect through `connections.revoke` ends only that connection's
+   lineage and every tracked rotation; same-client sibling connections survive.
+   The guard is stored in database tables, so cache outages/flushes do not lift
+   it. Database failure fails the revocation rather than claiming success.
 5. It prints one JSON line, for example
    `{"access_tokens":2,"refresh_tokens":1,"authorization_codes":0,"unattributed_refresh_tokens":0}`,
    and logs `agent_token.revoked` with `actor: console`, the person's public
@@ -115,8 +99,7 @@ php artisan svc:auth:revoke-connections USER_PUBLIC_UUID --client=OAUTH_CLIENT_I
    the owner of every such token whose access token still exists, so this is
    normally zero. If it is not and the compromise could involve one of them,
    turn OAuth issuance off (step 1; the command refuses `--unattributed`
-   otherwise, since no fence can name an unattributed token's owner and a
-   refresh in flight could replace it) and rerun with `--unattributed`.
+   otherwise, since old unattributed rows cannot name an owner safely) and rerun with `--unattributed`.
    Issuance must be off on the serving tier, deployed and with its
    configuration cache cleared, not only in the shell running the command:
    the command can check only its own process's configuration, so an
@@ -207,10 +190,45 @@ after a week):
 - Revoked rows are evidence: a revocation keeps them for the investigation, and
   the purge leaves them for 31 days past expiry.
 
-The revocation fence lives in the application cache, keyed by person, client and
-token-id digest, never by row, so a purge does not lift it. Do not run
-`passport:purge` without `--expired` during or after an incident; if the table
-needs trimming sooner, lower nothing below the refresh-token lifetime.
+The durable guard tables (`oauth_credential_revocations`,
+`oauth_credential_lineages`, `oauth_credential_members`) are independent of
+Passport's purgeable rows. Do not purge these tables or remove their completion
+marker. They retain credential IDs and owner/client associations, never bearer
+secrets. Their migration deliberately preserves them on rollback. Keep
+`passport:purge --expired --hours=744` and dynamic-client pruning unchanged.
+
+### Durable revocation rollout (#474)
+
+Upgrade to the released `bherila/auth-laravel` v0.27.0 (`^0.27.0`, exact
+reference committed in `composer.lock`). Pause OAuth issuance before deployment
+and use the standard maintenance and Artisan drain. A coordinated web-grant
+drain is not required: late old-process credentials stay unregistered and
+require fresh authorization. The migration registers existing identifiable
+code/access/refresh rows in bounded batches, including attributable refreshes
+whose access rows were already purged, at sequence zero. It records completion
+once and never enrolls later rows on replay. New package repositories register
+all subsequent credentials atomically with persistence. SVC enables the guard
+in `bherila-auth.oauth_server.revocation.enabled`.
+
+For the coordinated rollout, leave issuance paused until the new release has
+migrated and is selected. The live verifier announces this boundary and polls
+OAuth server metadata for up to 300 seconds before issuing any smoke token.
+The coordinator re-enables issuance in the server-held deployment environment
+and the selected release, and rebuilds its configuration cache. Verification
+then runs the normal authenticated MCP smoke and revokes its credentials.
+A timeout leaves the deployment failed under its existing maintenance policy;
+no smoke check is skipped. Late unregistered old-process grants require fresh
+authorization. Check the website integration and any affected clients after
+issuance is re-enabled.
+
+
+An older process's late, unregistered writes are refused by the new guard,
+rather than adopted as a new connection. Unknown legacy owners/clients also
+require fresh authorization. Rotations completed before registration cannot be
+reconstructed; each existing access/refresh family is registered independently.
+Serve the new repositories/revoker in every process before re-enabling issuance.
+Containment continues to start by turning issuance off; no cache fence or
+application refresh-token decoder remains.
 
 ## Per-endpoint resources and provider identity cutover
 

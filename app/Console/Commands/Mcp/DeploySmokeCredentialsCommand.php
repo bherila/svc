@@ -84,7 +84,7 @@ final class DeploySmokeCredentialsCommand extends MutationCommand
         $kind = AgentTokenKind::DeploymentSmoke;
 
         if ($this->option('revoke')) {
-            $revoked = $revoker->revoke(AgentCredentialSelection::connections($user, fence: false), $kind->actor());
+            $revoked = $revoker->revoke(AgentCredentialSelection::connections($user), $kind->actor());
             $this->line((string) json_encode(['revoked' => $revoked->accessTokens()], JSON_THROW_ON_ERROR));
 
             return self::SUCCESS;
@@ -101,10 +101,10 @@ final class DeploySmokeCredentialsCommand extends MutationCommand
 
         // Any token from a previous run is dead to us the moment we mint a new
         // pair, and leaving it live would mean a failed cleanup silently
-        // accumulating valid credentials one deploy at a time. Unfenced, here
-        // and in cleanup: the principal holds no OAuth connection to race, and
-        // a fence would revoke the pair this issues next.
-        $revoker->revoke(AgentCredentialSelection::connections($user, fence: false), $kind->actor());
+        // accumulating valid credentials one deploy at a time. The durable
+        // revocation ends its previous lineages; the fresh pair captures the
+        // new sequence and can be issued immediately.
+        $revoker->revoke(AgentCredentialSelection::connections($user), $kind->actor());
 
         try {
             $authorized = $issuer->issue($user, AgentTokenRequest::of($kind, 'authorized', [
@@ -129,7 +129,7 @@ final class DeploySmokeCredentialsCommand extends MutationCommand
             ], $ttl));
         } catch (AgentTokenRefused $refused) {
             // Nothing half-issued outlives the refusal.
-            $revoker->revoke(AgentCredentialSelection::connections($user, fence: false), $kind->actor());
+            $revoker->revoke(AgentCredentialSelection::connections($user), $kind->actor());
             $this->error($refused->getMessage());
 
             return self::FAILURE;
