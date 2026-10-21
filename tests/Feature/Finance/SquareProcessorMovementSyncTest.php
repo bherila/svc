@@ -14,6 +14,7 @@ use Carbon\CarbonImmutable;
 use DomainException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Sleep;
@@ -394,6 +395,27 @@ final class SquareProcessorMovementSyncTest extends TestCase
         $this->assertSame(1, $sync->payout($workspace, 'po_synthetic', true)['conflict']);
         $this->assertTrue(ProcessorMovement::query()->sole()->needs_review);
         $this->assertSame(-100, ProcessorMovement::query()->sole()->principal_minor);
+    }
+
+    public function test_discovery_default_until_comes_from_the_injected_workspace_clock_in_utc(): void
+    {
+        [$workspace] = $this->fixture();
+        $this->discoveryPages = ['LOCFIXTURE01|' => ['payouts' => [], 'cursor' => 'synthetic_clock_page'],
+            'LOCFIXTURE01|synthetic_clock_page' => ['payouts' => []]];
+        $clockNow = CarbonImmutable::parse('2031-02-03T04:05:06+05:30');
+        Date::use(static fn () => $clockNow);
+        try {
+            $counts = iterator_to_array(app(SquareProcessorMovementSync::class)->payouts($workspace, CarbonImmutable::parse('2020-01-01T00:00:00Z')), false);
+        } finally {
+            Date::useDefault();
+        }
+        $this->assertSame([], $counts);
+        $reads = Http::recorded(static fn (Request $request): bool => parse_url($request->url(), PHP_URL_PATH) === '/v2/payouts');
+        $this->assertCount(2, $reads);
+        foreach ($reads as [$request]) {
+            $this->assertSame('2031-02-02T22:35:06Z', $request['end_time']);
+        }
+        $this->assertDatabaseCount('processor_movements', 0);
     }
 
     public function test_discovery_uses_one_namespace_and_fixed_explicit_time_bounds_across_pages(): void

@@ -10,6 +10,7 @@ use App\Services\Square\SquareRequestFailed;
 use App\Support\Finance\ProcessorMovementFacts;
 use App\Support\Finance\ProcessorReadBudget;
 use App\Support\Square\SquareProcessorMovementFacts;
+use App\Support\WorkspaceClock;
 use Carbon\CarbonImmutable;
 use DomainException;
 use SensitiveParameter;
@@ -34,6 +35,7 @@ final class SquareProcessorMovementSync
     public function __construct(
         private readonly SquareClient $client,
         private readonly ProcessorMovementRecorder $recorder,
+        private readonly WorkspaceClock $clock,
     ) {}
 
     /**
@@ -70,7 +72,7 @@ final class SquareProcessorMovementSync
     public function payouts(#[SensitiveParameter] Workspace $workspace, CarbonImmutable $since, bool $apply = false, ?ProcessorReadBudget $budget = null, ?CarbonImmutable $until = null): iterable
     {
         $budget ??= new ProcessorReadBudget;
-        $until ??= CarbonImmutable::now('UTC');
+        $until ??= $this->clock->now('UTC');
         if ($since->year < 1000 || $since->year > 9999 || $until->year < 1000 || $until->year > 9999 || $since->greaterThan($until)) {
             throw new DomainException('The payout discovery time range is invalid.');
         }
@@ -160,7 +162,7 @@ final class SquareProcessorMovementSync
                 $key = $type.':'.$id;
                 if (! isset($sources[$key])) {
                     // Budget failure must escape; it is not an unreadable record.
-                    $budget?->consume();
+                    $budget->consume();
                     $response = $type === 'refund' ? $this->client->getPaymentRefund($id) : $this->client->getDispute($id);
                     $value = $response[$type] ?? null;
                     if (! is_array($value)) {
