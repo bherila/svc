@@ -261,7 +261,7 @@ final class ProcessorMovementRecorderTest extends TestCase
         [$workspace, $payment] = $this->fixture();
         $queries = [];
         DB::listen(static function (QueryExecuted $query) use (&$queries): void {
-            if (preg_match('/^(select|update).*"(?:client_invoice_payments|processor_movements)"/', $query->sql) === 1) {
+            if (preg_match('/^(select|update).*"(?:client_invoice_payments|processor_movements)"/', str_replace('`', '"', $query->sql)) === 1) {
                 $queries[] = $query;
             }
         });
@@ -270,7 +270,7 @@ final class ProcessorMovementRecorderTest extends TestCase
         $recorder->record($workspace, $payment->id, $this->facts($payment, ['principalMinor' => -101, 'netMinor' => -98]), 'synthetic_account', true);
         $this->assertNotEmpty($queries);
         foreach ($queries as $query) {
-            $this->assertStringContainsString('"workspace_id" = ?', $query->sql);
+            $this->assertStringContainsString('"workspace_id" = ?', str_replace('`', '"', $query->sql));
             $this->assertContains($workspace->id, $query->bindings);
         }
     }
@@ -281,7 +281,7 @@ final class ProcessorMovementRecorderTest extends TestCase
         $before = $this->table('client_invoice_payments');
         $failed = false;
         DB::listen(static function (QueryExecuted $query) use (&$failed): void {
-            if (! $failed && str_starts_with($query->sql, 'insert') && str_contains($query->sql, '"processor_movements"')) {
+            if (! $failed && str_starts_with($query->sql, 'insert') && str_contains(str_replace('`', '"', $query->sql), '"processor_movements"')) {
                 $failed = true;
                 throw new RuntimeException('Synthetic interrupted movement write.');
             }
@@ -347,7 +347,7 @@ final class ProcessorMovementRecorderTest extends TestCase
         $workspace->update(['timezone' => $timezone]);
         $inserts = 0;
         DB::listen(static function (QueryExecuted $query) use (&$inserts): void {
-            if (str_starts_with($query->sql, 'insert') && str_contains($query->sql, '"processor_movements"')) {
+            if (str_starts_with($query->sql, 'insert') && str_contains(str_replace('`', '"', $query->sql), '"processor_movements"')) {
                 $inserts++;
             }
         });
@@ -417,7 +417,7 @@ final class ProcessorMovementRecorderTest extends TestCase
         // One connection models the insert losing after its absent-row read;
         // this asserts duplicate handling, not real engine lock contention.
         DB::connection()->beforeExecuting(static function (string $sql) use (&$interleaved, $winner): void {
-            if (! $interleaved && str_starts_with($sql, 'insert') && str_contains($sql, '"processor_movements"')) {
+            if (! $interleaved && str_starts_with($sql, 'insert') && str_contains(str_replace('`', '"', $sql), '"processor_movements"')) {
                 $interleaved = true;
                 DB::table('processor_movements')->insert($winner);
             }
