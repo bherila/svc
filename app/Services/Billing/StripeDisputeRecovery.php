@@ -9,6 +9,7 @@ use App\Support\Billing\StripeDisputeSnapshot;
 use App\Support\Billing\StripeEventMustBeRetried;
 use App\Support\Concurrency\Locks;
 use App\Support\Finance\ProcessorMovementFacts;
+use App\Support\Finance\ProcessorReadBudget;
 use DomainException;
 use Illuminate\Support\Facades\DB;
 use SensitiveParameter;
@@ -40,16 +41,16 @@ final class StripeDisputeRecovery
 
     public function __construct(private readonly StripeGateway $gateway, private readonly InvoiceLifecycleService $invoices) {}
 
-    public function recover(Workspace $workspace, int $paymentId, bool $apply = false): StripeDisputeSnapshot
+    public function recover(Workspace $workspace, int $paymentId, bool $apply = false, ?ProcessorReadBudget $budget = null): StripeDisputeSnapshot
     {
-        $snapshot = $this->read($workspace, $paymentId);
+        $snapshot = $this->read($workspace, $paymentId, $budget);
         $this->apply($workspace, $snapshot, $apply);
 
         return $snapshot;
     }
 
     /** No database transaction is held across provider calls. */
-    public function read(Workspace $workspace, int $paymentId): StripeDisputeSnapshot
+    public function read(Workspace $workspace, int $paymentId, ?ProcessorReadBudget $budget = null): StripeDisputeSnapshot
     {
         $payment = ClientInvoicePayment::query()->where('workspace_id', $workspace->id)
             ->whereKey($paymentId)->where('provider', 'stripe')->first();
@@ -71,6 +72,7 @@ final class StripeDisputeRecovery
         $withheld = 0;
         try {
             for ($page = 0; $page < self::MAX_PAGES; $page++) {
+                $budget?->consume();
                 $response = $this->gateway->client()->disputes->all($params)->toArray();
                 $records = $response['data'] ?? null;
                 if (! is_array($records) || ! array_is_list($records) || count($records) > self::PAGE_SIZE
