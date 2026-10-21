@@ -181,3 +181,46 @@ Only **draft** invoices are redrawn. Bulk cadence generation skips any retainer 
 - Termination invoices include every outstanding deferred entry (`test_termination_force_bills_all_deferred`).
 
 See `tests/Feature/ClientManagement/DeferredBillingAllocatorTest.php`.
+
+## Voluntary settlement of deferred work
+
+An operator may bill whole deferred entries separately without ending a recurring
+agreement. On the agreement page, **Bill deferred work** previews a target in
+hours or money. FIFO selection follows `(worked_on, id)`, skips an entry that
+would exceed the remaining target, and never splits one. Opting into round up
+includes the first entry that would exceed the target and then stops. Money
+targets apply to the gross contract charge before discounts; prices preserve
+termination's consultant/retainer rate and flat-hourly snapshot groups, including
+aggregate rounding. Direct work stays the subcontractor's to bill.
+
+Creating a draft reserves the selected entries on `deferred_buydown` lines in a
+`deferred_buydown` invoice. The draft must still be explicitly issued and sent.
+The work consumes no retainer capacity and contributes no catch-up/overage hours.
+An optional discount is a separate negative `adjustment` with a required reason
+printed on the invoice. No rate is changed. The settlement is dated on the
+workspace's current day; original time and worked dates stay unchanged.
+
+Void or draft discard releases the reservations back to the shelf. This differs
+from a void cadence period, whose period remains deliberately waived. An issued
+but unpaid settlement keeps its entries reserved; collection uses ordinary AR.
+Termination only collects entries still unlinked. Replay retains settlements and
+their claims as independent history.
+
+The preview version covers the agreement terms and complete candidate shelf.
+Creation refuses a changed shelf with 409, so the operator previews again.
+Only workspace billing managers may preview or create. Draft, future-starting
+and one-time agreements cannot sell a settlement; active, paused and ended
+recurring agreements can, subject to the same ownership and pricing checks as
+termination. Carried ledger balances without whole entry candidates remain on
+the termination path.
+
+The agreement's **Show deferred backlog to client** setting is off by default.
+When enabled, a client who may already read that visible agreement also sees its
+backlog there; the client receives no settlement control or internal issue detail.
+This does not publish the agreement or extend project access. No new email is
+sent when the setting changes or a settlement draft is created.
+
+The backlog trend reports `hours_bought_down` as a subset of `hours_billed`. Net
+shelf movement subtracts that work once, and no retainer usage counter includes it.
+The operations time summary still counts its draft reservation among all time
+allocated to drafts; that is a claim count, not retainer capacity.

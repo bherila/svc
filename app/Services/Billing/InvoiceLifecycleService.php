@@ -755,7 +755,7 @@ final class InvoiceLifecycleService
      */
     private function lockCadenceAgreement(ClientInvoice $invoice): void
     {
-        if (in_array($invoice->invoice_kind, [null, InvoiceKind::CadencePeriod->value], true)) {
+        if (in_array($invoice->invoice_kind, [null, InvoiceKind::CadencePeriod->value, InvoiceKind::DeferredBuyDown->value], true)) {
             $this->lockAgreementOf($invoice);
         }
     }

@@ -54,6 +54,7 @@ class UpdateAgreementRequest extends FormRequest
             'currency' => ['sometimes', 'required', 'string', 'size:3', 'regex:/^[A-Z]{3}$/'],
             'agreement_text' => ['sometimes', 'nullable', 'string', 'max:30000'],
             'is_visible_to_client' => ['sometimes', 'boolean'],
+            'show_deferred_backlog_to_client' => ['sometimes', 'boolean'],
 
             'hourly_rate_amount' => ['sometimes', 'nullable', 'integer', 'min:0'],
             'retainer_amount' => ['sometimes', 'nullable', 'integer', 'min:0'],

@@ -10,6 +10,7 @@ use App\Services\Mcp\AgentMcpCapacityLedgerTools;
 use App\Services\Mcp\AgentMcpClientTools;
 use App\Services\Mcp\AgentMcpClientWriteTools;
 use App\Services\Mcp\AgentMcpContextResource;
+use App\Services\Mcp\AgentMcpDeferredBuyDownTools;
 use App\Services\Mcp\AgentMcpFinanceTools;
 use App\Services\Mcp\AgentMcpPaymentReminderTools;
 use App\Services\Mcp\AgentMcpPortalAccessTools;
@@ -86,6 +87,8 @@ final class AgentOperationCatalog
         'billing_schedules.generate' => ['billing-schedules.generate', '/workspaces/{workspace}/billing-schedules/{schedule}/generate', [200]],
         'billing_schedules.get' => ['billing-schedules.show', '/workspaces/{workspace}/billing-schedules/{schedule}', [200]],
         'billing_schedules.list' => ['billing-schedules.index', '/workspaces/{workspace}/billing-schedules', [200]],
+        'deferred_backlog.preview' => ['agreements.deferred-backlog.preview', '/workspaces/{workspace}/agreements/{agreement}/deferred-backlog/preview', [200]],
+        'invoices.create_deferred_buydown' => ['agreements.deferred-backlog.create', '/workspaces/{workspace}/agreements/{agreement}/deferred-backlog/invoices', [201]],
         'capacity_ledger.get' => ['agreements.capacity-ledger', '/workspaces/{workspace}/agreements/{agreement}/capacity-ledger', [200]],
         'clients.archive' => ['clients.archive', '/workspaces/{workspace}/clients/{client}/archive', [200]],
         'clients.create' => ['clients.store', '/workspaces/{workspace}/clients', [201]],
@@ -793,6 +796,17 @@ final class AgentOperationCatalog
                 'mcp.write',
                 cutovers: [AgentDeploymentFlags::INVOICES],
                 manager: true,
+            ),
+            $this->tool(
+                'deferred_backlog.preview', 'Preview deferred work settlement',
+                'Preview FIFO whole-entry settlement of deferred work at termination rates, without using retainer capacity. Choose hours or a gross amount target; round_up optionally includes the next whole entry. A discount is an explicit adjustment with a reason. Returns the backlog version required to reserve the selection as a draft. Managers only.',
+                [AgentMcpDeferredBuyDownTools::class, 'preview'], Effect::Read, true, 'mcp.read', manager: true, input: AgentInlineSchemas::deferredBuyDownPreviewInput(),
+            ),
+            $this->tool(
+                'invoices.create_deferred_buydown', 'Create deferred work settlement draft',
+                'Reserve FIFO whole deferred entries on a draft at the previewed backlog version. Discounts are explicit negative adjustments with reasons. Does not issue, send, consume retainer capacity or trigger catch-up. Void or discard releases the work. Managers only; idempotency required.',
+                [AgentMcpDeferredBuyDownTools::class, 'create'], Effect::LocalWrite, true, 'mcp.write',
+                cutovers: [AgentDeploymentFlags::INVOICES], manager: true,
             ),
             $this->tool(
                 'invoices.generate_period',
@@ -1845,6 +1859,6 @@ final class AgentOperationCatalog
         }
         $body = AgentApiResponseSchemaCatalog::requestForOperation($id);
 
-        return isset($body['properties']['expected_version']);
+        return isset($body['properties']['expected_version']) || isset($body['properties']['expected_backlog_version']);
     }
 }

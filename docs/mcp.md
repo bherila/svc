@@ -8,9 +8,12 @@ general-availability work tracked by
 ## Agent API contract baseline
 
 The authenticated `context.get` tool returns required integer
-`data.contract_version: 2`, the same field as `GET /api/v1/context`.
-`AgentApiContract::VERSION` names the published agent API baseline. Version 2 adds handover refusals and
-the required handover audit fields; consumers must explicitly support version 2. Consumers must explicitly support the exact integer; missing,
+`data.contract_version: 3`, the same field as `GET /api/v1/context`.
+`AgentApiContract::VERSION` names the published agent API baseline. Version 2
+introduced handover refusals and required handover audit fields. Version 3 adds
+buy-down operations, the `deferred_buydown` invoice kind, required
+`hours_bought_down` trend fields, and the agreement portal visibility setting.
+Consumers must explicitly support the exact integer; missing,
 non-integer or unsupported values are not a supported baseline. Check the
 runtime context when connecting and before syncing rather than assuming the
 `/api/v1` path or OpenAPI `info.version: 1.0.0` establishes compatibility.
@@ -1581,3 +1584,28 @@ Stored dates are evidence to review: a row may already have been prorated, and
 this audit neither infers a financial overcharge nor rewrites an issued invoice.
 The operator equivalent is `svc:billing:audit-handovers --workspace=<public-id>
 --format=json`; omitting the workspace audits all tenants as an operator.
+
+### Deferred backlog settlement
+
+`deferred_backlog.preview` is a manager-only `billing:read` operation, served by
+`GET /api/v1/workspaces/{workspace}/agreements/{agreement}/deferred-backlog/preview`.
+Supply `hours` (whole minutes expressed as hours) or `amount` (gross minor units),
+optionally `round_up`, `discount_amount` and `discount_reason`. It returns public
+entry IDs, minutes/hours, currency, gross/discount/net amounts and `backlog_version`.
+Selection and pricing are the termination candidate set and grouped pricing rule;
+it does not consume any retainer capacity. Entryless carried ledger balances are
+not selectable.
+
+`invoices.create_deferred_buydown` requires `billing:write`, `billing:read`, manager
+permission, the invoice write cutover, `Idempotency-Key`, and the same selection
+arguments plus `expected_backlog_version`. Its POST path replaces `/preview` with
+`/invoices`. It creates a reserved draft only (201); stale shelves are 409.
+Idempotent replay returns the existing draft. Ordinary issue/send confirmations
+and Square collection ownership still apply. Void/discard releases the work,
+while unpaid issued work remains billed. The dedicated invoice kind is
+`deferred_buydown`; its system-only line type was reserved in #375.
+
+`agreements.create` and `agreements.update` also accept the boolean
+`show_deferred_backlog_to_client`, and agreement reads report it. It defaults to
+false. Opting in shows the backlog on the existing visible agreement portal page,
+without allowing a client to create a settlement or exposing internal issue detail.

@@ -66,6 +66,7 @@ final class AgentMcpInventoryTest extends TestCase
         'companies.square_customer.get',
         'companies.square_customer.set',
         'context.get',
+        'deferred_backlog.preview',
         'expense_schedules.create',
         'expense_schedules.generate',
         'expense_schedules.list',
@@ -86,6 +87,7 @@ final class AgentMcpInventoryTest extends TestCase
         'invoices.add_time',
         'invoices.correct',
         'invoices.corrections.get',
+        'invoices.create_deferred_buydown',
         'invoices.create_draft',
         'invoices.discard_draft',
         'invoices.generate_period',
@@ -162,7 +164,7 @@ final class AgentMcpInventoryTest extends TestCase
     {
         return [
             'time_entry_writes_enabled' => ['time_entries.log', 'time_entries.update', 'time_entries.delete', 'time_entries.unapprove'],
-            'invoice_writes_enabled' => ['billing_schedules.create', 'billing_schedules.generate', 'invoices.hold_delivery', 'invoices.release_delivery', 'invoices.add_time', 'invoices.generate_period', 'invoices.create_draft', 'invoices.update_draft', 'invoices.update_details', 'invoices.correct', 'invoices.discard_draft', 'invoices.issue', 'invoices.send', 'invoices.void', 'invoices.square_link', 'invoices.square_unlink', 'invoices.square_cover', 'invoices.square_uncover', 'invoices.send_reminder'],
+            'invoice_writes_enabled' => ['invoices.create_deferred_buydown', 'billing_schedules.create', 'billing_schedules.generate', 'invoices.hold_delivery', 'invoices.release_delivery', 'invoices.add_time', 'invoices.generate_period', 'invoices.create_draft', 'invoices.update_draft', 'invoices.update_details', 'invoices.correct', 'invoices.discard_draft', 'invoices.issue', 'invoices.send', 'invoices.void', 'invoices.square_link', 'invoices.square_unlink', 'invoices.square_cover', 'invoices.square_uncover', 'invoices.send_reminder'],
             'expense_writes_enabled' => ['expenses.log', 'expenses.update', 'expenses.delete', 'expenses.approve', 'expenses.unapprove', 'expense_schedules.create', 'expense_schedules.update', 'expense_schedules.generate', 'expenses.receipts.upload_url'],
             'payment_writes_enabled' => ['payments.record', 'payments.correct', 'payments.set_status', 'payments.refund', 'payments.reverse_refund'],
             'client_writes_enabled' => ['clients.portal_access.grant', 'clients.portal_access.update', 'clients.portal_access.revoke',
@@ -205,7 +207,7 @@ final class AgentMcpInventoryTest extends TestCase
             app(AgentWithheldTools::class)->for(fn (string $scope): bool => true, true));
     }
 
-    public function test_inventory_retains_all_134_tools_when_every_cutover_is_disabled(): void
+    public function test_inventory_retains_all_136_tools_when_every_cutover_is_disabled(): void
     {
         $this->enableAll();
         $disabled = ['time_entries.approve', 'tasks.create', 'tasks.update', 'square.sync', 'invoices.square_reconcile'];
@@ -216,14 +218,14 @@ final class AgentMcpInventoryTest extends TestCase
         config(['agent_api.writes_enabled' => false]);
         $disabled = array_values(array_unique($disabled));
         sort($disabled);
-        $this->assertCount(134, self::TOOLS);
+        $this->assertCount(136, self::TOOLS);
         $this->assertSame(self::TOOLS, $this->inventory());
         $this->assertSame(array_values(array_diff(self::TOOLS, $disabled)), $this->deployed());
         $this->assertSame(array_map(fn (string $name): array => ['name' => $name, 'reason' => 'deployment_disabled'], $disabled),
             app(AgentWithheldTools::class)->for(fn (string $scope): bool => true, true));
     }
 
-    public function test_actual_mcp_discovery_and_context_partition_all_134_tools_after_every_cutover_is_disabled(): void
+    public function test_actual_mcp_discovery_and_context_partition_all_136_tools_after_every_cutover_is_disabled(): void
     {
         $this->enableAll();
         $owner = User::factory()->create();
@@ -328,7 +330,7 @@ final class AgentMcpInventoryTest extends TestCase
         $withheld = collect(app(AgentWithheldTools::class)->for(fn (string $scope): bool => true, false))->keyBy('name');
         foreach (['clients.portal_access.list', 'clients.portal_access.grant', 'clients.portal_access.update', 'clients.portal_access.revoke',
             'clients.portal_invitations.list', 'clients.portal_invitations.create', 'clients.portal_invitations.resend', 'clients.portal_invitations.revoke', 'clients.list', 'clients.get', 'agreements.list', 'agreements.get',
-            'invoices.hold_delivery', 'invoices.release_delivery', 'invoices.add_time', 'invoices.generate_period', 'invoices.preview_period',
+            'deferred_backlog.preview', 'invoices.create_deferred_buydown', 'invoices.hold_delivery', 'invoices.release_delivery', 'invoices.add_time', 'invoices.generate_period', 'invoices.preview_period',
             'billing_audit.stale_and_missing', 'billing_schedules.list', 'billing_schedules.get', 'billing_schedules.create', 'billing_schedules.generate',
             'projects.create', 'projects.update', 'projects.archive', 'projects.members.list', 'projects.members.update',
             'proposals.create', 'proposals.send', 'time_entries.unapprove',

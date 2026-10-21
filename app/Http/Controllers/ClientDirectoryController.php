@@ -503,6 +503,10 @@ class ClientDirectoryController extends Controller
                 'update' => $manages
                     ? route('svc.engagement.agreements.update', [$workspace, $clientAgreement], absolute: false)
                     : null,
+                'deferred_buydown' => $manages ? [
+                    'preview' => route('agent-api.v1.agreements.deferred-backlog.preview', [$workspace, $clientAgreement], absolute: false),
+                    'create' => route('agent-api.v1.agreements.deferred-backlog.create', [$workspace, $clientAgreement], absolute: false),
+                ] : null,
                 'upload_file' => $manages
                     ? "{$attachmentBase}/agreement/{$clientAgreement->public_id}"
                     : null,
@@ -545,6 +549,7 @@ class ClientDirectoryController extends Controller
                     : (int) $clientAgreement->period_retainer_amount,
                 'agreement_text' => $clientAgreement->agreement_text,
                 'is_visible_to_client' => (bool) $clientAgreement->is_visible_to_client,
+                'show_deferred_backlog_to_client' => (bool) $clientAgreement->show_deferred_backlog_to_client,
                 // Billed in Square (#438): SVC issues, Square collects.
                 'square_series_key' => $clientAgreement->square_series_key,
                 'square_location_id' => $clientAgreement->square_location_id,

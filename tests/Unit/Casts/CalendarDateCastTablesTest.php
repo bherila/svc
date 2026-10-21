@@ -39,6 +39,31 @@ final class CalendarDateCastTablesTest extends TestCase
         $this->assertSame($expected, $instance->getCasts());
     }
 
+    public function test_the_portal_backlog_setting_is_fillable_and_can_be_turned_off_again(): void
+    {
+        $agreement = new ClientAgreement;
+        // Editing the new privacy setting must retain every existing writable
+        // agreement term; a dropped mass-assignment field silently loses input.
+        $this->assertEqualsCanonicalizing([
+            'public_id', 'workspace_id', 'client_company_id', 'client_project_id', 'source_proposal_id', 'title', 'status',
+            'starts_on', 'ends_on', 'agreement_text', 'is_visible_to_client', 'currency', 'hourly_rate_amount',
+            'show_deferred_backlog_to_client', 'retainer_amount', 'retainer_minutes', 'billing_cadence', 'rollover_policy',
+            'activated_at', 'signed_at', 'signed_by_user_id', 'signer_name', 'signer_title', 'terminated_at',
+            'catch_up_threshold_minutes', 'period_retainer_minutes', 'period_retainer_amount',
+            'rollover_months', 'initial_rollover_minutes', 'bill_overage_interim', 'first_cycle_proration', 'agreement_link',
+        ], $agreement->getFillable());
+        $agreement->forceFill(['id' => 1, 'workspace_id' => 1, 'lock_version' => 2,
+            'client_company_id' => 3, 'client_project_id' => 4, 'source_proposal_id' => 5,
+            'signed_by_user_id' => 6, 'square_series_key' => 'SYNTHETIC-SERIES', 'square_location_id' => 'SYNTHETIC-LOCATION']);
+        foreach (['id', 'workspace_id', 'lock_version', 'client_company_id', 'client_project_id', 'source_proposal_id', 'signed_by_user_id', 'square_series_key', 'square_location_id'] as $private) {
+            $this->assertArrayNotHasKey($private, $agreement->toArray());
+        }
+        $agreement->fill(['show_deferred_backlog_to_client' => 1]);
+        $this->assertTrue($agreement->show_deferred_backlog_to_client);
+        $agreement->fill(['show_deferred_backlog_to_client' => 0]);
+        $this->assertFalse($agreement->show_deferred_backlog_to_client);
+    }
+
     /** @return iterable<string, array{class-string<Model>, array<string, string>}> */
     public static function tables(): iterable
     {
@@ -48,6 +73,7 @@ final class CalendarDateCastTablesTest extends TestCase
                 'starts_on' => DateOnly::class,
                 'ends_on' => DateOnly::class,
                 'is_visible_to_client' => 'boolean',
+                'show_deferred_backlog_to_client' => 'boolean',
                 'hourly_rate_amount' => 'integer',
                 'retainer_amount' => 'integer',
                 'retainer_minutes' => 'integer',

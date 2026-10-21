@@ -27,7 +27,7 @@ export type ApiResult<T> =
  * URLs come from the server as finished strings - this never assembles one.
  */
 export async function apiRequest<T = unknown>(
-    method: 'POST' | 'PATCH' | 'PUT' | 'DELETE',
+    method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE',
     url: string,
     body: object,
     idempotencyKey: string = newIdempotencyKey(),
@@ -35,16 +35,39 @@ export async function apiRequest<T = unknown>(
     let response: Response;
 
     try {
-        response = await fetch(url, {
+        let destination = url;
+
+        if (method === 'GET') {
+            const query = new URL(url, window.location.origin);
+
+            for (const [key, value] of Object.entries(body)) {
+                if (value !== null && value !== undefined) {
+                    query.searchParams.set(
+                        key,
+                        typeof value === 'boolean'
+                            ? value
+                                ? '1'
+                                : '0'
+                            : String(value),
+                    );
+                }
+            }
+
+            destination = query.toString();
+        }
+
+        response = await fetch(destination, {
             method,
             credentials: 'same-origin',
             headers: {
                 Accept: 'application/json',
                 'Content-Type': 'application/json',
-                'Idempotency-Key': idempotencyKey,
+                ...(method === 'GET'
+                    ? {}
+                    : { 'Idempotency-Key': idempotencyKey }),
                 ...xsrfHeader(),
             },
-            body: JSON.stringify(body),
+            body: method === 'GET' ? undefined : JSON.stringify(body),
         });
     } catch {
         return {

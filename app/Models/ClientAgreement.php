@@ -52,6 +52,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 #[Fillable([
     'public_id', 'workspace_id', 'client_company_id', 'client_project_id', 'source_proposal_id', 'title', 'status',
     'starts_on', 'ends_on', 'agreement_text', 'is_visible_to_client', 'currency', 'hourly_rate_amount',
+    'show_deferred_backlog_to_client',
     'retainer_amount', 'retainer_minutes', 'billing_cadence', 'rollover_policy', 'activated_at', 'signed_at',
     'signed_by_user_id', 'signer_name', 'signer_title', 'terminated_at',
     // Retainer and rollover terms the billing engine reads.
@@ -73,6 +74,7 @@ class ClientAgreement extends Model implements RetainerAgreementTerms, Workspace
             'starts_on' => DateOnly::class,
             'ends_on' => DateOnly::class,
             'is_visible_to_client' => 'boolean',
+            'show_deferred_backlog_to_client' => 'boolean',
             'hourly_rate_amount' => 'integer',
             'retainer_amount' => 'integer',
             'retainer_minutes' => 'integer',

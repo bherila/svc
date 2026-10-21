@@ -267,6 +267,8 @@ export function AgreementTermsForm({
                   : 'no',
         agreement_text: agreement.agreement_text ?? '',
         is_visible_to_client: agreement.is_visible_to_client === true,
+        show_deferred_backlog_to_client:
+            agreement.show_deferred_backlog_to_client === true,
     });
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -327,6 +329,8 @@ export function AgreementTermsForm({
                 agreement_text:
                     form.agreement_text === '' ? null : form.agreement_text,
                 is_visible_to_client: form.is_visible_to_client,
+                show_deferred_backlog_to_client:
+                    form.show_deferred_backlog_to_client,
             },
             {
                 preserveScroll: true,
@@ -588,6 +592,18 @@ export function AgreementTermsForm({
                         </SelectContent>
                     </Select>
                 </Field>
+                <div className="flex items-center gap-3 self-end pb-2">
+                    <Switch
+                        id="show-deferred-backlog"
+                        checked={form.show_deferred_backlog_to_client}
+                        onCheckedChange={(checked: boolean) =>
+                            set('show_deferred_backlog_to_client', checked)
+                        }
+                    />
+                    <Label htmlFor="show-deferred-backlog">
+                        Show deferred backlog to client
+                    </Label>
+                </div>
                 <div className="flex items-center gap-3 self-end pb-2">
                     <Switch
                         id="visible-to-client"

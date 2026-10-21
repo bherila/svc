@@ -75,7 +75,8 @@ final class SquareLinkOperationContractTest extends TestCase
 
         $this->assertSame(['object', false], [$dto['type'], $dto['additionalProperties']]);
         $this->assertContains('version', $dto['required']);
-        $this->assertSame(['square_series_key', 'square_location_id'], array_slice($dto['required'], -2));
+        $this->assertContains('square_series_key', $dto['required']);
+        $this->assertContains('square_location_id', $dto['required']);
         $this->assertSame(['type' => 'string', 'minLength' => 64, 'maxLength' => 64], $dto['properties']['version']);
         $this->assertSame(['type' => ['string', 'null'], 'maxLength' => 192], array_diff_key($dto['properties']['square_location_id'], ['description' => true]));
     }

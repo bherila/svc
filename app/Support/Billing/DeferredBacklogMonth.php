@@ -14,6 +14,8 @@ final readonly class DeferredBacklogMonth
         public int $minutesApplied,
         /** Deferred work billed at an hourly price this month instead. */
         public int $minutesBilled,
+        /** Buy-down subset of minutesBilled, never subtracted from net twice. */
+        public int $minutesBoughtDown = 0,
     ) {}
 
     public function netMinutes(): int

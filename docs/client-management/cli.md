@@ -352,3 +352,15 @@ It writes nothing and exits 0 when the report completes (2 for an unknown worksp
 Review the original pricing and proration before correcting an invoice.
 `svc:billing:preflight-schedule-generation` also reports due schedule handover
 conflicts and exits 1 until they are resolved, using the generator's policy.
+
+### Deferred work settlement
+
+`svc:billing:deferred-buydown <workspace-public-id> <agreement-public-id>
+--user=<manager-public-id> --hours=4 --format=json` previews the same selection
+as REST/MCP. Use `--amount=<gross-minor-units>` instead of hours for a money target.
+`--round-up`, `--discount-amount=<minor-units>` and `--discount-reason=<text>` are
+optional. It writes nothing by default. To reserve the shown selection as a
+draft, repeat with `--apply --expected-backlog-version=<backlog_version>
+--idempotency-key=<key>`. Reusing the exact request and key returns the same draft.
+Refused input/versions or missing write arguments exit 2; a successful preview or
+creation exits 0. Issue and send remain separate operations.

@@ -16,12 +16,14 @@ use App\Services\AgentApi\AgentReadService;
 use App\Services\Billing\CapacityLedgerInputs;
 use App\Services\Billing\ClientInvoicingService;
 use App\Services\Billing\DeferredBillingAllocator;
+use App\Services\Billing\DeferredBuyDownAction;
 use App\Services\Billing\DraftInvoiceTimeRegenerator;
 use App\Services\Billing\InterimOverageGenerator;
 use App\Services\Billing\InvoiceLedgerBuilder;
 use App\Services\Billing\InvoiceLineComposer;
 use App\Services\Billing\RolloverCalculator;
 use App\Support\AgentApi\AgentApiScopes;
+use App\Support\Billing\DeferredBuyDownRequest;
 use App\Support\Billing\DeferredWorkDisposition;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -136,6 +138,35 @@ final class DeferredSettlementCapacityTest extends TestCase
         $entry = ClientTimeEntry::query()->where('workspace_id', $this->workspace->id)->withCapacityPlacement($this->workspace->id)->findOrFail($terminal->id);
         $this->assertTrue($entry->countsTowardsRetainerCapacity());
         $this->assertFalse($entry->drawsAsDeferred(), 'Termination keeps its ordinary-work disposition');
+    }
+
+    #[DataProvider('readers')]
+    public function test_every_capacity_reader_also_ignores_a_settlement_created_by_the_shared_writer(string $reader): void
+    {
+        if (in_array($reader, ['quarterly-invoice', 'interim'], true)) {
+            $this->agreement->update(['billing_cadence' => 'quarterly', 'bill_overage_interim' => true, 'period_retainer_minutes' => 1800]);
+        } elseif ($reader === 'period-ledger') {
+            $this->agreement->update(['period_retainer_minutes' => 600]);
+        }
+        $before = $this->observe($reader);
+        $settled = $this->entry(2400, true);
+        $billing = app(DeferredBuyDownAction::class);
+        $request = DeferredBuyDownRequest::from(['hours' => 40]);
+        $preview = $billing->preview($this->workspace, $this->agreement, $request);
+        $invoice = $billing->create($this->workspace, $this->agreement, $request, $preview->version);
+        $after = $this->observe($reader);
+        if ($reader === 'agent') {
+            // This operational counter includes every draft reservation; it
+            // measures claims, not retainer usage. The capacity payload must
+            // still match in full.
+            $this->assertSame(0, $before[1]['time']['allocated_to_draft_minutes']);
+            $this->assertSame(2400, $after[1]['time']['allocated_to_draft_minutes']);
+            unset($before[1]['time']['allocated_to_draft_minutes'], $after[1]['time']['allocated_to_draft_minutes']);
+        }
+        $this->assertSame(json_encode($before, JSON_THROW_ON_ERROR), json_encode($after, JSON_THROW_ON_ERROR));
+        $line = $settled->invoiceLines()->firstOrFail();
+        $this->assertSame($invoice->id, $line->client_invoice_id);
+        $this->assertSame($this->agreement->id, $line->client_agreement_id);
     }
 
     /** @return iterable<string, array{string}> */

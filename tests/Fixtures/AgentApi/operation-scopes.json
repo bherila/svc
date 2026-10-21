@@ -528,6 +528,16 @@
             "mcp.switch:context.get"
         ]
     },
+    "deferred_backlog.preview": {
+        "scopes": [
+            "billing:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:deferred_backlog.preview"
+        ]
+    },
     "expense_schedules.create": {
         "scopes": [
             "clients:read",
@@ -766,6 +776,19 @@
             "mcp",
             "mcp.switch:mcp.read",
             "mcp.switch:invoices.corrections.get"
+        ]
+    },
+    "invoices.create_deferred_buydown": {
+        "scopes": [
+            "billing:write",
+            "billing:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.invoices",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:invoices.create_deferred_buydown"
         ]
     },
     "invoices.create_draft": {

@@ -38,6 +38,7 @@ final class DeferredBacklogPresenter
                 'hours_added' => round($month->minutesAdded / 60, 4),
                 'hours_applied' => round($month->minutesApplied / 60, 4),
                 'hours_billed' => round($month->minutesBilled / 60, 4),
+                'hours_bought_down' => round($month->minutesBoughtDown / 60, 4),
             ], $backlog->trend),
         ];
     }

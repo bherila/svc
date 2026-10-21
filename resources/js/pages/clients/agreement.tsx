@@ -8,6 +8,7 @@ import {
 } from '@/components/agreements/agreement-editor';
 import { DeferredBacklogCard } from '@/components/agreements/deferred-backlog';
 import type { DeferredBacklog } from '@/components/agreements/deferred-backlog';
+import { DeferredBuyDownForm } from '@/components/agreements/deferred-buydown';
 import {
     AlertDialog,
     AlertDialogAction,
@@ -99,7 +100,7 @@ export default function ClientAgreementDetail({
     files: AgreementFile[];
     agreement: AgreementTerms;
     recurring_items: RecurringItem[];
-    /** A manager's alone; null for everyone else and for the portal. */
+    /** Managers, or portal readers where the agreement explicitly opts in. */
     deferred_backlog: DeferredBacklog | null;
 }) {
     const [editingTerms, setEditingTerms] = useState(false);
@@ -366,8 +367,14 @@ export default function ClientAgreementDetail({
                     </CardContent>
                 </Card>
 
-                {forOperator && deferredBacklog !== null && (
+                {deferredBacklog !== null && (
                     <DeferredBacklogCard backlog={deferredBacklog} />
+                )}
+                {actions.deferred_buydown && (
+                    <DeferredBuyDownForm
+                        actions={actions.deferred_buydown}
+                        currency={agreement.currency}
+                    />
                 )}
 
                 <Card>

@@ -181,7 +181,7 @@ final class AgentMcpReadTools
         #[Schema(minimum: 1, maximum: 100)] int $limit = 25,
         #[Schema(maxLength: 2048)] ?string $cursor = null,
         #[Schema(format: 'uuid')] ?string $company_id = null,
-        #[Schema(enum: ['cadence_period', 'interim_overage', 'terminal', 'ad_hoc'])] ?string $invoice_kind = null,
+        #[Schema(enum: ['cadence_period', 'interim_overage', 'terminal', 'ad_hoc', 'deferred_buydown'])] ?string $invoice_kind = null,
         #[Schema(format: 'date')] ?string $issue_date_from = null,
         #[Schema(format: 'date')] ?string $issue_date_to = null,
         #[Schema(format: 'date')] ?string $due_date_from = null,

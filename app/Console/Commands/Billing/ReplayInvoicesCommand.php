@@ -989,7 +989,7 @@ final class ReplayInvoicesCommand extends TextReportCommand
             ->whereIn('client_company_id', $companies->pluck('id'))
             ->where(function ($query): void {
                 $query->whereNull('invoice_kind')
-                    ->orWhere('invoice_kind', '!=', InvoiceKind::AdHoc->value);
+                    ->orWhereNotIn('invoice_kind', InvoiceKind::preservedHistoryValues());
             })
             ->pluck('id');
 
@@ -1142,7 +1142,7 @@ final class ReplayInvoicesCommand extends TextReportCommand
         $this->openingCapacityProofs = $this->proveOpeningCapacityChain($expected, $actual);
 
         foreach ($expected as $key => $before) {
-            if ($before['invoice_kind'] === InvoiceKind::AdHoc->value) {
+            if (in_array($before['invoice_kind'], InvoiceKind::preservedHistoryValues(), true)) {
                 continue;
             }
 
@@ -1204,7 +1204,7 @@ final class ReplayInvoicesCommand extends TextReportCommand
         }
 
         foreach ($actual as $key => $after) {
-            if (! isset($expected[$key]) && $after['invoice_kind'] !== InvoiceKind::AdHoc->value) {
+            if (! isset($expected[$key]) && ! in_array($after['invoice_kind'], InvoiceKind::preservedHistoryValues(), true)) {
                 $comparisons[] = [
                     'key' => $key,
                     'invoice_number' => $after['invoice_number'],
