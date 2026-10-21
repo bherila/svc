@@ -192,7 +192,7 @@ final class SquareProcessorMovementFacts
             || ($parts[8] !== 'Z' && ((int) substr($parts[8], 1, 2) > 23 || (int) substr($parts[8], 4, 2) > 59))) {
             throw self::unreadable();
         }
-        $fraction = str_pad(substr($parts[7] ?? '', 0, 6), 6, '0');
+        $fraction = str_pad(substr($parts[7], 0, 6), 6, '0');
         $normalized = $parts[1].'-'.$parts[2].'-'.$parts[3].'T'.$parts[4].':'.$parts[5].':'.$parts[6].'.'.$fraction.$parts[8];
         try {
             $at = CarbonImmutable::parse($normalized)->utc();

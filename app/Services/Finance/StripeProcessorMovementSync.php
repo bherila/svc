@@ -104,7 +104,7 @@ final class StripeProcessorMovementSync
     }
 
     /**
-     * @param  array<string, string>  $filter
+     * @param  array{charge?: string, payment_intent?: string}  $filter
      * @return list<array<string, mixed>>
      */
     private function refunds(#[SensitiveParameter] array $filter, ProcessorReadBudget $budget): array

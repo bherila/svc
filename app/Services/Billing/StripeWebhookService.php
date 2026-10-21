@@ -127,7 +127,7 @@ final class StripeWebhookService
             : null;
         // An event can arrive before its payment. Acknowledge it without HTTP;
         // scheduled recovery will discover its current group after recording.
-        $snapshot = $workspace !== null && $probe !== null ? $this->disputes->read($workspace, $probe->id) : null;
+        $snapshot = $workspace !== null ? $this->disputes->read($workspace, $probe->id) : null;
 
         return DB::transaction(function () use ($event, $ledger, $workspace, $snapshot): bool {
             if ($workspace !== null && $snapshot !== null) {
@@ -142,7 +142,7 @@ final class StripeWebhookService
                         $this->recordPaymentEvent($payment, $created, (string) $event->id);
                     }
                 }
-                $ledger->workspace_id = $workspace->id;
+                $ledger->workspace_id = $workspace->id > 0 ? $workspace->id : null;
             }
             $ledger->forceFill(['status' => 'processed', 'processed_at' => $this->clock->now()])->save();
 

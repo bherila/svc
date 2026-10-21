@@ -235,7 +235,11 @@ final class SyncProcessorMovementsCommand extends MutationCommand
 
     private function boundedOption(string $name, int $maximum): int
     {
-        $value = (string) $this->option($name);
+        $value = $this->option($name);
+        if (! is_scalar($value)) {
+            throw new DomainException;
+        }
+        $value = (string) $value;
         if (preg_match('/^[0-9]+$/D', $value) !== 1 || strlen($value) > 4 || (int) $value < 1 || (int) $value > $maximum) {
             throw new DomainException;
         }
