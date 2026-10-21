@@ -3,6 +3,7 @@
 namespace App\Services\AgentApi\Operations;
 
 use App\Support\AgentApi\ReadView;
+use App\Support\Finance\ProcessorMovementKind;
 use App\Support\Square\SquareIdentifiers;
 
 /**
@@ -1748,6 +1749,30 @@ final class AgentRestDocumentation
                     403 => 'The caller may not read this workspace\'s payouts, or the token lacks finance:read (the finance token, finance.read).',
                     404 => 'The workspace does not exist or the caller is not in it.',
                     422 => 'A filter is invalid (`errors` names it): an unknown provider or status, a malformed date, arrival_to before arrival_from, per_page out of range, a watermark in the future, page or a filter other than provider on a change-feed request. Also a cursor from another workspace, query or watermark.',
+                    429 => 'Too many requests (retry after Retry-After).',
+                ],
+            ],
+            'finance.processor_movements.list' => [
+                'method' => 'GET',
+                'scopes' => ['finance:read'],
+                'description' => 'Read signed refunds, refund reversals, dispute debits, dispute credits, fees and fee reversals bound to their original payment. Money is signed integer minor units; net_minor equals principal_minor minus fee_minor. Occurrence facts retain the UTC processor timestamp and captured workspace local date/timezone. No processor account keys or raw source objects are exposed. Always a bounded change feed ordered by newest change and id, inside a snapshot watermark; follow meta.next_cursor until null, then use the watermark as inclusive updated_since and deduplicate by (id, version). Only immutable provider, kind, payment_id and occurrence-date filters are accepted; unknown filters, page and mutable review filters are refused. Workspace owners/admins; with the finance token, any workspace member.'.$token,
+                'parameters' => [
+                    'WorkspaceId',
+                    self::query('provider', ['type' => 'string', 'enum' => ['stripe', 'square']]),
+                    self::query('kind', ['type' => 'string', 'enum' => ProcessorMovementKind::all()]),
+                    self::query('payment_id', ['type' => 'string', 'format' => 'uuid']),
+                    self::query('occurred_from', ['type' => 'string', 'format' => 'date']),
+                    self::query('occurred_to', ['type' => 'string', 'format' => 'date']),
+                    self::query('per_page', ['type' => 'integer', 'minimum' => 1, 'maximum' => 100, 'default' => 50]),
+                    'UpdatedSince', 'Watermark', 'Cursor',
+                ],
+                'response' => 'FinanceProcessorMovementListResponse',
+                'response_description' => 'A cursor page of signed processor movements',
+                'errors' => [
+                    401 => 'Not signed in, or the token is missing, expired or revoked.',
+                    403 => 'The caller may not read this workspace or lacks finance:read (the finance token, finance.read).',
+                    404 => 'The workspace does not exist or the caller is not in it.',
+                    422 => 'A filter is unsupported or invalid, or the cursor does not match the workspace, immutable filters or watermark.',
                     429 => 'Too many requests (retry after Retry-After).',
                 ],
             ],

@@ -5230,6 +5230,166 @@
                 "x-mcp-tool": "finance.payouts.list"
             }
         },
+        "/workspaces/{workspace}/processor-movements": {
+            "get": {
+                "operationId": "finance.processor_movements.list",
+                "description": "Read signed refunds, refund reversals, dispute debits, dispute credits, fees and fee reversals bound to their original payment. Money is signed integer minor units; net_minor equals principal_minor minus fee_minor. Occurrence facts retain the UTC processor timestamp and captured workspace local date/timezone. No processor account keys or raw source objects are exposed. Always a bounded change feed ordered by newest change and id, inside a snapshot watermark; follow meta.next_cursor until null, then use the watermark as inclusive updated_since and deduplicate by (id, version). Only immutable provider, kind, payment_id and occurrence-date filters are accepted; unknown filters, page and mutable review filters are refused. Workspace owners/admins; with the finance token, any workspace member. The Sanctum finance token issued by svc:auth:issue-token is accepted too, its finance.read and finance.reconcile abilities standing for these scopes.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "finance:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "provider",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "stripe",
+                                "square"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "kind",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "refund",
+                                "refund_reversal",
+                                "dispute_debit",
+                                "dispute_credit",
+                                "fee",
+                                "fee_reversal"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "payment_id",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "occurred_from",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "format": "date"
+                        }
+                    },
+                    {
+                        "name": "occurred_to",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "format": "date"
+                        }
+                    },
+                    {
+                        "name": "per_page",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 50
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/UpdatedSince"
+                    },
+                    {
+                        "$ref": "#/components/parameters/Watermark"
+                    },
+                    {
+                        "$ref": "#/components/parameters/Cursor"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "A cursor page of signed processor movements",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/FinanceProcessorMovementListResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Not signed in, or the token is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The caller may not read this workspace or lacks finance:read (the finance token, finance.read).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace does not exist or the caller is not in it.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "A filter is unsupported or invalid, or the cursor does not match the workspace, immutable filters or watermark.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "read",
+                "x-agent-idempotent": true,
+                "x-agent-mcp-tool": "finance.processor_movements.list",
+                "x-svc-flags": [],
+                "x-mcp-tool": "finance.processor_movements.list"
+            }
+        },
         "/workspaces/{workspace}/invoice-payments/{payment}/reconciliations/{external_system}/{transaction}": {
             "delete": {
                 "operationId": "finance.reconciliations.deactivate",
@@ -13730,6 +13890,140 @@
                         "description": "ChangeFeedMeta when the request named updated_since, watermark or cursor; FinancePageMeta otherwise."
                     }
                 }
+            },
+            "FinanceProcessorMovement": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "id": {
+                        "$ref": "#/components/schemas/Uuid"
+                    },
+                    "version": {
+                        "$ref": "#/components/schemas/Version"
+                    },
+                    "payment_id": {
+                        "$ref": "#/components/schemas/Uuid"
+                    },
+                    "provider": {
+                        "type": "string",
+                        "enum": [
+                            "stripe",
+                            "square"
+                        ]
+                    },
+                    "kind": {
+                        "type": "string",
+                        "enum": [
+                            "refund",
+                            "refund_reversal",
+                            "dispute_debit",
+                            "dispute_credit",
+                            "fee",
+                            "fee_reversal"
+                        ]
+                    },
+                    "principal_minor": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                    },
+                    "fee_minor": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                    },
+                    "net_minor": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                    },
+                    "currency": {
+                        "$ref": "#/components/schemas/Currency"
+                    },
+                    "provider_occurred_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "occurred_on": {
+                        "type": "string",
+                        "format": "date"
+                    },
+                    "occurred_timezone": {
+                        "type": "string"
+                    },
+                    "date_basis": {
+                        "type": "string",
+                        "enum": [
+                            "stripe_balance_created",
+                            "square_effective_at"
+                        ]
+                    },
+                    "available_on": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time"
+                    },
+                    "provider_payout_identifier": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 255
+                    },
+                    "needs_review": {
+                        "type": "boolean"
+                    },
+                    "review_reason": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "enum": [
+                            "immutable_facts_changed",
+                            null
+                        ]
+                    }
+                },
+                "required": [
+                    "id",
+                    "version",
+                    "payment_id",
+                    "provider",
+                    "kind",
+                    "principal_minor",
+                    "fee_minor",
+                    "net_minor",
+                    "currency",
+                    "provider_occurred_at",
+                    "occurred_on",
+                    "occurred_timezone",
+                    "date_basis",
+                    "available_on",
+                    "provider_payout_identifier",
+                    "needs_review",
+                    "review_reason"
+                ]
+            },
+            "FinanceProcessorMovementListResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/FinanceProcessorMovement"
+                        }
+                    },
+                    "meta": {
+                        "$ref": "#/components/schemas/ChangeFeedMeta"
+                    }
+                },
+                "required": [
+                    "data",
+                    "meta"
+                ]
             },
             "FinanceReconciliation": {
                 "type": "object",

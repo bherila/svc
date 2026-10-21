@@ -3,9 +3,11 @@
 namespace App\Services\Finance;
 
 use App\Http\Resources\Api\V1\FinancePayoutResource;
+use App\Http\Resources\Api\V1\FinanceProcessorMovementResource;
 use App\Http\Resources\Api\V1\InvoicePaymentResource;
 use App\Models\ClientInvoicePayment;
 use App\Models\PaymentReconciliation;
+use App\Models\ProcessorMovement;
 use App\Models\ProcessorPayout;
 use App\Models\Workspace;
 use App\Services\AgentApi\AgentMutationExecutor;
@@ -14,6 +16,7 @@ use App\Support\Billing\InvoicePaymentStatus;
 use App\Support\Finance\FinanceCaller;
 use App\Support\Finance\FinancePaymentQuery;
 use App\Support\Finance\FinancePayoutQuery;
+use App\Support\Finance\FinanceProcessorMovementQuery;
 use App\Support\Finance\ReconciliationAllocation;
 use App\Support\Finance\ReconciliationTarget;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -48,6 +51,8 @@ final class FinanceReconciliationOperations
     public const string DEACTIVATE = 'finance.reconciliations.deactivate';
 
     public const string PAYOUTS = 'finance.payouts.list';
+
+    public const string MOVEMENTS = 'finance.processor_movements.list';
 
     public function __construct(
         private readonly PaymentReconciliationService $reconciliations,
@@ -189,6 +194,34 @@ final class FinanceReconciliationOperations
             ->when($query->status !== null, static fn (Builder $payouts) => $payouts->where('status', $query->status?->value))
             ->when($query->arrivalFrom !== null, static fn (Builder $payouts) => $payouts->where('arrival_date', '>=', (string) $query->arrivalFrom))
             ->when($query->arrivalTo !== null, static fn (Builder $payouts) => $payouts->where('arrival_date', '<=', (string) $query->arrivalTo));
+    }
+
+    /** @return array{data: list<array<string, mixed>>, meta: array{next_cursor: ?string, watermark: string}} */
+    public function movementChanges(FinanceCaller $caller, Workspace $workspace, FinanceProcessorMovementQuery $query): array
+    {
+        Gate::forUser($caller->user)->authorize($caller->door->membersMayRead() ? 'view' : 'manage', $workspace);
+        $workspaceId = $workspace->id;
+        $rows = ProcessorMovement::query()
+            ->where('workspace_id', $workspaceId)
+            ->whereHas('payment', static fn (Builder $payments) => $payments->where('workspace_id', $workspaceId)
+                ->when($query->paymentId !== null, static fn (Builder $payments) => $payments->where('public_id', $query->paymentId)))
+            ->when($query->provider !== null, static fn (Builder $rows) => $rows->where('provider', $query->provider))
+            ->when($query->kind !== null, static fn (Builder $rows) => $rows->where('kind', $query->kind))
+            ->when($query->occurredFrom !== null, static fn (Builder $rows) => $rows->where('occurred_on', '>=', $query->occurredFrom))
+            ->when($query->occurredTo !== null, static fn (Builder $rows) => $rows->where('occurred_on', '<=', $query->occurredTo))
+            ->with(['payment' => static fn ($payments) => $payments->where('workspace_id', $workspaceId)->select(['id', 'workspace_id', 'public_id'])]);
+
+        return ChangeFeedPage::run(
+            $workspace,
+            self::MOVEMENTS.'|'.$query->key(),
+            $rows,
+            $query->perPage,
+            $query->cursor,
+            $query->window,
+            static function (): void {},
+            static fn (ProcessorMovement $movement): array => (new FinanceProcessorMovementResource($movement))->resolve(),
+            microseconds: true,
+        );
     }
 
     /** The payouts route's address on this installation, as {@see listUrl()}. */

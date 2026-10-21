@@ -9,7 +9,7 @@ role.
 ## Contract baseline
 
 Authenticated `context.get` (`GET /api/v1/context`, `identity:read`) publishes
-required integer `data.contract_version: 2`. This is the current published baseline
+required integer `data.contract_version: 3`. This is the current published baseline
 of the published agent API contract. A finance consumer should check it when
 connecting and before syncing, accepting only the exact integer baseline it
 supports. Missing values, wrong types and unsupported integers are not version
@@ -33,6 +33,7 @@ and each is an MCP tool and a console command of the same name, all running one
 | Operation                            | REST                                                      | Scope               | Console                    |
 | ------------------------------------ | --------------------------------------------------------- | ------------------- | -------------------------- |
 | `finance.invoice_payments.list`      | `GET /api/v1/workspaces/{workspace}/invoice-payments`     | `finance:read`      | `svc:finance:payments`     |
+| `finance.processor_movements.list` | `GET /api/v1/workspaces/{workspace}/processor-movements` | `finance:read` | `svc:finance:processor-movements` |
 | `finance.payouts.list`               | `GET /api/v1/workspaces/{workspace}/payouts`              | `finance:read`      | `svc:finance:payouts`      |
 | `finance.reconciliations.upsert`     | `PUT …/invoice-payments/{payment}/reconciliations/{external-system}/{transaction-uuid}` | `finance:reconcile` | `svc:finance:reconcile`    |
 | `finance.reconciliations.deactivate` | `DELETE` the same path                                    | `finance:reconcile` | `svc:finance:unreconcile`  |
@@ -79,7 +80,7 @@ php artisan svc:auth:issue-token --apply \
 Send it as `Authorization: Bearer TOKEN`. Read-only integrations should receive
 only `finance.read`. On these routes the `finance.read` ability stands for the
 `finance:read` scope and `finance.reconcile` for `finance:reconcile`; the token
-holds no other scope, so it opens these three operations and nothing else in
+holds no other scope, so it opens only the finance operations and nothing else in
 `/api/v1` (a token issued with Sanctum's `*` ability is no exception). A token
 never broadens the user's workspace role: listing requires workspace membership,
 and reconciliation writes require owner or admin access. This is the contract the
@@ -192,6 +193,46 @@ dates, a client's `status` - is refused (`422`, naming it): a record that
 changes out of the filter would never be delivered again, and `overdue` changes
 as the date passes without the invoice changing at all. Sync without them and
 filter the synced records.
+
+## Signed processor movements
+
+`finance.processor_movements.list` (`GET /api/v1/workspaces/{workspace}/processor-movements`)
+reads recorded refunds, refund reversals, dispute debits, dispute credits, fees
+and fee reversals. It never calls a processor or changes a payment, invoice or
+allocation. It uses the same `finance:read` scope and owner/admin OAuth policy
+as the payment listing; a Sanctum `finance.read` token may read its workspace
+as a member. No new OAuth scope or contract baseline is required. Authorized
+workspace managers discover this additive surface through the
+`finance:processor_movements:read` workspace capability.
+
+Each closed record has `id` (movement public UUID), `version`, `payment_id`
+(original payment public UUID), `provider`, `kind`, `principal_minor`,
+`fee_minor`, `net_minor`, `currency`, `provider_occurred_at`, `occurred_on`,
+`occurred_timezone`, `date_basis`, nullable `available_on`, nullable
+`provider_payout_identifier`, `needs_review` and nullable `review_reason`.
+Amounts are signed safe integers in currency minor units: a refund/debit has
+negative principal; a reversal/credit has positive principal. Fees are positive
+when charged and negative when reversed; `net_minor = principal_minor - fee_minor`.
+The original facts are immutable. Conflicting provider facts keep the original
+amount and date and set `needs_review` with `immutable_facts_changed`.
+
+Processor timestamps are UTC with microsecond precision. `occurred_on` is the
+local calendar date captured with `occurred_timezone` at recording time;
+changing the workspace's timezone does not move historical dates. `date_basis`
+is `stripe_balance_created` or `square_effective_at`. Account keys, raw balance
+entry/source identifiers, notes and payloads never cross this boundary.
+
+This endpoint always returns `{data, meta: {next_cursor, watermark}}`. Follow
+`next_cursor` until null; begin the next pass with its watermark as inclusive
+`updated_since`, deduplicating by `(id, version)`. The watermark lags reads by
+two minutes, as on the other change feeds. Microsecond positions and equal-time
+id ties are preserved. A held or enriched record is redelivered when its version
+changes. Optional immutable filters are `provider`, `kind`, `payment_id`,
+`occurred_from` and `occurred_to` (inclusive captured local dates); `per_page`
+defaults to 50 and is at most 100. `updated_since`, `watermark` and `cursor` select
+the change window. Every unsupported filter, including `page`, `needs_review`
+and `review_reason`, returns 422. A cursor belongs to one workspace, immutable
+filter selection and lower bound; changing those requires a fresh pass.
 
 ## Processor settlement and payouts
 
@@ -428,6 +469,11 @@ php artisan svc:finance:reconcile PAYMENT SYSTEM TRANSACTION --workspace=WORKSPA
     [--inactive] [--format=json]
 php artisan svc:finance:unreconcile PAYMENT SYSTEM TRANSACTION --workspace=WORKSPACE \
     --user=USER [--format=json]
+php artisan svc:finance:processor-movements --workspace=WORKSPACE --user=USER \
+    [--provider=stripe] [--kind=refund] [--payment-id=PAYMENT_UUID] \
+    [--occurred-from=YYYY-MM-DD] [--occurred-to=YYYY-MM-DD] \
+    [--per-page=50] [--updated-since=UTC_TIME] [--watermark=UTC_TIME] \
+    [--cursor=OPAQUE_CURSOR] [--format=json]
 php artisan svc:finance:payouts --workspace=WORKSPACE --user=USER \
     [--provider=stripe] [--status=paid] [--arrival-from=YYYY-MM-DD] \
     [--arrival-to=YYYY-MM-DD] [--per-page=50] [--page=1] [--format=json]

@@ -129,6 +129,7 @@ final class AgentOperationCatalog
         'expenses.update' => ['expenses.update', '/workspaces/{workspace}/expenses/{expense}', [200]],
         'finance.invoice_payments.list' => ['invoice-payments.index', '/workspaces/{workspace}/invoice-payments', [200]],
         'finance.payouts.list' => ['payouts.index', '/workspaces/{workspace}/payouts', [200]],
+        'finance.processor_movements.list' => ['processor-movements.index', '/workspaces/{workspace}/processor-movements', [200]],
         'finance.reconciliations.deactivate' => ['payment-reconciliations.destroy', '/workspaces/{workspace}/invoice-payments/{payment}/reconciliations/{external_system}/{transaction}', [200]],
         'finance.reconciliations.upsert' => ['payment-reconciliations.upsert', '/workspaces/{workspace}/invoice-payments/{payment}/reconciliations/{external_system}/{transaction}', [200, 201]],
         'invoices.add_time' => ['invoices.add_time', '/workspaces/{workspace}/invoices/{invoice}/time', [200]],
@@ -1594,6 +1595,7 @@ final class AgentOperationCatalog
         foreach ([
             'finance.invoice_payments.list' => ['List payments for finance reconciliation', 'list', Effect::Read, 'mcp.read'],
             'finance.payouts.list' => ['List processor payouts for finance reconciliation', 'payouts', Effect::Read, 'mcp.read'],
+            'finance.processor_movements.list' => ['Read signed processor movements', 'movements', Effect::Read, 'mcp.read'],
             'finance.reconciliations.upsert' => ['Set a finance reconciliation allocation', 'upsert', Effect::LocalWrite, 'mcp.write'],
             'finance.reconciliations.deactivate' => ['Deactivate a finance reconciliation allocation', 'deactivate', Effect::LocalWrite, 'mcp.write'],
         ] as $id => [$title, $method, $effect, $group]) {

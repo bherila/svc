@@ -14,6 +14,7 @@ use App\Support\Finance\FinanceCaller;
 use App\Support\Finance\FinanceDoor;
 use App\Support\Finance\FinancePaymentQuery;
 use App\Support\Finance\FinancePayoutQuery;
+use App\Support\Finance\FinanceProcessorMovementQuery;
 use App\Support\Finance\ReconciliationAllocation;
 use App\Support\Finance\ReconciliationTarget;
 use Illuminate\Http\JsonResponse;
@@ -54,6 +55,11 @@ final class FinanceReconciliationController extends Controller
         }
 
         return FinancePayoutResource::collection($operations->payouts($caller, $workspace, $query));
+    }
+
+    public function movements(Request $request, Workspace $workspace, FinanceReconciliationOperations $operations): JsonResponse
+    {
+        return response()->json($operations->movementChanges($this->caller($request), $workspace, FinanceProcessorMovementQuery::fromInput($request->query())));
     }
 
     public function upsert(Request $request, Workspace $workspace, string $payment, string $external_system, string $transaction, FinanceReconciliationOperations $operations): PaymentReconciliationResource
