@@ -41,11 +41,18 @@ final class StripeWebhookService
      */
     private const array PAYOUT_EVENTS = ['payout.paid', 'payout.failed', 'payout.canceled'];
 
+    /** Every dispute notification is a hint to read the complete current group. */
+    private const array DISPUTE_EVENTS = [
+        'charge.dispute.created', 'charge.dispute.updated', 'charge.dispute.closed',
+        'charge.dispute.funds_withdrawn', 'charge.dispute.funds_reinstated',
+    ];
+
     public function __construct(
         private readonly InvoiceLifecycleService $invoices,
         private readonly StripePaymentMethodService $paymentMethods,
         private readonly StripeGateway $gateway,
         private readonly StripeSettlementSync $settlements,
+        private readonly StripeDisputeRecovery $disputes,
         private readonly WorkspaceClock $clock = new WorkspaceClock,
     ) {}
 
@@ -86,6 +93,9 @@ final class StripeWebhookService
             if (in_array((string) $event->type, self::PAYOUT_EVENTS, true)) {
                 return $this->handlePayout($event, $object, $ledger);
             }
+            if (in_array((string) $event->type, self::DISPUTE_EVENTS, true)) {
+                return $this->handleDispute($event, $object, $ledger);
+            }
             $processed = $this->handle($event, $object, $ledger);
         } catch (\DomainException $exception) {
             $ledger->forceFill([
@@ -101,6 +111,43 @@ final class StripeWebhookService
         }
 
         return $processed;
+    }
+
+    /**
+     * Read before any business lock, then apply the same complete group the
+     * scheduled recovery uses. A win for one dispute never clears another.
+     *
+     * @param  array<string, mixed>  $object
+     */
+    private function handleDispute(Event $event, array $object, ClientStripeEvent $ledger): bool
+    {
+        $probe = $this->paymentQuery($object)->first(['id', 'workspace_id']);
+        $workspace = $probe !== null && $probe->workspace_id > 0
+            ? Workspace::query()->whereKey($probe->workspace_id)->first()
+            : null;
+        // An event can arrive before its payment. Acknowledge it without HTTP;
+        // scheduled recovery will discover its current group after recording.
+        $snapshot = $workspace !== null && $probe !== null ? $this->disputes->read($workspace, $probe->id) : null;
+
+        return DB::transaction(function () use ($event, $ledger, $workspace, $snapshot): bool {
+            if ($workspace !== null && $snapshot !== null) {
+                $this->disputes->apply($workspace, $snapshot, true);
+                if ($snapshot->disputes !== []) {
+                    // apply() keeps the payment lock until this outer transaction
+                    // commits; do not acquire it again after lifecycle invoice locks.
+                    $payment = ClientInvoicePayment::query()->where('workspace_id', $workspace->id)
+                        ->whereKey($snapshot->paymentId)->where('provider', 'stripe')->firstOrFail();
+                    $created = max(0, (int) ($event->created ?? 0));
+                    if ($payment->provider_event_created_at === null || $created >= $payment->provider_event_created_at) {
+                        $this->recordPaymentEvent($payment, $created, (string) $event->id);
+                    }
+                }
+                $ledger->workspace_id = $workspace->id;
+            }
+            $ledger->forceFill(['status' => 'processed', 'processed_at' => $this->clock->now()])->save();
+
+            return true;
+        });
     }
 
     /**
@@ -245,10 +292,6 @@ final class StripeWebhookService
             'payment_intent.processing' => InvoicePaymentStatus::Pending->value,
             'payment_intent.payment_failed' => InvoicePaymentStatus::Failed->value,
             'payment_intent.canceled' => InvoicePaymentStatus::Canceled->value,
-            'charge.dispute.created' => InvoicePaymentStatus::Disputed->value,
-            'charge.dispute.closed' => ($object['status'] ?? null) === 'won'
-                ? InvoicePaymentStatus::Succeeded->value
-                : InvoicePaymentStatus::Disputed->value,
             default => null,
         };
 
@@ -288,50 +331,18 @@ final class StripeWebhookService
             if ($status === InvoicePaymentStatus::Succeeded->value) {
                 $amount = (int) ($object['amount_received'] ?? $object['amount'] ?? 0);
                 $currency = strtoupper((string) ($object['currency'] ?? ''));
-                if ($event->type === 'charge.dispute.closed') {
-                    // A won dispute carries the amount that was disputed, which
-                    // may be part of the payment: a partial win restores it.
-                    if ($amount < 1 || $amount > (int) $payment->amount || $currency !== $payment->currency) {
-                        throw new \DomainException('Stripe dispute does not match the disputed invoice payment.');
-                    }
-                } elseif ($amount !== (int) $payment->amount || $currency !== $payment->currency) {
+                if ($amount !== (int) $payment->amount || $currency !== $payment->currency) {
                     throw new \DomainException('Stripe payment does not match the pending invoice payment.');
                 }
             }
             if (! $this->isStalePaymentTransition($payment->status, $status)) {
-                $disputedAmount = $status === InvoicePaymentStatus::Disputed->value ? $this->disputedAmount($object, $payment) : null;
-                if ($disputedAmount !== null) {
-                    $this->invoices->setPaymentDisputed($payment, $disputedAmount);
-                } else {
-                    $this->invoices->setPaymentStatus($payment, $status);
-                }
+                $this->invoices->setPaymentStatus($payment, $status);
                 $this->recordPaymentEvent($payment, $providerCreatedAt, (string) $event->id);
             }
             $ledger->workspace_id = $payment->workspace_id;
         } elseif ($event->type === 'payment_intent.succeeded') {
             $this->createSuccessfulPayment($event, $object, $ledger);
         }
-    }
-
-    /**
-     * The part of the payment a dispute event says is contested, or null when
-     * it does not say - the whole payment is then held, as before amounts were
-     * recorded. An amount that is not part of the payment is refused.
-     *
-     * @param  array<string, mixed>  $object
-     */
-    private function disputedAmount(array $object, ClientInvoicePayment $payment): ?int
-    {
-        $amount = $object['amount'] ?? null;
-        if ($amount === null) {
-            return null;
-        }
-        $currency = is_string($object['currency'] ?? null) ? strtoupper($object['currency']) : '';
-        if (! is_int($amount) || $amount < 1 || $amount > (int) $payment->amount || $currency !== $payment->currency) {
-            throw new \DomainException('Stripe dispute does not match the disputed invoice payment.');
-        }
-
-        return $amount;
     }
 
     /** @param array<string, mixed> $object */
@@ -496,14 +507,24 @@ final class StripeWebhookService
      * @return Builder<ClientInvoicePayment> */
     private function paymentQuery(array $object): Builder
     {
+        $charge = $object['charge'] ?? null;
         $ids = array_values(array_filter([
-            isset($object['id']) ? (string) $object['id'] : null,
-            isset($object['payment_intent']) && is_string($object['payment_intent']) ? $object['payment_intent'] : null,
+            self::paymentReference($object['id'] ?? null),
+            self::paymentReference($object['payment_intent'] ?? null),
+            self::paymentReference($charge),
+            self::paymentReference(is_array($charge) ? ($charge['payment_intent'] ?? null) : null),
         ]));
 
         return ClientInvoicePayment::query()
             ->where('provider', 'stripe')
             ->whereIn('provider_payment_identifier', $ids);
+    }
+
+    private static function paymentReference(mixed $value): ?string
+    {
+        $id = is_array($value) ? ($value['id'] ?? null) : $value;
+
+        return is_string($id) && preg_match('/^(pi|ch)_[A-Za-z0-9_]{1,252}$/D', $id) === 1 ? $id : null;
     }
 
     /** @param array<string, mixed> $object */

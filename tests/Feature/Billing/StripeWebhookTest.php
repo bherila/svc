@@ -33,6 +33,12 @@ class StripeWebhookTest extends TestCase
     /** @var list<array<string, mixed>> */
     private array $stripeRequests = [];
 
+    /** @var list<array<string, mixed>> */
+    private array $stripeRefunds = [];
+
+    /** @var list<array<string, mixed>> */
+    private array $stripeDisputes = [];
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -157,6 +163,7 @@ class StripeWebhookTest extends TestCase
             'id' => 'dp_activity_transitions',
             'payment_intent' => 'pi_activity_transitions',
         ]);
+        $this->fakeStripeDisputes([['id' => 'dp_activity_transitions', 'charge' => 'ch_activity_transitions', 'payment_intent' => 'pi_activity_transitions', 'amount' => 1000, 'currency' => 'usd', 'status' => 'needs_response']]);
         $this->webhookPost($dispute, $this->signature($dispute))->assertOk();
         $this->webhookPost($dispute, $this->signature($dispute))->assertOk()->assertJsonPath('duplicate', true);
         $this->assertSame('disputed', $payment->fresh()->status);
@@ -195,6 +202,7 @@ class StripeWebhookTest extends TestCase
         $dispute = $this->eventPayload('evt_reconciled_dispute', 'charge.dispute.created', [
             'id' => 'dp_reconciled', 'charge' => 'ch_reconciled', 'payment_intent' => 'pi_synthetic_billing', 'amount' => 1000, 'currency' => 'usd', 'status' => 'needs_response',
         ], 100);
+        $this->fakeStripeDisputes([['id' => 'dp_reconciled', 'charge' => 'ch_reconciled', 'payment_intent' => 'pi_synthetic_billing', 'amount' => 1000, 'currency' => 'usd', 'status' => 'needs_response']]);
         $this->webhookPost($dispute, $this->signature($dispute))->assertOk();
 
         $this->assertSame('disputed', $payment->fresh()?->status);
@@ -207,6 +215,7 @@ class StripeWebhookTest extends TestCase
         $dispute = $this->eventPayload('evt_partial_dispute_created', 'charge.dispute.created', [
             'id' => 'dp_partial', 'charge' => 'ch_partial', 'payment_intent' => 'pi_synthetic_billing', 'amount' => 400, 'currency' => 'usd', 'status' => 'needs_response',
         ], 100);
+        $this->fakeStripeDisputes([['id' => 'dp_partial', 'charge' => 'ch_partial', 'payment_intent' => 'pi_synthetic_billing', 'amount' => 400, 'currency' => 'usd', 'status' => 'needs_response']]);
         $this->webhookPost($dispute, $this->signature($dispute))->assertOk();
         $this->assertSame('disputed', $payment->fresh()?->status);
         $this->assertSame(400, $payment->fresh()?->disputed_amount);
@@ -215,6 +224,7 @@ class StripeWebhookTest extends TestCase
         $won = $this->eventPayload('evt_partial_dispute_won', 'charge.dispute.closed', [
             'id' => 'dp_partial', 'charge' => 'ch_partial', 'payment_intent' => 'pi_synthetic_billing', 'amount' => 400, 'currency' => 'usd', 'status' => 'won',
         ], 200);
+        $this->fakeStripeDisputes([['id' => 'dp_partial', 'charge' => 'ch_partial', 'payment_intent' => 'pi_synthetic_billing', 'amount' => 400, 'currency' => 'usd', 'status' => 'won']]);
         $this->webhookPost($won, $this->signature($won))->assertOk()->assertJsonPath('duplicate', false);
 
         $this->assertSame('succeeded', $payment->fresh()?->status);
@@ -229,16 +239,19 @@ class StripeWebhookTest extends TestCase
         $dispute = $this->eventPayload('evt_mismatch_dispute_created', 'charge.dispute.created', [
             'id' => 'dp_mismatch', 'payment_intent' => 'pi_synthetic_billing', 'amount' => 1000, 'currency' => 'usd',
         ], 100);
+        $this->fakeStripeDisputes([['id' => 'dp_mismatch', 'charge' => 'ch_mismatch', 'payment_intent' => 'pi_synthetic_billing', 'amount' => 1000, 'currency' => 'usd', 'status' => 'needs_response']]);
         $this->webhookPost($dispute, $this->signature($dispute))->assertOk();
 
         $tooLarge = $this->eventPayload('evt_mismatch_dispute_large', 'charge.dispute.closed', [
             'id' => 'dp_mismatch', 'payment_intent' => 'pi_synthetic_billing', 'amount' => 1001, 'currency' => 'usd', 'status' => 'won',
         ], 200);
-        $this->webhookPost($tooLarge, $this->signature($tooLarge))->assertStatus(409);
+        $this->fakeStripeDisputes([['id' => 'dp_mismatch', 'charge' => 'ch_mismatch', 'payment_intent' => 'pi_synthetic_billing', 'amount' => 1001, 'currency' => 'usd', 'status' => 'won']]);
+        $this->webhookPost($tooLarge, $this->signature($tooLarge))->assertStatus(503);
         $otherCurrency = $this->eventPayload('evt_mismatch_dispute_currency', 'charge.dispute.closed', [
             'id' => 'dp_mismatch', 'payment_intent' => 'pi_synthetic_billing', 'amount' => 1000, 'currency' => 'eur', 'status' => 'won',
         ], 300);
-        $this->webhookPost($otherCurrency, $this->signature($otherCurrency))->assertStatus(409);
+        $this->fakeStripeDisputes([['id' => 'dp_mismatch', 'charge' => 'ch_mismatch', 'payment_intent' => 'pi_synthetic_billing', 'amount' => 1000, 'currency' => 'eur', 'status' => 'won']]);
+        $this->webhookPost($otherCurrency, $this->signature($otherCurrency))->assertStatus(503);
 
         $this->assertSame('disputed', $payment->fresh()?->status);
     }
@@ -372,6 +385,7 @@ class StripeWebhookTest extends TestCase
         $dispute = $this->eventPayload('evt_disputed_refund_dispute', 'charge.dispute.created', [
             'id' => 'dp_disputed_refund', 'charge' => 'ch_disputed_refund', 'payment_intent' => 'pi_synthetic_billing', 'amount' => 1000, 'currency' => 'usd',
         ], 150);
+        $this->fakeStripeDisputes([['id' => 'dp_disputed_refund', 'charge' => 'ch_disputed_refund', 'payment_intent' => 'pi_synthetic_billing', 'amount' => 1000, 'currency' => 'usd', 'status' => 'needs_response']]);
         $this->webhookPost($dispute, $this->signature($dispute))->assertOk();
         $this->assertSame('disputed', $payment->fresh()?->status);
 
@@ -402,6 +416,7 @@ class StripeWebhookTest extends TestCase
         $dispute = $this->eventPayload('evt_late_reversal_dispute', 'charge.dispute.created', [
             'id' => 'dp_late_reversal', 'charge' => 'ch_late_reversal', 'payment_intent' => 'pi_synthetic_billing', 'amount' => 1000, 'currency' => 'usd',
         ], 300);
+        $this->fakeStripeDisputes([['id' => 'dp_late_reversal', 'charge' => 'ch_late_reversal', 'payment_intent' => 'pi_synthetic_billing', 'amount' => 1000, 'currency' => 'usd', 'status' => 'needs_response']]);
         $this->webhookPost($dispute, $this->signature($dispute))->assertOk();
 
         // Stripe does not order its events: the refund failed at 200 but the
@@ -438,6 +453,7 @@ class StripeWebhookTest extends TestCase
         $dispute = $this->eventPayload('evt_repaid_dispute', 'charge.dispute.created', [
             'id' => 'dp_repaid', 'charge' => 'ch_repaid', 'payment_intent' => 'pi_synthetic_billing', 'amount' => 1000, 'currency' => 'usd',
         ], 100);
+        $this->fakeStripeDisputes([['id' => 'dp_repaid', 'charge' => 'ch_repaid', 'payment_intent' => 'pi_synthetic_billing', 'amount' => 1000, 'currency' => 'usd', 'status' => 'needs_response']]);
         $this->webhookPost($dispute, $this->signature($dispute))->assertOk();
         app(InvoiceLifecycleService::class)->applyPayment($invoice->fresh(), [
             'amount' => 1000, 'currency' => 'USD', 'method' => 'wire', 'status' => 'succeeded', 'idempotency_key' => 'repaid-during-dispute',
@@ -447,6 +463,7 @@ class StripeWebhookTest extends TestCase
         $won = $this->eventPayload('evt_repaid_dispute_won', 'charge.dispute.closed', [
             'id' => 'dp_repaid', 'charge' => 'ch_repaid', 'payment_intent' => 'pi_synthetic_billing', 'amount' => 1000, 'currency' => 'usd', 'status' => 'won',
         ], 200);
+        $this->fakeStripeDisputes([['id' => 'dp_repaid', 'charge' => 'ch_repaid', 'payment_intent' => 'pi_synthetic_billing', 'amount' => 1000, 'currency' => 'usd', 'status' => 'won']]);
         $this->webhookPost($won, $this->signature($won))->assertOk()->assertJsonPath('duplicate', false);
 
         $this->assertSame('succeeded', $payment->fresh()?->status);
@@ -904,17 +921,36 @@ class StripeWebhookTest extends TestCase
      */
     private function fakeStripeRefunds(array $refunds, ?\Closure $whileReading = null): void
     {
+        $this->stripeRefunds = $refunds;
+        $this->fakeStripeLists($whileReading);
+    }
+
+    /** @param  list<array<string, mixed>>  $disputes */
+    private function fakeStripeDisputes(array $disputes): void
+    {
+        $this->stripeDisputes = array_map(static fn (array $dispute): array => ['object' => 'dispute', 'balance_transactions' => [], ...$dispute], $disputes);
+        $this->fakeStripeLists();
+    }
+
+    private function fakeStripeLists(?\Closure $whileReading = null): void
+    {
         config(['services.stripe.secret_key' => 'sk_test_synthetic']);
-        $record = function (array $params) use ($whileReading): void {
-            $this->stripeRequests[] = $params;
-            if ($whileReading !== null) {
-                $whileReading();
+        $answer = function (string $method, string $path, array $params) use ($whileReading): array {
+            if ($method !== 'get' || ! in_array($path, ['/v1/refunds', '/v1/disputes'], true)) {
+                return [['error' => ['message' => 'Unexpected synthetic Stripe request.']], 400];
             }
+            if ($path === '/v1/refunds') {
+                $this->stripeRequests[] = $params;
+                if ($whileReading !== null) {
+                    $whileReading();
+                }
+            }
+
+            return [['object' => 'list', 'url' => $path, 'has_more' => false, 'data' => $path === '/v1/refunds' ? $this->stripeRefunds : $this->stripeDisputes], 200];
         };
-        ApiRequestor::setHttpClient(new class($refunds, $record) implements ClientInterface
+        ApiRequestor::setHttpClient(new class($answer) implements ClientInterface
         {
-            /** @param  list<array<string, mixed>>  $refunds */
-            public function __construct(private readonly array $refunds, private readonly \Closure $record) {}
+            public function __construct(private readonly \Closure $answer) {}
 
             /**
              * @param  array<int|string, mixed>  $headers
@@ -923,12 +959,9 @@ class StripeWebhookTest extends TestCase
              */
             public function request($method, $absUrl, $headers, $params, $hasFile, $apiMode = 'v1', $maxNetworkRetries = null)
             {
-                if ($method !== 'get' || ! str_ends_with((string) parse_url($absUrl, PHP_URL_PATH), '/v1/refunds')) {
-                    return [json_encode(['error' => ['message' => 'Unexpected synthetic Stripe request.']], JSON_THROW_ON_ERROR), 400, []];
-                }
-                ($this->record)($params);
+                [$body, $status] = ($this->answer)((string) $method, (string) parse_url($absUrl, PHP_URL_PATH), $params);
 
-                return [json_encode(['object' => 'list', 'url' => '/v1/refunds', 'has_more' => false, 'data' => $this->refunds], JSON_THROW_ON_ERROR), 200, []];
+                return [json_encode($body, JSON_THROW_ON_ERROR), $status, []];
             }
         });
     }
