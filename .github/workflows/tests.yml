@@ -250,7 +250,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: bherila/shared-cpanel-deployment
-          ref: 76e914604ae1e7d07d045f5412371b6634178e47
+          ref: cdd3b5eafb0555eedced6f966b9a1f5f1e68cdff
           path: .shared-cpanel-deployment
           persist-credentials: false
 
@@ -575,7 +575,7 @@ jobs:
       # pair. The action refuses an incomplete key pair rather than rotating it. SVC has a scheduler but
       # deliberately no queue worker; quiesce.sh drains only this app's in-flight Artisan processes.
       - name: Deploy to the cPanel account
-        uses: bherila/shared-cpanel-deployment@76e914604ae1e7d07d045f5412371b6634178e47 # v2.3.2
+        uses: bherila/shared-cpanel-deployment@cdd3b5eafb0555eedced6f966b9a1f5f1e68cdff # reviewed rollback recovery
         with:
           ssh-host: ${{ secrets.SSH_HOST }}
           ssh-username: ${{ secrets.SSH_USERNAME }}
