@@ -587,7 +587,8 @@ jobs:
           atomic-layout: stable-directory
           persistent-paths: storage
           retain-releases: '3'
-          failure-policy: maintenance
+          # Preserve previous-code compatibility when adding migrations; rollback keeps shared data.
+          failure-policy: rollback
           initial-live-commit: f997a89fb5ce83ea2346d1267dc6f54f11ec9f2a
           # Normally empty. Set only to the exact owner reported by a failed atomic
           # run; recovery finalizes it and proves the selected app serves before retrying.
