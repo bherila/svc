@@ -91,7 +91,9 @@ final readonly class ProcessorMovementFacts
             ProcessorMovementKind::Fee => $principalMinor === 0 && $feeMinor > 0,
             ProcessorMovementKind::FeeReversal => $principalMinor === 0 && $feeMinor < 0,
         };
-        if (! $signMatches || ! self::minor($calculatedNet) || $netMinor !== $calculatedNet) {
+        // The supplied net is already range-checked. Equality also bounds
+        // the calculated result, without a redundant type guard on an integer.
+        if (! $signMatches || $netMinor !== $calculatedNet) {
             throw self::unreadable();
         }
 
