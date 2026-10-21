@@ -153,16 +153,28 @@ final class SquareClient
     }
 
     /**
+     * The actual refund named by a balance entry, without issuing a refund.
+     * https://developer.squareup.com/reference/square/refunds-api/get-payment-refund
+     *
+     * @return array<string, mixed>
+     */
+    public function getPaymentRefund(string $refundId): array
+    {
+        return $this->send(SquareEndpoint::GetPaymentRefund, $refundId);
+    }
+
+    /**
      * The seller's payouts for one location, newest first (S7).
      *
      * @param  string|null  $beginTime  RFC 3339
      * @return array<string, mixed>
      */
-    public function listPayouts(?string $locationId, ?string $beginTime, ?string $cursor, int $limit): array
+    public function listPayouts(?string $locationId, ?string $beginTime, ?string $cursor, int $limit, ?string $endTime = null): array
     {
         return $this->send(SquareEndpoint::ListPayouts, query: [
             'location_id' => $locationId === null ? null : $this->id($locationId),
             'begin_time' => $beginTime,
+            'end_time' => $endTime,
             'sort_order' => 'DESC',
             'cursor' => $this->cursor($cursor),
             'limit' => self::limit($limit, 100),

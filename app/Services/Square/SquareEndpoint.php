@@ -23,6 +23,7 @@ enum SquareEndpoint: string
     case RetrieveOrder = 'orders.get';
     case ListPayments = 'payments.list';
     case GetPayment = 'payments.get';
+    case GetPaymentRefund = 'refunds.get';
     case ListDisputes = 'disputes.list';
     case RetrieveDispute = 'disputes.get';
     case ListPayouts = 'payouts.list';
@@ -34,7 +35,7 @@ enum SquareEndpoint: string
         return match ($this) {
             self::SearchCustomers, self::SearchInvoices => 'POST',
             self::ListLocations, self::ListCustomers, self::RetrieveCustomer, self::ListInvoices,
-            self::GetInvoice, self::RetrieveOrder, self::ListPayments, self::GetPayment, self::ListDisputes, self::RetrieveDispute,
+            self::GetInvoice, self::RetrieveOrder, self::ListPayments, self::GetPayment, self::GetPaymentRefund, self::ListDisputes, self::RetrieveDispute,
             self::ListPayouts, self::GetPayout, self::ListPayoutEntries => 'GET',
         };
     }
@@ -53,6 +54,7 @@ enum SquareEndpoint: string
             self::RetrieveOrder => '/v2/orders/{id}',
             self::ListPayments => '/v2/payments',
             self::GetPayment => '/v2/payments/{id}',
+            self::GetPaymentRefund => '/v2/refunds/{id}',
             self::ListDisputes => '/v2/disputes',
             self::RetrieveDispute => '/v2/disputes/{id}',
             self::ListPayouts => '/v2/payouts',
