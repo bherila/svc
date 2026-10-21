@@ -71,6 +71,7 @@ final class SquareClientTest extends TestCase
         $client->listPayments('2026-01-01T00:00:00Z', '2026-02-01T00:00:00Z', 'LOCFIXTURE01', false, null, 500);
         $client->getPayment('pay_fixture_1');
         $client->getDispute('dispute_fixture_1');
+        $client->listDisputes('dispute-cursor-fixture');
         $client->listPayouts('LOCFIXTURE01', '2026-01-01T00:00:00Z', 'cursor-fixture', 500);
         $client->getPayout('po_fixture_1');
         $client->listPayoutEntries('po_fixture_1', null, 500);
@@ -81,7 +82,7 @@ final class SquareClientTest extends TestCase
         }
         $pattern = '~^(?:'.str_replace('\{id\}', '[^/?]+', implode('|', $allowed)).')(?:\?.*)?$~';
         $recorded = Http::recorded();
-        $this->assertCount(14, $recorded);
+        $this->assertCount(15, $recorded);
         foreach ($recorded as [$request]) {
             /** @var Request $request */
             $this->assertStringStartsWith(self::SQUARE_BASE.'/v2/', $request->url());
@@ -104,10 +105,11 @@ final class SquareClientTest extends TestCase
         $this->assertSame(self::SQUARE_BASE.'/v2/invoices/inv%3A0-fixture1', $recorded[6][0]->url());
         $this->assertStringContainsString('sort_order=ASC', $recorded[8][0]->url());
         $this->assertStringContainsString('limit=100', $recorded[8][0]->url());
+        $this->assertSame(self::SQUARE_BASE.'/v2/disputes?cursor=dispute-cursor-fixture', $recorded[11][0]->url());
         // Payouts: newest first, a page of at most 100, from the day given.
-        $this->assertSame(self::SQUARE_BASE.'/v2/payouts?location_id=LOCFIXTURE01&begin_time=2026-01-01T00%3A00%3A00Z&sort_order=DESC&cursor=cursor-fixture&limit=100', $recorded[11][0]->url());
-        $this->assertSame(self::SQUARE_BASE.'/v2/payouts/po_fixture_1', $recorded[12][0]->url());
-        $this->assertSame(self::SQUARE_BASE.'/v2/payouts/po_fixture_1/payout-entries?sort_order=ASC&limit=100', $recorded[13][0]->url());
+        $this->assertSame(self::SQUARE_BASE.'/v2/payouts?location_id=LOCFIXTURE01&begin_time=2026-01-01T00%3A00%3A00Z&sort_order=DESC&cursor=cursor-fixture&limit=100', $recorded[12][0]->url());
+        $this->assertSame(self::SQUARE_BASE.'/v2/payouts/po_fixture_1', $recorded[13][0]->url());
+        $this->assertSame(self::SQUARE_BASE.'/v2/payouts/po_fixture_1/payout-entries?sort_order=ASC&limit=100', $recorded[14][0]->url());
     }
 
     public function test_reads_retry_429_and_5xx_with_backoff_then_succeed(): void

@@ -116,7 +116,7 @@ final class SquarePaymentSyncTest extends TestCase
         $this->squareInvoiceFailureStatus = 404;
         $before = count(Http::recorded());
         $this->artisan('svc:square:reconcile-payments', ['--apply' => true])->assertFailed();
-        $this->assertSame(3, count(Http::recorded()) - $before);
+        $this->assertSame(4, count(Http::recorded()) - $before);
     }
 
     public function test_an_unlinked_or_foreign_invoice_is_not_fetched_or_written(): void

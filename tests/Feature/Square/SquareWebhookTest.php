@@ -112,7 +112,7 @@ final class SquareWebhookTest extends TestCase
         $this->assertSame(12_345, $invoice->fresh()->balance_amount);
     }
 
-    public function test_dispute_events_refetch_the_dispute_and_move_the_payment(): void
+    public function test_dispute_events_read_the_complete_group_and_move_the_payment(): void
     {
         [$workspace, $owner, , $invoice] = $this->paymentFixture();
         app(SquarePaymentReconciler::class)->invoice($workspace, 'inv_fixture_1');
@@ -121,7 +121,7 @@ final class SquareWebhookTest extends TestCase
             'external_system_slug' => 'finance', 'external_transaction_uuid' => (string) Str::uuid(), 'allocated_amount' => 12_345, 'currency' => 'USD',
         ]);
 
-        // The notification's own state is ignored; the dispute is re-fetched.
+        // The notification's own state is ignored; the complete list is re-fetched.
         $this->squareDisputes['dispute_fixture_1'] = self::squareDispute('dispute_fixture_1', 'pay_fixture_1', 'EVIDENCE_REQUIRED', 5_000);
         $this->deliver(['event_id' => 'evt_fixture_dispute_created', 'type' => 'dispute.created', 'data' => ['type' => 'dispute', 'id' => 'dispute_fixture_1', 'object' => ['dispute' => ['state' => 'WON']]]])->assertOk();
 
@@ -132,6 +132,8 @@ final class SquareWebhookTest extends TestCase
         $this->assertSame('partially_paid', $invoice->fresh()->status);
         $this->assertSame(ReconciliationReviewReason::ProcessorDispute, $allocation->fresh()->review_reason);
         $this->assertTrue($allocation->fresh()->is_active);
+        Http::assertSent(fn ($request): bool => parse_url($request->url(), PHP_URL_PATH) === '/v2/disputes');
+        Http::assertNotSent(fn ($request): bool => str_contains($request->url(), '/v2/disputes/'));
 
         // A partial win: the disputed amount, not the whole payment, is what was contested.
         $this->squareDisputes['dispute_fixture_1']['state'] = 'WON';

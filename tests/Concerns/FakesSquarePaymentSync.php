@@ -30,6 +30,13 @@ trait FakesSquarePaymentSync
     /** @var array<string, array<string, mixed>> */
     private array $squareDisputes = [];
 
+    /** @var array<string, array<string, mixed>> */
+    private array $squareDisputePages = [];
+
+    private ?int $squareDisputeListStatus = null;
+
+    private ?\Closure $whileReadingSquareDisputes = null;
+
     private ?int $squareInvoiceFailureStatus = null;
 
     /** @return array{Workspace, User, ClientCompany, ClientInvoice} */
@@ -68,6 +75,18 @@ trait FakesSquarePaymentSync
                 $id = substr($path, strlen('/v2/payments/'));
 
                 return Http::response(['payment' => $this->squarePayments[$id] ?? null]);
+            }
+            if ($path === '/v2/disputes') {
+                if ($this->whileReadingSquareDisputes !== null) {
+                    $whileReading = $this->whileReadingSquareDisputes;
+                    $this->whileReadingSquareDisputes = null;
+                    $whileReading();
+                }
+                if ($this->squareDisputeListStatus !== null) {
+                    return Http::response(['errors' => [['category' => 'AUTHENTICATION_ERROR', 'code' => 'UNAUTHORIZED']]], $this->squareDisputeListStatus);
+                }
+
+                return Http::response($this->squareDisputePages[$request['cursor'] ?? ''] ?? ['disputes' => array_values($this->squareDisputes)]);
             }
             if (str_starts_with($path, '/v2/disputes/')) {
                 $id = substr($path, strlen('/v2/disputes/'));

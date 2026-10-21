@@ -71,38 +71,46 @@ final class SquarePaymentRecorder
     }
 
     /**
-     * Move a recorded payment into or out of dispute, as Square now reports
-     * the dispute. A dispute on a payment svc never recorded changes nothing.
+     * Apply the complete current group, not a single dispute: a newer win for
+     * one dispute cannot release money another still contests. The snapshot
+     * is applied only to the payment revision read before the provider call.
      *
-     * An open, lost or accepted dispute holds back only the amount it contests
-     * ({@see InvoiceLifecycleService::setPaymentDisputed()}); a won dispute or
-     * a closed inquiry restores the payment, as a whole win does. A refunded
-     * payment stays refunded. Reconciliation allocations are kept and flagged
-     * by the status change.
-     *
-     * Two notifications for one dispute are read from Square independently and
-     * can reach the payment in either order, so Square's own update time of
-     * the dispute last applied is kept on the payment: an older read changes
-     * nothing, and the same one again is applied again, which is harmless.
+     * @param  list<SquareDisputeFacts>  $disputes
      */
-    public function recordDispute(Workspace $workspace, SquareDisputeFacts $dispute): bool
+    public function recordDisputes(Workspace $workspace, string $paymentId, array $disputes, int $expectedVersion): void
     {
-        return DB::transaction(function () use ($workspace, $dispute): bool {
+        DB::transaction(function () use ($workspace, $paymentId, $disputes, $expectedVersion): void {
             BillingMaintenance::share($workspace->id);
             $payment = ClientInvoicePayment::query()->where('workspace_id', $workspace->id)
-                ->where('provider', 'square')->where('provider_payment_identifier', $dispute->paymentId)->tap(Locks::forUpdate())->first();
-            if ($payment === null) {
-                return false;
+                ->where('provider', 'square')->where('provider_payment_identifier', $paymentId)->tap(Locks::forUpdate())->first();
+            if ($payment === null || $payment->lock_version !== $expectedVersion) {
+                throw SquareRequestFailed::unreadable();
             }
-            if ($dispute->currency !== $payment->currency || $dispute->amount > $payment->amount) {
-                throw new DomainException('Square dispute facts do not match the recorded payment.');
+            $withheld = 0;
+            $updatedAtMs = 0;
+            foreach ($disputes as $dispute) {
+                if ($dispute->paymentId !== $paymentId || $dispute->currency !== $payment->currency || $dispute->amount > $payment->amount) {
+                    throw new DomainException('Square dispute facts do not match the recorded payment.');
+                }
+                $updatedAtMs = max($updatedAtMs, $dispute->updatedAtMs);
+                if (! $dispute->resolvedForMerchant) {
+                    if ($dispute->amount > PHP_INT_MAX - $withheld) {
+                        throw new DomainException('Square dispute amounts exceed the supported payment amount.');
+                    }
+                    $withheld += $dispute->amount;
+                }
             }
+            if ($disputes === [] || $withheld > $payment->amount) {
+                throw new DomainException('Square dispute amounts exceed the supported payment amount.');
+            }
+            // Keep the old single-dispute stale-read protection as well as
+            // revision checking. Equal maxima never prove a group is current.
             $applied = $payment->provider_dispute_updated_at_ms;
-            if ($applied !== null && $dispute->updatedAtMs < $applied) {
-                return true;
+            if ($applied !== null && $updatedAtMs < $applied) {
+                return;
             }
             $current = InvoicePaymentStatus::tryFrom((string) $payment->status);
-            if ($dispute->resolvedForMerchant) {
+            if ($withheld === 0) {
                 if ($current === InvoicePaymentStatus::Disputed) {
                     $this->invoices->setPaymentStatus($payment, InvoicePaymentStatus::Succeeded->value, $workspace);
                 }
@@ -113,16 +121,14 @@ final class SquarePaymentRecorder
                     InvoicePaymentStatus::Refunded, null => false,
                 };
                 if ($holds) {
-                    $this->invoices->setPaymentDisputed($payment, $dispute->amount, $workspace);
+                    $this->invoices->setPaymentDisputed($payment, $withheld, $workspace);
                 }
             }
             ClientInvoicePayment::query()->where('workspace_id', $workspace->id)->whereKey($payment->id)->update([
-                'provider_dispute_updated_at_ms' => $dispute->updatedAtMs,
+                'provider_dispute_updated_at_ms' => $updatedAtMs,
                 // A builder update never reaches IncrementsAgentRevision.
                 'lock_version' => DB::raw('lock_version + 1'),
             ]);
-
-            return true;
         });
     }
 }

@@ -136,6 +136,16 @@ final class SquareClient
         return $this->send(SquareEndpoint::GetPayment, $paymentId);
     }
 
+    /**
+     * All states and locations: wins must be recovered as well as new disputes.
+     *
+     * @return array<string, mixed>
+     */
+    public function listDisputes(?string $cursor): array
+    {
+        return $this->send(SquareEndpoint::ListDisputes, query: ['cursor' => $this->cursor($cursor)]);
+    }
+
     /** @return array<string, mixed> */
     public function getDispute(string $disputeId): array
     {

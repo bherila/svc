@@ -15,6 +15,13 @@ use App\Support\WorkspaceClock;
 /** Webhooks and the sweep share exactly the same synchronous refetch operation. */
 final class SquarePaymentReconciler
 {
+    /** Local bounds, not provider page-size promises; an incomplete sweep must fail. */
+    private const int DISPUTE_MAX_PAGES = 100;
+
+    private const int DISPUTE_MAX_RECORDS_PER_PAGE = 100;
+
+    private const int DISPUTE_MAX_KNOWN_PAYMENTS = 10_000;
+
     public function __construct(
         private readonly SquareClient $client,
         private readonly SquareLinkRepository $links,
@@ -125,15 +132,97 @@ final class SquarePaymentReconciler
         }
     }
 
-    /** A dispute is re-fetched by its id; its payment is matched only among recorded ones. */
+    /** A notification selects its payment, whose complete current dispute group is applied. */
     public function dispute(Workspace $workspace, string $disputeId): void
+    {
+        if (preg_match(SquareClient::ID_PATTERN, $disputeId) !== 1) {
+            throw SquareRequestFailed::unreadable();
+        }
+        $snapshot = $this->disputeSnapshot($workspace);
+        $paymentId = $snapshot->paymentByDispute[$disputeId] ?? null;
+        if ($paymentId === null) {
+            throw SquareRequestFailed::notFound();
+        }
+        if (isset($snapshot->paymentVersions[$paymentId])) {
+            $this->payments->recordDisputes($workspace, $paymentId, $snapshot->groups[$paymentId], $snapshot->paymentVersions[$paymentId]);
+        }
+    }
+
+    /** Recover notifications only after the sweep has recorded its payments. */
+    public function disputes(Workspace $workspace): void
+    {
+        $snapshot = $this->disputeSnapshot($workspace);
+        foreach ($snapshot->groups as $paymentId => $disputes) {
+            if (isset($snapshot->paymentVersions[$paymentId])) {
+                $this->payments->recordDisputes($workspace, (string) $paymentId, $disputes, $snapshot->paymentVersions[$paymentId]);
+            }
+        }
+    }
+
+    /**
+     * Square lists all states with no changed-since filter. Read and validate
+     * every bounded page before writing, so an incomplete set cannot release
+     * another dispute's hold. Local revisions are captured before HTTP: the
+     * maximum update time of distinct disputes cannot order whole snapshots.
+     *
+     * @see https://developer.squareup.com/reference/square/disputes-api/list-disputes
+     */
+    private function disputeSnapshot(Workspace $workspace): SquareDisputeSnapshot
     {
         if (! SquareConfiguration::fromConfig()->servesWorkspace($workspace)) {
             throw SquareRequestFailed::notConnected();
         }
-        $dispute = $this->client->getDispute($disputeId)['dispute'] ?? null;
-        $facts = is_array($dispute) ? SquareDisputeFacts::from($dispute, $disputeId) : throw SquareRequestFailed::unreadable();
-        $this->payments->recordDispute($workspace, $facts);
+        $known = ClientInvoicePayment::query()->where('workspace_id', $workspace->id)
+            ->where('provider', 'square')->whereNotNull('provider_payment_identifier')
+            ->orderBy('id')->limit(self::DISPUTE_MAX_KNOWN_PAYMENTS + 1)->get(['provider_payment_identifier', 'lock_version']);
+        if ($known->count() > self::DISPUTE_MAX_KNOWN_PAYMENTS) {
+            throw SquareRequestFailed::unreadable();
+        }
+        $versions = [];
+        foreach ($known as $payment) {
+            $id = $payment->provider_payment_identifier;
+            if (! is_string($id) || preg_match(SquareClient::ID_PATTERN, $id) !== 1) {
+                throw SquareRequestFailed::unreadable();
+            }
+            $versions[$id] = $payment->lock_version;
+        }
+        unset($known);
+        $groups = [];
+        $paymentByDispute = [];
+        $cursor = null;
+        $seen = [];
+        for ($page = 0; $page < self::DISPUTE_MAX_PAGES; $page++) {
+            $response = $this->client->listDisputes($cursor);
+            $records = array_key_exists('disputes', $response) ? $response['disputes'] : [];
+            if (! is_array($records) || ! array_is_list($records) || count($records) > self::DISPUTE_MAX_RECORDS_PER_PAGE) {
+                throw SquareRequestFailed::unreadable(SquareReadFailureReason::MalformedRecords);
+            }
+            foreach ($records as $record) {
+                if (! is_array($record) || ! is_string($record['id'] ?? null)) {
+                    throw SquareRequestFailed::unreadable(SquareReadFailureReason::MalformedRecords);
+                }
+                $facts = SquareDisputeFacts::from($record, $record['id']);
+                if (isset($paymentByDispute[$facts->id])) {
+                    throw SquareRequestFailed::unreadable(SquareReadFailureReason::MalformedRecords);
+                }
+                $paymentByDispute[$facts->id] = $facts->paymentId;
+                $groups[$facts->paymentId][] = $facts;
+            }
+            $next = $response['cursor'] ?? null;
+            if ($next === null || $next === '') {
+                return new SquareDisputeSnapshot($versions, $groups, $paymentByDispute);
+            }
+            if (! is_string($next) || preg_match(SquareClient::CURSOR_PATTERN, $next) !== 1) {
+                throw SquareRequestFailed::unreadable(SquareReadFailureReason::InvalidCursor);
+            }
+            if (isset($seen[$next])) {
+                throw SquareRequestFailed::unreadable(SquareReadFailureReason::RepeatedCursor);
+            }
+            $seen[$next] = true;
+            $cursor = $next;
+        }
+
+        throw SquareRequestFailed::unreadable();
     }
 
     /** @return iterable<InvoiceSquareLink> */
