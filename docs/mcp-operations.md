@@ -216,8 +216,9 @@ OAuth server metadata for up to 300 seconds before issuing any smoke token.
 The coordinator re-enables issuance in the server-held deployment environment
 and the selected release, and rebuilds its configuration cache. Verification
 then runs the normal authenticated MCP smoke and revokes its credentials.
-A timeout leaves the deployment failed under its existing maintenance policy;
-no smoke check is skipped. Late unregistered old-process grants require fresh
+A timeout fails the deployment and restores the retained prior release and scheduler
+entries through `failure-policy: rollback`; no smoke check is skipped. Shared data and
+applied migrations remain intact, so migrations must preserve prior-code compatibility. Late unregistered old-process grants require fresh
 authorization. Check the website integration and any affected clients after
 issuance is re-enabled.
 

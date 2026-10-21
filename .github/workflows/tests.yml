@@ -568,8 +568,8 @@ jobs:
       #
       # v2.1.2 builds and validates a versioned candidate before selecting it beneath a real cPanel
       # application directory, keeps the previous release, and records the exact selected commit.
-      # A migration or live OAuth/MCP verification failure leaves the selected release in maintenance
-      # for an explicit operator decision.
+      # A migration or live OAuth/MCP verification failure restores the retained prior release
+      # and its scheduler entries; migrations must remain compatible with prior code.
       #
       # All of storage is shared across releases, including authoritative svc-blobs and the OAuth key
       # pair. The action refuses an incomplete key pair rather than rotating it. SVC has a scheduler but
@@ -587,7 +587,8 @@ jobs:
           atomic-layout: stable-directory
           persistent-paths: storage
           retain-releases: '3'
-          failure-policy: maintenance
+          # Preserve previous-code compatibility when adding migrations; rollback keeps shared data.
+          failure-policy: rollback
           initial-live-commit: f997a89fb5ce83ea2346d1267dc6f54f11ec9f2a
           # Normally empty. Set only to the exact owner reported by a failed atomic
           # run; recovery finalizes it and proves the selected app serves before retrying.
