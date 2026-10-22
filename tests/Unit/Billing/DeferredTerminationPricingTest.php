@@ -14,6 +14,7 @@ use App\Support\Billing\FlatHourlyPricing;
 use Carbon\CarbonImmutable;
 use DomainException;
 use InvalidArgumentException;
+use PHPUnit\Framework\Attributes\CoversClass;
 use RuntimeException;
 use Tests\TestCase;
 
@@ -23,6 +24,15 @@ use Tests\TestCase;
  * The invoice composer writes its lines from this and the deferred backlog
  * quotes it, so the rules are pinned once, here.
  */
+#[CoversClass(ClientAgreement::class)]
+#[CoversClass(ClientTimeEntry::class)]
+#[CoversClass(ClosingBalance::class)]
+#[CoversClass(MonthSummary::class)]
+#[CoversClass(OpeningBalance::class)]
+#[CoversClass(DeferredBacklogReadService::class)]
+#[CoversClass(MoneyService::class)]
+#[CoversClass(DeferredTerminationPricing::class)]
+#[CoversClass(FlatHourlyPricing::class)]
 final class DeferredTerminationPricingTest extends TestCase
 {
     public function test_agreement_rate_work_is_priced_together_at_the_agreement_rate(): void

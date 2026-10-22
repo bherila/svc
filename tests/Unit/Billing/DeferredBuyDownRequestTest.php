@@ -4,9 +4,11 @@ namespace Tests\Unit\Billing;
 
 use App\Support\Billing\DeferredBuyDownRequest;
 use Illuminate\Validation\ValidationException;
+use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
+#[CoversClass(DeferredBuyDownRequest::class)]
 final class DeferredBuyDownRequestTest extends TestCase
 {
     /** @return iterable<string, array{array<string, mixed>}> */

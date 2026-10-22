@@ -8,6 +8,7 @@ use App\Models\ClientTimeEntry;
 use Carbon\CarbonImmutable;
 use DateTimeImmutable;
 use InvalidArgumentException;
+use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
@@ -18,6 +19,9 @@ use Tests\TestCase;
  * the conversion both ways is pinned here as well as through the feature
  * tests that store and query real rows.
  */
+#[CoversClass(DateOnly::class)]
+#[CoversClass(ClientInvoice::class)]
+#[CoversClass(ClientTimeEntry::class)]
 final class DateOnlyTest extends TestCase
 {
     #[DataProvider('writes')]

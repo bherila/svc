@@ -4,6 +4,7 @@ namespace Tests\Unit\Billing;
 
 use App\Casts\EmailAddressList;
 use App\Models\ClientInvoiceEmailDelivery;
+use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
@@ -16,6 +17,8 @@ use Tests\TestCase;
  * TypeError that blanked the entire page, taking the well-formed deliveries
  * above and below it with it. Every case below is a shape that did that.
  */
+#[CoversClass(EmailAddressList::class)]
+#[CoversClass(ClientInvoiceEmailDelivery::class)]
 final class EmailAddressListCastTest extends TestCase
 {
     /**
