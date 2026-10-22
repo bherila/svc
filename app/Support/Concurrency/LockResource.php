@@ -74,6 +74,11 @@ enum LockResource: string
     case ClientInvoiceLineTimeEntry = 'client_invoice_line_time_entries';
     case ClientTask = 'client_tasks';
 
+    // Collaboration locks its tenant access boundary, then the topic or task
+    // parent, then a comment. Private file publication follows its parent.
+    case ClientCollaborationTopic = 'client_collaboration_topics';
+    case ClientComment = 'client_comments';
+
     // Recurrence locks its schedule before inserting draft expense rows.
     // Invoice allocation locks expenses after invoice/time/task composition;
     // regeneration retains claims until that phase, before company credits.

@@ -163,3 +163,4 @@ require __DIR__.'/expenses.php';
 require __DIR__.'/expenses.php';
 require __DIR__.'/billing.php';
 require __DIR__.'/files.php';
+require __DIR__.'/collaboration.php';
