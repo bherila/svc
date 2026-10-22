@@ -156,6 +156,15 @@ without errors; Pint, TypeScript and 25 focused frontend tests passed. OpenAPI,
 MCP snapshots and generated TypeScript regenerated without drift. These remain
 focused integration results, not a full-suite or mutation result.
 
+The early hosted run exposed three legacy integration checks. The correction
+preserves malformed native agreement terms while withholding every file and
+upload capability, prunes Operations to its server-owned billing parent types,
+and updates the receipt lock assertion to include current authority facts. The
+affected SQLite selection passed 118 tests / 2,993 assertions; the added policy
+allowlist test passed 1 test / 9 assertions. The five exact regressions passed
+on MariaDB with 110 assertions. Operations now proves equal query counts for
+one and four companies, including the two shared-reader authority reads.
+
 Before foundation integration, one local production-asset build and the synthetic
 browser harness passed 44 page states at
 390, 820, 1440 and 1920 pixels. Each native file family navigated older and newer

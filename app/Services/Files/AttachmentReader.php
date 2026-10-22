@@ -60,8 +60,17 @@ final class AttachmentReader
      */
     public function query(User|AgentPrincipal $actor, Workspace $workspace, AttachmentAudience $audience, ?string $type = null): Builder
     {
+        return $this->queryForTypes($actor, $workspace, $audience, $type === null ? AttachmentRecordResolver::readableTypes() : [$type]);
+    }
+
+    /** Construct only the parent policies this surface actually presents.
+     * @param  list<string>  $types
+     * @return Builder<ClientAttachment>
+     */
+    public function queryForTypes(User|AgentPrincipal $actor, Workspace $workspace, AttachmentAudience $audience, array $types): Builder
+    {
         $this->assertPreviewAuthority($actor, $workspace, $audience);
-        $types = $type === null ? AttachmentRecordResolver::readableTypes() : [$type];
+        abort_unless(array_diff($types, AttachmentRecordResolver::readableTypes()) === [], 422);
         $viewable = in_array($audience, [AttachmentAudience::Portal, AttachmentAudience::PortalPreview], true) ? [] : $this->projects->viewableProjectIds($actor, $workspace);
         $staff = ! in_array($audience, [AttachmentAudience::Portal, AttachmentAudience::PortalPreview], true) && $this->projects->workspaceRole($actor, $workspace) !== null;
 

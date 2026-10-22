@@ -31,6 +31,7 @@ use App\Services\Billing\InvoiceCorrectionService;
 use App\Services\Billing\InvoiceEmailService;
 use App\Services\Clients\CompanyProfile;
 use App\Services\Files\AttachmentAudience;
+use App\Services\Files\AttachmentFilePage;
 use App\Services\Finance\FinanceReconciliationBadges;
 use App\Services\Square\Mirror\SquareInvoicePage;
 use App\Services\Square\SquareLinkRepository;
@@ -493,8 +494,15 @@ class ClientDirectoryController extends Controller
         // assemble - and every endpoint behind one authorizes again.
         $manages = Gate::forUser($user)->allows('manage', $workspace);
         $attachmentBase = "/workspaces/{$workspace->public_id}/attachments";
-        $filePage = AttachmentListing::page($workspace, 'agreement', $clientAgreement->public_id, $manages, $user, AttachmentAudience::Native,
-            $request->integer('files_page', 1), route('clients.agreement', [$workspace, $clientCompany, $clientAgreement], absolute: false));
+        // Legacy malformed project references remain inspectable as terms,
+        // without resolving another company's name or authorizing its files.
+        $validFileParent = $clientAgreement->client_project_id === null || $projectNames->has((int) $clientAgreement->client_project_id)
+            || ClientProject::query()->where('workspace_id', $workspace->id)->where('client_company_id', $clientCompany->id)
+                ->whereKey($clientAgreement->client_project_id)->exists();
+        $filePage = $validFileParent
+            ? AttachmentListing::page($workspace, 'agreement', $clientAgreement->public_id, $manages, $user, AttachmentAudience::Native,
+                $request->integer('files_page', 1), route('clients.agreement', [$workspace, $clientCompany, $clientAgreement], absolute: false))
+            : new AttachmentFilePage([], null, null);
 
         return Inertia::render('clients/agreement', [
             'company' => [
@@ -514,7 +522,7 @@ class ClientDirectoryController extends Controller
                     'preview' => route('agent-api.v1.agreements.deferred-backlog.preview', [$workspace, $clientAgreement], absolute: false),
                     'create' => route('agent-api.v1.agreements.deferred-backlog.create', [$workspace, $clientAgreement], absolute: false),
                 ] : null,
-                'upload_file' => $manages
+                'upload_file' => $manages && $validFileParent
                     ? "{$attachmentBase}/agreement/{$clientAgreement->public_id}"
                     : null,
             ],

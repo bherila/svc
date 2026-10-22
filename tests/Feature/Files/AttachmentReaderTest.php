@@ -33,11 +33,12 @@ use Inertia\Testing\AssertableInertia as Assert;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\Concerns\BuildsSyntheticExpenses;
+use Tests\Concerns\CallsMcp;
 use Tests\TestCase;
 
 final class AttachmentReaderTest extends TestCase
 {
-    use BuildsSyntheticExpenses, RefreshDatabase;
+    use BuildsSyntheticExpenses, CallsMcp, RefreshDatabase;
 
     private Workspace $workspace;
 
@@ -108,6 +109,23 @@ final class AttachmentReaderTest extends TestCase
         $this->assertFalse($reader->canView($this->client, $this->workspace, $file, AttachmentAudience::Portal));
     }
 
+    public function test_selected_parent_policies_are_an_allowlist_and_empty_never_means_all(): void
+    {
+        $this->attach();
+        $reader = app(AttachmentReader::class);
+        $this->assertSame(1, $reader->queryForTypes($this->owner, $this->workspace, AttachmentAudience::Native, ['project'])->count());
+        $this->assertSame(0, $reader->queryForTypes($this->owner, $this->workspace, AttachmentAudience::Native, [])->count());
+        $this->assertSame(0, $reader->queryForTypes($this->owner, $this->workspace, AttachmentAudience::Native, ['agreement'])->count());
+        foreach ([['unknown'], ['project', 'unknown']] as $types) {
+            try {
+                $reader->queryForTypes($this->owner, $this->workspace, AttachmentAudience::Native, $types)->get();
+                $this->fail('An unsupported parent policy must not broaden the query.');
+            } catch (HttpException $exception) {
+                $this->assertSame(422, $exception->getStatusCode());
+            }
+        }
+    }
+
     public function test_private_rows_are_filtered_before_the_listing_limit_and_queries_are_bounded(): void
     {
         $file = $this->attach();
@@ -146,6 +164,29 @@ final class AttachmentReaderTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page->has('files', 1)->where('files.0.filename', 'synthetic-shared-agreement.txt')->where('files.0.delete_href', null));
         $this->assertStringNotContainsString('synthetic-private-only.txt', $response->getContent());
         $this->actingAs($this->owner)->get(route('svc.files.download', [$this->workspace, $files[1]->public_id]))->assertOk();
+    }
+
+    public function test_native_agreement_with_a_foreign_company_project_keeps_terms_but_no_file_authority(): void
+    {
+        $sibling = $this->syntheticCompany($this->workspace, 'file-lineage-sibling');
+        $foreignProject = $this->syntheticProject($sibling, 'file-lineage-sibling');
+        $valid = ClientAgreement::query()->create(['workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id,
+            'client_project_id' => $this->project->id, 'title' => 'Synthetic valid file terms', 'starts_on' => '2026-10-01', 'currency' => 'USD']);
+        $malformed = ClientAgreement::query()->create(['workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id,
+            'client_project_id' => $foreignProject->id, 'title' => 'Synthetic malformed file terms', 'starts_on' => '2026-10-01', 'currency' => 'USD']);
+        $storage = app(AttachmentStorageService::class);
+        $visible = $storage->store($this->workspace, $valid, UploadedFile::fake()->createWithContent('synthetic-valid-lineage.txt', 'Synthetic valid bytes'), $this->owner);
+        $hidden = $storage->store($this->workspace, $malformed, UploadedFile::fake()->createWithContent('synthetic-malformed-lineage.txt', 'Synthetic malformed bytes'), $this->owner);
+        $this->actingAs($this->owner)->get(route('clients.agreement', [$this->workspace, $this->company, $valid]))->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->has('files', 1)->where('files.0.id', $visible->public_id)
+                ->where('actions.upload_file', route('svc.files.store', [$this->workspace, 'agreement', $valid->public_id], absolute: false)));
+        $response = $this->get(route('clients.agreement', [$this->workspace, $this->company, $malformed]))->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->where('agreement.project', null)->has('files', 0)
+                ->where('files_next_href', null)->where('files_previous_href', null)->where('actions.upload_file', null));
+        $this->assertStringNotContainsString('synthetic-malformed-lineage.txt', $response->getContent());
+        $this->get(route('svc.files.download', [$this->workspace, $hidden->public_id]))->assertNotFound();
+        $this->actingAsMcp($this->owner, ['files:read']);
+        $this->getJson('/api/v1/workspaces/'.$this->workspace->public_id.'/attachments/'.$hidden->public_id)->assertNotFound();
     }
 
     public function test_native_portal_preview_without_grants_keeps_client_safe_flags_and_no_management(): void

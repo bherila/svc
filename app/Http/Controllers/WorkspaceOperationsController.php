@@ -138,7 +138,7 @@ class WorkspaceOperationsController extends Controller
         abort_unless($filePage >= 1 && $filePage <= 1_000_000, 422);
 
         if (collect($attachmentRecordIds)->contains(fn (array $recordIds): bool => $recordIds !== [])) {
-            $fileRows = app(AttachmentReader::class)->query($actor, $workspace, AttachmentAudience::Native)
+            $fileRows = app(AttachmentReader::class)->queryForTypes($actor, $workspace, AttachmentAudience::Native, ['proposal', 'agreement', 'invoice'])
                 ->select(['public_id', 'record_type', 'record_public_id', 'original_filename', 'media_type', 'bytes'])
                 ->where('workspace_id', $workspace->id)
                 ->where('lifecycle_state', ClientAttachment::STATE_AVAILABLE)
