@@ -27,6 +27,29 @@ final class BusinessContactParityTest extends TestCase
         config(['agent_api.writes_enabled' => true, 'agent_api.client_writes_enabled' => true]);
     }
 
+    public function test_mcp_preserves_maximum_unicode_contact_notes_on_create_update_and_read(): void
+    {
+        [$workspace, $owner, $company] = $this->fixture();
+        $this->actingAsMcp($owner, ['mcp:use', 'identity:read', 'clients:read', 'clients:write']);
+        $session = $this->initialize();
+        $identity = ['workspace_id' => $workspace->public_id, 'client_id' => $company->public_id];
+        $notes = str_repeat('🚀', 20000);
+        $created = $this->callTool($session, 'clients.contacts.create', [...$identity,
+            'idempotency_key' => 'synthetic-unicode-contact', 'first_name' => 'Synthetic Unicode', 'notes' => $notes]);
+        $this->assertFalse($created['result']['isError'] ?? true, json_encode($created));
+        $contact = $created['result']['structuredContent']['data'];
+        $this->assertSame($notes, $contact['notes']);
+        $replacement = str_repeat('🧭', 20000);
+        $updated = $this->callTool($session, 'clients.contacts.update', [...$identity,
+            'contact_id' => $contact['id'], 'idempotency_key' => 'synthetic-unicode-contact-update',
+            'expected_version' => $contact['version'], 'notes' => $replacement]);
+        $this->assertFalse($updated['result']['isError'] ?? true, json_encode($updated));
+        $this->assertSame($replacement, $updated['result']['structuredContent']['data']['notes']);
+        $listed = $this->callTool($session, 'clients.contacts.list', [...$identity, 'limit' => 1]);
+        $this->assertFalse($listed['result']['isError'] ?? true, json_encode($listed));
+        $this->assertSame($replacement, $listed['result']['structuredContent']['data'][0]['notes']);
+    }
+
     public function test_rest_and_mcp_share_contact_lifecycle_receipts_and_preserve_unedited_fields(): void
     {
         Mail::fake();
