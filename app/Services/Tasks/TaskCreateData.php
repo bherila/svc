@@ -23,7 +23,7 @@ final readonly class TaskCreateData
         $data = Validator::make($attributes, TaskInputRules::create())->validate();
         TaskPatchData::assertDateOrder($data['starts_on'] ?? null, $data['due_on'] ?? null);
 
-        return new self($data['title'], $data['description'] ?? null, (bool) ($data['is_visible_to_client'] ?? false),
+        return new self($data['title'], $data['description'] ?? null, $data['is_visible_to_client'] ?? false,
             $data['starts_on'] ?? null, $data['due_on'] ?? null, $data['assignee_ids'] ?? []);
     }
 

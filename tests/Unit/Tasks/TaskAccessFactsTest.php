@@ -29,9 +29,17 @@ final class TaskAccessFactsTest extends TestCase
     public function test_access_and_responsibility_follow_current_internal_memberships(?string $staffRole, ?ProjectRole $projectRole, bool $manage, bool $assign): void
     {
         $facts = new TaskAccessFacts(['synthetic-account' => 17], $staffRole === null ? [] : [17 => $staffRole], $projectRole === null ? [] : [17 => $projectRole]);
+        $this->assertFalse($facts->portalMember);
         $this->assertSame($manage, $facts->canManage(17));
         $this->assertSame($assign, $facts->canAssign('synthetic-account'));
         $this->assertFalse($facts->canManage(99));
         $this->assertFalse($facts->canAssign('unknown-account'));
+    }
+
+    public function test_portal_membership_is_an_independent_current_fact_for_agent_origin_checks(): void
+    {
+        $facts = new TaskAccessFacts(['synthetic-account' => 17], [17 => 'owner'], [], portalMember: true);
+        $this->assertTrue($facts->portalMember);
+        $this->assertTrue($facts->canManage(17), 'Trusted internal staff retain their native role; Agent origin separately refuses the Portal fact.');
     }
 }
