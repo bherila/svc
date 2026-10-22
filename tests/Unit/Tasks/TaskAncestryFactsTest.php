@@ -15,9 +15,54 @@ final class TaskAncestryFactsTest extends TestCase
 {
     public function test_invalid_facts_carry_only_generic_disclosure_state(): void
     {
-        $facts = TaskAncestryFacts::classify(1, [], []);
-        $this->assertSame('invalid', $facts->organizationState());
-        $this->assertSame(['validOrganization' => false, 'visibleToClient' => false], get_object_vars($facts));
+        foreach ([TaskAncestryFacts::invalid(), TaskAncestryFacts::classify(1, [], [])] as $facts) {
+            $this->assertSame('invalid', $facts->organizationState());
+            $this->assertSame(['validOrganization' => false, 'visibleToClient' => false], get_object_vars($facts));
+        }
+    }
+
+    public function test_a_task_without_a_list_is_a_valid_root_whether_public_or_private(): void
+    {
+        foreach ([true, false] as $visible) {
+            $row = ['id' => 1, 'project_id' => 4, 'parent_id' => null, 'list_id' => null, 'visible' => $visible, 'project_visible' => true];
+            $facts = TaskAncestryFacts::classify(1, [1 => $row], []);
+            $this->assertSame('valid', $facts->organizationState());
+            $this->assertSame(['validOrganization' => true, 'visibleToClient' => $visible], get_object_vars($facts));
+        }
+    }
+
+    public function test_eight_parent_edges_are_valid_but_a_ninth_edge_fails_closed(): void
+    {
+        foreach ([8 => true, 9 => false] as $edges => $valid) {
+            $tasks = [];
+            for ($id = 1; $id <= $edges + 1; $id++) {
+                $tasks[$id] = ['id' => $id, 'project_id' => 4, 'parent_id' => $id <= $edges ? $id + 1 : null, 'list_id' => null, 'visible' => true, 'project_visible' => true];
+            }
+            $facts = TaskAncestryFacts::classify(1, $tasks, []);
+            $this->assertSame($valid ? 'valid' : 'invalid', $facts->organizationState());
+            $this->assertSame(['validOrganization' => $valid, 'visibleToClient' => $valid], get_object_vars($facts));
+        }
+    }
+
+    public static function rootLists(): iterable
+    {
+        yield 'public task in public list' => [true, ['project_id' => 4, 'visible' => true, 'deleted' => false], true, true];
+        yield 'private task in public list' => [false, ['project_id' => 4, 'visible' => true, 'deleted' => false], true, false];
+        yield 'public task in private list' => [true, ['project_id' => 4, 'visible' => false, 'deleted' => false], true, false];
+        yield 'private task in private list' => [false, ['project_id' => 4, 'visible' => false, 'deleted' => false], true, false];
+        yield 'deleted list' => [true, ['project_id' => 4, 'visible' => true, 'deleted' => true], false, false];
+        yield 'missing list' => [true, null, false, false];
+        yield 'foreign project list' => [true, ['project_id' => 5, 'visible' => true, 'deleted' => false], false, false];
+    }
+
+    #[DataProvider('rootLists')]
+    public function test_descendants_inherit_root_list_disclosure_without_foreign_metadata(bool $taskVisible, ?array $list, bool $valid, bool $visible): void
+    {
+        $child = ['id' => 1, 'project_id' => 4, 'parent_id' => 2, 'list_id' => null, 'visible' => true, 'project_visible' => true];
+        $root = ['id' => 2, 'project_id' => 4, 'parent_id' => null, 'list_id' => 3, 'visible' => $taskVisible, 'project_visible' => true];
+        $facts = TaskAncestryFacts::classify(1, [1 => $child, 2 => $root], $list === null ? [] : [3 => $list]);
+        $this->assertSame($valid ? 'valid' : 'invalid', $facts->organizationState());
+        $this->assertSame(['validOrganization' => $valid, 'visibleToClient' => $visible], get_object_vars($facts));
     }
 
     public function test_an_incomplete_or_cyclic_chain_never_becomes_a_public_root(): void
@@ -46,6 +91,7 @@ final class TaskAncestryFactsTest extends TestCase
     {
         $this->assertSame(range(1, 100), TaskAncestryRepository::boundedIds(range(1, 100)));
         $this->assertSame([3, 1], TaskAncestryRepository::boundedIds([3, 1, 3]));
+        $this->assertSame([3, 1, 7], TaskAncestryRepository::boundedIds([3, 3, 1, 1, 7]));
         $this->assertSame([], TaskAncestryRepository::boundedIds([]));
     }
 
