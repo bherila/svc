@@ -15,9 +15,17 @@ native operator routes and CLI use their current staff permissions.
 
 Transport ceilings remain bounded: MCP request 1 MiB, capability result 2 MiB,
 and complete response 4 MiB. REST/MCP comment lists default to one row, with a
-configurable limit of 1–30; native UI pages retain 30. Private CLI JSON input is
+configurable maximum of 1–30. Agent REST/MCP and native CLI comment lists use
+opaque ascending cursors bound to workspace, company, parent, actor and audience.
+Serialized byte bounds can shorten a page; clients follow `meta.next_cursor` or
+`next_href` until null, with `previous_href` always null. Offset/focus parameters
+are reserved for native thread pages, which retain 30 rows and focused links. Private CLI JSON input is
 limited to 1 MiB. Focused checks cover a full 50,000-character Unicode body and
 current locked authority under real MariaDB repeatable-read snapshots.
+
+For CLI continuation, `svc:collaboration comments.list` takes the parent UUID in
+private JSON `id`, its `parent_type`, and optional `payload.limit` and
+`payload.cursor`. It returns the same opaque `meta.next_cursor` as REST/MCP.
 
 This checkpoint does not complete the later task graph or attachment-sharing
 slices below. Add their shared readers and parent guards before their writers;

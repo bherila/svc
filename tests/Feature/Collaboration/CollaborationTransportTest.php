@@ -4,10 +4,12 @@ namespace Tests\Feature\Collaboration;
 
 use App\Models\AgentMutationReceipt;
 use App\Models\ClientCollaborationTopic;
+use App\Models\ClientComment;
 use App\Models\ClientCompany;
 use App\Models\ClientCompanyActivity;
 use App\Models\ClientCompanyMembership;
 use App\Models\ClientProject;
+use App\Models\ClientTask;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Collaboration\CollaborationAction;
@@ -15,9 +17,11 @@ use App\Services\Collaboration\CollaborationAudience;
 use App\Services\Collaboration\TopicDraft;
 use App\Support\AgentApi\AgentApiScopes;
 use App\Support\AgentApi\AgentApiVersion;
+use App\Support\AgentApi\AgentPageBudget;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Concerns\CallsMcp;
 use Tests\TestCase;
 
@@ -138,6 +142,131 @@ final class CollaborationTransportTest extends TestCase
         $this->assertSame(1, AgentMutationReceipt::query()->where('workspace_id', $workspace->id)->where('operation', 'collaboration.topics.create')->count());
     }
 
+    public function test_comment_cursors_bind_context_and_recheck_portal_flags_and_tombstones_before_limits(): void
+    {
+        [$actor, $workspace, $company, $project] = $this->fixture();
+        $topic = $this->topic($actor, $workspace, $company, $project, true);
+        $comments = [];
+        for ($index = 0; $index < 4; $index++) {
+            $comments[] = ClientComment::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id,
+                'client_project_id' => $project->id, 'client_collaboration_topic_id' => $topic->id,
+                'body' => 'Synthetic scoped reply '.$index, 'author_user_id' => $actor->id, 'author_name' => $actor->name, 'is_visible_to_client' => $index !== 0]);
+        }
+        $url = $this->base($workspace, $company).'/comments/topic/'.$topic->public_id;
+        $this->actingAsMcp($actor, ['collaboration:read']);
+        $cursor = $this->getJson($url)->assertOk()->json('meta.next_cursor');
+        $this->assertIsString($cursor);
+        $tail = '?cursor='.rawurlencode($cursor);
+        $other = $this->topic($actor, $workspace, $company, $project, true);
+        $this->getJson($this->base($workspace, $company).'/comments/topic/'.$other->public_id.$tail)->assertUnprocessable();
+        $task = new ClientTask;
+        $task->forceFill(['workspace_id' => $workspace->id, 'client_project_id' => $project->id,
+            'public_id' => $topic->public_id, 'title' => 'Synthetic same UUID different parent kind'])->save();
+        $this->getJson($this->base($workspace, $company).'/comments/task/'.$task->public_id.$tail)->assertUnprocessable();
+        $otherCompany = ClientCompany::query()->create(['workspace_id' => $workspace->id, 'name' => 'Synthetic other cursor company', 'slug' => 'synthetic-other-cursor-company']);
+        $otherProject = ClientProject::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $otherCompany->id, 'name' => 'Synthetic other cursor project']);
+        $otherTopic = $this->topic($actor, $workspace, $otherCompany, $otherProject, true);
+        $this->getJson($this->base($workspace, $otherCompany).'/comments/topic/'.$otherTopic->public_id.$tail)->assertUnprocessable();
+        $otherWorkspace = Workspace::query()->create(['name' => 'Synthetic other cursor workspace', 'slug' => 'synthetic-other-cursor-workspace']);
+        $otherWorkspace->memberships()->create(['user_id' => $actor->id, 'role' => 'owner']);
+        $foreignCompany = ClientCompany::query()->create(['workspace_id' => $otherWorkspace->id, 'name' => 'Synthetic foreign cursor company', 'slug' => 'synthetic-foreign-cursor-company']);
+        $foreignProject = ClientProject::query()->create(['workspace_id' => $otherWorkspace->id, 'client_company_id' => $foreignCompany->id, 'name' => 'Synthetic foreign cursor project']);
+        $foreignTopic = $this->topic($actor, $otherWorkspace, $foreignCompany, $foreignProject, true);
+        $this->getJson($this->base($otherWorkspace, $foreignCompany).'/comments/topic/'.$foreignTopic->public_id.$tail)->assertUnprocessable();
+        $admin = User::factory()->create(['email' => 'synthetic-cursor-admin@example.test']);
+        $workspace->memberships()->create(['user_id' => $admin->id, 'role' => 'admin']);
+        $this->actingAsMcp($admin, ['collaboration:read']);
+        $this->getJson($url.$tail)->assertUnprocessable();
+        $this->actingAsMcp($actor, ['collaboration:read']);
+        ClientCompanyMembership::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id,
+            'user_id' => $actor->id, 'role' => 'client', 'access_scope' => 'company']);
+        $this->getJson($url.$tail)->assertUnprocessable();
+        $page = $this->getJson($url)->assertOk()->assertJsonPath('data.0.id', $comments[1]->public_id)->json();
+        $comments[2]->forceFill(['deleted_at' => now()])->save();
+        $this->getJson($page['next_href'])->assertOk()->assertJsonPath('data.0.id', $comments[2]->public_id)
+            ->assertJsonPath('data.0.deleted', true)->assertJsonPath('data.0.body', null);
+        $project->update(['is_visible_to_client' => false]);
+        $this->getJson($page['next_href'])->assertNotFound();
+    }
+
+    public function test_agent_topic_get_does_not_fetch_unused_comment_bodies(): void
+    {
+        [$actor, $workspace, $company, $project] = $this->fixture();
+        $topic = $this->topic($actor, $workspace, $company, $project, true);
+        $this->actingAsMcp($actor, ['collaboration:read']);
+        DB::enableQueryLog();
+        DB::flushQueryLog();
+        try {
+            $this->getJson($this->base($workspace, $company).'/topics/'.$topic->public_id)->assertOk();
+            $queries = DB::getQueryLog();
+        } finally {
+            DB::disableQueryLog();
+        }
+        $this->assertSame([], array_values(array_filter($queries, fn (array $query): bool => str_contains($query['query'], 'client_comments'))));
+    }
+
+    /** @return list<array{string}> */
+    public static function largeCommentBodies(): array
+    {
+        return [['unicode'], ['backslashes']];
+    }
+
+    #[DataProvider('largeCommentBodies')]
+    public function test_maximum_comment_limit_follows_byte_bounded_cursors_without_losing_full_bodies(string $kind): void
+    {
+        [$actor, $workspace, $company, $project] = $this->fixture();
+        $topic = app(CollaborationAction::class)->createTopic($actor, $workspace, $company,
+            TopicDraft::fromInput(['kind' => 'discussion', 'title' => 'Synthetic bounded comments', 'body' => 'Synthetic parent',
+                'project_id' => $project->public_id, 'is_visible_to_client' => true]), CollaborationAudience::Internal);
+        $body = str_repeat($kind === 'unicode' ? '🧪' : chr(92), 50000);
+        $this->assertSame(50000, mb_strlen($body));
+        $ids = [];
+        for ($index = 0; $index < 13; $index++) {
+            $comment = ClientComment::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id,
+                'client_project_id' => $project->id, 'client_collaboration_topic_id' => $topic->id,
+                'body' => $body, 'author_user_id' => $actor->id, 'author_name' => 'Synthetic bounded author', 'is_visible_to_client' => true]);
+            $ids[] = $comment->public_id;
+        }
+        $this->actingAsMcp($actor, ['mcp:use', 'collaboration:read']);
+        $session = $this->initialize();
+        $arguments = ['workspace_id' => $workspace->public_id, 'client_id' => $company->public_id,
+            'parent_type' => 'topic', 'parent_id' => $topic->public_id, 'limit' => 30];
+        $seen = [];
+        $cursor = null;
+        $pages = 0;
+        do {
+            $response = $this->mcp(['jsonrpc' => '2.0', 'id' => 100, 'method' => 'tools/call', 'params' => ['name' => 'collaboration.comments.list',
+                'arguments' => [...$arguments, ...($cursor === null ? [] : ['cursor' => $cursor])]]], $session)->assertOk();
+            $result = $response->json('result');
+            $this->assertFalse($result['isError'] ?? false, json_encode($result, JSON_THROW_ON_ERROR));
+            $page = $result['structuredContent'];
+            $this->assertNotEmpty($page['data']);
+            $this->assertLessThanOrEqual(AgentPageBudget::dataBytes(), strlen(json_encode($page['data'], JSON_THROW_ON_ERROR)));
+            $this->assertLessThanOrEqual(config('agent_api.mcp_max_result_bytes'), strlen(json_encode($result, JSON_THROW_ON_ERROR)));
+            $wire = $response->getContent();
+            $this->assertIsString($wire);
+            $this->assertLessThanOrEqual(config('agent_api.mcp_max_response_body_bytes'), strlen($wire));
+            foreach ($page['data'] as $row) {
+                $this->assertSame($body, $row['body']);
+                $seen[] = $row['id'];
+            }
+            $this->assertNull($page['previous_href']);
+            $cursor = $page['meta']['next_cursor'];
+            $this->assertSame($cursor === null, $page['next_href'] === null);
+            if ($cursor !== null) {
+                $this->assertStringContainsString('cursor=', $page['next_href']);
+            }
+            $this->assertLessThan(20, ++$pages);
+        } while ($cursor !== null);
+        $this->assertGreaterThan(1, $pages);
+        $this->assertSame($ids, $seen);
+
+        $url = $this->base($workspace, $company).'/comments/topic/'.$topic->public_id;
+        $this->getJson($url.'?cursor='.rawurlencode(base64_encode('1')))->assertUnprocessable();
+        $this->getJson($url.'?comments_page=2')->assertUnprocessable();
+        $this->getJson($url.'?comment='.$ids[0])->assertUnprocessable();
+    }
+
     public function test_mcp_all_topic_and_comment_operations_share_the_native_contract(): void
     {
         [$actor, $workspace, $company, $project] = $this->fixture();
@@ -212,7 +341,13 @@ final class CollaborationTransportTest extends TestCase
             $this->assertSame($topic['id'], $call('topics.get', ['id' => $topic['id']])['data']['id']);
             $topic = $call('topics.update', ['id' => $topic['id'], 'idempotency_key' => 'synthetic-cli-topic-update', 'payload' => ['title' => 'Synthetic updated CLI discussion', 'expected_version' => $topic['version']]])['data'];
             $comment = $call('comments.create', ['id' => $topic['id'], 'parent_type' => 'topic', 'idempotency_key' => 'synthetic-cli-comment', 'payload' => ['body' => 'Synthetic CLI reply', 'expected_version' => $topic['version']]])['data'];
-            $this->assertSame($comment['id'], $call('comments.list', ['id' => $topic['id'], 'parent_type' => 'topic'])['data'][0]['id']);
+            $second = $call('comments.create', ['id' => $topic['id'], 'parent_type' => 'topic', 'idempotency_key' => 'synthetic-cli-second-comment', 'payload' => ['body' => 'Synthetic CLI second reply', 'expected_version' => $topic['version']]])['data'];
+            $page = $call('comments.list', ['id' => $topic['id'], 'parent_type' => 'topic']);
+            $this->assertSame($comment['id'], $page['data'][0]['id']);
+            $this->assertNotNull($page['meta']['next_cursor']);
+            $next = $call('comments.list', ['id' => $topic['id'], 'parent_type' => 'topic', 'payload' => ['cursor' => $page['meta']['next_cursor']]]);
+            $this->assertSame($second['id'], $next['data'][0]['id']);
+            $this->assertNull($next['meta']['next_cursor']);
             $comment = $call('comments.update', ['id' => $comment['id'], 'idempotency_key' => 'synthetic-cli-comment-update', 'payload' => ['body' => 'Synthetic updated CLI reply', 'expected_version' => $comment['version']]])['data'];
             $this->assertTrue($call('comments.delete', ['id' => $comment['id'], 'idempotency_key' => 'synthetic-cli-comment-delete', 'payload' => ['expected_version' => $comment['version'], 'confirm' => true]])['data']['deleted']);
             $this->assertTrue($call('topics.delete', ['id' => $topic['id'], 'idempotency_key' => 'synthetic-cli-topic-delete', 'payload' => ['expected_version' => $topic['version'], 'confirm' => true]])['data']['deleted']);

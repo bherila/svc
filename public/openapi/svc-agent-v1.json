@@ -1940,6 +1940,438 @@
                 "x-mcp-tool": "clients.archive"
             }
         },
+        "/workspaces/{workspace}/clients/{client}/contacts/{contact}/archive": {
+            "post": {
+                "operationId": "clients.contacts.archive",
+                "description": "Workspace managers only. Business contacts never grant portal access or send invitations. Archive retains the record and requires explicit confirm: true.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "clients:write",
+                            "clients:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/clients_contacts_archiveRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "client",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "contact",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Authorized business contact result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ClientBusinessContactResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "destructive",
+                "x-agent-idempotent": true,
+                "x-agent-write-safety": {
+                    "idempotency_key": "header_and_argument",
+                    "expected_version": true,
+                    "confirm": true
+                },
+                "x-agent-mcp-tool": "clients.contacts.archive",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_CLIENT_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "clients.contacts.archive"
+            }
+        },
+        "/workspaces/{workspace}/clients/{client}/contacts": {
+            "post": {
+                "operationId": "clients.contacts.create",
+                "description": "Workspace managers only. Business contacts never grant portal access or send invitations. ",
+                "security": [
+                    {
+                        "oauth2": [
+                            "clients:write"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/clients_contacts_createRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "client",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Authorized business contact result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ClientBusinessContactResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "local_write",
+                "x-agent-idempotent": true,
+                "x-agent-write-safety": {
+                    "idempotency_key": "header_and_argument"
+                },
+                "x-agent-mcp-tool": "clients.contacts.create",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_CLIENT_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "clients.contacts.create"
+            },
+            "get": {
+                "operationId": "clients.contacts.list",
+                "description": "Workspace managers only. Business contacts never grant portal access or send invitations. All records, including archived contacts, are returned unless status is specified.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "clients:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "client",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/Limit"
+                    },
+                    {
+                        "$ref": "#/components/parameters/Cursor"
+                    },
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "active",
+                                "archived"
+                            ]
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Authorized business contact result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ClientBusinessContactListResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "read",
+                "x-agent-idempotent": true,
+                "x-agent-mcp-tool": "clients.contacts.list",
+                "x-svc-flags": [],
+                "x-mcp-tool": "clients.contacts.list"
+            }
+        },
+        "/workspaces/{workspace}/clients/{client}/contacts/{contact}": {
+            "get": {
+                "operationId": "clients.contacts.get",
+                "description": "Workspace managers only. Business contacts never grant portal access or send invitations. ",
+                "security": [
+                    {
+                        "oauth2": [
+                            "clients:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "client",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "contact",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Authorized business contact result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ClientBusinessContactResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "read",
+                "x-agent-idempotent": true,
+                "x-agent-mcp-tool": "clients.contacts.get",
+                "x-svc-flags": [],
+                "x-mcp-tool": "clients.contacts.get"
+            },
+            "patch": {
+                "operationId": "clients.contacts.update",
+                "description": "Workspace managers only. Business contacts never grant portal access or send invitations. Omitted fields remain unchanged; explicit null clears nullable fields. Current expected_version is required.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "clients:write",
+                            "clients:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/clients_contacts_updateRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "client",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "contact",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Authorized business contact result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ClientBusinessContactResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "local_write",
+                "x-agent-idempotent": true,
+                "x-agent-write-safety": {
+                    "idempotency_key": "header_and_argument",
+                    "expected_version": true
+                },
+                "x-agent-mcp-tool": "clients.contacts.update",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_CLIENT_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "clients.contacts.update"
+            }
+        },
+        "/workspaces/{workspace}/clients/{client}/contacts/{contact}/restore": {
+            "post": {
+                "operationId": "clients.contacts.restore",
+                "description": "Workspace managers only. Business contacts never grant portal access or send invitations. ",
+                "security": [
+                    {
+                        "oauth2": [
+                            "clients:write",
+                            "clients:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/clients_contacts_restoreRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "client",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "contact",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Authorized business contact result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ClientBusinessContactResponse"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "local_write",
+                "x-agent-idempotent": true,
+                "x-agent-write-safety": {
+                    "idempotency_key": "header_and_argument",
+                    "expected_version": true
+                },
+                "x-agent-mcp-tool": "clients.contacts.restore",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_CLIENT_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "clients.contacts.restore"
+            }
+        },
         "/workspaces/{workspace}/clients": {
             "post": {
                 "operationId": "clients.create",
@@ -3464,7 +3896,7 @@
             },
             "get": {
                 "operationId": "collaboration.comments.list",
-                "description": "Native collaboration uses current tenant and parent authorization. Portal and dual identities are read-only and receive only disclosed ancestors. Staff authors edit their own text; managers publish and moderate. Writes require the global and collaboration cutovers; versioned writes also require collaboration:read. All writes use idempotency receipts and current locked authority, including on replay. Deletion creates a tombstone and requires confirm true. No imported history, grants, billing amounts or email are changed.",
+                "description": "Comment lists use ascending opaque cursor pagination; limit is a maximum row count and serialized byte bounds may shorten a page. Follow meta.next_cursor or next_href until null; previous_href is always null. REST, MCP and CLI share this contract; native thread pages retain focused comment links. Native collaboration uses current tenant and parent authorization. Portal and dual identities are read-only and receive only disclosed ancestors. Staff authors edit their own text; managers publish and moderate. Writes require the global and collaboration cutovers; versioned writes also require collaboration:read. All writes use idempotency receipts and current locked authority, including on replay. Deletion creates a tombstone and requires confirm true. No imported history, grants, billing amounts or email are changed.",
                 "security": [
                     {
                         "oauth2": [
@@ -3520,20 +3952,11 @@
                         }
                     },
                     {
-                        "name": "comments_page",
-                        "in": "query",
-                        "schema": {
-                            "type": "integer",
-                            "minimum": 1,
-                            "maximum": 100000
-                        }
-                    },
-                    {
-                        "name": "comment",
+                        "name": "cursor",
                         "in": "query",
                         "schema": {
                             "type": "string",
-                            "format": "uuid"
+                            "maxLength": 4096
                         }
                     }
                 ],
@@ -3745,7 +4168,7 @@
                         "$ref": "#/components/responses/Error"
                     }
                 },
-                "x-agent-effect": "local_write",
+                "x-agent-effect": "destructive",
                 "x-agent-idempotent": true,
                 "x-agent-write-safety": {
                     "idempotency_key": "header_and_argument",
@@ -4289,7 +4712,7 @@
                         "$ref": "#/components/responses/Error"
                     }
                 },
-                "x-agent-effect": "local_write",
+                "x-agent-effect": "destructive",
                 "x-agent-idempotent": true,
                 "x-agent-write-safety": {
                     "idempotency_key": "header_and_argument",
@@ -9637,7 +10060,7 @@
         "/workspaces/{workspace}/projects/{project}": {
             "get": {
                 "operationId": "projects.get",
-                "description": "Task data is embedded only when the token also has tasks:read.",
+                "description": "Task data is embedded only when the token also has tasks:read. Task pages are bounded by row count and serialized bytes including the base project. Follow tasks_next_href or pass tasks_cursor to continue; a short page does not imply completion.",
                 "security": [
                     {
                         "oauth2": [
@@ -9654,6 +10077,14 @@
                     },
                     {
                         "$ref": "#/components/parameters/ProjectId"
+                    },
+                    {
+                        "name": "tasks_cursor",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 2048
+                        }
                     }
                 ],
                 "responses": {
@@ -13499,6 +13930,126 @@
                     }
                 }
             },
+            "ClientBusinessContact": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "id",
+                    "company_id",
+                    "version",
+                    "first_name",
+                    "last_name",
+                    "title",
+                    "email",
+                    "phone",
+                    "notes",
+                    "is_archived"
+                ],
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "company_id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "version": {
+                        "type": "string",
+                        "minLength": 64,
+                        "maxLength": 64
+                    },
+                    "first_name": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 100
+                    },
+                    "last_name": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 100
+                    },
+                    "title": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 191
+                    },
+                    "email": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 255,
+                        "format": "email"
+                    },
+                    "phone": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 191
+                    },
+                    "notes": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 20000
+                    },
+                    "is_archived": {
+                        "type": "boolean"
+                    }
+                }
+            },
+            "ClientBusinessContactListResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data",
+                    "meta"
+                ],
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/ClientBusinessContact"
+                        }
+                    },
+                    "meta": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "next_cursor"
+                        ],
+                        "properties": {
+                            "next_cursor": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            }
+                        }
+                    }
+                }
+            },
+            "ClientBusinessContactResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data"
+                ],
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/ClientBusinessContact"
+                    }
+                }
+            },
             "ClientCompany": {
                 "type": "object",
                 "additionalProperties": false,
@@ -13510,7 +14061,13 @@
                     "is_active",
                     "automatic_invoice_email_enabled",
                     "automatic_invoice_email_delay_days",
-                    "square_customer"
+                    "square_customer",
+                    "billing_address",
+                    "phone",
+                    "website_url",
+                    "tax_id",
+                    "currency",
+                    "notes"
                 ],
                 "properties": {
                     "version": {
@@ -13557,6 +14114,50 @@
                             }
                         ],
                         "description": "The confirmed Square customer, or null."
+                    },
+                    "billing_address": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 10000
+                    },
+                    "phone": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 191
+                    },
+                    "website_url": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "uri",
+                        "pattern": "^https?://",
+                        "maxLength": 191
+                    },
+                    "tax_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 191
+                    },
+                    "currency": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "pattern": "^[A-Z]{3}$"
+                    },
+                    "notes": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 20000
                     }
                 }
             },
@@ -13713,13 +14314,29 @@
                             "string",
                             "null"
                         ]
+                    },
+                    "meta": {
+                        "type": "object",
+                        "properties": {
+                            "next_cursor": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "next_cursor"
+                        ],
+                        "additionalProperties": false
                     }
                 },
                 "required": [
                     "data",
                     "parent_version",
                     "next_href",
-                    "previous_href"
+                    "previous_href",
+                    "meta"
                 ],
                 "additionalProperties": false
             },
@@ -18850,7 +19467,16 @@
                         "type": "array",
                         "items": {
                             "$ref": "#/components/schemas/Task"
-                        }
+                        },
+                        "maxItems": 25
+                    },
+                    "tasks_next_href": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "uri",
+                        "description": "Present with the bounded tasks array when tasks:read is held. Continue on this project URL with its opaque tasks_cursor; null when the task page is complete."
                     }
                 }
             },
@@ -25035,6 +25661,178 @@
                     }
                 }
             },
+            "clients_contacts_archiveRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "expected_version",
+                    "confirm"
+                ],
+                "properties": {
+                    "expected_version": {
+                        "type": "string",
+                        "minLength": 64,
+                        "maxLength": 64
+                    },
+                    "confirm": {
+                        "type": "boolean",
+                        "const": true
+                    }
+                }
+            },
+            "clients_contacts_createRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [],
+                "properties": {
+                    "first_name": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 100
+                    },
+                    "last_name": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 100
+                    },
+                    "title": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 191
+                    },
+                    "email": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 255,
+                        "format": "email"
+                    },
+                    "phone": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 191
+                    },
+                    "notes": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 20000
+                    },
+                    "is_archived": {
+                        "type": "boolean",
+                        "default": false
+                    }
+                },
+                "allOf": [
+                    {
+                        "anyOf": [
+                            {
+                                "required": [
+                                    "first_name"
+                                ],
+                                "properties": {
+                                    "first_name": {
+                                        "type": "string",
+                                        "minLength": 1
+                                    }
+                                }
+                            },
+                            {
+                                "required": [
+                                    "last_name"
+                                ],
+                                "properties": {
+                                    "last_name": {
+                                        "type": "string",
+                                        "minLength": 1
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                ]
+            },
+            "clients_contacts_restoreRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "expected_version"
+                ],
+                "properties": {
+                    "expected_version": {
+                        "type": "string",
+                        "minLength": 64,
+                        "maxLength": 64
+                    }
+                }
+            },
+            "clients_contacts_updateRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "expected_version"
+                ],
+                "properties": {
+                    "first_name": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 100
+                    },
+                    "last_name": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 100
+                    },
+                    "title": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 191
+                    },
+                    "email": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 255,
+                        "format": "email"
+                    },
+                    "phone": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 191
+                    },
+                    "notes": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 20000
+                    },
+                    "expected_version": {
+                        "type": "string",
+                        "minLength": 64,
+                        "maxLength": 64
+                    }
+                }
+            },
             "clients_createRequest": {
                 "type": "object",
                 "additionalProperties": false,
@@ -25054,6 +25852,50 @@
                         ],
                         "format": "email",
                         "maxLength": 255
+                    },
+                    "billing_address": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 10000
+                    },
+                    "phone": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 191
+                    },
+                    "website_url": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "uri",
+                        "pattern": "^https?://",
+                        "maxLength": 191
+                    },
+                    "tax_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 191
+                    },
+                    "currency": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "pattern": "^[A-Z]{3}$"
+                    },
+                    "notes": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 20000
                     }
                 }
             },
@@ -25373,6 +26215,50 @@
                     },
                     "is_active": {
                         "type": "boolean"
+                    },
+                    "billing_address": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 10000
+                    },
+                    "phone": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 191
+                    },
+                    "website_url": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "uri",
+                        "pattern": "^https?://",
+                        "maxLength": 191
+                    },
+                    "tax_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 191
+                    },
+                    "currency": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "pattern": "^[A-Z]{3}$"
+                    },
+                    "notes": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 20000
                     }
                 },
                 "allOf": [

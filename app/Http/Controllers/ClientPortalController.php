@@ -436,7 +436,8 @@ class ClientPortalController extends Controller
         )
             ->orderBy('status')
             ->orderBy('title')
-            ->get();
+            ->orderBy('id')
+            ->simplePaginate(50)->appends($selected === null ? [] : ['project' => $selected->public_id]);
 
         $viewer = $this->viewer($request);
         abort_unless($viewer instanceof User, 401);
@@ -465,6 +466,7 @@ class ClientPortalController extends Controller
                 'comment_thread_url' => isset($commentProjects[$task->client_project_id])
                     ? route('portal.collaboration.comments.index', [$clientCompany, 'task', $task->public_id], absolute: false) : null,
             ])->values()->all(),
+            'pagination' => ['previous_href' => $tasks->previousPageUrl(), 'next_href' => $tasks->nextPageUrl()],
         ]);
     }
 

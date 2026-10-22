@@ -669,7 +669,12 @@ class ClientDirectoryController extends Controller
             ->where('client_project_id', $clientProject->id)
             ->orderBy('status')
             ->orderBy('title')
-            ->get();
+            ->orderBy('id')
+            ->limit(26)->get();
+        $moreTasks = $tasks->count() > 25;
+        if ($moreTasks) {
+            $tasks->pop();
+        }
 
         // One grouped query rather than one per status, so the cost does not
         // follow the number of statuses anyone invents later.
@@ -720,6 +725,7 @@ class ClientDirectoryController extends Controller
                 'detail_url' => $canManageTasks ? route('tasks.show', [$workspace, $task]) : null,
                 'comment_thread_url' => route('collaboration.comments.index', [$workspace, $clientCompany, 'task', $task->public_id], absolute: false),
             ])->values()->all(),
+            'tasks_next_href' => $moreTasks ? route('clients.tasks', [$workspace, $clientCompany, 'project' => $clientProject->public_id]) : null,
             'time' => $minutesByStatus->map(fn (ClientTimeEntry $row): array => [
                 'status' => (string) $row->status,
                 'minutes' => (int) $row->getAttribute('total_minutes'),
@@ -1015,7 +1021,8 @@ class ClientDirectoryController extends Controller
             ->whereIn('client_project_id', $scope->pluck('id')->all())
             ->orderBy('status')
             ->orderBy('title')
-            ->get();
+            ->orderBy('id')
+            ->simplePaginate(50)->appends($selected === null ? [] : ['project' => $selected->public_id]);
 
         $projectNames = $projects->pluck('name', 'id');
 
@@ -1054,6 +1061,7 @@ class ClientDirectoryController extends Controller
                 'detail_url' => isset($taskProjectIds[$task->client_project_id]) ? route('tasks.show', [$workspace, $task]) : null,
                 'comment_thread_url' => route('collaboration.comments.index', [$workspace, $clientCompany, 'task', $task->public_id], absolute: false),
             ])->values()->all(),
+            'pagination' => ['previous_href' => $tasks->previousPageUrl(), 'next_href' => $tasks->nextPageUrl()],
         ]);
     }
 

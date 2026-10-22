@@ -22,7 +22,7 @@ final class CollaborationCommand extends MutationCommand
         {workspace : Workspace public UUID} {client : Client company public UUID}
         {--actor= : Acting user public UUID} {--input=- : Private JSON file, or - for stdin} {--format=json : Output text or json}';
 
-    protected $description = 'Read or preview/apply native collaboration with the same scoped actions and receipts as REST';
+    protected $description = 'Read cursor-paged comments or preview/apply native collaboration with the same scoped actions and receipts as REST';
 
     public function handle(CollaborationTransportService $collaboration): int
     {

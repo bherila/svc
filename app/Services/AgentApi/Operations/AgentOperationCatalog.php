@@ -7,6 +7,7 @@ use App\Services\Mcp\AgentMcpAgreementTools;
 use App\Services\Mcp\AgentMcpBillingAuditTools;
 use App\Services\Mcp\AgentMcpBillingScheduleTools;
 use App\Services\Mcp\AgentMcpCapacityLedgerTools;
+use App\Services\Mcp\AgentMcpClientContactTools;
 use App\Services\Mcp\AgentMcpClientTools;
 use App\Services\Mcp\AgentMcpClientWriteTools;
 use App\Services\Mcp\AgentMcpCollaborationTools;
@@ -104,6 +105,12 @@ final class AgentOperationCatalog
         'clients.create' => ['clients.store', '/workspaces/{workspace}/clients', [201]],
         'clients.get' => ['clients.show', '/workspaces/{workspace}/clients/{client}', [200]],
         'clients.list' => ['clients.index', '/workspaces/{workspace}/clients', [200]],
+        'clients.contacts.list' => ['clients.contacts.index', '/workspaces/{workspace}/clients/{client}/contacts', [200]],
+        'clients.contacts.get' => ['clients.contacts.show', '/workspaces/{workspace}/clients/{client}/contacts/{contact}', [200]],
+        'clients.contacts.create' => ['clients.contacts.store', '/workspaces/{workspace}/clients/{client}/contacts', [201]],
+        'clients.contacts.update' => ['clients.contacts.update', '/workspaces/{workspace}/clients/{client}/contacts/{contact}', [200]],
+        'clients.contacts.archive' => ['clients.contacts.archive', '/workspaces/{workspace}/clients/{client}/contacts/{contact}/archive', [200]],
+        'clients.contacts.restore' => ['clients.contacts.restore', '/workspaces/{workspace}/clients/{client}/contacts/{contact}/restore', [200]],
         'clients.portal_access.list' => ['clients.portal-access.index', '/workspaces/{workspace}/clients/{client}/portal-access', [200]],
         'clients.portal_access.grant' => ['clients.portal-access.store', '/workspaces/{workspace}/clients/{client}/portal-access', [201]],
         'clients.portal_access.update' => ['clients.portal-access.update', '/workspaces/{workspace}/clients/{client}/portal-access/{user}', [200]],
@@ -281,8 +288,8 @@ final class AgentOperationCatalog
         foreach ($definitions as $name => [$handler, $title]) {
             $read = in_array($name, ['topics.list', 'topics.get', 'comments.list'], true);
             $tools[] = $this->tool('collaboration.'.$name, $title,
-                'Native notes, discussions and flat comments. Current staff roles, authorship, parent visibility and portal grants apply. Portal and dual identities are read-only; no history is activated and no mail is sent.',
-                [AgentMcpCollaborationTools::class, $handler], $read ? Effect::Read : Effect::LocalWrite, true,
+                ($name === 'comments.list' ? 'Ascending opaque cursor pages; limit is a maximum of 1–30 rows (default 1), and a byte budget may shorten pages. Follow meta.next_cursor or next_href until null; previous_href is null. ' : '').'Native notes, discussions and flat comments. Current staff roles, authorship, parent visibility and portal grants apply. Portal and dual identities are read-only; no history is activated and no mail is sent.',
+                [AgentMcpCollaborationTools::class, $handler], $read ? Effect::Read : (str_ends_with($name, '.delete') ? Effect::Destructive : Effect::LocalWrite), true,
                 $read ? 'mcp.read' : 'mcp.write', cutovers: $read ? [] : [AgentDeploymentFlags::COLLABORATION]);
         }
 
@@ -315,7 +322,7 @@ final class AgentOperationCatalog
             $this->tool(
                 'projects.list',
                 'List projects',
-                'List authorized projects with bounded cursor pagination.',
+                'List authorized projects with cursor pagination bounded by row count and serialized bytes. Follow next_cursor even when a page contains fewer than limit records.',
                 [AgentMcpReadTools::class, 'projects'],
                 Effect::Read,
                 true,
@@ -334,7 +341,7 @@ final class AgentOperationCatalog
             $this->tool(
                 'projects.get',
                 'Get project',
-                'Get one authorized project and its visible tasks.',
+                'Get one authorized project. When tasks:read is held, includes a bounded first task page; follow tasks_next_href or pass its tasks_cursor to continue. Long descriptions can shorten pages.',
                 [AgentMcpReadTools::class, 'project'],
                 Effect::Read,
                 true,
@@ -343,7 +350,7 @@ final class AgentOperationCatalog
             $this->tool(
                 'tasks.list',
                 'List tasks',
-                'List authorized tasks with bounded cursor pagination.',
+                'List authorized tasks with cursor pagination bounded by row count and serialized bytes. Follow next_cursor even when a page contains fewer than limit records.',
                 [AgentMcpReadTools::class, 'tasks'],
                 Effect::Read,
                 true,
@@ -403,6 +410,9 @@ final class AgentOperationCatalog
                 true,
                 'mcp.read',
             ),
+            // MCP lists invoice snapshots for every authorized viewer. The
+            // REST-only change window is gated to workspace owners/admins by
+            // AgentReadService; it must not make this whole tool manager-only.
             $this->tool(
                 'invoices.list',
                 'List invoices',
@@ -1240,6 +1250,58 @@ final class AgentOperationCatalog
                 cutovers: [AgentDeploymentFlags::CLIENTS],
                 manager: true,
                 input: AgentInlineSchemas::clientInput('clients.archive', ['client_id' => ['type' => 'string', 'format' => 'uuid'], 'idempotency_key' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 255]], ['client_id', 'idempotency_key'], write: true),
+            ),
+            $this->tool(
+                'clients.contacts.list', 'List business contacts',
+                'Workspace managers only. Business contacts never create accounts, invitations or access grants.',
+                [AgentMcpClientContactTools::class, 'listing'], Effect::Read, true,
+                'mcp.read.clients',
+                manager: true,
+                input: AgentInlineSchemas::clientInput('clients.contacts.list', ['client_id' => ['type' => 'string', 'format' => 'uuid'], 'status' => ['type' => ['string', 'null'], 'enum' => ['active', 'archived', null]], 'limit' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 100, 'default' => 25], 'cursor' => ['type' => ['string', 'null'], 'maxLength' => 2048]], ['client_id']),
+            ),
+            $this->tool(
+                'clients.contacts.get', 'Get business contact',
+                'Workspace managers only. Business contacts never create accounts, invitations or access grants.',
+                [AgentMcpClientContactTools::class, 'get'], Effect::Read, true,
+                'mcp.read.clients',
+                manager: true,
+                input: AgentInlineSchemas::clientInput('clients.contacts.get', ['client_id' => ['type' => 'string', 'format' => 'uuid'], 'contact_id' => ['type' => 'string', 'format' => 'uuid']], ['client_id', 'contact_id']),
+            ),
+            $this->tool(
+                'clients.contacts.create', 'Create business contact',
+                'Workspace managers only. Business contacts never create accounts, invitations or access grants.',
+                [AgentMcpClientContactTools::class, 'create'], Effect::LocalWrite, true,
+                'mcp.write.clients',
+                cutovers: [AgentDeploymentFlags::CLIENTS],
+                manager: true,
+                input: AgentInlineSchemas::clientInput('clients.contacts.create', ['client_id' => ['type' => 'string', 'format' => 'uuid'], 'idempotency_key' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 255]], ['client_id', 'idempotency_key'], write: true),
+            ),
+            $this->tool(
+                'clients.contacts.update', 'Update business contact',
+                'Workspace managers only. Business contacts never create accounts, invitations or access grants.',
+                [AgentMcpClientContactTools::class, 'update'], Effect::LocalWrite, true,
+                'mcp.write.clients',
+                cutovers: [AgentDeploymentFlags::CLIENTS],
+                manager: true,
+                input: AgentInlineSchemas::clientInput('clients.contacts.update', ['client_id' => ['type' => 'string', 'format' => 'uuid'], 'contact_id' => ['type' => 'string', 'format' => 'uuid'], 'idempotency_key' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 255]], ['client_id', 'contact_id', 'idempotency_key'], write: true),
+            ),
+            $this->tool(
+                'clients.contacts.archive', 'Archive business contact',
+                'Workspace managers only. Business contacts never create accounts, invitations or access grants.',
+                [AgentMcpClientContactTools::class, 'archive'], Effect::Destructive, true,
+                'mcp.write.clients',
+                cutovers: [AgentDeploymentFlags::CLIENTS],
+                manager: true,
+                input: AgentInlineSchemas::clientInput('clients.contacts.archive', ['client_id' => ['type' => 'string', 'format' => 'uuid'], 'contact_id' => ['type' => 'string', 'format' => 'uuid'], 'idempotency_key' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 255]], ['client_id', 'contact_id', 'idempotency_key'], write: true),
+            ),
+            $this->tool(
+                'clients.contacts.restore', 'Restore business contact',
+                'Workspace managers only. Business contacts never create accounts, invitations or access grants.',
+                [AgentMcpClientContactTools::class, 'restore'], Effect::LocalWrite, true,
+                'mcp.write.clients',
+                cutovers: [AgentDeploymentFlags::CLIENTS],
+                manager: true,
+                input: AgentInlineSchemas::clientInput('clients.contacts.restore', ['client_id' => ['type' => 'string', 'format' => 'uuid'], 'contact_id' => ['type' => 'string', 'format' => 'uuid'], 'idempotency_key' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 255]], ['client_id', 'contact_id', 'idempotency_key'], write: true),
             ),
             $this->tool(
                 'clients.portal_access.list',

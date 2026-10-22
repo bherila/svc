@@ -35,6 +35,7 @@ class UpdateClientCompanyRequest extends FormRequest
                 'max:365',
             ],
             'is_active' => ['required', 'boolean'],
+            ...(new UpdateCompanyProfileRequest)->rules(),
         ];
     }
 }

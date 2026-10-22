@@ -7,6 +7,7 @@ use App\Models\ClientInvoice;
 use App\Models\Workspace;
 use App\Services\Activity\ClientActivityRecorder;
 use App\Services\Billing\InvoiceEmailService;
+use App\Services\Clients\CompanyProfile;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Concurrency\Locks;
 use Illuminate\Support\Facades\DB;
@@ -103,7 +104,7 @@ class UpdateClientCompany
                 'is_active' => array_key_exists('is_active', $attributes)
                     ? (bool) $attributes['is_active']
                     : $locked->is_active,
-            ]);
+            ] + array_intersect_key($attributes, array_flip(CompanyProfile::FIELDS)));
 
             $cancelledInvoices = 0;
             if (! $enabled && $pendingInvoiceIds !== []) {

@@ -242,11 +242,11 @@ final class AgentRestDocumentation
             }
             if ($name === 'comments.list') {
                 $parameters = [...$parameters, self::query('limit', ['type' => 'integer', 'minimum' => 1, 'maximum' => 30, 'default' => 1]),
-                    self::query('comments_page', ['type' => 'integer', 'minimum' => 1, 'maximum' => 100000]), self::query('comment', ['type' => 'string', 'format' => 'uuid'])];
+                    self::query('cursor', ['type' => 'string', 'maxLength' => 4096])];
             }
             $scopes = $method === 'GET' ? ['collaboration:read'] : ($name === 'topics.create' ? ['collaboration:write'] : ['collaboration:write', 'collaboration:read']);
             $operations['collaboration.'.$name] = ['method' => $method, 'scopes' => $scopes, 'parameters' => $parameters,
-                'description' => 'Native collaboration uses current tenant and parent authorization. Portal and dual identities are read-only and receive only disclosed ancestors. Staff authors edit their own text; managers publish and moderate. Writes require the global and collaboration cutovers; versioned writes also require collaboration:read. All writes use idempotency receipts and current locked authority, including on replay. Deletion creates a tombstone and requires confirm true. No imported history, grants, billing amounts or email are changed.',
+                'description' => ($name === 'comments.list' ? 'Comment lists use ascending opaque cursor pagination; limit is a maximum row count and serialized byte bounds may shorten a page. Follow meta.next_cursor or next_href until null; previous_href is always null. REST, MCP and CLI share this contract; native thread pages retain focused comment links. ' : '').'Native collaboration uses current tenant and parent authorization. Portal and dual identities are read-only and receive only disclosed ancestors. Staff authors edit their own text; managers publish and moderate. Writes require the global and collaboration cutovers; versioned writes also require collaboration:read. All writes use idempotency receipts and current locked authority, including on replay. Deletion creates a tombstone and requires confirm true. No imported history, grants, billing amounts or email are changed.',
                 'response' => $response, 'response_description' => 'Authorized native collaboration result',
                 'errors' => [401 => 'Authentication is required.', 403 => 'Scope or current role does not permit this operation.', 404 => 'A parent or tenant is not visible, or the agent write cutover is off.',
                     409 => 'Expected version is stale or the idempotency key was reused with different input.', 422 => 'An input field or idempotency key is invalid.', 429 => 'Too many requests.']];
@@ -639,6 +639,46 @@ final class AgentRestDocumentation
                 ],
                 'response' => 'ClientCompanyListResponse',
                 'response_description' => 'Authorized result',
+            ],
+            'clients.contacts.list' => [
+                'method' => 'GET', 'scopes' => ['clients:read'],
+                'description' => 'Workspace managers only. Business contacts never grant portal access or send invitations. All records, including archived contacts, are returned unless status is specified.',
+                'parameters' => ['WorkspaceId', self::uuidPath('client'), 'Limit', 'Cursor', self::query('status', ['type' => 'string', 'enum' => ['active', 'archived']])],
+                'response' => 'ClientBusinessContactListResponse', 'response_description' => 'Authorized business contact result',
+            ],
+            'clients.contacts.get' => [
+                'method' => 'GET', 'scopes' => ['clients:read'],
+                'description' => 'Workspace managers only. Business contacts never grant portal access or send invitations. ',
+                'parameters' => ['WorkspaceId', self::uuidPath('client'), self::uuidPath('contact')],
+                'response' => 'ClientBusinessContactResponse', 'response_description' => 'Authorized business contact result',
+            ],
+            'clients.contacts.create' => [
+                'method' => 'POST', 'scopes' => ['clients:write'],
+                'description' => 'Workspace managers only. Business contacts never grant portal access or send invitations. ',
+                'parameters' => ['WorkspaceId', self::uuidPath('client'), 'IdempotencyKey'],
+                'request' => 'clients_contacts_createRequest',
+                'response' => 'ClientBusinessContactResponse', 'response_description' => 'Authorized business contact result',
+            ],
+            'clients.contacts.update' => [
+                'method' => 'PATCH', 'scopes' => ['clients:write', 'clients:read'],
+                'description' => 'Workspace managers only. Business contacts never grant portal access or send invitations. Omitted fields remain unchanged; explicit null clears nullable fields. Current expected_version is required.',
+                'parameters' => ['WorkspaceId', self::uuidPath('client'), self::uuidPath('contact'), 'IdempotencyKey'],
+                'request' => 'clients_contacts_updateRequest',
+                'response' => 'ClientBusinessContactResponse', 'response_description' => 'Authorized business contact result',
+            ],
+            'clients.contacts.archive' => [
+                'method' => 'POST', 'scopes' => ['clients:write', 'clients:read'],
+                'description' => 'Workspace managers only. Business contacts never grant portal access or send invitations. Archive retains the record and requires explicit confirm: true.',
+                'parameters' => ['WorkspaceId', self::uuidPath('client'), self::uuidPath('contact'), 'IdempotencyKey'],
+                'request' => 'clients_contacts_archiveRequest',
+                'response' => 'ClientBusinessContactResponse', 'response_description' => 'Authorized business contact result',
+            ],
+            'clients.contacts.restore' => [
+                'method' => 'POST', 'scopes' => ['clients:write', 'clients:read'],
+                'description' => 'Workspace managers only. Business contacts never grant portal access or send invitations. ',
+                'parameters' => ['WorkspaceId', self::uuidPath('client'), self::uuidPath('contact'), 'IdempotencyKey'],
+                'request' => 'clients_contacts_restoreRequest',
+                'response' => 'ClientBusinessContactResponse', 'response_description' => 'Authorized business contact result',
             ],
             'clients.portal_access.list' => [
                 'method' => 'GET',
@@ -1320,8 +1360,8 @@ final class AgentRestDocumentation
             'projects.get' => [
                 'method' => 'GET',
                 'scopes' => ['projects:read'],
-                'description' => 'Task data is embedded only when the token also has tasks:read.',
-                'parameters' => ['WorkspaceId', 'ProjectId'],
+                'description' => 'Task data is embedded only when the token also has tasks:read. Task pages are bounded by row count and serialized bytes including the base project. Follow tasks_next_href or pass tasks_cursor to continue; a short page does not imply completion.',
+                'parameters' => ['WorkspaceId', 'ProjectId', self::query('tasks_cursor', ['type' => 'string', 'maxLength' => 2048])],
                 'response' => 'ProjectDetailResponse',
                 'response_description' => 'Authorized project detail',
             ],
