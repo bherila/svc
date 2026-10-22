@@ -41,6 +41,8 @@ const remindersOnly = process.argv.includes('--reminders');
 const timeOnly = process.argv.includes('--time');
 const backlogOnly = process.argv.includes('--deferred-backlog');
 const historyOnly = process.argv.includes('--history');
+const tasksOnly = process.argv.includes('--tasks');
+const skipBuild = process.argv.includes('--skip-build');
 const results = [];
 const failures = [];
 const serverLog = [];
@@ -134,12 +136,23 @@ try {
             'https://finance.example.test/transactions/{transaction_uuid}',
         SVC_LAYOUT_PORTAL_PAGES: portalOnly ? '1' : '0',
         SVC_LAYOUT_DEFERRED_BACKLOG: backlogOnly ? '1' : '0',
+        SVC_LAYOUT_TASKS: tasksOnly ? '1' : '0',
     };
     run('php', ['scripts/layout/seed.php'], env);
     const fixture = JSON.parse(
         readFileSync(path.join(runtime, 'fixture.json'), 'utf8'),
     );
-    run('pnpm', ['run', 'build'], env);
+
+    if (skipBuild) {
+        if (!existsSync(path.join(root, 'public', 'build', 'manifest.json'))) {
+            throw new Error(
+                '--skip-build requires assets from a successful build of this checkout.',
+            );
+        }
+    } else {
+        run('pnpm', ['run', 'build'], env);
+    }
+
     server = spawn(
         'php',
         ['-S', host, '-t', 'public', 'scripts/layout/router.php'],
@@ -258,7 +271,7 @@ try {
         const screenshot = `${screen}-${state}-${width}.png`;
         await page.screenshot({
             path: path.join(artifacts, screenshot),
-            fullPage: true,
+            fullPage: !(screen === 'task_list' && state.startsWith('create-')),
             animations: 'disabled',
         });
         results.push({
@@ -281,36 +294,38 @@ try {
     for (const width of widths) {
         await page.setViewportSize({ width, height: 1000 });
 
-        for (const screen of historyOnly
-            ? ['history_index', 'history_discussion', 'history_invoice']
-            : portalOnly
-            ? ['settings']
-            : correctionOnly
-              ? ['invoice_review']
-              : squareOnly
-                ? ['square_explore', 'square_invoice', 'square_portal']
-                : remindersOnly
-                  ? ['reminder_invoice', 'settings']
-                  : timeOnly
-                    ? ['time', 'draft_time']
-                    : backlogOnly
-                      ? ['agreement']
-                      : [
-                            'mcp_setup',
-                            'invoice',
-                            'invoice_review',
-                            'reminder_invoice',
-                            'settings',
-                            'draft_invoice',
-                            'draft_time',
-                            'proposal',
-                            'proposal_acceptance',
-                            'operations',
-                            'time',
-                            'expenses',
-                            'receipts',
-                            'expense_schedules',
-                        ]) {
+        for (const screen of tasksOnly
+            ? ['task_list', 'task_project', 'task_editor', 'task_portal']
+            : historyOnly
+              ? ['history_index', 'history_discussion', 'history_invoice']
+              : portalOnly
+                ? ['settings']
+                : correctionOnly
+                  ? ['invoice_review']
+                  : squareOnly
+                    ? ['square_explore', 'square_invoice', 'square_portal']
+                    : remindersOnly
+                      ? ['reminder_invoice', 'settings']
+                      : timeOnly
+                        ? ['time', 'draft_time']
+                        : backlogOnly
+                          ? ['agreement']
+                          : [
+                                'mcp_setup',
+                                'invoice',
+                                'invoice_review',
+                                'reminder_invoice',
+                                'settings',
+                                'draft_invoice',
+                                'draft_time',
+                                'proposal',
+                                'proposal_acceptance',
+                                'operations',
+                                'time',
+                                'expenses',
+                                'receipts',
+                                'expense_schedules',
+                            ]) {
             const response = await page.goto(
                 origin + fixture[portalOnly ? 'portal_settings' : screen],
             );
@@ -329,6 +344,169 @@ try {
 
                     throw error;
                 });
+
+            if (screen === 'task_list') {
+                await expect(
+                    page.getByRole('link', { name: 'Next tasks', exact: true }),
+                ).toBeVisible();
+                await page
+                    .getByRole('link', { name: 'Next tasks', exact: true })
+                    .click();
+                await expect(
+                    page.getByRole('link', {
+                        name: 'Previous tasks',
+                        exact: true,
+                    }),
+                ).toBeVisible();
+                await expect(
+                    page.getByRole('link', { name: 'Next tasks', exact: true }),
+                ).toHaveCount(0);
+                await capture(screen, 'last-page', width);
+                await page
+                    .getByRole('link', { name: 'Previous tasks', exact: true })
+                    .click();
+                await expect(
+                    page.getByRole('link', { name: 'Next tasks', exact: true }),
+                ).toBeVisible();
+                await page
+                    .getByRole('button', { name: 'New task', exact: true })
+                    .click();
+                await expect(page.getByRole('dialog')).toBeVisible();
+                await capture(screen, 'create-empty', width);
+                await page
+                    .getByLabel('Title', { exact: true })
+                    .fill('SyntheticTaskCreatedInBrowser');
+                await page
+                    .getByLabel('Description', { exact: true })
+                    .fill('Synthetic create task description. '.repeat(20));
+                await page
+                    .getByLabel('Start date', { exact: true })
+                    .fill('2026-11-01');
+                await page
+                    .getByLabel('Due date', { exact: true })
+                    .fill('2026-11-02');
+                await expect(page.getByRole('checkbox').first()).toBeVisible();
+                await page.getByRole('checkbox').first().check();
+                await page
+                    .getByRole('button', { name: 'Create task', exact: true })
+                    .scrollIntoViewIfNeeded();
+                await capture(screen, 'create-dialog', width);
+
+                if (width === 1440) {
+                    await page
+                        .getByRole('button', {
+                            name: 'Create task',
+                            exact: true,
+                        })
+                        .click();
+                    await expect(page.getByRole('dialog')).toHaveCount(0);
+                    await expect(
+                        page.getByRole('link', {
+                            name: 'SyntheticTaskCreatedInBrowser',
+                            exact: true,
+                        }),
+                    ).toBeVisible();
+                    await capture(screen, 'created', width);
+                } else {
+                    await page.keyboard.press('Escape');
+                }
+            }
+
+            if (screen === 'task_project') {
+                const allTasks = page.getByRole('link', {
+                    name: 'View all tasks',
+                    exact: true,
+                });
+                await expect(allTasks).toBeVisible();
+                const allTasksHref = await allTasks.getAttribute('href');
+                expect(allTasksHref).toContain('?project=');
+                await allTasks.click();
+                await expect(
+                    page.getByRole('link', { name: 'Next tasks', exact: true }),
+                ).toBeVisible();
+                await capture(screen, 'project-filtered-list', width);
+                await page.goto(origin + fixture.task_project);
+            }
+
+            if (screen === 'task_editor') {
+                await expect(
+                    page.locator(
+                        'header [aria-label="Client sections"]:visible',
+                    ),
+                ).toContainText('Tasks');
+                await expect(page.locator('header')).not.toContainText(
+                    'Select a client',
+                );
+                await expect(
+                    page.getByRole('button', {
+                        name: /^Remove SyntheticAssignee/,
+                    }),
+                ).toHaveCount(10);
+                await expect(
+                    page.getByText(
+                        'More staff match. Refine the search to find them.',
+                    ),
+                ).toBeVisible();
+                await capture(screen, 'editor', width);
+                const version = await page.evaluate(() => {
+                    const initial = document.querySelector('script[data-page]');
+
+                    if (!initial?.textContent) {
+                        throw new Error(
+                            'The task page has no initial Inertia data.',
+                        );
+                    }
+
+                    return JSON.parse(initial.textContent).props.task.version;
+                });
+                const revised = await context.request.patch(
+                    origin + fixture.task_update,
+                    {
+                        data: { expected_version: version },
+                        headers: { 'Sec-Fetch-Site': 'same-origin' },
+                        maxRedirects: 0,
+                    },
+                );
+
+                expect([302, 303]).toContain(revised.status());
+
+                await page
+                    .getByRole('button', { name: 'Save task', exact: true })
+                    .click();
+                await expect(page.getByRole('alert')).toContainText(
+                    'This task has changed. Reload',
+                );
+                await capture(screen, 'stale-conflict', width);
+            }
+
+            if (screen === 'task_portal') {
+                await expect(
+                    page.getByRole('button', { name: 'New task', exact: true }),
+                ).toHaveCount(0);
+                await expect(page.getByText(/^SyntheticAssignee/)).toHaveCount(
+                    0,
+                );
+                await page
+                    .getByRole('link', { name: 'Next tasks', exact: true })
+                    .click();
+                await expect(page).toHaveURL(/\/portal\//);
+                await expect(
+                    page.getByRole('link', {
+                        name: 'Previous tasks',
+                        exact: true,
+                    }),
+                ).toBeVisible();
+                await expect(
+                    page.getByRole('button', { name: 'New task', exact: true }),
+                ).toHaveCount(0);
+                await capture(screen, 'last-page', width);
+                await page
+                    .getByRole('link', { name: 'Previous tasks', exact: true })
+                    .click();
+                await expect(
+                    page.getByRole('link', { name: 'Next tasks', exact: true }),
+                ).toBeVisible();
+            }
 
             if (screen.startsWith('square_')) {
                 await expect(
@@ -405,19 +583,37 @@ try {
 
             if (screen === 'history_index') {
                 await expect(page.getByLabel('Search history')).toBeVisible();
-                await expect(page.getByRole('link', { name: 'SyntheticHistoricalDiscussion'.repeat(12) })).toBeVisible();
+                await expect(
+                    page.getByRole('link', {
+                        name: 'SyntheticHistoricalDiscussion'.repeat(12),
+                    }),
+                ).toBeVisible();
             }
 
             if (screen === 'history_discussion') {
-                await expect(page.getByRole('heading', { name: 'Related records' })).toBeVisible();
+                await expect(
+                    page.getByRole('heading', { name: 'Related records' }),
+                ).toBeVisible();
                 await expect(page.locator('main script')).toHaveCount(0);
-                await expect(page.getByText('<script>Displayed as text only</script>', { exact: false })).toBeVisible();
+                await expect(
+                    page.getByText('<script>Displayed as text only</script>', {
+                        exact: false,
+                    }),
+                ).toBeVisible();
             }
 
             if (screen === 'history_invoice') {
-                await expect(page.getByRole('heading', { name: 'Invoice items' })).toBeVisible();
-                await expect(page.getByText('0.00400', { exact: true })).toHaveCount(3);
-                await expect(page.getByRole('button', { name: /send|charge|collect|remind/i })).toHaveCount(0);
+                await expect(
+                    page.getByRole('heading', { name: 'Invoice items' }),
+                ).toBeVisible();
+                await expect(
+                    page.getByText('0.00400', { exact: true }),
+                ).toHaveCount(3);
+                await expect(
+                    page.getByRole('button', {
+                        name: /send|charge|collect|remind/i,
+                    }),
+                ).toHaveCount(0);
             }
 
             if (screen === 'proposal_acceptance') {
@@ -434,7 +630,14 @@ try {
                     .fill('SyntheticLayoutTitle'.repeat(8));
             }
 
-            await capture(screen, 'initial', width, screen === 'operations');
+            if (screen !== 'task_editor') {
+                await capture(
+                    screen,
+                    'initial',
+                    width,
+                    screen === 'operations',
+                );
+            }
 
             if (screen === 'agreement' && backlogOnly) {
                 await page
@@ -828,6 +1031,7 @@ try {
     }
 
     if (
+        !tasksOnly &&
         !portalOnly &&
         !correctionOnly &&
         !squareOnly &&
@@ -862,6 +1066,7 @@ try {
     }
 
     if (
+        !tasksOnly &&
         !portalOnly &&
         !correctionOnly &&
         !squareOnly &&
@@ -1016,15 +1221,17 @@ try {
         [
             '# Browser layout evidence',
             '',
-            portalOnly
-                ? 'Synthetic portal contacts and invitations on client settings; initial, project selection, removal and invitation withdrawal confirmation states at every required width.'
-                : squareOnly
-                  ? 'Synthetic Square explore, linked operator invoice and linked client portal invoice at every required width.'
-                  : remindersOnly
-                    ? 'Synthetic payment reminders: an operator invoice with its reminder log and send confirmation, and the client cadence switch on settings, at every required width.'
-                    : backlogOnly
-                      ? 'Synthetic deferred backlog on the operator agreement page, with an unbroken client and agreement name and a shelf priced in the millions, at every required width.'
-                      : 'Synthetic local fixtures only. Invoice review/settings/proposal/time/expenses are asserted; operations is a bounded measurement of known pre-existing layout problems.',
+            tasksOnly
+                ? 'Synthetic native project-manager paginated task list and project preview, create dialog, editor with ten assignees and stale conflict, and read-only paginated portal tasks at every required width.'
+                : portalOnly
+                  ? 'Synthetic portal contacts and invitations on client settings; initial, project selection, removal and invitation withdrawal confirmation states at every required width.'
+                  : squareOnly
+                    ? 'Synthetic Square explore, linked operator invoice and linked client portal invoice at every required width.'
+                    : remindersOnly
+                      ? 'Synthetic payment reminders: an operator invoice with its reminder log and send confirmation, and the client cadence switch on settings, at every required width.'
+                      : backlogOnly
+                        ? 'Synthetic deferred backlog on the operator agreement page, with an unbroken client and agreement name and a shelf priced in the millions, at every required width.'
+                        : 'Synthetic local fixtures only. Invoice review/settings/proposal/time/expenses are asserted; operations is a bounded measurement of known pre-existing layout problems.',
             '',
             '| Page/state | Viewport | Document width | Navbar height | Gate | Screenshot |',
             '| --- | --- | --- | --- | --- | --- |',

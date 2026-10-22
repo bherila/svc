@@ -51,6 +51,39 @@ billing detail as text output. OAuth prune wraps the vendor's report text in
 `{ "dry_run": true|false, "exit_code": number, "report": string }`.
 Existing credential commands that already emit JSON by default keep doing so.
 
+## Tasks
+
+`svc:tasks list|get|create|update WORKSPACE_UUID --actor=USER_UUID` uses the same
+workspace-scoped reads, task lifecycle, calendar dates, assignee eligibility,
+versions and retry receipts as REST/MCP. Use `--project=PROJECT_UUID` to create or
+filter a list, and `--task=TASK_UUID` to read or update one task. List accepts
+`--limit=1..100` and `--cursor`.
+
+Task pages also respect a serialized byte budget, so a short page can still have
+more rows. Follow `meta.next_cursor` until it is null. REST and MCP project
+details embed at most 25 tasks within the whole project response budget; when
+`tasks:read` is held, follow `tasks_next_href` or pass its `tasks_cursor` to
+`projects.get` to continue. Project-only tokens receive the base project without
+task data or a continuation.
+
+```bash
+php artisan svc:tasks list WORKSPACE_UUID --actor=USER_UUID --format=json
+php artisan svc:tasks create WORKSPACE_UUID --actor=USER_UUID --project=PROJECT_UUID --input=task.json --key=unique-retry-key --format=json
+```
+
+Mutations preview and roll back unless `--apply` is supplied. `--input` accepts a
+JSON object in a file or `-` for standard input, at most 1 MiB. Updates require the
+current opaque `expected_version`. Omitted fields remain unchanged; explicit
+`null` clears a date, and an empty `assignee_ids` array clears assignments.
+Assignments do not grant project access. Local commands require current account
+permissions independently of OAuth deployment switches. Reusing an applied
+request and key replays the existing operation; stale versions and revoked
+permissions are refused.
+
+Task commands use current internal staff authority. An account that also has
+portal access can use its staff permissions locally; REST/MCP treat that account
+as a portal reader and refuse task mutations.
+
 ## Business contacts
 
 Company and business-contact listings apply both a maximum row count and a

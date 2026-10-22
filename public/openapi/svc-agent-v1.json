@@ -8779,7 +8779,7 @@
         "/workspaces/{workspace}/projects/{project}": {
             "get": {
                 "operationId": "projects.get",
-                "description": "Task data is embedded only when the token also has tasks:read.",
+                "description": "Task data is embedded only when the token also has tasks:read. Task pages are bounded by row count and serialized bytes including the base project. Follow tasks_next_href or pass tasks_cursor to continue; a short page does not imply completion.",
                 "security": [
                     {
                         "oauth2": [
@@ -8796,6 +8796,14 @@
                     },
                     {
                         "$ref": "#/components/parameters/ProjectId"
+                    },
+                    {
+                        "name": "tasks_cursor",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 2048
+                        }
                     }
                 ],
                 "responses": {
@@ -17706,7 +17714,16 @@
                         "type": "array",
                         "items": {
                             "$ref": "#/components/schemas/Task"
-                        }
+                        },
+                        "maxItems": 25
+                    },
+                    "tasks_next_href": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "uri",
+                        "description": "Present with the bounded tasks array when tasks:read is held. Continue on this project URL with its opaque tasks_cursor; null when the task page is complete."
                     }
                 }
             },
@@ -22666,6 +22683,42 @@
                     "web_url": {
                         "type": "string",
                         "format": "uri"
+                    },
+                    "starts_on": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date"
+                    },
+                    "due_on": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date"
+                    },
+                    "assignees": {
+                        "type": "array",
+                        "maxItems": 10,
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                                "id",
+                                "name"
+                            ],
+                            "properties": {
+                                "id": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                },
+                                "name": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "description": "Internal planning metadata, withheld from portal and dual-identity API responses."
                     }
                 }
             },
@@ -22691,6 +22744,30 @@
                     "is_visible_to_client": {
                         "type": "boolean",
                         "description": "Hidden from clients when omitted. Callers choose visibility explicitly when publishing a task."
+                    },
+                    "starts_on": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date"
+                    },
+                    "due_on": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date"
+                    },
+                    "assignee_ids": {
+                        "type": "array",
+                        "maxItems": 10,
+                        "uniqueItems": true,
+                        "items": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "description": "Current eligible internal account public UUIDs. Omit to preserve assignments; an empty array clears them."
                     }
                 }
             },
@@ -22757,6 +22834,30 @@
                     },
                     "is_visible_to_client": {
                         "type": "boolean"
+                    },
+                    "starts_on": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date"
+                    },
+                    "due_on": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date"
+                    },
+                    "assignee_ids": {
+                        "type": "array",
+                        "maxItems": 10,
+                        "uniqueItems": true,
+                        "items": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "description": "Current eligible internal account public UUIDs. Omit to preserve assignments; an empty array clears them."
                     }
                 }
             },

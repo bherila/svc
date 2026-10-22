@@ -1,5 +1,8 @@
 import { Head, Link } from '@inertiajs/react';
+import { TaskCreateDialog } from '@/components/tasks/task-create-dialog';
+import type { TaskEditorProject } from '@/components/tasks/task-editor';
 import { Badge } from '@/components/ui/badge';
+import { buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
     Table,
@@ -11,6 +14,7 @@ import {
 } from '@/components/ui/table';
 import WorkspaceShell from '@/layouts/workspace-shell';
 import { formatDay } from '@/lib/datetime';
+import { statusLabel } from '@/lib/labels';
 import { SHELL_CONTAINER } from '@/lib/layout';
 import { formatHours } from '@/lib/time';
 import { cn } from '@/lib/utils';
@@ -22,6 +26,9 @@ type ProjectTask = {
     status: string;
     is_visible_to_client: boolean;
     completed_at: string | null;
+    starts_on?: string | null;
+    due_on?: string | null;
+    detail_url?: string | null;
 };
 
 type TimeByStatus = {
@@ -46,6 +53,8 @@ export default function ClientProjectDetail({
     tasks,
     time,
     agreements,
+    task_management = null,
+    tasks_next_href = null,
 }: {
     workspace: { id: string };
     company: { id: string; name: string };
@@ -57,6 +66,8 @@ export default function ClientProjectDetail({
         is_visible_to_client: boolean;
     };
     tasks: ProjectTask[];
+    task_management?: { projects: TaskEditorProject[] } | null;
+    tasks_next_href?: string | null;
     time: TimeByStatus[];
     agreements: CompanyAgreement[];
 }) {
@@ -69,15 +80,17 @@ export default function ClientProjectDetail({
                 <header className="grid grid-cols-1 gap-1">
                     <Link
                         href={`/workspaces/${workspace.id}/clients/${company.id}`}
-                        className="text-sm text-muted-foreground underline-offset-4 hover:underline"
+                        className="text-sm wrap-anywhere text-muted-foreground underline-offset-4 hover:underline"
                     >
                         ← {company.name} overview
                     </Link>
                     <div className="flex flex-wrap items-center gap-3">
-                        <h1 className="text-2xl font-semibold">
+                        <h1 className="min-w-0 text-2xl font-semibold wrap-anywhere">
                             {project.name}
                         </h1>
-                        <Badge variant="outline">{project.status}</Badge>
+                        <Badge variant="outline">
+                            {statusLabel(project.status)}
+                        </Badge>
                         {!project.is_visible_to_client && (
                             <Badge variant="secondary">
                                 Hidden from client
@@ -101,14 +114,14 @@ export default function ClientProjectDetail({
                                 No time logged against this project.
                             </p>
                         ) : (
-                            <dl className="grid gap-2 text-sm sm:grid-cols-3">
+                            <dl className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-3">
                                 {time.map((row) => (
                                     <div
                                         key={row.status}
                                         className="flex gap-2"
                                     >
                                         <dt className="text-muted-foreground">
-                                            {row.status}
+                                            {statusLabel(row.status)}
                                         </dt>
                                         <dd className="tabular-nums">
                                             {formatHours(row.minutes)}
@@ -137,7 +150,25 @@ export default function ClientProjectDetail({
 
                 <Card>
                     <CardHeader>
-                        <CardTitle>Tasks</CardTitle>
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                            <CardTitle>Tasks</CardTitle>
+                            {task_management !== null && (
+                                <TaskCreateDialog
+                                    projects={task_management.projects}
+                                />
+                            )}
+                            {tasks_next_href !== null && (
+                                <Link
+                                    href={tasks_next_href}
+                                    className={buttonVariants({
+                                        variant: 'outline',
+                                        size: 'sm',
+                                    })}
+                                >
+                                    View all tasks
+                                </Link>
+                            )}
+                        </div>
                     </CardHeader>
                     <CardContent>
                         {tasks.length === 0 ? (
@@ -149,7 +180,9 @@ export default function ClientProjectDetail({
                                 <Table>
                                     <TableHeader>
                                         <TableRow>
-                                            <TableHead>Task</TableHead>
+                                            <TableHead className="min-w-64">
+                                                Task
+                                            </TableHead>
                                             <TableHead>Status</TableHead>
                                             <TableHead>Completed</TableHead>
                                             <TableHead>Client sees</TableHead>
@@ -158,12 +191,41 @@ export default function ClientProjectDetail({
                                     <TableBody>
                                         {tasks.map((task) => (
                                             <TableRow key={task.id}>
-                                                <TableCell className="font-medium">
-                                                    {task.title}
+                                                <TableCell className="max-w-0 font-medium wrap-anywhere whitespace-normal">
+                                                    {task.detail_url ? (
+                                                        <Link
+                                                            href={
+                                                                task.detail_url
+                                                            }
+                                                            className="underline-offset-4 hover:underline"
+                                                        >
+                                                            {task.title}
+                                                        </Link>
+                                                    ) : (
+                                                        task.title
+                                                    )}
+                                                    {task.starts_on && (
+                                                        <p className="mt-1 text-xs text-muted-foreground">
+                                                            Starts{' '}
+                                                            {formatDay(
+                                                                task.starts_on,
+                                                            )}
+                                                        </p>
+                                                    )}
+                                                    {task.due_on && (
+                                                        <p className="mt-1 text-xs text-muted-foreground">
+                                                            Due{' '}
+                                                            {formatDay(
+                                                                task.due_on,
+                                                            )}
+                                                        </p>
+                                                    )}
                                                 </TableCell>
                                                 <TableCell>
                                                     <Badge variant="outline">
-                                                        {task.status}
+                                                        {statusLabel(
+                                                            task.status,
+                                                        )}
                                                     </Badge>
                                                 </TableCell>
                                                 <TableCell>

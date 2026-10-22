@@ -53,7 +53,7 @@ final class TaskMutationParityTest extends TestCase
         $created = $this->withHeader('Idempotency-Key', 'synthetic-task-create')->postJson($this->createPath($workspace, $project), ['title' => 'Synthetic agent task'])->assertCreated();
         $created->assertJsonPath('data.is_visible_to_client', false)->assertJsonPath('data.status', 'open');
         $agentTask = ClientTask::query()->where('workspace_id', $workspace->id)->where('public_id', $created->json('data.id'))->firstOrFail();
-        $this->actingAs($owner)->from($return)->patch($this->updatePath($workspace, $webTask, true), ['status' => 'completed'])
+        $this->actingAs($owner)->from($return)->patch($this->updatePath($workspace, $webTask, true), ['expected_version' => AgentApiVersion::for($webTask->fresh()), 'status' => 'completed'])
             ->assertRedirect($return)->assertSessionHas('status', 'Task updated.');
         $this->actingAsMcp($owner, ['tasks:write']);
         $completed = $this->withHeader('Idempotency-Key', 'synthetic-task-complete')->patchJson($this->updatePath($workspace, $agentTask), ['expected_version' => $created->json('data.version'), 'status' => 'completed'])->assertOk();
@@ -64,7 +64,7 @@ final class TaskMutationParityTest extends TestCase
         $this->travelTo(CarbonImmutable::parse('2026-10-09 12:00:00', 'UTC'));
         $edited = $this->withHeader('Idempotency-Key', 'synthetic-task-title')->patchJson($this->updatePath($workspace, $agentTask), ['expected_version' => $completed->json('data.version'), 'title' => 'Revised synthetic agent task', 'description' => null])->assertOk();
         $this->assertSame('2026-10-08 12:00:00', $agentTask->fresh()->completed_at->format('Y-m-d H:i:s'));
-        $this->actingAs($owner)->patch($this->updatePath($workspace, $webTask, true), ['status' => 'in_progress', 'is_visible_to_client' => false])->assertRedirect();
+        $this->actingAs($owner)->patch($this->updatePath($workspace, $webTask, true), ['expected_version' => AgentApiVersion::for($webTask->fresh()), 'status' => 'in_progress', 'is_visible_to_client' => false])->assertRedirect();
         $this->actingAsMcp($owner, ['tasks:write']);
         $this->withHeader('Idempotency-Key', 'synthetic-task-reopen')->patchJson($this->updatePath($workspace, $agentTask), ['expected_version' => $edited->json('data.version'), 'status' => 'open', 'is_visible_to_client' => true])->assertOk();
         $this->assertNull($webTask->fresh()->completed_at);
@@ -82,13 +82,13 @@ final class TaskMutationParityTest extends TestCase
         $this->actingAsMcp($owner, ['tasks:write']);
         $created = $this->withHeader('Idempotency-Key', 'long-agent-task')->postJson($this->createPath($workspace, $project), ['title' => str_repeat('x', 255), 'description' => str_repeat('x', 10000)])->assertCreated();
         $task = ClientTask::query()->where('workspace_id', $workspace->id)->where('public_id', $created->json('data.id'))->firstOrFail();
-        $this->actingAs($owner)->patchJson($this->updatePath($workspace, $task, true), ['is_visible_to_client' => true])->assertUnprocessable();
+        $this->actingAs($owner)->patchJson($this->updatePath($workspace, $task, true), ['is_visible_to_client' => true])->assertUnprocessable()->assertJsonValidationErrors('expected_version');
         $this->actingAsMcp($owner, ['tasks:write']);
         $this->withHeader('Idempotency-Key', 'partial-agent-task')->patchJson($this->updatePath($workspace, $task), ['expected_version' => $created->json('data.version'), 'description' => null])->assertOk()->assertJsonPath('data.description', null);
     }
 
     #[DataProvider('roles')]
-    public function test_shared_task_policy_preserves_web_manager_gate_and_agent_project_roles(string $workspaceRole, ?string $projectRole, bool $agentAllowed, bool $webAllowed): void
+    public function test_shared_task_policy_allows_the_same_current_internal_project_roles(string $workspaceRole, ?string $projectRole, bool $agentAllowed, bool $webAllowed): void
     {
         [$workspace, $company, $project, $owner] = $this->fixture();
         $actor = $workspaceRole === 'owner' ? $owner : User::factory()->create();
@@ -102,7 +102,7 @@ final class TaskMutationParityTest extends TestCase
         }
         $task = $this->task($workspace, $project);
         $this->actingAs($actor)->postJson($this->createPath($workspace, $project, true), ['title' => 'Synthetic web role task', 'is_visible_to_client' => true])->assertStatus($webAllowed ? 302 : 403);
-        $this->actingAs($actor)->patchJson($this->updatePath($workspace, $task, true), ['status' => 'in_progress'])->assertStatus($webAllowed ? 302 : 403);
+        $this->actingAs($actor)->patchJson($this->updatePath($workspace, $task, true), ['expected_version' => AgentApiVersion::for($task), 'status' => 'in_progress'])->assertStatus($webAllowed ? 302 : 403);
         $this->actingAsMcp($actor, ['tasks:write']);
         $this->withHeader('Idempotency-Key', 'role-create')->postJson($this->createPath($workspace, $project), ['title' => 'Synthetic agent role task'])->assertStatus($agentAllowed ? 201 : 403);
         $this->withHeader('Idempotency-Key', 'role-update')->patchJson($this->updatePath($workspace, $task), ['expected_version' => AgentApiVersion::for($task->fresh()), 'title' => 'Revised synthetic role task'])->assertStatus($agentAllowed ? 200 : 403);
@@ -110,7 +110,7 @@ final class TaskMutationParityTest extends TestCase
 
     public static function roles(): array
     {
-        return [['owner', null, true, true], ['admin', null, true, true], ['member', 'owner', true, false], ['member', 'manager', true, false], ['member', 'contributor', false, false], ['member', 'viewer', false, false], ['member', null, false, false], ['portal', null, false, false]];
+        return [['owner', null, true, true], ['admin', null, true, true], ['member', 'owner', true, true], ['member', 'manager', true, true], ['member', 'contributor', false, false], ['member', 'viewer', false, false], ['member', null, false, false], ['portal', null, false, false]];
     }
 
     public function test_replay_noop_revision_stale_conflict_and_revocation_are_preserved_under_task_lock(): void
@@ -154,7 +154,7 @@ final class TaskMutationParityTest extends TestCase
         $badProject = $this->writingLegacyCrossTenantRows(fn () => ClientProject::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $foreignCompany->id, 'name' => 'Malformed synthetic project']));
         $this->actingAs($owner)->postJson($this->createPath($workspace, $foreignProject, true), ['title' => 'Foreign synthetic task', 'is_visible_to_client' => true])->assertNotFound();
         foreach ([$foreignTask, $malformed] as $record) {
-            $this->actingAs($owner)->patchJson($this->updatePath($workspace, $record, true), ['status' => 'completed'])->assertNotFound();
+            $this->actingAs($owner)->patchJson($this->updatePath($workspace, $record, true), ['expected_version' => AgentApiVersion::for($record), 'status' => 'completed'])->assertNotFound();
         }
         $this->actingAsMcp($owner, ['tasks:write']);
         foreach ([$foreignProject, $badProject] as $record) {

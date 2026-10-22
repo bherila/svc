@@ -73,6 +73,8 @@ enum LockResource: string
     // after locking the entry; invoice state was already locked before it.
     case ClientInvoiceLineTimeEntry = 'client_invoice_line_time_entries';
     case ClientTask = 'client_tasks';
+    // Responsibility reads are current after the task lock, before access facts.
+    case ClientTaskAssignment = 'client_task_assignments';
 
     // Recurrence locks its schedule before inserting draft expense rows.
     // Invoice allocation locks expenses after invoice/time/task composition;

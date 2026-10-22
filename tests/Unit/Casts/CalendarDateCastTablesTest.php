@@ -12,9 +12,11 @@ use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceLine;
 use App\Models\ClientInvoicePayment;
 use App\Models\ClientProposal;
+use App\Models\ClientTask;
 use App\Models\PaymentReconciliation;
 use App\Support\Finance\ReconciliationReviewReason;
 use Illuminate\Database\Eloquent\Model;
+use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
@@ -27,6 +29,19 @@ use Tests\TestCase;
  * as a whole once any line of it changes, and only a whole-table assertion
  * notices an entry removed from it.
  */
+#[CoversClass(DateOnly::class)]
+#[CoversClass(ClientAgreement::class)]
+#[CoversClass(ClientAgreementRecurringItem::class)]
+#[CoversClass(ClientBillingSchedule::class)]
+#[CoversClass(ClientExpense::class)]
+#[CoversClass(ClientExpenseSchedule::class)]
+#[CoversClass(ClientInvoice::class)]
+#[CoversClass(ClientInvoiceLine::class)]
+#[CoversClass(ClientInvoicePayment::class)]
+#[CoversClass(ClientProposal::class)]
+#[CoversClass(ClientTask::class)]
+#[CoversClass(PaymentReconciliation::class)]
+#[CoversClass(ReconciliationReviewReason::class)]
 final class CalendarDateCastTablesTest extends TestCase
 {
     /** @param  array<string, string>  $expected */
@@ -68,6 +83,10 @@ final class CalendarDateCastTablesTest extends TestCase
     public static function tables(): iterable
     {
         $tables = [
+            ClientTask::class => [
+                'id' => 'int', 'is_visible_to_client' => 'boolean', 'completed_at' => 'immutable_datetime',
+                'milestone_price_amount' => 'integer', 'starts_on' => DateOnly::class, 'due_on' => DateOnly::class,
+            ],
             ClientAgreement::class => [
                 'id' => 'int',
                 'starts_on' => DateOnly::class,

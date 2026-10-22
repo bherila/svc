@@ -18,12 +18,17 @@ use App\Services\Authorization\ProjectAccess;
 use App\Services\Billing\DeferredBacklogReadService;
 use App\Services\Billing\InvoiceCorrectionReadService;
 use App\Services\Mcp\AgentWithheldTools;
+use App\Services\Tasks\TaskAccess;
+use App\Services\Tasks\TaskMutationOrigin;
+use App\Services\Tasks\TaskPlanningPresenter;
 use App\Support\AgentApi\AgentApiContract;
 use App\Support\AgentApi\AgentApiCursor;
 use App\Support\AgentApi\AgentApiScopes;
+use App\Support\AgentApi\AgentPageBudget;
 use App\Support\AgentApi\AgentWriteCutover;
 use App\Support\AgentApi\ChangeFeedPage;
 use App\Support\AgentApi\ChangeWindow;
+use App\Support\AgentApi\CursorPage;
 use App\Support\AgentApi\InvoiceListFilters;
 use App\Support\AgentApi\Presenters\AgentInvoicePresenter;
 use App\Support\AgentApi\Presenters\AgentProjectPresenter;
@@ -58,6 +63,8 @@ final class AgentReadService
      * deliver the change that took it out of the filter.
      */
     private const array INVOICE_FEED_FILTERS = ['company_id', 'invoice_kind'];
+
+    private const int PROJECT_TASK_LINK_RESERVE = 8192;
 
     public function __construct(
         private readonly AgentAccess $access,
@@ -185,68 +192,73 @@ final class AgentReadService
             $query->where('name', 'like', '%'.$search.'%');
         }
 
-        $page = $this->page($query, $workspace, 'projects|status='.($status ?? '').'|search='.($search ?? ''), $limit, $cursor);
         // Withheld from a portal client, and fail-closed for anyone who is
         // somehow both: a repository mapping names internal infrastructure, and
         // the client half of a dual identity is the half that must not see it.
         $includeRepository = ! $this->access->isWorkspaceClient($user, $workspace);
-        $data = [];
-        foreach ($page['records'] as $project) {
-            if (! $project instanceof ClientProject) {
-                continue;
-            }
-            $data[] = $this->projectPresenter->present($workspace, $project, $includeRepository);
-        }
 
-        return ['data' => $data, 'meta' => ['next_cursor' => $page['next_cursor']]];
+        return CursorPage::run($workspace, 'projects|status='.($status ?? '').'|search='.($search ?? ''), $limit, $cursor,
+            fn (int $take, ?int $after) => (clone $query)->when($after !== null, fn (Builder $page) => $page->where('client_projects.id', '>', $after))->limit($take)->get(),
+            fn (ClientProject $project): array => $this->projectPresenter->present($workspace, $project, $includeRepository),
+            maxDataBytes: AgentPageBudget::dataBytes(),
+        );
     }
 
     /** @return array<string, mixed> */
-    public function project(User|AgentPrincipal $user, Workspace $workspace, string $projectId, bool $includeTasks): array
+    public function project(User|AgentPrincipal $user, Workspace $workspace, string $projectId, bool $includeTasks, ?string $tasksCursor = null): array
     {
         $this->requireWorkspace($user, $workspace);
-        $query = $this->projectQuery($user, $workspace)->where('public_id', $projectId)->with('clientCompany');
-        if ($includeTasks) {
-            $query->with('tasks');
-        }
-        $record = $query->firstOrFail();
+        $record = $this->projectQuery($user, $workspace)->where('public_id', $projectId)->with('clientCompany')->firstOrFail();
         $data = $this->projectPresenter->present($workspace, $record, ! $this->access->isWorkspaceClient($user, $workspace));
-        if ($record->relationLoaded('tasks')) {
-            $data['tasks'] = $record->tasks->filter(fn (ClientTask $task): bool => $this->access->canViewTask($user, $task))
-                ->map(fn (ClientTask $task): array => $this->taskPresenter->present($workspace, $task))->values()->all();
+        if ($includeTasks) {
+            // The base project's description consumes the same response budget.
+            // Reserve 8 KiB for property names and an encoded continuation URL
+            // (request cursors themselves are bounded to 2 KiB).
+            $budget = max(1, AgentPageBudget::dataBytes() - strlen(json_encode($data, JSON_THROW_ON_ERROR)) - self::PROJECT_TASK_LINK_RESERVE);
+            $page = $this->taskPage($user, $workspace, $projectId, 25, $tasksCursor, TaskMutationOrigin::Agent, $budget);
+            $data['tasks'] = $page['data'];
+            $data['tasks_next_href'] = $page['meta']['next_cursor'] === null ? null
+                : route('agent-api.v1.projects.show', ['workspace' => $workspace, 'project' => $projectId, 'tasks_cursor' => $page['meta']['next_cursor']]);
         }
 
         return $data;
     }
 
     /** @return array{data:list<array<string, mixed>>,meta:array{next_cursor:?string}} */
-    public function tasks(User|AgentPrincipal $user, Workspace $workspace, ?string $projectId, int $limit, ?string $cursor): array
+    public function tasks(User|AgentPrincipal $user, Workspace $workspace, ?string $projectId, int $limit, ?string $cursor, TaskMutationOrigin $origin = TaskMutationOrigin::Agent): array
     {
         $this->requireWorkspace($user, $workspace);
-        $query = $this->taskQuery($user, $workspace)->with('project.clientCompany')->orderBy('id');
+
+        return $this->taskPage($user, $workspace, $projectId, $limit, $cursor, $origin, AgentPageBudget::dataBytes());
+    }
+
+    /** @return array{data:list<array<string, mixed>>,meta:array{next_cursor:?string}} */
+    private function taskPage(User|AgentPrincipal $user, Workspace $workspace, ?string $projectId, int $limit, ?string $cursor, TaskMutationOrigin $origin, int $maxDataBytes): array
+    {
+        $includePlanning = $origin === TaskMutationOrigin::Internal || ! $this->access->isWorkspaceClient($user, $workspace);
+        $manageable = $includePlanning ? app(TaskAccess::class)->manageableProjectIds($user, $workspace) : [];
+        $query = $this->taskQuery($user, $workspace, $origin)->with('project.clientCompany')->when($includePlanning, fn (Builder $planning): Builder => $planning->with(TaskPlanningPresenter::relations($workspace)))->orderBy('id');
         if ($projectId !== null && $projectId !== '') {
             $query->whereHas('project', fn (Builder $projects) => $projects->where('public_id', $projectId));
         }
 
-        $page = $this->page($query, $workspace, 'tasks|project_id='.($projectId ?? ''), $limit, $cursor);
-        $data = [];
-        foreach ($page['records'] as $task) {
-            if (! $task instanceof ClientTask) {
-                continue;
-            }
-            $data[] = $this->taskPresenter->present($workspace, $task);
-        }
-
-        return ['data' => $data, 'meta' => ['next_cursor' => $page['next_cursor']]];
+        return CursorPage::run($workspace, 'tasks|project_id='.($projectId ?? ''), $limit, $cursor,
+            fn (int $take, ?int $after) => (clone $query)->when($after !== null, fn (Builder $page) => $page->where('client_tasks.id', '>', $after))->limit($take)->get(),
+            fn (ClientTask $task): array => $this->taskPresenter->present($workspace, $task, includePlanning: $includePlanning,
+                canManage: $manageable === null || in_array((int) $task->client_project_id, $manageable, true)),
+            maxDataBytes: $maxDataBytes,
+        );
     }
 
     /** @return array<string, mixed> */
-    public function task(User|AgentPrincipal $user, Workspace $workspace, string $taskId): array
+    public function task(User|AgentPrincipal $user, Workspace $workspace, string $taskId, TaskMutationOrigin $origin = TaskMutationOrigin::Agent): array
     {
         $this->requireWorkspace($user, $workspace);
-        $record = $this->taskQuery($user, $workspace)->where('public_id', $taskId)->with('project.clientCompany')->firstOrFail();
+        $includePlanning = $origin === TaskMutationOrigin::Internal || ! $this->access->isWorkspaceClient($user, $workspace);
+        $manageable = $includePlanning ? app(TaskAccess::class)->manageableProjectIds($user, $workspace) : [];
+        $record = $this->taskQuery($user, $workspace, $origin)->where('public_id', $taskId)->with('project.clientCompany')->when($includePlanning, fn (Builder $planning): Builder => $planning->with(TaskPlanningPresenter::relations($workspace)))->firstOrFail();
 
-        return $this->taskPresenter->present($workspace, $record);
+        return $this->taskPresenter->present($workspace, $record, includePlanning: $includePlanning, canManage: $manageable === null || in_array((int) $record->client_project_id, $manageable, true));
     }
 
     /** @return array{data:list<array<string, mixed>>,meta:array{next_cursor:?string}} */
@@ -442,40 +454,40 @@ final class AgentReadService
     /** @return Builder<ClientProject> */
     private function projectQuery(User|AgentPrincipal $user, Workspace $workspace): Builder
     {
-        $query = ClientProject::query()->where('workspace_id', $workspace->id);
+        $query = ClientProject::query()->where('workspace_id', $workspace->id)
+            ->whereHas('clientCompany', fn (Builder $companies) => $companies->where('workspace_id', $workspace->id));
+        if ($this->access->isWorkspaceClient($user, $workspace)) {
+            return $this->portalAccess->constrainProjectQuery($query->where('is_visible_to_client', true), $user);
+        }
         if ($this->access->isWorkspaceManager($user, $workspace)) {
             return $query;
         }
 
-        return $query->where(function (Builder $projects) use ($user): void {
-            $projects->whereHas('members', fn (Builder $members) => $members->whereKey($user->id))
-                ->orWhere(fn (Builder $clients) => $this->portalAccess
-                    ->constrainProjectQuery($clients->where('is_visible_to_client', true), $user));
-        });
+        return $query->whereHas('members', fn (Builder $members) => $members->whereKey($user->id)
+            ->where('client_project_memberships.workspace_id', $workspace->id));
     }
 
     /** @return Builder<ClientTask> */
-    private function taskQuery(User|AgentPrincipal $user, Workspace $workspace): Builder
+    private function taskQuery(User|AgentPrincipal $user, Workspace $workspace, TaskMutationOrigin $origin = TaskMutationOrigin::Agent): Builder
     {
-        $query = ClientTask::query()->where('workspace_id', $workspace->id);
+        $query = ClientTask::query()->where('workspace_id', $workspace->id)
+            ->whereHas('project', fn (Builder $projects): Builder => $projects->where('workspace_id', $workspace->id)
+                ->whereHas('clientCompany', fn (Builder $companies): Builder => $companies->where('workspace_id', $workspace->id)));
+        if ($origin === TaskMutationOrigin::Internal && $this->projects->workspaceRole($user, $workspace) === null) {
+            return $query->whereRaw('1 = 0');
+        }
+        if ($origin === TaskMutationOrigin::Agent && $this->access->isWorkspaceClient($user, $workspace)) {
+            return $query->where('is_visible_to_client', true)
+                ->whereHas('project', fn (Builder $projects) => $this->portalAccess
+                    ->constrainProjectQuery($projects->where('is_visible_to_client', true), $user));
+        }
         if ($this->access->isWorkspaceManager($user, $workspace)) {
             return $query;
         }
 
-        return $query->where(function (Builder $tasks) use ($user): void {
-            $tasks->where(function (Builder $assigned) use ($user): void {
-                $assigned->whereHas('project', fn (Builder $projects) => $projects
-                    ->whereHas('members', fn (Builder $members) => $members->whereKey($user->id)))
-                    ->where(function (Builder $visibility) use ($user): void {
-                        $visibility->whereDoesntHave('project.clientCompany.portalUsers', fn (Builder $users) => $users->whereKey($user->id))
-                            ->orWhere('is_visible_to_client', true);
-                    });
-            })->orWhere(function (Builder $clientVisible) use ($user): void {
-                $clientVisible->where('is_visible_to_client', true)
-                    ->whereHas('project', fn (Builder $projects) => $this->portalAccess
-                        ->constrainProjectQuery($projects->where('is_visible_to_client', true), $user));
-            });
-        });
+        return $query->whereHas('project', fn (Builder $projects) => $projects
+            ->whereHas('members', fn (Builder $members) => $members->whereKey($user->id)
+                ->where('client_project_memberships.workspace_id', $workspace->id)));
     }
 
     /** @return Builder<ClientInvoice> */

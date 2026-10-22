@@ -5,7 +5,9 @@ use App\Models\ClientCompany;
 use App\Models\ClientContact;
 use App\Models\ClientPortalInvitation;
 use App\Models\ClientProject;
+use App\Models\ClientProjectMembership;
 use App\Models\ClientProposal;
+use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
 use App\Models\InvoiceReminderLog;
 use App\Models\User;
@@ -25,6 +27,8 @@ use App\Services\History\HistoricalRecordRepository;
 use App\Services\Square\Mirror\SquareMirrorRepository;
 use App\Services\Square\Mirror\SquareSnapshotMapper;
 use App\Services\Square\SquareLinkService;
+use App\Services\Tasks\TaskCreateData;
+use App\Services\WorkspaceTaskMutationAction;
 use App\Support\Access\AccessMutationContext;
 use App\Support\Access\PortalAccessScope;
 use App\Support\AgentApi\AgentApiVersion;
@@ -151,6 +155,32 @@ $project = ClientProject::query()->create([
     'workspace_id' => $workspace->id, 'client_company_id' => $company->id,
     'name' => str_repeat('SyntheticProject', 10), 'status' => 'active',
 ]);
+$planningTask = null;
+if (getenv('SVC_LAYOUT_TASKS') === '1') {
+    $taskAssignees = [];
+    for ($index = 0; $index < 28; $index++) {
+        $staff = User::factory()->create([
+            'name' => str_repeat('SyntheticAssigneeWithoutBreaks', 7).str_pad((string) $index, 2, '0', STR_PAD_LEFT),
+            'email' => 'synthetic-task-staff-'.$index.'@example.test',
+        ]);
+        $workspace->memberships()->create(['user_id' => $staff->id, 'role' => 'member']);
+        ClientProjectMembership::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $project->id, 'user_id' => $staff->id, 'role' => 'contributor']);
+        if ($index < 10) {
+            $taskAssignees[] = $staff->public_id;
+        }
+    }
+    $planningTask = app(WorkspaceTaskMutationAction::class)->create($owner, $workspace, $project->public_id, TaskCreateData::fromValidated([
+        'title' => str_repeat('SyntheticTaskWithoutBreaks', 9),
+        'description' => str_repeat('Synthetic task description with planning context and enough prose to wrap. ', 24),
+        'is_visible_to_client' => true, 'starts_on' => '2026-10-20', 'due_on' => '2026-10-30', 'assignee_ids' => $taskAssignees,
+    ]));
+    for ($index = 0; $index < 53; $index++) {
+        ClientTask::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $project->id,
+            'title' => 'ZZZ Synthetic paginated task '.str_repeat('UnbrokenTitle', 8).' '.str_pad((string) $index, 3, '0', STR_PAD_LEFT),
+            'status' => 'open', 'is_visible_to_client' => true]);
+    }
+}
+
 // Portal contacts on the settings page: one reaching the whole client, one limited to the
 // project above, both with a name and an address that will not break on their own.
 foreach ([PortalAccessScope::Company, PortalAccessScope::Projects] as $index => $scope) {
@@ -364,7 +394,20 @@ $historyInvoice = app(HistoricalLibraryRepository::class)->publish($workspace, $
         ['label' => 'Payments', 'columns' => ['Method', 'Date', 'Amount'], 'rows' => [['Historical manual receipt', '2020-03-10', 'USD 2.99']]],
     ]), $company);
 
+$taskViewer = $owner;
+if ($planningTask !== null) {
+    $taskViewer = User::factory()->create(['name' => 'Synthetic Project Manager', 'email' => 'layout-project-manager@example.test']);
+    $workspace->memberships()->create(['user_id' => $taskViewer->id, 'role' => 'member']);
+    ClientProjectMembership::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $project->id, 'user_id' => $taskViewer->id, 'role' => 'manager']);
+}
+
 file_put_contents($runtime.'/fixture.json', json_encode([
+    'task_editor' => $planningTask === null ? null : route('tasks.show', [$workspace, $planningTask], absolute: false),
+    'task_list' => route('clients.tasks', [$workspace, $company], absolute: false),
+    'task_project' => route('clients.project', [$workspace, $company, $project], absolute: false),
+    'task_portal' => route('portal.tasks', $company, absolute: false),
+    'task_create' => $planningTask === null ? null : route('tasks.store', [$workspace, $project], absolute: false),
+    'task_update' => $planningTask === null ? null : route('tasks.update', [$workspace, $planningTask], absolute: false),
     'history_index' => route('history.index', $workspace, absolute: false),
     'history_discussion' => route('history.show', [$workspace, $historyDiscussion], absolute: false),
     'history_invoice' => route('history.show', [$workspace, $historyInvoice], absolute: false),
@@ -388,7 +431,7 @@ file_put_contents($runtime.'/fixture.json', json_encode([
         'PATCH' => ['/api/v1/workspaces/'.$workspace->public_id.'/time-entries/'.$correction->public_id],
     ],
     'receipts' => route('svc.expenses.receipts', [$workspace, $company, $receiptExpense->public_id], absolute: false),
-    'user_id' => $owner->id, 'date' => $date,
+    'user_id' => $taskViewer->id, 'date' => $date,
     'expense_schedule_store' => route('svc.expense-schedules.store', [$workspace, $company], absolute: false),
     'expense_schedule_prefix' => '/workspaces/'.$workspace->public_id.'/expense-schedules/',
     'expense_schedules' => route('clients.expense-schedules', [$workspace, $company], absolute: false),

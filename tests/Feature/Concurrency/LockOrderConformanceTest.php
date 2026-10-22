@@ -119,7 +119,7 @@ final class LockOrderConformanceTest extends TestCase
         'App\\Services\\Billing\\InvoiceLifecycleService::releaseAllocations',
         'App\\Services\\Billing\\InvoiceLineComposer::addBillableMilestoneTasks',
         'App\\Services\\Files\\AttachmentAction::lockedRecord',
-        'App\\Services\\WorkspaceTaskMutationAction::update',
+        'App\\Services\\Tasks\\WorkspaceTaskRepository::find',
     ];
 
     private Workspace $workspace;

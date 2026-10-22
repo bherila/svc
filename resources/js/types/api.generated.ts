@@ -1539,7 +1539,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Task data is embedded only when the token also has tasks:read. */
+        /** @description Task data is embedded only when the token also has tasks:read. Task pages are bounded by row count and serialized bytes including the base project. Follow tasks_next_href or pass tasks_cursor to continue; a short page does not imply completion. */
         get: operations['projects.get'];
         put?: never;
         post?: never;
@@ -3683,6 +3683,11 @@ export interface components {
             /** Format: uri */
             web_url: string;
             tasks?: components['schemas']['Task'][];
+            /**
+             * Format: uri
+             * @description Present with the bounded tasks array when tasks:read is held. Continue on this project URL with its opaque tasks_cursor; null when the task page is complete.
+             */
+            tasks_next_href?: string | null;
         };
         ProjectDetailResponse: {
             data: components['schemas']['ProjectDetail'];
@@ -4803,12 +4808,28 @@ export interface components {
             version: components['schemas']['Version'];
             /** Format: uri */
             web_url: string;
+            /** Format: date */
+            starts_on?: string | null;
+            /** Format: date */
+            due_on?: string | null;
+            /** @description Internal planning metadata, withheld from portal and dual-identity API responses. */
+            assignees?: {
+                /** Format: uuid */
+                id: string;
+                name: string;
+            }[];
         };
         TaskCreateRequest: {
             title: string;
             description?: string | null;
             /** @description Hidden from clients when omitted. Callers choose visibility explicitly when publishing a task. */
             is_visible_to_client?: boolean;
+            /** Format: date */
+            starts_on?: string | null;
+            /** Format: date */
+            due_on?: string | null;
+            /** @description Current eligible internal account public UUIDs. Omit to preserve assignments; an empty array clears them. */
+            assignee_ids?: string[];
         };
         TaskListResponse: {
             data: components['schemas']['Task'][];
@@ -4824,6 +4845,12 @@ export interface components {
             /** @enum {string} */
             status?: 'open' | 'in_progress' | 'completed';
             is_visible_to_client?: boolean;
+            /** Format: date */
+            starts_on?: string | null;
+            /** Format: date */
+            due_on?: string | null;
+            /** @description Current eligible internal account public UUIDs. Omit to preserve assignments; an empty array clears them. */
+            assignee_ids?: string[];
         };
         TimeApprovalItem: {
             id: components['schemas']['Uuid'];
@@ -9758,7 +9785,9 @@ export interface operations {
     };
     'projects.get': {
         parameters: {
-            query?: never;
+            query?: {
+                tasks_cursor?: string;
+            };
             header?: never;
             path: {
                 workspace: components['parameters']['WorkspaceId'];

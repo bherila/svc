@@ -33,6 +33,8 @@ use App\Services\Clients\CompanyProfile;
 use App\Services\Finance\FinanceReconciliationBadges;
 use App\Services\Square\Mirror\SquareInvoicePage;
 use App\Services\Square\SquareLinkRepository;
+use App\Services\Tasks\TaskAccess;
+use App\Services\Tasks\TaskEditorPresenter;
 use App\Services\WorkspaceAuthorization;
 use App\Support\Access\PortalInvitationStatus;
 use App\Support\AgentApi\AgentApiVersion;
@@ -662,7 +664,12 @@ class ClientDirectoryController extends Controller
             ->where('client_project_id', $clientProject->id)
             ->orderBy('status')
             ->orderBy('title')
-            ->get();
+            ->orderBy('id')
+            ->limit(26)->get();
+        $moreTasks = $tasks->count() > 25;
+        if ($moreTasks) {
+            $tasks->pop();
+        }
 
         // One grouped query rather than one per status, so the cost does not
         // follow the number of statuses anyone invents later.
@@ -684,8 +691,13 @@ class ClientDirectoryController extends Controller
 
         $projectNames = collect([$clientProject->id => $clientProject->name]);
 
+        $canManageTasks = app(TaskAccess::class)->canManage($user, $workspace, $clientProject);
+
         return Inertia::render('clients/project', [
             'workspace' => ['id' => $workspace->public_id],
+            'task_management' => $canManageTasks
+                ? ['projects' => [app(TaskEditorPresenter::class)->project($workspace, $clientProject)]]
+                : null,
             'company' => [
                 'id' => $clientCompany->public_id,
                 'name' => $clientCompany->name,
@@ -703,7 +715,11 @@ class ClientDirectoryController extends Controller
                 'status' => $task->status,
                 'is_visible_to_client' => (bool) $task->is_visible_to_client,
                 'completed_at' => $task->completed_at?->toDateString(),
+                'starts_on' => $task->starts_on?->toDateString(),
+                'due_on' => $task->due_on?->toDateString(),
+                'detail_url' => $canManageTasks ? route('tasks.show', [$workspace, $task]) : null,
             ])->values()->all(),
+            'tasks_next_href' => $moreTasks ? route('clients.tasks', [$workspace, $clientCompany, 'project' => $clientProject->public_id]) : null,
             'time' => $minutesByStatus->map(fn (ClientTimeEntry $row): array => [
                 'status' => (string) $row->status,
                 'minutes' => (int) $row->getAttribute('total_minutes'),
@@ -999,9 +1015,14 @@ class ClientDirectoryController extends Controller
             ->whereIn('client_project_id', $scope->pluck('id')->all())
             ->orderBy('status')
             ->orderBy('title')
-            ->get();
+            ->orderBy('id')
+            ->simplePaginate(50)->appends($selected === null ? [] : ['project' => $selected->public_id]);
 
         $projectNames = $projects->pluck('name', 'id');
+
+        $manageable = app(TaskAccess::class)->manageableProjectIds($user, $workspace);
+        $taskProjects = $projects->filter(fn (ClientProject $project): bool => $manageable === null || in_array((int) $project->id, $manageable, true))->values();
+        $taskProjectIds = array_fill_keys($taskProjects->modelKeys(), true);
 
         return Inertia::render('clients/tasks', [
             'company' => [
@@ -1012,6 +1033,9 @@ class ClientDirectoryController extends Controller
             // disclosure, which is meaningless on the copy of this screen the
             // client is reading.
             'audience' => 'operator',
+            'task_management' => $taskProjects->isNotEmpty()
+                ? ['projects' => $taskProjects->map(fn (ClientProject $project): array => app(TaskEditorPresenter::class)->project($workspace, $project))->values()->all()]
+                : null,
             'filters' => [
                 'project_id' => $selected?->public_id,
             ],
@@ -1026,7 +1050,11 @@ class ClientDirectoryController extends Controller
                 'project' => $projectNames[$task->client_project_id] ?? null,
                 'is_visible_to_client' => (bool) $task->is_visible_to_client,
                 'completed_at' => $task->completed_at?->toDateString(),
+                'starts_on' => $task->starts_on?->toDateString(),
+                'due_on' => $task->due_on?->toDateString(),
+                'detail_url' => isset($taskProjectIds[$task->client_project_id]) ? route('tasks.show', [$workspace, $task]) : null,
             ])->values()->all(),
+            'pagination' => ['previous_href' => $tasks->previousPageUrl(), 'next_href' => $tasks->nextPageUrl()],
         ]);
     }
 

@@ -2,8 +2,8 @@
 
 namespace App\Http\Requests;
 
+use App\Services\Tasks\TaskInputRules;
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Validation\Rule;
 
 class UpdateClientTaskRequest extends FormRequest
 {
@@ -15,9 +15,6 @@ class UpdateClientTaskRequest extends FormRequest
     /** @return array<string, list<mixed>> */
     public function rules(): array
     {
-        return [
-            'status' => ['required', Rule::in(['open', 'in_progress', 'completed'])],
-            'is_visible_to_client' => ['sometimes', 'boolean'],
-        ];
+        return ['expected_version' => ['required', 'string', 'size:64']] + TaskInputRules::patch();
     }
 }

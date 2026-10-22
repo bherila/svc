@@ -228,6 +228,10 @@ describe('client screens under data that does not fit', () => {
                         completed_at: null,
                     },
                 ]}
+                pagination={{
+                    previous_href: '/synthetic/tasks?page=1',
+                    next_href: '/synthetic/tasks?page=3',
+                }}
             />,
         );
 

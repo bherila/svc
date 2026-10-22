@@ -6,6 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Models\Workspace;
 use App\Services\AgentApi\AgentMutationContextFactory;
 use App\Services\AgentApi\AgentTaskMutationAction;
+use App\Services\Authorization\AgentAccess;
+use App\Services\Tasks\TaskAccess;
+use App\Services\Tasks\TaskInputRules;
 use App\Support\AgentApi\Presenters\AgentTaskPresenter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -19,9 +22,10 @@ final class AgentTaskMutationController extends Controller
         AgentTaskMutationAction $tasks,
         AgentTaskPresenter $presenter,
         AgentMutationContextFactory $contexts,
+        AgentAccess $access,
     ): JsonResponse {
         $context = $contexts->from($request);
-        $data = $request->validate(['title' => ['required', 'string', 'max:255'], 'description' => ['nullable', 'string', 'max:10000'], 'is_visible_to_client' => ['sometimes', 'boolean']]);
+        $data = $request->validate(TaskInputRules::create());
         $task = $tasks->create(
             $context->user,
             $workspace,
@@ -31,7 +35,7 @@ final class AgentTaskMutationController extends Controller
             $data,
         );
 
-        return response()->json(['data' => $presenter->present($workspace, $task)], 201);
+        return response()->json(['data' => $presenter->present($workspace, $task, includePlanning: ! $access->isWorkspaceClient($context->user, $workspace), canManage: app(TaskAccess::class)->canManage($context->user, $workspace, $task->project))], 201);
     }
 
     public function update(
@@ -41,9 +45,10 @@ final class AgentTaskMutationController extends Controller
         AgentTaskMutationAction $tasks,
         AgentTaskPresenter $presenter,
         AgentMutationContextFactory $contexts,
+        AgentAccess $access,
     ): JsonResponse {
         $context = $contexts->from($request);
-        $data = $request->validate(['expected_version' => ['required', 'string', 'size:64'], 'title' => ['sometimes', 'string', 'max:255'], 'description' => ['nullable', 'string', 'max:10000'], 'status' => ['sometimes', 'string', 'in:open,in_progress,completed'], 'is_visible_to_client' => ['sometimes', 'boolean']]);
+        $data = $request->validate(['expected_version' => ['required', 'string', 'size:64']] + TaskInputRules::patch());
         $record = $tasks->update(
             $context->user,
             $workspace,
@@ -53,6 +58,6 @@ final class AgentTaskMutationController extends Controller
             $data,
         );
 
-        return response()->json(['data' => $presenter->present($workspace, $record)]);
+        return response()->json(['data' => $presenter->present($workspace, $record, includePlanning: ! $access->isWorkspaceClient($context->user, $workspace), canManage: app(TaskAccess::class)->canManage($context->user, $workspace, $record->project))]);
     }
 }

@@ -2,60 +2,79 @@
 
 namespace App\Services;
 
-use App\Models\ClientProject;
 use App\Models\ClientTask;
 use App\Models\User;
 use App\Models\Workspace;
-use App\Services\Authorization\ProjectAccess;
 use App\Services\Billing\BillingMaintenance;
+use App\Services\Tasks\TaskCreateData;
+use App\Services\Tasks\TaskMutationOrigin;
+use App\Services\Tasks\TaskPatchData;
+use App\Services\Tasks\WorkspaceTaskRepository;
 use App\Support\AgentApi\AgentApiVersion;
-use App\Support\Concurrency\Locks;
 use App\Support\WorkspaceClock;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 
-/** The tenant-scoped task lifecycle shared by website, REST and MCP adapters. */
+/** The tenant-scoped task lifecycle shared by website, REST, MCP and CLI adapters. */
 final class WorkspaceTaskMutationAction
 {
-    public function __construct(private readonly ProjectAccess $access, private readonly WorkspaceClock $clock = new WorkspaceClock) {}
+    public function __construct(
+        private readonly WorkspaceTaskRepository $tasks,
+        private readonly WorkspaceClock $clock = new WorkspaceClock,
+    ) {}
 
-    /** @param array<string,mixed> $facts */
-    public function create(User $actor, Workspace $workspace, string $projectId, array $facts): ClientTask
+    /** @param TaskCreateData|array<string,mixed> $facts */
+    public function create(User $actor, Workspace $workspace, string $projectId, TaskCreateData|array $facts, TaskMutationOrigin $origin = TaskMutationOrigin::Internal): ClientTask
     {
-        return DB::transaction(function () use ($actor, $workspace, $projectId, $facts): ClientTask {
-            BillingMaintenance::share($workspace->id);
-            $project = ClientProject::query()->where('workspace_id', $workspace->id)->where('public_id', $projectId)
-                ->whereHas('clientCompany', fn (Builder $company): Builder => $company->where('workspace_id', $workspace->id))->firstOrFail();
-            $project->setRelation('workspace', $workspace);
-            abort_unless($this->access->canManageTasks($actor, $project), 403);
-            $task = $project->tasks()->create([
-                'workspace_id' => $workspace->id, 'title' => $facts['title'], 'description' => $facts['description'] ?? null,
-                'status' => 'open', 'is_visible_to_client' => $facts['is_visible_to_client'] ?? false,
-            ]);
+        $data = $facts instanceof TaskCreateData ? $facts : TaskCreateData::fromValidated($facts);
 
-            return $task->setRelation('project', $project);
+        return DB::transaction(function () use ($actor, $workspace, $projectId, $data, $origin): ClientTask {
+            BillingMaintenance::share($workspace->id);
+            $lockedWorkspace = $this->tasks->lockWorkspace($workspace);
+            $project = $this->tasks->project($lockedWorkspace, $projectId);
+            $access = $this->tasks->access($lockedWorkspace, $project, $actor, $data->assigneeIds);
+            abort_if($origin === TaskMutationOrigin::Agent && $access->portalMember, 403);
+            abort_unless($access->canManage($actor->id), 403);
+
+            return $this->tasks->create($lockedWorkspace, $project, $data, $access);
         });
     }
 
-    /** @param array<string,mixed> $facts */
-    public function update(User $actor, Workspace $workspace, string $taskId, array $facts, ?string $expectedVersion = null): ClientTask
+    /** @param TaskPatchData|array<string,mixed> $facts */
+    public function update(User $actor, Workspace $workspace, string $taskId, TaskPatchData|array $facts, ?string $expectedVersion = null, TaskMutationOrigin $origin = TaskMutationOrigin::Internal): ClientTask
     {
-        return DB::transaction(function () use ($actor, $workspace, $taskId, $facts, $expectedVersion): ClientTask {
+        $data = $facts instanceof TaskPatchData ? $facts : TaskPatchData::fromValidated($facts);
+
+        return DB::transaction(function () use ($actor, $workspace, $taskId, $data, $expectedVersion, $origin): ClientTask {
             BillingMaintenance::share($workspace->id);
-            $task = $this->query($workspace)->where('public_id', $taskId)->tap(Locks::forUpdate())->firstOrFail();
-            $task->project->setRelation('workspace', $workspace);
-            abort_unless($this->access->canManageTasks($actor, $task->project), 403);
+            $lockedWorkspace = $this->tasks->lockWorkspace($workspace);
+            $task = $this->tasks->find($lockedWorkspace, $taskId, lock: true);
+            $task->project->setRelation('workspace', $lockedWorkspace);
+            $access = $this->tasks->access($lockedWorkspace, $task->project, $actor, $data->assigneeIds ?? []);
+            abort_if($origin === TaskMutationOrigin::Agent && $access->portalMember, 403);
+            abort_unless($access->canManage($actor->id), 403);
             abort_unless($expectedVersion === null || AgentApiVersion::matches($task, $expectedVersion), 409, 'The task has changed; read it and retry.');
-            $attributes = array_intersect_key($facts, array_flip(['title', 'description', 'status', 'is_visible_to_client']));
-            if (array_key_exists('status', $attributes)) {
-                $attributes['completed_at'] = $attributes['status'] === 'completed' ? $this->clock->now($workspace)->utc() : null;
+            $attributes = $data->attributes($task->starts_on?->toDateString(), $task->due_on?->toDateString());
+            if (array_key_exists('status', $attributes) && $attributes['status'] !== $task->status) {
+                $attributes['completed_at'] = $attributes['status'] === 'completed' ? $this->clock->now($lockedWorkspace)->utc() : null;
             }
-            $task->forceFill($attributes);
-            if ($expectedVersion !== null && ! $task->isDirty()) {
-                // Agent updates have always advanced the revision, including no-op updates.
-                $task->forceFill(['lock_version' => $task->lock_version + 1]);
-            }
-            $task->save();
+            $assignmentsChanged = $data->assigneeIds !== null && $this->tasks->assign($lockedWorkspace, $task, $data->assigneeIds, $access);
+            // Pivot-only updates advance the same revision as metadata updates.
+            $this->tasks->save($task, $attributes, $expectedVersion !== null || $assignmentsChanged);
+
+            return $this->tasks->find($lockedWorkspace, $taskId, lock: true);
+        });
+    }
+
+    /** Replays recheck current authority, including inside a caller's older snapshot. */
+    public function readManaged(User $actor, Workspace $workspace, string $id, TaskMutationOrigin $origin = TaskMutationOrigin::Internal): ClientTask
+    {
+        return DB::transaction(function () use ($actor, $workspace, $id, $origin): ClientTask {
+            BillingMaintenance::share($workspace->id);
+            $lockedWorkspace = $this->tasks->lockWorkspace($workspace);
+            $task = $this->tasks->find($lockedWorkspace, $id, lock: true);
+            $access = $this->tasks->access($lockedWorkspace, $task->project, $actor, []);
+            abort_if($origin === TaskMutationOrigin::Agent && $access->portalMember, 403);
+            abort_unless($access->canManage($actor->id), 403);
 
             return $task;
         });
@@ -63,15 +82,6 @@ final class WorkspaceTaskMutationAction
 
     public function find(Workspace $workspace, ?string $id): ClientTask
     {
-        return $this->query($workspace)->where('public_id', $id)->firstOrFail();
-    }
-
-    /** @return Builder<ClientTask> */
-    private function query(Workspace $workspace): Builder
-    {
-        return ClientTask::query()->where('workspace_id', $workspace->id)
-            ->whereHas('project', fn (Builder $project): Builder => $project->where('workspace_id', $workspace->id)
-                ->whereHas('clientCompany', fn (Builder $company): Builder => $company->where('workspace_id', $workspace->id)))
-            ->with(['project' => fn ($project) => $project->where('workspace_id', $workspace->id)]);
+        return $this->tasks->find($workspace, $id);
     }
 }

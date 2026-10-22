@@ -3,7 +3,9 @@
 namespace Tests\Feature\Mcp;
 
 use App\Models\AgentMutationAudit;
+use App\Models\AgentMutationReceipt;
 use App\Models\ClientCompany;
+use App\Models\ClientCompanyMembership;
 use App\Models\ClientProject;
 use App\Models\ClientProjectMembership;
 use App\Models\ClientTask;
@@ -62,6 +64,45 @@ final class AgentMcpRestRoutedWritesTest extends TestCase
         $this->assertSame('completed', ClientTask::query()->where('public_id', $created['id'])->value('status'));
         // Both refusals reached the same audit boundary.
         $this->assertSame(2, AgentMutationAudit::query()->where('operation', 'tasks.update')->where('outcome', 'failed')->where('error_category', 'conflict')->count());
+    }
+
+    public function test_task_planning_fields_preserve_omission_and_explicit_clears_across_mcp_rest_receipts(): void
+    {
+        [$workspace, $project, $manager] = $this->fixture();
+        $this->actingAsMcp($manager, [AgentApiScopes::MCP_USE, AgentApiScopes::TASKS_WRITE]);
+        $session = $this->initialize();
+        $body = ['title' => 'Synthetic routed plan', 'starts_on' => '2026-10-20', 'due_on' => '2026-10-30', 'assignee_ids' => [$manager->public_id]];
+        $created = $this->data($this->callTool($session, 'tasks.create', ['workspace_id' => $workspace->public_id, 'project_id' => $project->public_id, 'idempotency_key' => 'synthetic-plan-create'] + $body));
+        $replay = $this->withHeader('Idempotency-Key', 'synthetic-plan-create')->postJson("/api/v1/workspaces/{$workspace->public_id}/projects/{$project->public_id}/tasks", $body)->assertCreated()->json('data');
+        $this->assertSame($replay, $created);
+        $this->assertSame('2026-10-20', $created['starts_on']);
+        $this->assertSame($manager->public_id, $created['assignees'][0]['id']);
+        $partial = $this->data($this->callTool($session, 'tasks.update', ['workspace_id' => $workspace->public_id, 'task_id' => $created['id'], 'expected_version' => $created['version'], 'idempotency_key' => 'synthetic-plan-partial', 'title' => 'Synthetic metadata edit']));
+        $this->assertSame('2026-10-20', $partial['starts_on']);
+        $this->assertSame('2026-10-30', $partial['due_on']);
+        $this->assertSame($created['assignees'], $partial['assignees']);
+        $clear = ['expected_version' => $partial['version'], 'starts_on' => null, 'due_on' => null, 'assignee_ids' => []];
+        $cleared = $this->data($this->callTool($session, 'tasks.update', ['workspace_id' => $workspace->public_id, 'task_id' => $created['id'], 'idempotency_key' => 'synthetic-plan-clear'] + $clear));
+        $rest = $this->withHeader('Idempotency-Key', 'synthetic-plan-clear')->patchJson("/api/v1/workspaces/{$workspace->public_id}/tasks/{$created['id']}", $clear)->assertOk()->json('data');
+        $this->assertSame($rest, $cleared);
+        $this->assertNull($cleared['starts_on']);
+        $this->assertNull($cleared['due_on']);
+        $this->assertSame([], $cleared['assignees']);
+        $this->assertDatabaseCount('client_tasks', 1);
+        $this->assertDatabaseCount('client_task_assignments', 0);
+        $this->assertSame(3, AgentMutationReceipt::query()->where('workspace_id', $workspace->id)->where('status', 'completed')->count());
+    }
+
+    public function test_dual_staff_portal_identity_is_refused_by_mcp_task_writes_as_rest_refuses_it(): void
+    {
+        [$workspace, $project, $manager] = $this->fixture();
+        ClientCompanyMembership::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $project->client_company_id, 'user_id' => $manager->id, 'role' => 'client']);
+        $this->actingAsMcp($manager, [AgentApiScopes::MCP_USE, AgentApiScopes::TASKS_WRITE]);
+        $body = ['title' => 'Synthetic dual identity plan', 'starts_on' => '2026-10-20', 'assignee_ids' => [$manager->public_id]];
+        $refused = $this->withHeader('Idempotency-Key', 'synthetic-dual-rest-plan')->postJson("/api/v1/workspaces/{$workspace->public_id}/projects/{$project->public_id}/tasks", $body)->assertForbidden();
+        $this->assertRefusal(AgentMcpApiFailure::message(403, $refused->json()), $this->callTool($this->initialize(), 'tasks.create',
+            ['workspace_id' => $workspace->public_id, 'project_id' => $project->public_id, 'idempotency_key' => 'synthetic-dual-mcp-plan'] + $body));
+        $this->assertDatabaseCount('client_tasks', 0);
     }
 
     public function test_a_task_outside_the_callers_workspace_is_refused_as_rest_refuses_it(): void

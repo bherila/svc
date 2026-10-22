@@ -33,7 +33,9 @@ $scheduleWrite = is_string($requestPath) && (
 );
 $draftWrite = in_array($requestPath, $fixture['draft_writes'][$method] ?? [], true);
 $buydownWrite = $method === 'POST' && is_string($fixture['buydown_create'] ?? null) && $requestPath === $fixture['buydown_create'];
-if ($method !== 'GET' && ! $scheduleWrite && ! $draftWrite && ! $buydownWrite) {
+$taskWrite = ($method === 'POST' && $requestPath === ($fixture['task_create'] ?? null))
+    || ($method === 'PATCH' && $requestPath === ($fixture['task_update'] ?? null));
+if ($method !== 'GET' && ! $scheduleWrite && ! $draftWrite && ! $buydownWrite && ! $taskWrite) {
     http_response_code(403);
     exit('Layout harness write refused.');
 }
@@ -46,5 +48,5 @@ if ($file !== false && str_starts_with($file, $public.'/build/') && is_file($fil
 }
 
 $app = require __DIR__.'/bootstrap.php';
-Auth::onceUsingId($requestPath === $fixture['square_portal'] ? $fixture['square_portal_user_id'] : $fixture['user_id']);
+Auth::onceUsingId(in_array($requestPath, [$fixture['square_portal'], $fixture['task_portal']], true) ? $fixture['square_portal_user_id'] : $fixture['user_id']);
 $app->handleRequest(Request::capture());
