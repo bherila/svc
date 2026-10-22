@@ -2,9 +2,12 @@
 set -euo pipefail
 
 repository=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+: "${SHARED_DEPLOY_ACTION_PATH:?checkout the workflow-pinned shared action}"
+shared=$(cd "$SHARED_DEPLOY_ACTION_PATH" && pwd)
+php_binary=$(command -v php)
 fixture=$(mktemp -d)
 trap 'rm -rf "$fixture"' EXIT
-fixture_home="$fixture/account"
+fixture_home="$fixture/account with spaces"
 config_root="$fixture_home/.config/svc"
 key_root="$fixture_home/svc-laravel/storage/app/private/oauth"
 mkdir -p "$config_root" "$key_root"
@@ -15,10 +18,22 @@ touch "${files[@]}"
 printf 'AGENT_API_OAUTH_SERVER_ENABLED=true\n' >"${files[0]}"
 chmod 600 "${files[@]}"
 candidate="$fixture_home/.deployments/svc-laravel/releases/fixture"
-mkdir -p "$candidate/scripts/deploy" "$candidate/vendor"
-cp "$repository/scripts/deploy/check-oauth-config.php" "$candidate/scripts/deploy/"
+# Build only the pinned action's default upload roots, never a full checkout.
+# The production hook is streamed separately; scripts/ is not uploaded.
+upload_paths=$("$php_binary" -r '
+    require $argv[1];
+    echo Symfony\Component\Yaml\Yaml::parseFile($argv[2])["inputs"]["paths"]["default"];
+' "$repository/vendor/autoload.php" "$shared/action.yml")
+while IFS= read -r path; do
+    [ -n "$path" ] || continue
+    [[ $path =~ ^[A-Za-z0-9._-]+$ ]] || exit 2
+    case $path in
+        artisan | composer.json | composer.lock) mkdir -p "$candidate"; touch "$candidate/$path" ;;
+        *) mkdir -p "$candidate/$path" ;;
+    esac
+done <<< "$upload_paths"
+test ! -e "$candidate/scripts"
 ln -s "$repository/vendor/autoload.php" "$candidate/vendor/autoload.php"
-php_binary=$(command -v php)
 
 # A fake, read-only crontab: the fixture's lines, no crontab, or a failed read. A write fails.
 mkdir -p "$fixture/bin"
@@ -41,8 +56,8 @@ chmod +x "$fixture/bin/curl"
 
 run_preflight() {
     HOME="$fixture_home" PATH="$fixture/bin:$PATH" FIXTURE_CRONTAB="$crontab_file" \
-        bash "$repository/scripts/deploy/preflight.sh" \
-        .deployments/svc-laravel/releases/fixture "$php_binary" svc-laravel
+        bash -s -- .deployments/svc-laravel/releases/fixture "$php_binary" svc-laravel \
+        < "$repository/scripts/deploy/preflight.sh"
 }
 reject() {
     if run_preflight >"$fixture/output" 2>&1; then
@@ -52,6 +67,13 @@ reject() {
 }
 
 run_preflight >/dev/null
+
+mv "$candidate/vendor/autoload.php" "$candidate/vendor/autoload.saved"
+before=$(sha256sum "${files[@]}")
+reject 'a deployment payload missing its autoloader'
+test "$before" = "$(sha256sum "${files[@]}")"
+grep -Fq 'incoming OAuth issuance' "$fixture/output"
+mv "$candidate/vendor/autoload.saved" "$candidate/vendor/autoload.php"
 
 # Parse exactly the incoming flag with the real Dotenv parser, without executing
 # shell syntax, leaking errors/values, or changing any private file or cron.
