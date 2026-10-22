@@ -338,7 +338,7 @@ final class SquareProcessorMovementSync
             return null;
         }
 
-        return $date->utc()->format('Y-m-d\TH:i:s').'.'.str_pad($parts[2] ?? '', 9, '0').'Z';
+        return $date->utc()->format('Y-m-d\TH:i:s').'.'.str_pad($parts[2], 9, '0').'Z';
     }
 
     /**
