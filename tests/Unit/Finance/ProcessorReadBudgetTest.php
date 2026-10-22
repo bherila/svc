@@ -21,9 +21,13 @@ use App\Support\Finance\ProcessorReadBudget;
 use DomainException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\PreserveGlobalState;
-use PHPUnit\Framework\Attributes\RunInSeparateProcess;
+use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use PHPUnit\Framework\TestCase;
 
+// PHP caches a namespace's native function fallback after its first call. Start
+// each clock test before another test can bind ProcessorReadBudget to native hrtime.
+#[RunTestsInSeparateProcesses]
+#[PreserveGlobalState(false)]
 final class ProcessorReadBudgetTest extends TestCase
 {
     public static ?int $nanoseconds = null;
@@ -60,8 +64,6 @@ final class ProcessorReadBudgetTest extends TestCase
     }
 
     #[DataProvider('durationBoundaries')]
-    #[RunInSeparateProcess]
-    #[PreserveGlobalState(false)]
     public function test_a_read_is_allowed_one_nanosecond_before_the_deadline_and_refused_at_it(?int $maxSeconds): void
     {
         self::$nanoseconds = 10_000_000_000;

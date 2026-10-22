@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\AgentApi;
 
+use App\Http\Middleware\ExpectSelfRevokingOAuthResource;
 use App\Services\AgentApi\Operations\AgentOperationCatalog;
 use App\Support\AgentApi\AgentApiScopes;
 use Bherila\McpLaravelBridge\Capabilities\Operation;
@@ -46,10 +47,25 @@ final class AgentOAuthResourceCeilingTest extends TestCase
         foreach (app(AgentOperationCatalog::class)->registry()->all() as $operation) {
             $scopes = $operation->requirement->scopes;
             if ($operation->rest !== null) {
-                $resource = $this->expectedResource($this->route($operation), $operation->id);
-                $this->assertSame([], array_values(array_diff($scopes, OAuthResourceIndicator::resources()[$resource]['scopes'] ?? [])),
-                    "{$operation->id} is served on {$resource}, which must admit every scope it requires");
-                $needed[$resource] = [...$needed[$resource], ...$scopes];
+                $route = $this->route($operation);
+                $middleware = app('router')->gatherRouteMiddleware($route);
+                if ($operation->id === 'oauth.token.revoke') {
+                    // Only credential disposal admits either resource, with no new permissions.
+                    $this->assertContains(ExpectSelfRevokingOAuthResource::class, $middleware);
+                    $this->assertSame([], $scopes);
+                    $this->assertTrue($operation->requirement->authenticated);
+                    $this->assertNull($operation->mcp);
+                    foreach (OAuthResourceIndicator::resources() as $resource => $configured) {
+                        $this->assertSame([], array_values(array_diff($scopes, $configured['scopes'])),
+                            "Self-revocation fits the {$resource} ceiling");
+                    }
+                } else {
+                    $this->assertNotContains(ExpectSelfRevokingOAuthResource::class, $middleware);
+                    $resource = $this->expectedResource($route, $operation->id);
+                    $this->assertSame([], array_values(array_diff($scopes, OAuthResourceIndicator::resources()[$resource]['scopes'] ?? [])),
+                        "{$operation->id} is served on {$resource}, which must admit every scope it requires");
+                    $needed[$resource] = [...$needed[$resource], ...$scopes];
+                }
             }
             if ($operation->mcp !== null) {
                 $this->assertSame([], array_values(array_diff($scopes, AgentApiScopes::mcp())),
