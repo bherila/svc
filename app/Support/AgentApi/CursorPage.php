@@ -24,22 +24,38 @@ final class CursorPage
      *
      * @param  Closure(int, ?int): Collection<int, TRecord>  $fetch  at most `$take` rows with an id above `$after` (null: from the start), ordered by id
      * @param  Closure(TRecord): array<string, mixed>  $present
+     * @param  int|null  $maxDataBytes  optional serialized data-array ceiling; a page may contain fewer than $limit rows
      * @return array{data:list<array<string, mixed>>,meta:array{next_cursor:?string}}
      *
      * @throws InvalidAgentApiCursor
      */
-    public static function run(Workspace $workspace, string $queryKey, int $limit, ?string $cursor, Closure $fetch, Closure $present): array
+    public static function run(Workspace $workspace, string $queryKey, int $limit, ?string $cursor, Closure $fetch, Closure $present, ?int $maxDataBytes = null): array
     {
         $rows = $fetch($limit + 1, AgentApiCursor::decode($cursor, $workspace->public_id, $queryKey));
-        $next = $rows->count() > $limit ? $rows->pop() : null;
+        $hasMore = $rows->count() > $limit;
+        if ($hasMore) {
+            $rows->pop();
+        }
         $data = [];
+        $bytes = 2;
+        $last = null;
         foreach ($rows as $row) {
-            $data[] = $present($row);
+            $item = $present($row);
+            $size = $maxDataBytes === null ? 0 : strlen(json_encode($item, JSON_THROW_ON_ERROR)) + ($data === [] ? 0 : 1);
+            // Always make progress for a single row; a configured ceiling too
+            // small for one record is still refused by the transport guard.
+            if ($maxDataBytes !== null && $data !== [] && $bytes + $size > $maxDataBytes) {
+                $hasMore = true;
+                break;
+            }
+            $data[] = $item;
+            $bytes += $size;
+            $last = $row;
         }
 
         return [
             'data' => $data,
-            'meta' => ['next_cursor' => $next === null ? null : AgentApiCursor::encode((int) $rows->last()->getKey(), $workspace->public_id, $queryKey)],
+            'meta' => ['next_cursor' => $hasMore && $last !== null ? AgentApiCursor::encode((int) $last->getKey(), $workspace->public_id, $queryKey) : null],
         ];
     }
 }

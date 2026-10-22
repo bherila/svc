@@ -53,6 +53,11 @@ Existing credential commands that already emit JSON by default keep doing so.
 
 ## Business contacts
 
+Company and business-contact listings apply both a maximum row count and a
+serialized byte budget. Large profiles/notes can produce shorter pages in REST,
+MCP and CLI. Continue with `meta.next_cursor` until it is null; a short page does
+not imply completion. Full notes remain available on every returned record.
+
 `svc:clients:contacts` lists, reads, creates, updates, archives and restores
 business contacts. The acting `--actor` must currently be an owner or admin of
 the workspace. Workspace, company and contact identifiers are public UUIDs.

@@ -50,6 +50,45 @@ final class BusinessContactParityTest extends TestCase
         $this->assertSame($replacement, $listed['result']['structuredContent']['data'][0]['notes']);
     }
 
+    public function test_default_contact_pages_fit_mcp_and_traverse_all_large_notes_without_skips(): void
+    {
+        [$workspace, $owner, $company, $base] = $this->fixture();
+        $this->actingAsMcp($owner, ['mcp:use', 'identity:read', 'clients:read']);
+        $notes = str_repeat('🚀', 20000);
+        $expected = [];
+        for ($i = 0; $i < 9; $i++) {
+            $expected[] = ClientContact::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id,
+                'first_name' => 'Synthetic large notes '.$i, 'notes' => $notes])->public_id;
+        }
+        $session = $this->initialize();
+        $seen = [];
+        $cursor = null;
+        for ($page = 0; $page < 10; $page++) {
+            $arguments = ['workspace_id' => $workspace->public_id, 'client_id' => $company->public_id];
+            if ($cursor !== null) {
+                $arguments['cursor'] = $cursor;
+            }
+            $reply = $this->callTool($session, 'clients.contacts.list', $arguments);
+            $this->assertFalse($reply['result']['isError'] ?? true, json_encode($reply));
+            $this->assertLessThanOrEqual(config('agent_api.mcp_max_result_bytes'), strlen(json_encode($reply['result'], JSON_THROW_ON_ERROR)));
+            $result = $reply['result']['structuredContent'];
+            $rest = $this->getJson($base.($cursor === null ? '' : '?cursor='.urlencode($cursor)))->assertOk();
+            $this->assertSame($result['data'], $rest->json('data'));
+            $this->assertSame($result['meta']['next_cursor'] === null, $rest->json('meta.next_cursor') === null);
+            $this->assertNotEmpty($result['data']);
+            foreach ($result['data'] as $contact) {
+                $this->assertSame($notes, $contact['notes']);
+                $seen[] = $contact['id'];
+            }
+            $cursor = $result['meta']['next_cursor'];
+            if ($cursor === null) {
+                break;
+            }
+        }
+        $this->assertNull($cursor, 'A bounded traversal must finish.');
+        $this->assertSame($expected, $seen);
+    }
+
     public function test_rest_and_mcp_share_contact_lifecycle_receipts_and_preserve_unedited_fields(): void
     {
         Mail::fake();

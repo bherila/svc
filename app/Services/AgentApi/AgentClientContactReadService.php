@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\AgentAccess;
 use App\Support\AgentApi\AgentApiVersion;
+use App\Support\AgentApi\AgentPageBudget;
 use App\Support\AgentApi\CursorPage;
 use Illuminate\Database\Eloquent\Collection;
 
@@ -28,7 +29,7 @@ final class AgentClientContactReadService
 
         return CursorPage::run($workspace, 'business-contacts|client='.$companyId.'|status='.($status ?? ''), $limit, $cursor,
             fn (int $take, ?int $after): Collection => $query->when($after !== null, fn ($q) => $q->where('id', '>', $after))->orderBy('id')->limit($take)->get(),
-            fn (ClientContact $contact): array => $this->present($company, $contact));
+            fn (ClientContact $contact): array => $this->present($company, $contact), AgentPageBudget::dataBytes());
     }
 
     /** @return array<string, mixed> */
