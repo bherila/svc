@@ -1,6 +1,6 @@
 # R2 attachment sharing contract
 
-Status: proposed interface freeze, based on reader `01d56d39`. This document
+Status: frozen with coordinator review, based on reader `01d56d39`. This document
 authorizes no activation or production change. It implements the R2 phase in
 [the execution plan](collaboration-execution-plan.md) after the deployed reader
 and retained fallback have been verified as described in
@@ -18,7 +18,10 @@ Add `svc.attachments.sharing_writes_enabled`, from
 `SVC_ATTACHMENT_SHARING_WRITES_ENABLED=false`. This is a strict product
 availability condition, outside Agent write cutovers, with no first-party
 bypass. Require the retained runtime privacy latch for every R2 writer as well;
-configuration true without the marker refuses before staging. Existing Agent
+configuration true without the marker refuses before staging. Capability reads
+hide unavailable controls if the marker is missing or its directory cannot be
+searched/read; this must never turn a parent/file read into a site-wide failure.
+Explicit writes fail safely instead. Existing Agent
 file/expense/collaboration cutovers remain additional requirements for Agent
 writers. Native/CLI authority is selected by the server, never an input field.
 
@@ -48,9 +51,10 @@ client-sharing control for them.
 
 Reserve additive migration `2026_10_22_180210_use_private_attachment_default`:
 change only the database default to false, with no row backfill or drop. The
-deployment order requires the verified reader/fallback and retained marker
-before this migration; a guard must refuse an absent/inaccessible marker rather
-than infer readiness from cached settings. Normal application rollback retains
+operational deployment order requires the verified reader/fallback before this
+migration. Its up path changes the default unconditionally: fresh installs and
+ordinary CI migrations work with controls off and no runtime marker. New runtime
+writers still require the retained marker before staging. Normal application rollback retains
 the schema/data. Its down path refuses while the latch or private/new-parent
 state is retained, before DDL. Keep R1's stronger down barrier intact.
 
@@ -124,6 +128,10 @@ same-value request; parent content/version is unchanged. Replay stores/reuses
 the file ID, makes no second change, reauthorizes, and presents currently
 authorized metadata rather than stale serialized receipt content. Changed body
 or bytes under the same key gives 409.
+Deletion replay accepts retained DELETING and DELETED rows after physical repair
+cleanup as an authorized no-op, with no second revision or object operation.
+Current parent authority still applies; upload/sharing replays require an
+available file.
 
 A checked file under a hidden project/list/task/topic/comment stays effectively
 hidden. Show the reason; never publish the parent or rewrite descendants. A
@@ -131,10 +139,10 @@ later authorized parent publication may expose files whose stored choice is
 already true. Deleted/staged/corrupt files cannot be shared. Repair, publication
 and deletion preserve flags; only the explicit action changes them.
 
-## Proposed transport freeze
+## Frozen transport interfaces
 
 Root owns registration, generated schemas/types and inventory integration. The
-following names are proposals to freeze before source implementation.
+following names are frozen for the isolated implementation.
 
 | Operation                                     | Binding                                                             | Scope/policy                                                                       |
 | --------------------------------------------- | ------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
@@ -248,8 +256,9 @@ storage/resolver policy changes, additive default migration, adapters, reusable
 file UI and focused tests. Root owns shared route/catalog/schema/scopes/MCP
 factory/generated artifacts/inventories. Collaboration presenter/page integration
 and task-reader seams are coordinated before edits; reuse their policies rather
-than fork ancestry or grants. No source work begins until root freezes this
-contract, and activation remains a separate future operator action.
+than fork ancestry or grants. The coordinator has frozen this contract for the isolated domain checkpoint;
+registration/adapters follow its review. Activation remains a separate future
+operator action.
 
 Implement in three reviewable checkpoints: domain/policy/default migration and
 regressions; additive native/REST/MCP/CLI adapters with real route contracts;
