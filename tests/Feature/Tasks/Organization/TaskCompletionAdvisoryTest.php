@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Tasks\Organization;
 
+use App\Http\Middleware\HandleInertiaRequests;
 use App\Models\ClientCompany;
 use App\Models\ClientCompanyMembership;
 use App\Models\ClientProject;
@@ -13,6 +14,7 @@ use App\Services\Tasks\WorkspaceTaskRepository;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\AgentApi\Presenters\AgentTaskPresenter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Tests\Concerns\CallsMcp;
@@ -28,9 +30,10 @@ final class TaskCompletionAdvisoryTest extends TestCase
     public function test_native_editor_and_internal_agent_reads_warn_before_completion_without_exposing_children(): void
     {
         [$workspace, $company, $project, $owner, $parent, $child] = $this->fixture();
-        $this->actingAs($owner, 'web')->withHeader('X-Inertia', 'true')->get(route('tasks.show', [$workspace, $parent]))
+        $this->actingAs($owner, 'web')->withHeaders(['X-Inertia' => 'true', 'X-Inertia-Version' => (app(HandleInertiaRequests::class)->version(Request::create('/')) ?? '')])->get(route('tasks.show', [$workspace, $parent]))
             ->assertOk()->assertJsonPath('props.task.status', 'open')->assertJsonPath('props.task.completion_advisory', $this->message());
         $this->withoutHeader('X-Inertia');
+        $this->withoutHeader('X-Inertia-Version');
         $this->actingAsMcp($owner, ['mcp:use', 'tasks:read', 'projects:read']);
         foreach ([['tasks', 'data.0'], ['tasks/'.$parent->public_id, 'data'], ['projects/'.$project->public_id, 'data.tasks.0']] as [$path, $key]) {
             $this->getJson('/api/v1/workspaces/'.$workspace->public_id.'/'.$path)->assertOk()
