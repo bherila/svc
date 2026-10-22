@@ -179,9 +179,13 @@ $app->handleRequest(Illuminate\\Http\\Request::capture());
                     page.locator('[role="menuitem"][aria-current="page"]'),
                 ).toContainText(activeSection);
                 await page.screenshot({
+                    animations: 'disabled',
                     path: path.join(artifacts, `${screen}-menu-${width}.png`),
                 });
                 await page.keyboard.press('Escape');
+                await page
+                    .locator('[data-slot="dropdown-menu-content"]')
+                    .waitFor({ state: 'detached' });
             } else {
                 await expect(
                     page
@@ -244,6 +248,7 @@ $app->handleRequest(Illuminate\\Http\\Request::capture());
                 100,
             );
             await page.screenshot({
+                animations: 'disabled',
                 path: path.join(artifacts, `${screen}-${width}.png`),
                 fullPage: false,
             });
@@ -256,6 +261,7 @@ $app->handleRequest(Illuminate\\Http\\Request::capture());
                 await expect(editor).toHaveValue(/Literal synthetic text/);
                 await editor.scrollIntoViewIfNeeded();
                 await page.screenshot({
+                    animations: 'disabled',
                     path: path.join(artifacts, `editor-${width}.png`),
                 });
                 await page
@@ -265,6 +271,7 @@ $app->handleRequest(Illuminate\\Http\\Request::capture());
                     .getByRole('textbox', { name: 'New comment' })
                     .scrollIntoViewIfNeeded();
                 await page.screenshot({
+                    animations: 'disabled',
                     path: path.join(artifacts, `new-comment-${width}.png`),
                 });
                 expect(
