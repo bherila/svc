@@ -17,11 +17,69 @@ use Mcp\Schema\Result\CallToolResult;
 use PHPUnit\Framework\Attributes\CoversClass;
 use Tests\TestCase;
 
+#[CoversClass(ClientProject::class)]
+#[CoversClass(ClientTask::class)]
+#[CoversClass(ClientTaskGraphState::class)]
+#[CoversClass(ClientTaskList::class)]
+#[CoversClass(TaskOrganizationRecords::class)]
 #[CoversClass(TaskOrganizationSnapshot::class)]
 #[CoversClass(TaskGraph::class)]
 #[CoversClass(TaskContainer::class)]
 final class TaskOrganizationSnapshotTest extends TestCase
 {
+    public function test_snapshot_preserves_the_public_topology_and_editor_contract_with_stable_list_ties(): void
+    {
+        $project = new ClientProject;
+        $project->setRawAttributes(['id' => 99, 'workspace_id' => 5, 'public_id' => 'synthetic-project']);
+        $lists = new Collection;
+        $listFacts = [];
+        // Input order differs from position order, and equal positions require the internal ID tie breaker.
+        foreach ([[1, 'later', 7, true, null], [3, 'second', 2, false, '2026-10-22 00:00:00'], [2, 'first', 2, true, null]] as [$id, $public, $position, $visible, $deleted]) {
+            $model = new ClientTaskList;
+            $model->setRawAttributes(['id' => $id, 'public_id' => $public, 'name' => 'Synthetic '.$public,
+                'organization_position' => $position, 'is_visible_to_client' => $visible, 'deleted_at' => $deleted]);
+            $lists->push($model);
+            $listFacts[$public] = ['id' => $id, 'deleted' => $deleted !== null, 'position' => $position, 'version' => 'list-'.$public];
+        }
+        $tasks = new Collection;
+        $taskFacts = [];
+        foreach ([[3, 'root', null, 'first', 4, 'open', true], [2, 'child-b', 'root', null, 1, 'completed', false], [1, 'child-a', 'root', null, 0, 'in_progress', true]] as [$id, $public, $parent, $list, $position, $status, $visible]) {
+            $model = new ClientTask;
+            $model->setRawAttributes(['id' => $id, 'public_id' => $public, 'title' => 'Synthetic '.$public,
+                'description' => 'Private description excluded from organization snapshots', 'status' => $status, 'is_visible_to_client' => $visible]);
+            $tasks->push($model);
+            $taskFacts[$public] = ['id' => $id, 'parent' => $parent, 'list' => $list, 'position' => $position, 'version' => 'task-'.$public];
+        }
+        $graph = new TaskGraph($taskFacts, $listFacts, 3);
+        $records = new TaskOrganizationRecords($project, new ClientTaskGraphState, $tasks, $lists);
+        $container = new TaskContainer('root', null);
+        $expected = [
+            'project_id' => 'synthetic-project', 'graph_version' => $graph->graphVersion(), 'lists_version' => $graph->graphVersion(),
+            'lists' => [
+                ['id' => 'first', 'name' => 'Synthetic first', 'is_visible_to_client' => true, 'archived' => false, 'version' => 'list-first'],
+                ['id' => 'second', 'name' => 'Synthetic second', 'is_visible_to_client' => false, 'archived' => true, 'version' => 'list-second'],
+                ['id' => 'later', 'name' => 'Synthetic later', 'is_visible_to_client' => true, 'archived' => false, 'version' => 'list-later'],
+            ],
+            'tree' => [
+                ['id' => 'root', 'parent_id' => null, 'list_id' => 'first', 'position' => 4, 'version' => 'task-root'],
+                ['id' => 'child-b', 'parent_id' => 'root', 'list_id' => null, 'position' => 1, 'version' => 'task-child-b'],
+                ['id' => 'child-a', 'parent_id' => 'root', 'list_id' => null, 'position' => 0, 'version' => 'task-child-a'],
+            ],
+            'container' => ['parent_id' => 'root', 'list_id' => null, 'version' => $graph->containerVersion($container), 'tasks' => [
+                ['id' => 'child-a', 'title' => 'Synthetic child-a', 'status' => 'in_progress', 'is_visible_to_client' => true, 'version' => 'task-child-a'],
+                ['id' => 'child-b', 'title' => 'Synthetic child-b', 'status' => 'completed', 'is_visible_to_client' => false, 'version' => 'task-child-b'],
+            ]],
+        ];
+        $this->assertSame($expected, TaskOrganizationSnapshot::capture($records, $graph, $container)->data);
+        $expected['container'] = null;
+        $this->assertSame($expected, TaskOrganizationSnapshot::capture($records, $graph)->data);
+        $root = new TaskContainer(null, 'first');
+        $expected['container'] = ['parent_id' => null, 'list_id' => 'first', 'version' => $graph->containerVersion($root), 'tasks' => [
+            ['id' => 'root', 'title' => 'Synthetic root', 'status' => 'open', 'is_visible_to_client' => true, 'version' => 'task-root'],
+        ]];
+        $this->assertSame($expected, TaskOrganizationSnapshot::capture($records, $graph, $root)->data);
+    }
+
     public function test_maximum_unicode_names_and_bounded_sibling_titles_fit_actual_default_sdk_envelopes(): void
     {
         $tasks = new Collection;

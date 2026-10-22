@@ -30,6 +30,7 @@ final readonly class TaskOrganizationCommand
         if (! is_array($ids) || ! array_is_list($ids)) {
             throw new \LogicException('This command has no sibling order.');
         }
+        // @infection-ignore-all The private factory already validates every member as a required UUID string; this defensive loop supplies static type narrowing.
         foreach ($ids as $id) {
             if (! is_string($id)) {
                 throw new \LogicException('This command has an invalid identity.');
@@ -49,10 +50,10 @@ final readonly class TaskOrganizationCommand
         $rules = match ($operation) {
             'tasks.create' => ['expected_graph_version' => $version] + $container
                 + ['task' => ['required', 'array:title,description,is_visible_to_client,starts_on,due_on,assignee_ids']]
-                + array_combine(array_map(static fn (string $key): string => 'task.'.$key, array_keys(TaskInputRules::create())), array_values(TaskInputRules::create())),
-            'lists.create' => ['expected_graph_version' => $version, 'name' => ['required', 'string', 'max:255'], 'is_visible_to_client' => ['sometimes', 'filled', 'boolean']],
+                + array_combine(array_map(static fn (string $key): string => 'task.'.$key, array_keys(TaskInputRules::create())), TaskInputRules::create()),
+            'lists.create' => ['expected_graph_version' => $version, 'name' => ['required', 'string', 'max:255'], 'is_visible_to_client' => ['filled', 'boolean']],
             'lists.update' => ['list_id' => $identity, 'expected_version' => $version, 'expected_graph_version' => $version,
-                'name' => ['sometimes', 'filled', 'string', 'min:1', 'max:255'], 'is_visible_to_client' => ['sometimes', 'filled', 'boolean']],
+                'name' => ['filled', 'string', 'min:1', 'max:255'], 'is_visible_to_client' => ['filled', 'boolean']],
             'lists.archive' => ['list_id' => $identity, 'expected_version' => $version, 'expected_graph_version' => $version, 'confirm' => ['required', new ExplicitConfirmation]],
             'lists.restore' => ['list_id' => $identity, 'expected_version' => $version, 'expected_graph_version' => $version],
             'tasks.move' => ['task_id' => $identity, 'expected_version' => $version, 'expected_graph_version' => $version] + $container,
