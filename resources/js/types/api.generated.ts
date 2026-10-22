@@ -1612,7 +1612,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Task data is embedded only when the token also has tasks:read. */
+        /** @description Task data is embedded only when the token also has tasks:read. Task pages are bounded by row count and serialized bytes including the base project. Follow tasks_next_href or pass tasks_cursor to continue; a short page does not imply completion. */
         get: operations['projects.get'];
         put?: never;
         post?: never;
@@ -3850,6 +3850,11 @@ export interface components {
             /** Format: uri */
             web_url: string;
             tasks?: components['schemas']['Task'][];
+            /**
+             * Format: uri
+             * @description Present with the bounded tasks array when tasks:read is held. Continue on this project URL with its opaque tasks_cursor; null when the task page is complete.
+             */
+            tasks_next_href?: string | null;
         };
         ProjectDetailResponse: {
             data: components['schemas']['ProjectDetail'];
@@ -10708,7 +10713,9 @@ export interface operations {
     };
     'projects.get': {
         parameters: {
-            query?: never;
+            query?: {
+                tasks_cursor?: string;
+            };
             header?: never;
             path: {
                 workspace: components['parameters']['WorkspaceId'];

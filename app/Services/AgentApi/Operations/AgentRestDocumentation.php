@@ -1358,8 +1358,8 @@ final class AgentRestDocumentation
             'projects.get' => [
                 'method' => 'GET',
                 'scopes' => ['projects:read'],
-                'description' => 'Task data is embedded only when the token also has tasks:read.',
-                'parameters' => ['WorkspaceId', 'ProjectId'],
+                'description' => 'Task data is embedded only when the token also has tasks:read. Task pages are bounded by row count and serialized bytes including the base project. Follow tasks_next_href or pass tasks_cursor to continue; a short page does not imply completion.',
+                'parameters' => ['WorkspaceId', 'ProjectId', self::query('tasks_cursor', ['type' => 'string', 'maxLength' => 2048])],
                 'response' => 'ProjectDetailResponse',
                 'response_description' => 'Authorized project detail',
             ],

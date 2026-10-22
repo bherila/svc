@@ -322,7 +322,7 @@ final class AgentOperationCatalog
             $this->tool(
                 'projects.list',
                 'List projects',
-                'List authorized projects with bounded cursor pagination.',
+                'List authorized projects with cursor pagination bounded by row count and serialized bytes. Follow next_cursor even when a page contains fewer than limit records.',
                 [AgentMcpReadTools::class, 'projects'],
                 Effect::Read,
                 true,
@@ -341,7 +341,7 @@ final class AgentOperationCatalog
             $this->tool(
                 'projects.get',
                 'Get project',
-                'Get one authorized project and its visible tasks.',
+                'Get one authorized project. When tasks:read is held, includes a bounded first task page; follow tasks_next_href or pass its tasks_cursor to continue. Long descriptions can shorten pages.',
                 [AgentMcpReadTools::class, 'project'],
                 Effect::Read,
                 true,
@@ -350,7 +350,7 @@ final class AgentOperationCatalog
             $this->tool(
                 'tasks.list',
                 'List tasks',
-                'List authorized tasks with bounded cursor pagination.',
+                'List authorized tasks with cursor pagination bounded by row count and serialized bytes. Follow next_cursor even when a page contains fewer than limit records.',
                 [AgentMcpReadTools::class, 'tasks'],
                 Effect::Read,
                 true,

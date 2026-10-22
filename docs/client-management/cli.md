@@ -59,6 +59,13 @@ versions and retry receipts as REST/MCP. Use `--project=PROJECT_UUID` to create 
 filter a list, and `--task=TASK_UUID` to read or update one task. List accepts
 `--limit=1..100` and `--cursor`.
 
+Task pages also respect a serialized byte budget, so a short page can still have
+more rows. Follow `meta.next_cursor` until it is null. REST and MCP project
+details embed at most 25 tasks within the whole project response budget; when
+`tasks:read` is held, follow `tasks_next_href` or pass its `tasks_cursor` to
+`projects.get` to continue. Project-only tokens receive the base project without
+task data or a continuation.
+
 ```bash
 php artisan svc:tasks list WORKSPACE_UUID --actor=USER_UUID --format=json
 php artisan svc:tasks create WORKSPACE_UUID --actor=USER_UUID --project=PROJECT_UUID --input=task.json --key=unique-retry-key --format=json

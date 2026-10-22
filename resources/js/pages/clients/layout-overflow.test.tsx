@@ -229,6 +229,10 @@ describe('client screens under data that does not fit', () => {
                         comment_thread_url: '/synthetic/task-comments',
                     },
                 ]}
+                pagination={{
+                    previous_href: '/synthetic/tasks?page=1',
+                    next_href: '/synthetic/tasks?page=3',
+                }}
             />,
         );
 
