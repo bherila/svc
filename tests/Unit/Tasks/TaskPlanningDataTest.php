@@ -73,6 +73,21 @@ final class TaskPlanningDataTest extends TestCase
         $this->assertSame(['description' => null, 'starts_on' => null], $cleared->attributes('2026-10-20', '2026-10-30'));
     }
 
+    public function test_patch_refuses_blank_nonnullable_fields_while_omitted_fields_stay_unchanged(): void
+    {
+        $this->assertSame([], TaskPatchData::fromValidated([])->attributes('2026-10-20', '2026-10-30'));
+        foreach (['title', 'status'] as $field) {
+            foreach (['', '   ', null] as $blank) {
+                try {
+                    TaskPatchData::fromValidated([$field => $blank]);
+                    $this->fail('A present nonnullable field must not be blank.');
+                } catch (ValidationException $exception) {
+                    $this->assertArrayHasKey($field, $exception->errors());
+                }
+            }
+        }
+    }
+
     public function test_date_order_uses_the_merged_stored_start_not_just_the_patch(): void
     {
         $this->assertSame(['due_on' => '2026-10-20'], TaskPatchData::fromValidated(['due_on' => '2026-10-20'])->attributes('2026-10-20', null));

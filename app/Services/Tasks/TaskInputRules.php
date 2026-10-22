@@ -16,8 +16,8 @@ final class TaskInputRules
     public static function patch(): array
     {
         return [
-            'title' => ['string', 'min:1', 'max:255'],
-            'status' => ['string', 'in:open,in_progress,completed'],
+            'title' => ['filled', 'string', 'max:255'],
+            'status' => ['filled', 'string', 'in:open,in_progress,completed'],
         ] + self::optional();
     }
 
