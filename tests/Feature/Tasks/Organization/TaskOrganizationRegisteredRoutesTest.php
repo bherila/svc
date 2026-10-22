@@ -36,6 +36,7 @@ final class TaskOrganizationRegisteredRoutesTest extends TestCase
         'tasks.reorder' => ['PUT', '/tasks/order'],
     ];
 
+    /** @return iterable<string, array{string}> */
     public static function surfaces(): iterable
     {
         yield 'native JSON' => ['native'];
@@ -94,15 +95,15 @@ final class TaskOrganizationRegisteredRoutesTest extends TestCase
         $this->success($surface, $workspace, $project, 'lists.reorder', ['ordered_ids' => [$secondList, $list], 'expected_container_version' => $graph['lists_version']], key: 'synthetic-list-order');
         $graph = $read();
         $this->assertSame([$secondList, $list], array_column($graph['lists'], 'id'));
-        $row = collect($graph['lists'])->firstWhere('id', $list);
+        $row = $this->listRow($graph['lists'], $list);
         $this->success($surface, $workspace, $project, 'lists.archive', ['confirm' => true, 'expected_graph_version' => $graph['graph_version'], 'expected_version' => $row['version']], $list, 'synthetic-list-archive');
         $graph = $read();
-        $row = collect($graph['lists'])->firstWhere('id', $list);
+        $row = $this->listRow($graph['lists'], $list);
         $this->assertTrue($row['archived']);
         $restore = ['expected_graph_version' => $graph['graph_version'], 'expected_version' => $row['version']];
         $restored = $this->success($surface, $workspace, $project, 'lists.restore', $restore, $list, 'synthetic-list-restore');
         $graph = $read();
-        $this->assertFalse(collect($graph['lists'])->firstWhere('id', $list)['archived']);
+        $this->assertFalse($this->listRow($graph['lists'], $list)['archived']);
         $this->assertSame($restored, $this->success($surface, $workspace, $project, 'lists.restore', $restore, $list, 'synthetic-list-restore'));
         $this->assertSame($graph['graph_version'], $read()['graph_version'], 'Exact receipt replay must not advance organization revisions.');
         $this->assertDatabaseCount('client_task_graph_states', 1);
@@ -113,13 +114,13 @@ final class TaskOrganizationRegisteredRoutesTest extends TestCase
         if ($surface !== 'mcp') {
             $url = $this->url($surface, $workspace, $project, 'lists.update', $list);
             $this->withHeader('Idempotency-Key', 'synthetic-stale-registered')->patchJson($url,
-                ['name' => 'Synthetic stale change', 'expected_graph_version' => $oldGraph, 'expected_version' => collect($graph['lists'])->firstWhere('id', $list)['version']])->assertConflict();
+                ['name' => 'Synthetic stale change', 'expected_graph_version' => $oldGraph, 'expected_version' => $this->listRow($graph['lists'], $list)['version']])->assertConflict();
             $this->withHeader('Idempotency-Key', 'synthetic-body-identity')->patchJson($url,
-                ['list_id' => $list, 'expected_graph_version' => $graph['graph_version'], 'expected_version' => collect($graph['lists'])->firstWhere('id', $list)['version']])->assertUnprocessable();
+                ['list_id' => $list, 'expected_graph_version' => $graph['graph_version'], 'expected_version' => $this->listRow($graph['lists'], $list)['version']])->assertUnprocessable();
             $this->assertSame($graph['graph_version'], $read()['graph_version']);
         } else {
             $arguments = ['workspace_id' => $workspace->public_id, 'project_id' => $project->public_id, 'list_id' => $list,
-                'name' => 'Synthetic stale change', 'expected_graph_version' => $oldGraph, 'expected_version' => collect($graph['lists'])->firstWhere('id', $list)['version'],
+                'name' => 'Synthetic stale change', 'expected_graph_version' => $oldGraph, 'expected_version' => $this->listRow($graph['lists'], $list)['version'],
                 'idempotency_key' => 'synthetic-stale-mcp'];
             $reply = $this->callTool($this->session, 'task_organization.lists.update', $arguments);
             $this->assertTrue(isset($reply['error']) || ($reply['result']['isError'] ?? false));
@@ -260,7 +261,20 @@ final class TaskOrganizationRegisteredRoutesTest extends TestCase
         return ['X-Inertia' => 'true', 'X-Inertia-Version' => (app(HandleInertiaRequests::class)->version(Request::create('/')) ?? '')];
     }
 
-    /** @return array<string,mixed> */
+    /** @return array<string, mixed> */
+    private function listRow(mixed $rows, string $identity): array
+    {
+        $this->assertIsArray($rows);
+        $row = collect($rows)->firstWhere('id', $identity);
+        $this->assertIsArray($row);
+
+        return $row;
+    }
+
+    /**
+     * @param  array<string, mixed>  $body
+     * @return array<string, mixed>
+     */
     private function success(string $surface, Workspace $workspace, ClientProject $project, string $operation, array $body = [], ?string $identity = null, string $key = 'synthetic-read'): array
     {
         if ($surface === 'mcp') {
@@ -275,16 +289,25 @@ final class TaskOrganizationRegisteredRoutesTest extends TestCase
             $this->assertArrayHasKey('result', $reply, json_encode($reply, JSON_THROW_ON_ERROR));
             $this->assertFalse($reply['result']['isError'] ?? true, json_encode($reply, JSON_THROW_ON_ERROR));
 
-            return $reply['result']['structuredContent']['data'];
+            $data = $reply['result']['structuredContent']['data'];
+            $this->assertIsArray($data);
+
+            return $data;
         }
         [$verb] = self::BINDINGS[$operation];
         $url = $this->url($surface, $workspace, $project, $operation, $identity);
         if ($operation === 'get') {
-            return $this->getJson($url.($body === [] ? '' : '?'.http_build_query($body)))->assertOk()->json('data');
+            $data = $this->getJson($url.($body === [] ? '' : '?'.http_build_query($body)))->assertOk()->json('data');
+            $this->assertIsArray($data);
+
+            return $data;
         }
 
-        return $this->withHeader('Idempotency-Key', $key)->json($verb, $url, $body)
+        $data = $this->withHeader('Idempotency-Key', $key)->json($verb, $url, $body)
             ->assertStatus(str_ends_with($operation, '.create') ? 201 : 200)->json('data');
+        $this->assertIsArray($data);
+
+        return $data;
     }
 
     private function url(string $surface, Workspace $workspace, ClientProject $project, string $operation, ?string $identity = null): string

@@ -26,6 +26,7 @@ final class TaskOrganizationConcurrencyTest extends TestCase
 {
     use UsesAProbeDatabase;
 
+    /** @return iterable<string, array{bool}> */
     public static function retainedState(): iterable
     {
         yield 'first state committed after old snapshot' => [false];
@@ -68,6 +69,7 @@ final class TaskOrganizationConcurrencyTest extends TestCase
         }
     }
 
+    /** @return iterable<string, array{bool}> */
     public static function agentPublication(): iterable
     {
         yield 'fresh write' => [false];
