@@ -55,8 +55,7 @@ class AttachmentController extends Controller
         }
 
         abort_unless(
-            Gate::forUser($user)->allows('view', $workspace)
-                || $recordResolver->portalUserCanView($user, $workspace, $attachment),
+            $recordResolver->userCanView($user, $workspace, $attachment),
             403,
         );
 
