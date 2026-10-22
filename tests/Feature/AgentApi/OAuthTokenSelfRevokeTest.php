@@ -279,5 +279,4 @@ final class OAuthTokenSelfRevokeTest extends TestCase
 
         return $query['code'];
     }
-
 }
