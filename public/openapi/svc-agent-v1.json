@@ -619,7 +619,7 @@
             },
             "get": {
                 "operationId": "attachments.get",
-                "description": "Manager-only metadata, excluding storage and uploader identifiers.",
+                "description": "Manager-only metadata, excluding storage and uploader identifiers. Dual identities use exact Portal grants, current parent ancestry and file visibility.",
                 "security": [
                     {
                         "oauth2": [
@@ -646,7 +646,7 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "Manager-only metadata, excluding storage and uploader identifiers.",
+                        "description": "Manager-only metadata, excluding storage and uploader identifiers. Dual identities use exact Portal grants, current parent ancestry and file visibility.",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -784,7 +784,7 @@
         "/workspaces/{workspace}/records/{recordType}/{recordPublicId}/attachments": {
             "get": {
                 "operationId": "attachments.list",
-                "description": "Manager-only generic attachment listing, bounded to 100 newest files. Expense receipts use separate routes.",
+                "description": "Manager-only generic attachment listing, bounded to 100 authorized newest files per page, ordered by descending ID. Follow meta.next_cursor; serialized byte limits may shorten a page. Dual identities use exact Portal grants and file visibility. Expense receipts use separate routes.",
                 "security": [
                     {
                         "oauth2": [
@@ -811,7 +811,9 @@
                                 "task",
                                 "proposal",
                                 "agreement",
-                                "invoice"
+                                "invoice",
+                                "topic",
+                                "comment"
                             ]
                         }
                     },
@@ -823,11 +825,31 @@
                             "type": "string",
                             "format": "uuid"
                         }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 100
+                        }
+                    },
+                    {
+                        "name": "cursor",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 4096
+                        }
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "Manager-only generic attachment listing, bounded to 100 newest files. Expense receipts use separate routes.",
+                        "description": "Manager-only generic attachment listing, bounded to 100 authorized newest files per page, ordered by descending ID. Follow meta.next_cursor; serialized byte limits may shorten a page. Dual identities use exact Portal grants and file visibility. Expense receipts use separate routes.",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -850,7 +872,7 @@
         "/workspaces/{workspace}/records/{recordType}/{recordPublicId}/attachments/upload": {
             "post": {
                 "operationId": "attachments.upload",
-                "description": "Manager-only multipart upload, at most 50 MiB. Locked parent version checked; actor/client/key receipt binds parent/version/filename/media/length/SHA256, with replay and audit. Uploading adds an immutable file and leaves parent business facts unchanged.",
+                "description": "Staff-manager-only multipart upload, at most 50 MiB. Dual Portal identities are denied. Reader release keeps legacy inheritance and rejects visibility fields and topic/comment parents before staging. Locked parent version checked; actor/client/key receipt binds parent/version/filename/media/length/SHA256, with replay and audit. Uploading adds an immutable file and leaves parent business facts unchanged.",
                 "security": [
                     {
                         "oauth2": [
@@ -922,7 +944,7 @@
                 ],
                 "responses": {
                     "201": {
-                        "description": "Manager-only multipart upload, at most 50 MiB. Locked parent version checked; actor/client/key receipt binds parent/version/filename/media/length/SHA256, with replay and audit. Uploading adds an immutable file and leaves parent business facts unchanged.",
+                        "description": "Staff-manager-only multipart upload, at most 50 MiB. Dual Portal identities are denied. Reader release keeps legacy inheritance and rejects visibility fields and topic/comment parents before staging. Locked parent version checked; actor/client/key receipt binds parent/version/filename/media/length/SHA256, with replay and audit. Uploading adds an immutable file and leaves parent business facts unchanged.",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -5940,7 +5962,7 @@
         "/workspaces/{workspace}/expenses/{expense}/receipts": {
             "get": {
                 "operationId": "expenses.receipts.list",
-                "description": "Manager-only list of the 100 newest available receipts; includes current expense_version.",
+                "description": "Staff-manager-only available receipts, ordered by descending ID, default and maximum 100 per page. Follow meta.next_cursor; serialized byte limits may shorten a page. Includes current expense_version. Dual Portal identities are denied.",
                 "security": [
                     {
                         "oauth2": [
@@ -5957,6 +5979,26 @@
                     },
                     {
                         "$ref": "#/components/parameters/ExpenseId"
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 100
+                        }
+                    },
+                    {
+                        "name": "cursor",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 4096
+                        }
                     }
                 ],
                 "responses": {
@@ -5982,7 +6024,7 @@
             },
             "post": {
                 "operationId": "expenses.receipts.upload",
-                "description": "Manager-only multipart upload, at most 50 MiB. File digest, filename and expense version bind idempotent retries. Version is checked on locked expense and advances on upload. Prepared URLs expire after ten minutes; direct authenticated REST uploads need no preparation. Both expense write flags required.",
+                "description": "Staff-manager-only multipart upload, at most 50 MiB. Dual Portal identities are denied. Reader release keeps legacy inheritance and rejects visibility fields and topic/comment parents before staging. File digest, filename and expense version bind idempotent retries. Version is checked on locked expense and advances on upload. Prepared URLs expire after ten minutes; direct authenticated REST uploads need no preparation. Both expense write flags required.",
                 "security": [
                     {
                         "oauth2": [
@@ -12803,7 +12845,9 @@
                             "task",
                             "proposal",
                             "agreement",
-                            "invoice"
+                            "invoice",
+                            "topic",
+                            "comment"
                         ]
                     },
                     "record_id": {
@@ -12902,7 +12946,8 @@
                 "additionalProperties": false,
                 "required": [
                     "data",
-                    "parent_version"
+                    "parent_version",
+                    "meta"
                 ],
                 "properties": {
                     "data": {
@@ -12916,6 +12961,21 @@
                         "type": "string",
                         "minLength": 64,
                         "maxLength": 64
+                    },
+                    "meta": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "next_cursor"
+                        ],
+                        "properties": {
+                            "next_cursor": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            }
+                        }
                     }
                 }
             },
@@ -14864,7 +14924,8 @@
                 "additionalProperties": false,
                 "required": [
                     "data",
-                    "expense_version"
+                    "expense_version",
+                    "meta"
                 ],
                 "properties": {
                     "data": {
@@ -14876,6 +14937,21 @@
                     },
                     "expense_version": {
                         "$ref": "#/components/schemas/Version"
+                    },
+                    "meta": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "next_cursor"
+                        ],
+                        "properties": {
+                            "next_cursor": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            }
+                        }
                     }
                 }
             },

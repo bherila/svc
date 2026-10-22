@@ -5,6 +5,7 @@ import { ActivityTimeline } from '@/components/activity-timeline';
 import type { CompanyActivity } from '@/components/activity-timeline';
 import { AppearanceSelector } from '@/components/appearance-selector';
 import { CommandPaletteTrigger } from '@/components/command-palette';
+import { AttachmentPageLinks } from '@/components/files/attachment-page-links';
 import {
     predatesInvoiceIssue,
     predatesInvoiceIssueWarning,
@@ -89,6 +90,8 @@ type Workspace = {
     id: string;
     name: string;
     clients: Client[];
+    files_next_href?: string | null;
+    files_previous_href?: string | null;
     /** The workspace's calendar; date defaults are read on it, not UTC's. */
     timezone: string;
 };
@@ -174,7 +177,7 @@ function AttachmentPanel({
                     <a
                         key={attachment.id}
                         href={attachment.download_url}
-                        className="font-medium text-cyan-700"
+                        className="min-w-0 font-medium wrap-anywhere text-cyan-700"
                     >
                         {attachment.name}
                     </a>
@@ -611,7 +614,7 @@ export default function Operations({ workspace }: { workspace: Workspace }) {
         <>
             <Head title={`${workspace.name} operations`} />
             <main
-                className="min-h-screen bg-slate-100 text-slate-950"
+                className="min-h-screen bg-slate-100 wrap-anywhere text-slate-950"
                 data-appearance-bridge
             >
                 <header className="border-b border-slate-200 bg-white">
@@ -647,6 +650,12 @@ export default function Operations({ workspace }: { workspace: Workspace }) {
                 </header>
 
                 <div className="mx-auto max-w-7xl space-y-8 px-6 py-10">
+                    <div id="files-pagination">
+                        <AttachmentPageLinks
+                            nextHref={workspace.files_next_href}
+                            previousHref={workspace.files_previous_href}
+                        />
+                    </div>
                     {workspace.clients.map((client) => (
                         <section
                             key={client.id}

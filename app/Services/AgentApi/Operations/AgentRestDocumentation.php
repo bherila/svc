@@ -385,15 +385,15 @@ final class AgentRestDocumentation
             'attachments.get' => [
                 'method' => 'GET',
                 'scopes' => ['files:read'],
-                'description' => 'Manager-only metadata, excluding storage and uploader identifiers.',
+                'description' => 'Manager-only metadata, excluding storage and uploader identifiers. Dual identities use exact Portal grants, current parent ancestry and file visibility.',
                 'parameters' => ['WorkspaceId', self::uuidPath('attachment')],
                 'response' => 'AttachmentResponse',
-                'response_description' => 'Manager-only metadata, excluding storage and uploader identifiers.',
+                'response_description' => 'Manager-only metadata, excluding storage and uploader identifiers. Dual identities use exact Portal grants, current parent ancestry and file visibility.',
             ],
             'attachments.list' => [
                 'method' => 'GET',
                 'scopes' => ['files:read'],
-                'description' => 'Manager-only generic attachment listing, bounded to 100 newest files. Expense receipts use separate routes.',
+                'description' => 'Manager-only generic attachment listing, bounded to 100 authorized newest files per page, ordered by descending ID. Follow meta.next_cursor; serialized byte limits may shorten a page. Dual identities use exact Portal grants and file visibility. Expense receipts use separate routes.',
                 'parameters' => [
                     'WorkspaceId',
                     [
@@ -402,18 +402,20 @@ final class AgentRestDocumentation
                         'required' => true,
                         'schema' => [
                             'type' => 'string',
-                            'enum' => ['company', 'project', 'task', 'proposal', 'agreement', 'invoice'],
+                            'enum' => ['company', 'project', 'task', 'proposal', 'agreement', 'invoice', 'topic', 'comment'],
                         ],
                     ],
                     self::uuidPath('recordPublicId'),
+                    self::filePageLimit(),
+                    self::filePageCursor(),
                 ],
                 'response' => 'AttachmentListResponse',
-                'response_description' => 'Manager-only generic attachment listing, bounded to 100 newest files. Expense receipts use separate routes.',
+                'response_description' => 'Manager-only generic attachment listing, bounded to 100 authorized newest files per page, ordered by descending ID. Follow meta.next_cursor; serialized byte limits may shorten a page. Dual identities use exact Portal grants and file visibility. Expense receipts use separate routes.',
             ],
             'attachments.upload' => [
                 'method' => 'POST',
                 'scopes' => ['files:write'],
-                'description' => 'Manager-only multipart upload, at most 50 MiB. Locked parent version checked; actor/client/key receipt binds parent/version/filename/media/length/SHA256, with replay and audit. Uploading adds an immutable file and leaves parent business facts unchanged.',
+                'description' => 'Staff-manager-only multipart upload, at most 50 MiB. Dual Portal identities are denied. Reader release keeps legacy inheritance and rejects visibility fields and topic/comment parents before staging. Locked parent version checked; actor/client/key receipt binds parent/version/filename/media/length/SHA256, with replay and audit. Uploading adds an immutable file and leaves parent business facts unchanged.',
                 'parameters' => [
                     'WorkspaceId',
                     [
@@ -443,7 +445,7 @@ final class AgentRestDocumentation
                 'request' => 'AttachmentUploadRequest',
                 'request_types' => ['multipart/form-data'],
                 'response' => 'AttachmentResponse',
-                'response_description' => 'Manager-only multipart upload, at most 50 MiB. Locked parent version checked; actor/client/key receipt binds parent/version/filename/media/length/SHA256, with replay and audit. Uploading adds an immutable file and leaves parent business facts unchanged.',
+                'response_description' => 'Staff-manager-only multipart upload, at most 50 MiB. Dual Portal identities are denied. Reader release keeps legacy inheritance and rejects visibility fields and topic/comment parents before staging. Locked parent version checked; actor/client/key receipt binds parent/version/filename/media/length/SHA256, with replay and audit. Uploading adds an immutable file and leaves parent business facts unchanged.',
             ],
             'attachments.upload_url' => [
                 'method' => 'POST',
@@ -932,15 +934,15 @@ final class AgentRestDocumentation
             'expenses.receipts.list' => [
                 'method' => 'GET',
                 'scopes' => ['expenses:read'],
-                'description' => 'Manager-only list of the 100 newest available receipts; includes current expense_version.',
-                'parameters' => ['WorkspaceId', 'ExpenseId'],
+                'description' => 'Staff-manager-only available receipts, ordered by descending ID, default and maximum 100 per page. Follow meta.next_cursor; serialized byte limits may shorten a page. Includes current expense_version. Dual Portal identities are denied.',
+                'parameters' => ['WorkspaceId', 'ExpenseId', self::filePageLimit(), self::filePageCursor()],
                 'response' => 'ExpenseReceiptListResponse',
                 'response_description' => 'Successful operation',
             ],
             'expenses.receipts.upload' => [
                 'method' => 'POST',
                 'scopes' => ['expenses:read', 'expenses:write'],
-                'description' => 'Manager-only multipart upload, at most 50 MiB. File digest, filename and expense version bind idempotent retries. Version is checked on locked expense and advances on upload. Prepared URLs expire after ten minutes; direct authenticated REST uploads need no preparation. Both expense write flags required.',
+                'description' => 'Staff-manager-only multipart upload, at most 50 MiB. Dual Portal identities are denied. Reader release keeps legacy inheritance and rejects visibility fields and topic/comment parents before staging. File digest, filename and expense version bind idempotent retries. Version is checked on locked expense and advances on upload. Prepared URLs expire after ten minutes; direct authenticated REST uploads need no preparation. Both expense write flags required.',
                 'parameters' => ['WorkspaceId', 'ExpenseId', 'IdempotencyKey'],
                 'request' => 'ExpenseReceiptUploadRequest',
                 'request_types' => ['multipart/form-data'],
@@ -1998,6 +2000,20 @@ final class AgentRestDocumentation
             'description' => "Send `read` to receive {$answer}, when the token also holds {$scope}; without that scope the response keeps the write shape. Any other value is refused before anything is written, and the view is not part of the request an Idempotency-Key binds.",
             'schema' => ['type' => 'string', 'enum' => [ReadView::READ]],
         ];
+    }
+
+    /** @return array<string, mixed> */
+    private static function filePageLimit(): array
+    {
+        return ['name' => 'limit', 'in' => 'query', 'required' => false,
+            'schema' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 100, 'default' => 100]];
+    }
+
+    /** @return array<string, mixed> */
+    private static function filePageCursor(): array
+    {
+        return ['name' => 'cursor', 'in' => 'query', 'required' => false,
+            'schema' => ['type' => 'string', 'maxLength' => 4096]];
     }
 
     /** @return array<string, mixed> */

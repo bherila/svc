@@ -22,16 +22,16 @@ final class CursorPage
     /**
      * @template TRecord of Model
      *
-     * @param  Closure(int, ?int): Collection<int, TRecord>  $fetch  at most `$take` rows with an id above `$after` (null: from the start), ordered by id
+     * @param  Closure(int, ?int): Collection<int, TRecord>  $fetch  at most `$take` rows after the cursor id in the declared ascending or descending id order (null: from the start)
      * @param  Closure(TRecord): array<string, mixed>  $present
      * @param  int|null  $maxDataBytes  optional serialized data-array ceiling; a page may contain fewer than $limit rows
      * @return array{data:list<array<string, mixed>>,meta:array{next_cursor:?string}}
      *
      * @throws InvalidAgentApiCursor
      */
-    public static function run(Workspace $workspace, string $queryKey, int $limit, ?string $cursor, Closure $fetch, Closure $present, ?int $maxDataBytes = null): array
+    public static function run(Workspace $workspace, string $queryKey, int $limit, ?string $cursor, Closure $fetch, Closure $present, ?int $maxDataBytes = null, bool $allowLegacyCursor = true): array
     {
-        $rows = $fetch($limit + 1, AgentApiCursor::decode($cursor, $workspace->public_id, $queryKey));
+        $rows = $fetch($limit + 1, AgentApiCursor::decode($cursor, $workspace->public_id, $queryKey, $allowLegacyCursor));
         $hasMore = $rows->count() > $limit;
         if ($hasMore) {
             $rows->pop();

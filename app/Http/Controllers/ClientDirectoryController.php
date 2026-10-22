@@ -30,6 +30,7 @@ use App\Services\Billing\InvoiceCorrectionReadService;
 use App\Services\Billing\InvoiceCorrectionService;
 use App\Services\Billing\InvoiceEmailService;
 use App\Services\Clients\CompanyProfile;
+use App\Services\Files\AttachmentAudience;
 use App\Services\Finance\FinanceReconciliationBadges;
 use App\Services\Square\Mirror\SquareInvoicePage;
 use App\Services\Square\SquareLinkRepository;
@@ -492,6 +493,8 @@ class ClientDirectoryController extends Controller
         // assemble - and every endpoint behind one authorizes again.
         $manages = Gate::forUser($user)->allows('manage', $workspace);
         $attachmentBase = "/workspaces/{$workspace->public_id}/attachments";
+        $filePage = AttachmentListing::page($workspace, 'agreement', $clientAgreement->public_id, $manages, $user, AttachmentAudience::Native,
+            $request->integer('files_page', 1), route('clients.agreement', [$workspace, $clientCompany, $clientAgreement], absolute: false));
 
         return Inertia::render('clients/agreement', [
             'company' => [
@@ -515,7 +518,9 @@ class ClientDirectoryController extends Controller
                     ? "{$attachmentBase}/agreement/{$clientAgreement->public_id}"
                     : null,
             ],
-            'files' => AttachmentListing::for($workspace, 'agreement', (string) $clientAgreement->public_id, $manages),
+            'files' => $filePage->files,
+            'files_next_href' => $filePage->nextHref,
+            'files_previous_href' => $filePage->previousHref,
             'agreement' => $this->agreements->present($clientAgreement, $projectNames->get((int) $clientAgreement->client_project_id)) + [
                 // Terms the summary has no room for. Hours rather than minutes
                 // where the operator reads hours, and null rather than zero

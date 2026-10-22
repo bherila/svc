@@ -10,8 +10,11 @@ use App\Models\ClientCompanyActivity;
 use App\Models\ClientInvoice;
 use App\Models\ClientProposal;
 use App\Models\ClientTimeEntry;
+use App\Models\User;
 use App\Models\Workspace;
 use App\Models\WorkspaceMembership;
+use App\Services\Files\AttachmentAudience;
+use App\Services\Files\AttachmentReader;
 use App\Support\Access\StaffRole;
 use App\Support\AgentApi\Presenters\BillingScheduleReadPresenter;
 use Illuminate\Http\Request;
@@ -24,6 +27,8 @@ class WorkspaceOperationsController extends Controller
 
     public function __invoke(Request $request, Workspace $workspace): Response
     {
+        $actor = $request->user();
+        abort_unless($actor instanceof User, 401);
         $membership = WorkspaceMembership::query()
             ->where('workspace_id', $workspace->id)
             ->where('user_id', $request->user()?->id)
@@ -127,9 +132,13 @@ class WorkspaceOperationsController extends Controller
             'invoice' => $invoices->pluck('public_id')->all(),
         ];
         $attachments = collect();
+        $filesNextHref = null;
+        $filesPreviousHref = null;
+        $filePage = $request->integer('files_page', 1);
+        abort_unless($filePage >= 1 && $filePage <= 1_000_000, 422);
 
         if (collect($attachmentRecordIds)->contains(fn (array $recordIds): bool => $recordIds !== [])) {
-            $attachments = ClientAttachment::query()
+            $fileRows = app(AttachmentReader::class)->query($actor, $workspace, AttachmentAudience::Native)
                 ->select(['public_id', 'record_type', 'record_public_id', 'original_filename', 'media_type', 'bytes'])
                 ->where('workspace_id', $workspace->id)
                 ->where('lifecycle_state', ClientAttachment::STATE_AVAILABLE)
@@ -145,8 +154,11 @@ class WorkspaceOperationsController extends Controller
                             ->where('record_type', 'invoice')
                             ->whereIn('record_public_id', $attachmentRecordIds['invoice']));
                 })
-                ->get()
-                ->groupBy(fn (ClientAttachment $attachment): string => $attachment->record_type.':'.$attachment->record_public_id);
+                ->orderByDesc('id')->simplePaginate(300, ['*'], 'files_page', $filePage)
+                ->withPath(route('workspaces.operations', $workspace, absolute: false))->fragment('files-pagination');
+            $attachments = $fileRows->getCollection()->groupBy(fn (ClientAttachment $attachment): string => $attachment->record_type.':'.$attachment->record_public_id);
+            $filesNextHref = $fileRows->nextPageUrl();
+            $filesPreviousHref = $fileRows->previousPageUrl();
         }
         $attachmentPayload = fn (string $type, string $recordPublicId): array => ($attachments->get($type.':'.$recordPublicId) ?? collect())
             ->map(fn (ClientAttachment $attachment): array => [
@@ -247,6 +259,8 @@ class WorkspaceOperationsController extends Controller
                 'id' => $workspace->public_id,
                 'name' => $workspace->name,
                 'clients' => $clients,
+                'files_next_href' => $filesNextHref,
+                'files_previous_href' => $filesPreviousHref,
                 // The browser's calendar is not the workspace's, and neither
                 // is UTC's. Defaulting a date from `toISOString()` gives UTC's
                 // day, which the write validators - bounded by the workspace's

@@ -17,8 +17,9 @@ class StoreAttachmentRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'recordType' => ['required', 'string', Rule::in(AttachmentRecordResolver::allowedTypes())],
+            'recordType' => ['required', 'string', Rule::in(AttachmentRecordResolver::uploadableTypes())],
             'recordPublicId' => ['required', 'uuid'],
+            'is_visible_to_client' => ['missing'],
             'file' => ['required', 'file', 'max:51200'],
         ];
     }

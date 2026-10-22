@@ -106,7 +106,8 @@ if ($file !== false && str_starts_with($file, $root.'/public/build/') && is_file
 $app = require $root.'/scripts/layout/bootstrap.php';
 $fixture = json_decode(file_get_contents($runtime.'/fixture.json'), true);
 $path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
-Illuminate\\Support\\Facades\\Auth::onceUsingId(str_starts_with($path, '/portal/') ? $fixture['portal_user_id'] : $fixture['user_id']);
+$preview = $_SERVER['HTTP_X_SVC_LAYOUT_PREVIEW'] ?? null;
+Illuminate\\Support\\Facades\\Auth::onceUsingId($preview === 'dual' ? $fixture['dual_preview_user_id'] : (str_starts_with($path, '/portal/') && $preview === null ? $fixture['portal_user_id'] : $fixture['user_id']));
 $app->handleRequest(Illuminate\\Http\\Request::capture());
 `,
     );
@@ -147,90 +148,150 @@ $app->handleRequest(Illuminate\\Http\\Request::capture());
             'discussion',
             'portal',
             'taskthread',
+            'agreementfiles',
+            'portalagreementfiles',
+            'nativeportalagreementfiles',
+            'dualportalagreementfiles',
+            'expensefiles',
+            'operationsfiles',
         ]) {
+            await page.setExtraHTTPHeaders({
+                ...headers,
+                ...(screen === 'nativeportalagreementfiles'
+                    ? { 'X-SVC-Layout-Preview': '1' }
+                    : screen === 'dualportalagreementfiles'
+                      ? { 'X-SVC-Layout-Preview': 'dual' }
+                      : {}),
+            });
             await page.goto(origin + fixture[screen]);
             await expect(page.locator('main')).toBeVisible();
-            await expect(
-                page.getByRole('button', { name: 'Current client' }),
-            ).toContainText(fixture.company_name);
-            const activeSection =
-                screen === 'taskthread'
-                    ? 'Tasks'
-                    : ['discussion', 'portal'].includes(screen)
-                      ? 'Discussions'
-                      : 'Notes';
 
-            if (width < 640) {
-                const sectionMenu = page.getByRole('button', {
-                    name: 'Client sections',
+            if (screen !== 'operationsfiles') {
+                await expect(
+                    page.getByRole('button', { name: 'Current client' }),
+                ).toContainText(fixture.company_name);
+                const activeSection = screen.includes('agreementfiles')
+                    ? width < 640
+                        ? 'Home'
+                        : 'Client Home'
+                    : screen === 'expensefiles'
+                      ? 'Expenses'
+                      : screen === 'taskthread'
+                        ? 'Tasks'
+                        : ['discussion', 'portal'].includes(screen)
+                          ? 'Discussions'
+                          : 'Notes';
+
+                if (width < 640) {
+                    const sectionMenu = page.getByRole('button', {
+                        name: 'Client sections',
+                    });
+                    await expect(sectionMenu).toContainText(activeSection);
+                    await sectionMenu.click();
+                    await expect(
+                        page.getByRole('menuitem', {
+                            name: 'Notes',
+                            exact: true,
+                        }),
+                    ).toBeVisible();
+                    await expect(
+                        page.getByRole('menuitem', {
+                            name: 'Discussions',
+                            exact: true,
+                        }),
+                    ).toBeVisible();
+                    await expect(
+                        page.locator('[role="menuitem"][aria-current="page"]'),
+                    ).toContainText(activeSection);
+                    await page.screenshot({
+                        animations: 'disabled',
+                        path: path.join(
+                            artifacts,
+                            `${screen}-menu-${width}.png`,
+                        ),
+                    });
+                    await page.keyboard.press('Escape');
+                    await page
+                        .locator('[data-slot="dropdown-menu-content"]')
+                        .waitFor({ state: 'detached' });
+                } else {
+                    await expect(
+                        page
+                            .getByRole('navigation', {
+                                name: 'Client sections',
+                            })
+                            .locator('[aria-current="page"]'),
+                    ).toHaveText(activeSection);
+                }
+
+                if (screen === 'portal') {
+                    await expect(
+                        page.getByRole('button', { name: 'Add comment' }),
+                    ).toHaveCount(0);
+                }
+
+                if (screen === 'note') {
+                    await expect(
+                        page
+                            .getByText(
+                                'Hidden from clients because a parent is private.',
+                            )
+                            .first(),
+                    ).toBeVisible();
+                }
+
+                if (width >= 640) {
+                    const strip = page.getByRole('navigation', {
+                        name: 'Client sections',
+                    });
+                    const selected = strip.locator('[aria-current="page"]');
+                    await expect
+                        .poll(async () => {
+                            const [navBounds, itemBounds] = await Promise.all([
+                                strip.boundingBox(),
+                                selected.boundingBox(),
+                            ]);
+
+                            return (
+                                navBounds !== null &&
+                                itemBounds !== null &&
+                                itemBounds.x >= navBounds.x - 1 &&
+                                itemBounds.x + itemBounds.width <=
+                                    navBounds.x + navBounds.width + 1
+                            );
+                        })
+                        .toBe(true);
+                }
+            }
+
+            if (screen.endsWith('files')) {
+                const pagination = page.getByRole('navigation', {
+                    name: 'File pages',
                 });
-                await expect(sectionMenu).toContainText(activeSection);
-                await sectionMenu.click();
-                await expect(
-                    page.getByRole('menuitem', { name: 'Notes', exact: true }),
-                ).toBeVisible();
-                await expect(
-                    page.getByRole('menuitem', {
-                        name: 'Discussions',
-                        exact: true,
-                    }),
-                ).toBeVisible();
-                await expect(
-                    page.locator('[role="menuitem"][aria-current="page"]'),
-                ).toContainText(activeSection);
+                await pagination.scrollIntoViewIfNeeded();
+                const older = pagination.getByRole('link', {
+                    name: 'Older files',
+                });
+                await expect(older).toBeVisible();
+                await older.click();
+                await expect(page).toHaveURL(/files_page=2/);
+                const newer = page
+                    .getByRole('navigation', { name: 'File pages' })
+                    .getByRole('link', { name: 'Newer files' });
+                await expect(newer).toBeVisible();
+                await newer.click();
+                await expect(page).toHaveURL(/files_page=1/);
+                await page
+                    .getByRole('navigation', { name: 'File pages' })
+                    .scrollIntoViewIfNeeded();
                 await page.screenshot({
                     animations: 'disabled',
-                    path: path.join(artifacts, `${screen}-menu-${width}.png`),
+                    path: path.join(
+                        artifacts,
+                        `${screen}-pagination-${width}.png`,
+                    ),
                 });
-                await page.keyboard.press('Escape');
-                await page
-                    .locator('[data-slot="dropdown-menu-content"]')
-                    .waitFor({ state: 'detached' });
-            } else {
-                await expect(
-                    page
-                        .getByRole('navigation', { name: 'Client sections' })
-                        .locator('[aria-current="page"]'),
-                ).toHaveText(activeSection);
-            }
-
-            if (screen === 'portal') {
-                await expect(
-                    page.getByRole('button', { name: 'Add comment' }),
-                ).toHaveCount(0);
-            }
-
-            if (screen === 'note') {
-                await expect(
-                    page
-                        .getByText(
-                            'Hidden from clients because a parent is private.',
-                        )
-                        .first(),
-                ).toBeVisible();
-            }
-
-            if (width >= 640) {
-                const strip = page.getByRole('navigation', {
-                    name: 'Client sections',
-                });
-                const selected = strip.locator('[aria-current="page"]');
-                await expect
-                    .poll(async () => {
-                        const [navBounds, itemBounds] = await Promise.all([
-                            strip.boundingBox(),
-                            selected.boundingBox(),
-                        ]);
-
-                        return (
-                            navBounds !== null &&
-                            itemBounds !== null &&
-                            itemBounds.x >= navBounds.x - 1 &&
-                            itemBounds.x + itemBounds.width <=
-                                navBounds.x + navBounds.width + 1
-                        );
-                    })
-                    .toBe(true);
+                await page.evaluate(() => scrollTo(0, 0));
             }
 
             const layout = await page.evaluate(() => ({
@@ -244,9 +305,11 @@ $app->handleRequest(Illuminate\\Http\\Request::capture());
                 layout.document,
                 `${screen} at ${width}`,
             ).toBeLessThanOrEqual(width);
-            expect(layout.nav, `${screen} navbar at ${width}`).toBeLessThan(
-                100,
-            );
+
+            if (screen !== 'operationsfiles') {
+                expect(layout.nav, `${screen} navbar at ${width}`).toBe(49);
+            }
+
             await page.screenshot({
                 animations: 'disabled',
                 path: path.join(artifacts, `${screen}-${width}.png`),

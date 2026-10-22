@@ -9,6 +9,7 @@ import {
 import { DeferredBacklogCard } from '@/components/agreements/deferred-backlog';
 import type { DeferredBacklog } from '@/components/agreements/deferred-backlog';
 import { DeferredBuyDownForm } from '@/components/agreements/deferred-buydown';
+import { AttachmentPageLinks } from '@/components/files/attachment-page-links';
 import {
     AlertDialog,
     AlertDialogAction,
@@ -88,6 +89,8 @@ export default function ClientAgreementDetail({
     audience,
     actions,
     files,
+    files_next_href: nextFilesHref = null,
+    files_previous_href: previousFilesHref = null,
     agreement,
     recurring_items: recurringItems,
     deferred_backlog: deferredBacklog,
@@ -98,6 +101,8 @@ export default function ClientAgreementDetail({
     audience: 'operator' | 'client';
     actions: AgreementActions;
     files: AgreementFile[];
+    files_next_href?: string | null;
+    files_previous_href?: string | null;
     agreement: AgreementTerms;
     recurring_items: RecurringItem[];
     /** Managers, or portal readers where the agreement explicitly opts in. */
@@ -379,12 +384,14 @@ export default function ClientAgreementDetail({
 
                 <Card>
                     <CardHeader>
-                        <CardTitle>Files</CardTitle>
+                        <CardTitle id="files">Files</CardTitle>
                     </CardHeader>
                     <CardContent className="grid grid-cols-1 gap-4">
                         {files.length === 0 ? (
                             <p className="text-sm text-muted-foreground">
-                                Nothing is attached to this agreement.
+                                {previousFilesHref
+                                    ? 'No files on this page.'
+                                    : 'Nothing is attached to this agreement.'}
                             </p>
                         ) : (
                             <ul className="grid grid-cols-1 gap-2 text-sm">
@@ -419,6 +426,11 @@ export default function ClientAgreementDetail({
                                 ))}
                             </ul>
                         )}
+
+                        <AttachmentPageLinks
+                            nextHref={nextFilesHref}
+                            previousHref={previousFilesHref}
+                        />
 
                         {actions.upload_file !== null && (
                             <AgreementFileUpload

@@ -16,10 +16,11 @@ use Illuminate\Support\Facades\DB;
 /** Shared file lifecycle for web forms and agent mutations. */
 final class AttachmentAction
 {
-    public function __construct(private readonly AttachmentRecordResolver $records, private readonly AttachmentStorageService $storage) {}
+    public function __construct(private readonly AttachmentRecordResolver $records, private readonly AttachmentStorageService $storage, private readonly AttachmentWriteAccess $access) {}
 
     public function store(Workspace $workspace, string $type, string $id, UploadedFile $file, User $user, ?string $expectedVersion = null): ClientAttachment
     {
+        abort_unless(in_array($type, AttachmentRecordResolver::uploadableTypes(), true), 422);
         if ($expectedVersion === null) {
             return $this->storage->store($workspace, $this->records->resolve($workspace, $type, $id), $file, $user);
         }
@@ -33,21 +34,27 @@ final class AttachmentAction
     }
 
     /** Publish preverified bytes under the current tenant-owned parent revision. */
-    public function publishPrepared(Workspace $workspace, string $type, string $id, ClientAttachment $prepared, string $expectedVersion): ClientAttachment
+    public function publishPrepared(Workspace $workspace, string $type, string $id, ClientAttachment $prepared, string $expectedVersion, ?User $agentActor = null): ClientAttachment
     {
-        return DB::transaction(function () use ($workspace, $type, $id, $prepared, $expectedVersion): ClientAttachment {
+        abort_unless(in_array($type, AttachmentRecordResolver::uploadableTypes(), true), 422);
+
+        return DB::transaction(function () use ($workspace, $type, $id, $prepared, $expectedVersion, $agentActor): ClientAttachment {
             BillingMaintenance::share($workspace->id);
-            $record = $this->lockedRecord($workspace, $type, $id);
+            $record = $agentActor === null ? $this->lockedRecord($workspace, $type, $id) : $this->lockAgentParent($workspace, $type, $id, $agentActor);
             abort_unless(AgentApiVersion::matches($record, $expectedVersion), 409, 'The record changed. Read it again before uploading.');
 
             return $this->storage->publishPrepared($workspace, $record, $prepared);
         });
     }
 
-    public function delete(Workspace $workspace, string $id, ?string $expectedVersion = null): ClientAttachment
+    public function delete(Workspace $workspace, string $id, ?string $expectedVersion = null, ?User $agentActor = null): ClientAttachment
     {
-        return DB::transaction(function () use ($workspace, $id, $expectedVersion): ClientAttachment {
+        return DB::transaction(function () use ($workspace, $id, $expectedVersion, $agentActor): ClientAttachment {
             BillingMaintenance::share($workspace->id);
+            if ($agentActor !== null) {
+                $identity = ClientAttachment::query()->where('workspace_id', $workspace->id)->where('public_id', $id)->firstOrFail();
+                $this->lockAgentParent($workspace, $identity->record_type, $identity->record_public_id, $agentActor);
+            }
             $attachment = ClientAttachment::query()->where('workspace_id', $workspace->id)->where('public_id', $id)
                 ->tap(Locks::forUpdate())->firstOrFail();
             if ($attachment->record_type === 'expense') {
@@ -60,6 +67,24 @@ final class AttachmentAction
 
             return $this->storage->requestDeletion($attachment);
         });
+    }
+
+    /** Caller holds its mutation receipt. Publication and replay acquire the same current authority.
+     * @return Model&WorkspaceOwned
+     */
+    public function lockAgentParent(Workspace $workspace, string $type, string $id, User $actor): Model
+    {
+        $early = in_array($type, ['proposal', 'agreement', 'invoice'], true);
+        if (! $early) {
+            $this->access->lockWorkspace($workspace);
+        }
+        $record = $this->lockedRecord($workspace, $type, $id);
+        if ($early) {
+            $this->access->lockWorkspace($workspace);
+        }
+        $this->access->assertCurrentManager($actor, $workspace);
+
+        return $record;
     }
 
     /** @return Model&WorkspaceOwned */

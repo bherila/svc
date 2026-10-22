@@ -57,16 +57,16 @@ them into active tasks or collectible invoices nor reactivates people or grants.
 The checkbox answers whether content may be disclosed to an authorized client.
 It does not create membership, add a project grant, permit editing, or send mail.
 
-| Content | Client disclosure rule |
-|---|---|
-| Existing project/task/proposal/agreement/invoice/time | Preserve current behavior and documented lifecycle rules |
-| Project note or discussion | Current company/project grant, visible project, own checkbox |
-| Company-wide note or discussion | Current company-wide portal grant and own checkbox; one project grant is insufficient |
-| Task comment | Current grant, visible project, task and its task/list ancestors, own checkbox |
-| Topic comment | Current grant, visible topic and its applicable ancestors, own checkbox |
-| New attachment | Same parent authorization plus its own checkbox when file-level sharing is introduced |
-| Task lists and subtasks | A private containing list or task ancestor hides its descendants from clients |
-| Labels and assignee metadata | Present only fields authorized for the audience; never disclose a hidden related record's title or identity |
+| Content                                               | Client disclosure rule                                                                                      |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Existing project/task/proposal/agreement/invoice/time | Preserve current behavior and documented lifecycle rules                                                    |
+| Project note or discussion                            | Current company/project grant, visible project, own checkbox                                                |
+| Company-wide note or discussion                       | Current company-wide portal grant and own checkbox; one project grant is insufficient                       |
+| Task comment                                          | Current grant, visible project, task and its task/list ancestors, own checkbox                              |
+| Topic comment                                         | Current grant, visible topic and its applicable ancestors, own checkbox                                     |
+| New attachment                                        | Same parent authorization plus its own checkbox when file-level sharing is introduced                       |
+| Task lists and subtasks                               | A private containing list or task ancestor hides its descendants from clients                               |
+| Labels and assignee metadata                          | Present only fields authorized for the audience; never disclose a hidden related record's title or identity |
 
 New notes, discussions, staff comments and ordinary task creation default to
 internal. Omitted visibility on update means unchanged. Existing project creation,
@@ -212,10 +212,44 @@ and required transport contracts work together.
 - Introduce file-level sharing as a separate explicit slice: retain existing
   native attachments as `is_visible_to_client=true`, even under currently private
   parents, preserving their parent-inherited disclosure when a parent later changes.
-  Historical blobs stay separate. New ordinary uploads default false with an
-  explicit sharing choice. Before this slice, files inherit strict parent access.
-  All listing/metadata/download predicates include the flag once introduced and
-  recheck it on held URLs. A file checkbox narrows its parent's audience only.
+  Historical blobs stay separate. Deliver the following reader release before
+  enabling any private-file or new-parent writers:
+    - **R1 reader release:** add the non-null column with database default **true**
+      and backfill every existing lifecycle row true, including staged, deleting
+      and corrupt rows. The database default must remain true while an older
+      uploader binary can omit the column. Upgraded ordinary upload paths explicitly
+      write true throughout R1, regardless of later sharing-control configuration.
+      Reject a supplied
+      private flag or topic/comment upload before staging bytes or inserting a
+      recovery row. Separate readable parent types from uploadable parent types;
+      synthetic reader coverage does not enable uploads. No sharing controls or
+      new-parent upload operations are available in this release.
+    - All R1 listing, metadata and download paths enforce the stored file flag and
+      the full current parent/grant/ancestry policy, including held URLs. Readers
+      enforce a stored false value even while the writer flag is off. Preserve
+      manager-only generic agent file operations, separate expense restrictions
+      and the historical blob library. Apply authorization before counts, limits,
+      filenames or snippets; use the shared task ancestor/root-list predicate for
+      task files and comments. A file checkbox only narrows its parent's audience.
+    - **R2 writer release:** only after the deployed reader floor is verified,
+      change the database default to **false** and make ordinary uploads explicitly
+      private in every adapter. A separate domain flag enables explicit sharing
+      controls and topic/comment uploads across native, first-party, agent and CLI
+      writes; existing agent cutovers do not replace it. Turning those controls off
+      preserves existing private rows and keeps future ordinary uploads private.
+      The deployed reader/writer phase determines the upload default; toggling a
+      controls flag never makes uploads more public. Do not roll back below R1 after
+      private or new-parent
+      rows exist; a schema rollback must refuse retained incompatible rows rather
+      than publishing them. Prepared uploads reauthorize their current parent and
+      actor at publication, and receipt replay rechecks current authority.
+
+    Reader compatibility tests must exercise an older uploader that omits the
+    column, all upgraded upload adapters throughout R1, and zero staged
+    rows or objects after rejected private/new-parent uploads. Test current grants,
+    hidden/deleted ancestors, exact portal grants for dual identities, cross-tenant
+    lineage and held URLs across metadata and bytes. Prove bounded query counts and
+    actual database defaults on SQLite and MariaDB before enabling R2 writers.
 
 ### 3. Finish workflows and all transports
 
@@ -246,12 +280,12 @@ retries and retain delivery failures without rolling back committed content.
 All initial worktrees start from the planning baseline. Rebase dependent slices
 onto reviewed prerequisite commits; merge in dependency order, not completion order.
 
-| Lane | Worktree / branch | Owned implementation |
-|---|---|---|
-| Coordinator | `svc-collaboration-plan` / `plan/client-collaboration-execution` | Plan, shared routes/catalog/scopes, generated artifacts, integration, contacts parity initially |
-| Visibility/files | `svc-client-visibility` / `feat/client-visibility` | Parent authorization, capability filtering, attachment resolver/controller/storage, focused permission tests |
-| Tasks | `svc-task-management` / `feat/task-management` | Task DTO/repository/action/model/migrations, organization, task components and focused tests |
-| Collaboration | `svc-project-collaboration` / `feat/project-collaboration` | New topic/comment models/migrations/actions/controllers/components and focused tests |
+| Lane             | Worktree / branch                                                | Owned implementation                                                                                         |
+| ---------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Coordinator      | `svc-collaboration-plan` / `plan/client-collaboration-execution` | Plan, shared routes/catalog/scopes, generated artifacts, integration, contacts parity initially              |
+| Visibility/files | `svc-client-visibility` / `feat/client-visibility`               | Parent authorization, capability filtering, attachment resolver/controller/storage, focused permission tests |
+| Tasks            | `svc-task-management` / `feat/task-management`                   | Task DTO/repository/action/model/migrations, organization, task components and focused tests                 |
+| Collaboration    | `svc-project-collaboration` / `feat/project-collaboration`       | New topic/comment models/migrations/actions/controllers/components and focused tests                         |
 
 Reserve `AgentReadService`, directory/portal controller integration,
 `WorkspaceSearch`, activity registration, lock resource registry, tenant reference

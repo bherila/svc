@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\Crypt;
 
 final class AgentApiCursor
 {
-    public static function decode(?string $cursor, string $workspaceId, string $query): ?int
+    public static function decode(?string $cursor, string $workspaceId, string $query, bool $allowLegacy = true): ?int
     {
         if ($cursor === null || $cursor === '') {
             return null;
@@ -18,6 +18,10 @@ final class AgentApiCursor
             $value = Crypt::decryptString($cursor);
             $payload = json_decode($value, true, flags: JSON_THROW_ON_ERROR);
         } catch (DecryptException|\JsonException) {
+            if (! $allowLegacy) {
+                throw new InvalidAgentApiCursor('cursor must be an opaque pagination cursor.');
+            }
+
             return self::legacy($cursor);
         }
 
