@@ -32,6 +32,13 @@ or paginating. Detail, embed, task comment, search, activity, attachment metadat
 and attachment byte readers must use this boundary. Filtering the final page in
 PHP cannot protect counts, snippets or cursor behavior.
 
+Time entries retain their independent visibility and financial lifecycle. Their
+optional task reference is scoped through the actor's task query and becomes
+null for hidden ancestry or mismatched workspace/project lineage; this does not
+remove an otherwise visible time record. The existing manager-first dual-identity
+time-entry/financial read policy is a separate authorization follow-up, outside
+this task organization reader slice.
+
 The predicate validates at most eight parent edges using fixed scoped joins.
 Every present ancestor and the project must be client-visible. A listed root
 also requires its same-project list to exist, be live and be client-visible.
