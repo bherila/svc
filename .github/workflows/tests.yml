@@ -609,7 +609,7 @@ jobs:
         run: bash scripts/ci/require-success.sh
 
   ci:
-    needs: [checks, sqlite, mariadb, mcp-smoke, mutation]
+    needs: [checks, sqlite, mariadb, mcp-smoke]
     if: ${{ always() }}
     runs-on: ubuntu-24.04-arm
     steps:
@@ -617,7 +617,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Require all CI lanes
+      - name: Require all required CI lanes
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
         run: bash scripts/ci/require-success.sh

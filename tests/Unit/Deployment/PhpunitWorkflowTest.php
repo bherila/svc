@@ -34,7 +34,7 @@ final class PhpunitWorkflowTest extends TestCase
     public function test_existing_required_check_names_gate_all_their_dependencies(): void
     {
         $jobs = $this->jobs();
-        $this->assertSame(['checks', 'sqlite', 'mariadb', 'mcp-smoke', 'mutation'], $jobs['ci']['needs']);
+        $this->assertSame(['checks', 'sqlite', 'mariadb', 'mcp-smoke'], $jobs['ci']['needs']);
         $this->assertSame('Tests on MariaDB', $jobs['mariadb']['name']);
         $this->assertSame(['mariadb-tests'], $jobs['mariadb']['needs']);
         foreach (['ci', 'mariadb'] as $gate) {
@@ -45,6 +45,16 @@ final class PhpunitWorkflowTest extends TestCase
         }
         $this->assertContains('ci', $jobs['deploy']['needs']);
         $this->assertStringContainsString("needs.ci.result == 'success'", $jobs['deploy']['if']);
+    }
+
+    public function test_universal_gates_do_not_require_pull_request_only_jobs(): void
+    {
+        $jobs = $this->jobs();
+        foreach (['ci', 'mariadb'] as $gate) {
+            foreach ($jobs[$gate]['needs'] as $lane) {
+                $this->assertStringNotContainsString('github.event_name', $jobs[$lane]['if'] ?? '', $gate.' cannot require a lane skipped on main or manual dispatch.');
+            }
+        }
     }
 
     public function test_checks_keep_static_and_frontend_validation_without_running_phpunit(): void
