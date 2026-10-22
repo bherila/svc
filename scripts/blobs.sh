@@ -9,7 +9,7 @@
 set -euo pipefail
 
 PROJECT="svc"
-REMOTE_HOST="ssh-bwh-php"
+REMOTE_HOST="ssh-svc"
 REMOTE_PATH="svc-laravel/storage/app/private"
 
 X_DATA="${X_DATA_DIR:-$HOME/proj/x-data}"
