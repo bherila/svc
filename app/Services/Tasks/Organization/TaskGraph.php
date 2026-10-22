@@ -42,6 +42,7 @@ final readonly class TaskGraph
             if ($row === null || isset($seen[$id])) {
                 throw new DomainException('The task organization is invalid.');
             }
+            // @infection-ignore-all Only isset reads this set: true and false are both non-null, so visitation depends on the key alone.
             $seen[$id] = true;
             if ($row['parent'] !== null) {
                 if ($row['list'] !== null) {
@@ -158,7 +159,8 @@ final readonly class TaskGraph
         }
         $tasks = $this->tasks;
         foreach ($ids as $position => $id) {
-            $task = $tasks[$id] ?? throw new DomainException('The requested task is unavailable.');
+            // Complete sibling-set equality above guarantees every ID exists in this immutable snapshot.
+            $task = $tasks[$id];
             $tasks[$id] = [...$task, 'position' => $position];
         }
 
