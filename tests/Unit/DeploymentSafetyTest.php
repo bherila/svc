@@ -26,7 +26,7 @@ class DeploymentSafetyTest extends TestCase
         // The shared action holds a key that reaches every application on the account, so it
         // must be pinned to a full commit, never a mutable tag.
         $this->assertStringContainsString(
-            'uses: bherila/shared-cpanel-deployment@cdd3b5eafb0555eedced6f966b9a1f5f1e68cdff',
+            'uses: bherila/shared-cpanel-deployment@46a47522ad977c008a1251b0f67e73807a8bfb10',
             $workflow,
         );
         $this->assertMatchesRegularExpression('~uses: bherila/shared-cpanel-deployment@[0-9a-f]{40}\b~', $workflow);
@@ -44,7 +44,8 @@ class DeploymentSafetyTest extends TestCase
         // runtime state and OAuth keys authoritative across every release and rollback.
         $this->assertStringContainsString('deployment-mode: atomic', $workflow);
         $this->assertStringContainsString('persistent-paths: storage', $workflow);
-        $this->assertStringContainsString('retain-releases:', $workflow);
+        $this->assertStringContainsString("retain-releases: '0'", $workflow);
+        $this->assertStringContainsString('webroot-symlink: public_html', $workflow);
         $this->assertStringContainsString('failure-policy: rollback', $workflow);
         $this->assertStringContainsString("operational-audit: 'true'", $workflow);
         $this->assertStringContainsString("runtime-audit: 'true'", $workflow);

@@ -250,7 +250,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: bherila/shared-cpanel-deployment
-          ref: cdd3b5eafb0555eedced6f966b9a1f5f1e68cdff
+          ref: 46a47522ad977c008a1251b0f67e73807a8bfb10
           path: .shared-cpanel-deployment
           persist-credentials: false
 
@@ -509,10 +509,10 @@ jobs:
           fi
 
   deploy:
-    name: Deploy empty alpha to web1
+    name: Deploy SVC to web1
     needs: [ci, mariadb, mcp-smoke]
-    # Keep production deploys explicitly disabled while the cPanel vhost requires
-    # the configured application directory itself to remain a real directory.
+    # The operator can pause deployment during account cutover. Stable-directory activation
+    # preserves the real application path required by cPanel/LiteSpeed.
     if: ${{ !cancelled() && github.ref == 'refs/heads/main' && vars.ATOMIC_DEPLOY_ENABLED == 'true' && needs.ci.result == 'success' && needs.mariadb.result == 'success' && needs.mcp-smoke.result == 'success' }}
     runs-on: ubuntu-24.04-arm
     environment: web1
@@ -563,8 +563,8 @@ jobs:
           path: public/build/
 
       # Shared deploy for Laravel on a cPanel account: https://github.com/bherila/shared-cpanel-deployment
-      # (its README lists every input and what each guard refuses). Pinned to a commit because this job
-      # holds a key that reaches every application on the account.
+      # (its README lists every input and what each guard refuses). Pin the action to a reviewed
+      # commit; its deployment key belongs only to this application's cPanel account.
       #
       # v2.1.2 builds and validates a versioned candidate before selecting it beneath a real cPanel
       # application directory, keeps the previous release, and records the exact selected commit.
@@ -575,18 +575,20 @@ jobs:
       # pair. The action refuses an incomplete key pair rather than rotating it. SVC has a scheduler but
       # deliberately no queue worker; quiesce.sh drains only this app's in-flight Artisan processes.
       - name: Deploy to the cPanel account
-        uses: bherila/shared-cpanel-deployment@cdd3b5eafb0555eedced6f966b9a1f5f1e68cdff # reviewed rollback recovery
+        uses: bherila/shared-cpanel-deployment@46a47522ad977c008a1251b0f67e73807a8bfb10 # reviewed rollback recovery
         with:
           ssh-host: ${{ secrets.SSH_HOST }}
           ssh-username: ${{ secrets.SSH_USERNAME }}
           ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
           ssh-known-hosts: ${{ secrets.SSH_KNOWN_HOSTS }}
           deploy-dir: svc-laravel
+          webroot-symlink: public_html
           site-url: https://svc.bherila.net
           deployment-mode: atomic
           atomic-layout: stable-directory
           persistent-paths: storage
-          retain-releases: '3'
+          # Keep rollback material until finalization; discard inactive code once serving is proven.
+          retain-releases: '0'
           # Preserve previous-code compatibility when adding migrations; rollback keeps shared data.
           failure-policy: rollback
           initial-live-commit: f997a89fb5ce83ea2346d1267dc6f54f11ec9f2a

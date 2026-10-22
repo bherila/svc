@@ -120,6 +120,17 @@ are not touched; revoke those by name with `svc:auth:revoke-token` (see
 
 ## Recovery and rollback
 
+Production deploys use a dedicated cPanel account and an account-specific SSH key.
+The stable application directory is `~/svc-laravel`; `~/public_html` points to its
+`public` directory. Account-specific configuration is stored under `~/.config/svc`.
+Absolute runtime paths and database ownership must be verified when moving accounts;
+preserve application and OAuth keys rather than regenerating them.
+
+`retain-releases: '0'` keeps prior code during the deployment and any recovery,
+then removes inactive code once finalization proves the selected application is
+serving. Incomplete transactions and persistent storage are preserved. To roll back
+after a completed deployment, redeploy a previously verified source commit.
+
 1. Confirm the affected capability's feature flag remains false while the
    incident is investigated.
 2. Reproduce only with synthetic `.test` data and a short-lived test OAuth
