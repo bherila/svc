@@ -77,6 +77,40 @@ Task commands use current internal staff authority. An account that also has
 portal access can use its staff permissions locally; REST/MCP treat that account
 as a portal reader and refuse task mutations.
 
+## Business contacts
+
+Company and business-contact listings apply both a maximum row count and a
+serialized byte budget. Large profiles/notes can produce shorter pages in REST,
+MCP and CLI. Continue with `meta.next_cursor` until it is null; a short page does
+not imply completion. Full notes remain available on every returned record.
+
+`svc:clients:contacts` lists, reads, creates, updates, archives and restores
+business contacts. The acting `--actor` must currently be an owner or admin of
+the workspace. Workspace, company and contact identifiers are public UUIDs.
+These records describe people at a client company; editing them does not create
+login accounts, send invitations or change portal access.
+
+```bash
+php artisan svc:clients:contacts list WORKSPACE_UUID COMPANY_UUID --actor=USER_UUID --format=json
+php artisan svc:clients:contacts get WORKSPACE_UUID COMPANY_UUID --actor=USER_UUID --contact=CONTACT_UUID --format=json
+php artisan svc:clients:contacts create WORKSPACE_UUID COMPANY_UUID --actor=USER_UUID --input=contact.json --key=unique-retry-key --format=json
+```
+
+Mutations preview and roll back by default. Add `--apply` to persist. `--input=-`
+reads a JSON object from standard input; files and standard input accept at most
+1 MiB. Use the same body as `clients.contacts.create`, `update`, `archive` or
+`restore` in REST/MCP. Updates merge only the fields supplied, and explicit
+`null` clears an optional field. At least one name must remain. Update, archive
+and restore require the current opaque `expected_version` returned by reads;
+archive additionally requires `"confirm": true`. Keep the request and `--key`
+unchanged when retrying an applied operation. List accepts `--status=active` or
+`archived`, `--limit=1..100` and a continuation `--cursor` bound to that company
+and status. Local commands use current internal account permissions independently of
+OAuth deployment switches. REST/MCP business-contact operations treat any current
+portal identity in the workspace as the client audience, including dual-role
+accounts, and refuse those private reads and writes. Native CLI authority remains
+internal and is rechecked on each write and replay.
+
 ## Apply Payment
 
 Amounts are integer currency minor units, as in REST. The workspace is required;
@@ -196,7 +230,7 @@ with no known reader, both compared as exact sets. Adding a branch therefore
 means editing a constant in the same commit — which is the point, and also a
 guaranteed conflict as soon as two branches add one. Hand-resolving a sorted
 70-line constant is the friction that gets a guard deleted rather than fixed;
-with this, resolving is *take both sides, re-run, commit*.
+with this, resolving is _take both sides, re-run, commit_.
 
 It cannot weaken anything by itself: it derives the manifests from `REGISTRY`, so
 running it after a branch is deleted produces a manifest that agrees with the
@@ -315,7 +349,7 @@ php artisan svc:billing:audit-missing-billed-overage --format=json   # machine-r
 Three sums total the overage an agreement has already been charged so the next
 period does not charge it again. All three are `SUM(hours_billed_at_rate)`, and
 SQL aggregation contributes nothing for a null — so a charged invoice with a
-null there reads as *zero already billed*, and its hours can be sold a second
+null there reads as _zero already billed_, and its hours can be sold a second
 time.
 
 Same defect class as #135 by a different route: there a `<=` answered false for
@@ -324,7 +358,7 @@ value it contributes vanishes.
 
 **No fix is implied, and none should be inferred from the count.**
 `service_period_end` could be read fail-closed because the question was which
-side of a window a row falls on. This one cannot: the question is *how much* was
+side of a window a row falls on. This one cannot: the question is _how much_ was
 billed, and a null is not a quantity. Coercing it to zero is the current
 behaviour and is the bug; coercing it to anything else invents a number. The
 decision is to refuse on unknown, or to establish the column is never null on a
@@ -334,7 +368,7 @@ The agreement count is the one that sizes the exposure, because the sums are per
 agreement: ten such invoices on one agreement leave one figure unknown, one on
 each of ten leaves ten.
 
-It says *may* throughout, deliberately. A null proves the contribution is
+It says _may_ throughout, deliberately. A null proves the contribution is
 unknown — not that the invoice carried overage — so a flagged sum may read
 short and may be exactly right. This audit exists to establish whether #144 is
 live at all, and claiming more than counts can support is how an audit stops

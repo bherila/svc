@@ -419,6 +419,76 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    '/workspaces/{workspace}/clients/{client}/contacts/{contact}/archive': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Workspace managers only. Business contacts never grant portal access or send invitations. Archive retains the record and requires explicit confirm: true. */
+        post: operations['clients.contacts.archive'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/clients/{client}/contacts': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Workspace managers only. Business contacts never grant portal access or send invitations. All records, including archived contacts, are returned unless status is specified. */
+        get: operations['clients.contacts.list'];
+        put?: never;
+        /** @description Workspace managers only. Business contacts never grant portal access or send invitations. */
+        post: operations['clients.contacts.create'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/clients/{client}/contacts/{contact}': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Workspace managers only. Business contacts never grant portal access or send invitations. */
+        get: operations['clients.contacts.get'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** @description Workspace managers only. Business contacts never grant portal access or send invitations. Omitted fields remain unchanged; explicit null clears nullable fields. Current expected_version is required. */
+        patch: operations['clients.contacts.update'];
+        trace?: never;
+    };
+    '/workspaces/{workspace}/clients/{client}/contacts/{contact}/restore': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Workspace managers only. Business contacts never grant portal access or send invitations. */
+        post: operations['clients.contacts.restore'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     '/workspaces/{workspace}/clients': {
         parameters: {
             query?: never;
@@ -2316,6 +2386,30 @@ export interface components {
              */
             watermark: string;
         };
+        ClientBusinessContact: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            company_id: string;
+            version: string;
+            first_name: string | null;
+            last_name: string | null;
+            title: string | null;
+            /** Format: email */
+            email: string | null;
+            phone: string | null;
+            notes: string | null;
+            is_archived: boolean;
+        };
+        ClientBusinessContactListResponse: {
+            data: components['schemas']['ClientBusinessContact'][];
+            meta: {
+                next_cursor: string | null;
+            };
+        };
+        ClientBusinessContactResponse: {
+            data: components['schemas']['ClientBusinessContact'];
+        };
         ClientCompany: {
             version: string;
             /** Format: uuid */
@@ -2328,6 +2422,13 @@ export interface components {
             /** @description The confirmed Square customer, or null. */
             square_customer:
                 components['schemas']['CompanySquareCustomer'] | null;
+            billing_address: string | null;
+            phone: string | null;
+            /** Format: uri */
+            website_url: string | null;
+            tax_id: string | null;
+            currency: string | null;
+            notes: string | null;
         };
         ClientCompanyListResponse: {
             data: components['schemas']['ClientCompany'][];
@@ -5170,10 +5271,53 @@ export interface components {
              */
             confirm: true;
         };
+        clients_contacts_archiveRequest: {
+            expected_version: string;
+            /** @constant */
+            confirm: true;
+        };
+        clients_contacts_createRequest: {
+            first_name?: string | null;
+            last_name?: string | null;
+            title?: string | null;
+            /** Format: email */
+            email?: string | null;
+            phone?: string | null;
+            notes?: string | null;
+            /** @default false */
+            is_archived: boolean;
+        } & (
+            | {
+                  first_name: string;
+              }
+            | {
+                  last_name: string;
+              }
+        );
+        clients_contacts_restoreRequest: {
+            expected_version: string;
+        };
+        clients_contacts_updateRequest: {
+            first_name?: string | null;
+            last_name?: string | null;
+            title?: string | null;
+            /** Format: email */
+            email?: string | null;
+            phone?: string | null;
+            notes?: string | null;
+            expected_version: string;
+        };
         clients_createRequest: {
             name: string;
             /** Format: email */
             billing_email?: string | null;
+            billing_address?: string | null;
+            phone?: string | null;
+            /** Format: uri */
+            website_url?: string | null;
+            tax_id?: string | null;
+            currency?: string | null;
+            notes?: string | null;
         };
         clients_portal_access_grantRequest: {
             /** @constant */
@@ -5225,6 +5369,13 @@ export interface components {
             automatic_invoice_email_enabled?: boolean;
             automatic_invoice_email_delay_days?: number | null;
             is_active?: boolean;
+            billing_address?: string | null;
+            phone?: string | null;
+            /** Format: uri */
+            website_url?: string | null;
+            tax_id?: string | null;
+            currency?: string | null;
+            notes?: string | null;
         } & unknown;
     };
     responses: {
@@ -6238,6 +6389,182 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['ClientCompanyResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'clients.contacts.archive': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                client: string;
+                contact: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['clients_contacts_archiveRequest'];
+            };
+        };
+        responses: {
+            /** @description Authorized business contact result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ClientBusinessContactResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'clients.contacts.list': {
+        parameters: {
+            query?: {
+                limit?: components['parameters']['Limit'];
+                cursor?: components['parameters']['Cursor'];
+                status?: 'active' | 'archived';
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                client: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized business contact result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ClientBusinessContactListResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'clients.contacts.create': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                client: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['clients_contacts_createRequest'];
+            };
+        };
+        responses: {
+            /** @description Authorized business contact result */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ClientBusinessContactResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'clients.contacts.get': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                client: string;
+                contact: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized business contact result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ClientBusinessContactResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'clients.contacts.update': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                client: string;
+                contact: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['clients_contacts_updateRequest'];
+            };
+        };
+        responses: {
+            /** @description Authorized business contact result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ClientBusinessContactResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'clients.contacts.restore': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                client: string;
+                contact: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['clients_contacts_restoreRequest'];
+            };
+        };
+        responses: {
+            /** @description Authorized business contact result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ClientBusinessContactResponse'];
                 };
             };
             default: components['responses']['Error'];

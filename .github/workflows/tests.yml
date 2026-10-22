@@ -596,6 +596,20 @@ jobs:
             fi
           fi
 
+
+      - name: Preserve mutation diagnostics
+        if: ${{ always() && steps.mutation_scope.outputs.required == 'true' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mutation-diagnostics
+          retention-days: 7
+          if-no-files-found: ignore
+          path: |
+            storage/framework/cache/infection-diff/summary.json
+            storage/framework/cache/infection-diff/mutations.log
+            storage/framework/cache/infection-diff/junit.xml
+            storage/framework/cache/infection-diff/coverage-xml/**/*.xml
+
   mariadb:
     name: Tests on MariaDB
     needs: [mariadb-tests]
