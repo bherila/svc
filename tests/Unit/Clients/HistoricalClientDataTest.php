@@ -47,4 +47,14 @@ class HistoricalClientDataTest extends TestCase
             'email' => null, 'phone' => null, 'notes' => null, 'is_archived' => false,
         ], $details->attributes());
     }
+
+    public function test_archival_accepts_the_boolean_values_from_validated_html_forms(): void
+    {
+        foreach ([true, 1, '1'] as $value) {
+            $this->assertTrue(ContactDetails::fromValidated(['is_archived' => $value])->archived);
+        }
+        foreach ([false, 0, '0'] as $value) {
+            $this->assertFalse(ContactDetails::fromValidated(['is_archived' => $value])->archived);
+        }
+    }
 }
