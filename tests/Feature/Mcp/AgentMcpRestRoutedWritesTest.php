@@ -93,16 +93,16 @@ final class AgentMcpRestRoutedWritesTest extends TestCase
         $this->assertSame(3, AgentMutationReceipt::query()->where('workspace_id', $workspace->id)->where('status', 'completed')->count());
     }
 
-    public function test_dual_staff_portal_identity_has_no_planning_metadata_in_mcp_write_responses(): void
+    public function test_dual_staff_portal_identity_is_refused_by_mcp_task_writes_as_rest_refuses_it(): void
     {
         [$workspace, $project, $manager] = $this->fixture();
         ClientCompanyMembership::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $project->client_company_id, 'user_id' => $manager->id, 'role' => 'client']);
         $this->actingAsMcp($manager, [AgentApiScopes::MCP_USE, AgentApiScopes::TASKS_WRITE]);
-        $created = $this->data($this->callTool($this->initialize(), 'tasks.create', ['workspace_id' => $workspace->public_id, 'project_id' => $project->public_id,
-            'title' => 'Synthetic dual identity plan', 'idempotency_key' => 'synthetic-dual-mcp-plan', 'starts_on' => '2026-10-20', 'assignee_ids' => [$manager->public_id]]));
-        $this->assertArrayNotHasKey('starts_on', $created);
-        $this->assertArrayNotHasKey('due_on', $created);
-        $this->assertArrayNotHasKey('assignees', $created);
+        $body = ['title' => 'Synthetic dual identity plan', 'starts_on' => '2026-10-20', 'assignee_ids' => [$manager->public_id]];
+        $refused = $this->withHeader('Idempotency-Key', 'synthetic-dual-rest-plan')->postJson("/api/v1/workspaces/{$workspace->public_id}/projects/{$project->public_id}/tasks", $body)->assertForbidden();
+        $this->assertRefusal(AgentMcpApiFailure::message(403, $refused->json()), $this->callTool($this->initialize(), 'tasks.create',
+            ['workspace_id' => $workspace->public_id, 'project_id' => $project->public_id, 'idempotency_key' => 'synthetic-dual-mcp-plan'] + $body));
+        $this->assertDatabaseCount('client_tasks', 0);
     }
 
     public function test_a_task_outside_the_callers_workspace_is_refused_as_rest_refuses_it(): void

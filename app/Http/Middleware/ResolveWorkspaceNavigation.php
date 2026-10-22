@@ -10,9 +10,9 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Navigation\WorkspaceNavigationFactory;
 use App\Services\Navigation\WorkspaceReturnPoint;
+use App\Services\Tasks\TaskAccess;
 use Closure;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Gate;
 use Inertia\Inertia;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -93,13 +93,12 @@ class ResolveWorkspaceNavigation
             return $company;
         }
         $task = $request->route('clientTask');
-        if (! $task instanceof ClientTask || (int) $task->workspace_id !== (int) $workspace->id
-            || ! Gate::forUser($user)->allows('manage', $workspace)) {
+        if (! $task instanceof ClientTask || (int) $task->workspace_id !== (int) $workspace->id) {
             return null;
         }
         $project = ClientProject::query()->where('workspace_id', $workspace->id)->whereKey($task->client_project_id)
             ->with(['clientCompany' => fn ($companies) => $companies->where('workspace_id', $workspace->id)])->first();
-        if ($project === null || (int) $project->workspace_id !== (int) $workspace->id) {
+        if ($project === null || ! app(TaskAccess::class)->canManage($user, $workspace, $project)) {
             return null;
         }
         $company = $project->clientCompany;

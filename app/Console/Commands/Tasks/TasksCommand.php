@@ -7,6 +7,7 @@ use App\Console\Commands\MutationCommand;
 use App\Services\AgentApi\AgentReadService;
 use App\Services\AgentApi\AgentTaskMutationAction;
 use App\Services\Tasks\TaskInputRules;
+use App\Services\Tasks\TaskMutationOrigin;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Validation\ValidationException;
 use JsonException;
@@ -51,9 +52,9 @@ final class TasksCommand extends MutationCommand
                     'limit' => ['required', 'integer', 'min:1', 'max:100'], 'cursor' => ['nullable', 'string', 'max:2048'],
                 ])->validate();
             if ($operation === 'list') {
-                $result = $reads->tasks($actor, $workspace, $options['project'], (int) $options['limit'], $options['cursor']);
+                $result = $reads->tasks($actor, $workspace, $options['project'], (int) $options['limit'], $options['cursor'], TaskMutationOrigin::Internal);
             } elseif ($operation === 'get') {
-                $result = ['data' => $reads->task($actor, $workspace, $options['task'])];
+                $result = ['data' => $reads->task($actor, $workspace, $options['task'], TaskMutationOrigin::Internal)];
             } elseif (in_array($operation, ['create', 'update'], true)) {
                 $input = $this->option('input');
                 if (! is_string($input) || $input === '' || ($input !== '-' && (! is_file($input) || ! is_readable($input)))) {
@@ -77,10 +78,10 @@ final class TasksCommand extends MutationCommand
                 $data = validator($payload, $rules)->validate();
                 $result = $this->preview(function () use ($writes, $reads, $actor, $workspace, $operation, $options, $data): array {
                     $task = $operation === 'create'
-                        ? $writes->create($actor, $workspace, 'svc-cli-tasks', $options['key'], $options['project'], $data)
-                        : $writes->update($actor, $workspace, 'svc-cli-tasks', $options['key'], $options['task'], $data);
+                        ? $writes->createInternal($actor, $workspace, 'svc-cli-tasks', $options['key'], $options['project'], $data)
+                        : $writes->updateInternal($actor, $workspace, 'svc-cli-tasks', $options['key'], $options['task'], $data);
 
-                    return ['data' => $reads->task($actor, $workspace, $task->public_id)];
+                    return ['data' => $reads->task($actor, $workspace, $task->public_id, TaskMutationOrigin::Internal)];
                 });
                 $result['dry_run'] = ! $this->applying();
             } else {

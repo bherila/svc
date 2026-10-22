@@ -3,6 +3,7 @@
 namespace Tests\Feature\Tasks;
 
 use App\Models\ClientCompany;
+use App\Models\ClientCompanyMembership;
 use App\Models\ClientProject;
 use App\Models\ClientTask;
 use App\Models\User;
@@ -23,6 +24,8 @@ final class TaskCliParityTest extends TestCase
         $workspace->memberships()->create(['user_id' => $actor->id, 'role' => 'owner']);
         $company = ClientCompany::query()->create(['workspace_id' => $workspace->id, 'name' => 'Synthetic company', 'slug' => 'synthetic-cli-company']);
         $project = ClientProject::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'name' => 'Synthetic project']);
+        // Local CLI uses the trusted Internal origin even for a dual account.
+        ClientCompanyMembership::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'user_id' => $actor->id, 'role' => 'client']);
         $input = tempnam(sys_get_temp_dir(), 'svc-task-cli-');
         $base = ['workspace' => $workspace->public_id, '--actor' => $actor->public_id, '--format' => 'json'];
         try {
@@ -51,6 +54,8 @@ final class TaskCliParityTest extends TestCase
             $this->assertSame(1, Artisan::call('svc:tasks', array_replace($update, ['--key' => 'synthetic-stale-version'])));
             $this->assertSame(0, Artisan::call('svc:tasks', $base + ['operation' => 'get', '--task' => $created['data']['id']]));
             $this->assertSame($updated, json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['data']);
+            $this->assertSame(0, Artisan::call('svc:tasks', $base + ['operation' => 'list']));
+            $this->assertSame($updated, json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['data'][0]);
             file_put_contents($input, json_encode(['title' => 'Synthetic planned task', 'starts_on' => '2026-10-22', 'due_on' => '2026-10-25', 'assignee_ids' => [$actor->public_id]], JSON_THROW_ON_ERROR));
             $workspace->memberships()->where('user_id', $actor->id)->update(['role' => 'member']);
             $this->assertSame(1, Artisan::call('svc:tasks', $create + ['--apply' => true]));

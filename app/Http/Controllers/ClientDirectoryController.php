@@ -33,6 +33,7 @@ use App\Services\Clients\CompanyProfile;
 use App\Services\Finance\FinanceReconciliationBadges;
 use App\Services\Square\Mirror\SquareInvoicePage;
 use App\Services\Square\SquareLinkRepository;
+use App\Services\Tasks\TaskAccess;
 use App\Services\Tasks\TaskEditorPresenter;
 use App\Services\WorkspaceAuthorization;
 use App\Support\Access\PortalInvitationStatus;
@@ -685,7 +686,7 @@ class ClientDirectoryController extends Controller
 
         $projectNames = collect([$clientProject->id => $clientProject->name]);
 
-        $canManageTasks = Gate::allows('manage', $workspace);
+        $canManageTasks = app(TaskAccess::class)->canManage($user, $workspace, $clientProject);
 
         return Inertia::render('clients/project', [
             'workspace' => ['id' => $workspace->public_id],
@@ -1012,7 +1013,9 @@ class ClientDirectoryController extends Controller
 
         $projectNames = $projects->pluck('name', 'id');
 
-        $canManageTasks = Gate::allows('manage', $workspace);
+        $manageable = app(TaskAccess::class)->manageableProjectIds($user, $workspace);
+        $taskProjects = $projects->filter(fn (ClientProject $project): bool => $manageable === null || in_array((int) $project->id, $manageable, true))->values();
+        $taskProjectIds = array_fill_keys($taskProjects->modelKeys(), true);
 
         return Inertia::render('clients/tasks', [
             'company' => [
@@ -1023,8 +1026,8 @@ class ClientDirectoryController extends Controller
             // disclosure, which is meaningless on the copy of this screen the
             // client is reading.
             'audience' => 'operator',
-            'task_management' => $canManageTasks
-                ? ['projects' => $projects->map(fn (ClientProject $project): array => app(TaskEditorPresenter::class)->project($workspace, $project))->values()->all()]
+            'task_management' => $taskProjects->isNotEmpty()
+                ? ['projects' => $taskProjects->map(fn (ClientProject $project): array => app(TaskEditorPresenter::class)->project($workspace, $project))->values()->all()]
                 : null,
             'filters' => [
                 'project_id' => $selected?->public_id,
@@ -1042,7 +1045,7 @@ class ClientDirectoryController extends Controller
                 'completed_at' => $task->completed_at?->toDateString(),
                 'starts_on' => $task->starts_on?->toDateString(),
                 'due_on' => $task->due_on?->toDateString(),
-                'detail_url' => $canManageTasks ? route('tasks.show', [$workspace, $task]) : null,
+                'detail_url' => isset($taskProjectIds[$task->client_project_id]) ? route('tasks.show', [$workspace, $task]) : null,
             ])->values()->all(),
         ]);
     }

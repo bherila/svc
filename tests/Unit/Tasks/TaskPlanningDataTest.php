@@ -3,10 +3,15 @@
 namespace Tests\Unit\Tasks;
 
 use App\Services\Tasks\TaskCreateData;
+use App\Services\Tasks\TaskInputRules;
 use App\Services\Tasks\TaskPatchData;
 use Illuminate\Validation\ValidationException;
+use PHPUnit\Framework\Attributes\CoversClass;
 use Tests\TestCase;
 
+#[CoversClass(TaskCreateData::class)]
+#[CoversClass(TaskPatchData::class)]
+#[CoversClass(TaskInputRules::class)]
 final class TaskPlanningDataTest extends TestCase
 {
     public function test_new_tasks_are_open_and_internal_and_cannot_set_billing_or_ownership_facts(): void

@@ -388,6 +388,13 @@ $historyInvoice = app(HistoricalLibraryRepository::class)->publish($workspace, $
         ['label' => 'Payments', 'columns' => ['Method', 'Date', 'Amount'], 'rows' => [['Historical manual receipt', '2020-03-10', 'USD 2.99']]],
     ]), $company);
 
+$taskViewer = $owner;
+if ($planningTask !== null) {
+    $taskViewer = User::factory()->create(['name' => 'Synthetic Project Manager', 'email' => 'layout-project-manager@example.test']);
+    $workspace->memberships()->create(['user_id' => $taskViewer->id, 'role' => 'member']);
+    ClientProjectMembership::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $project->id, 'user_id' => $taskViewer->id, 'role' => 'manager']);
+}
+
 file_put_contents($runtime.'/fixture.json', json_encode([
     'task_editor' => $planningTask === null ? null : route('tasks.show', [$workspace, $planningTask], absolute: false),
     'task_list' => route('clients.tasks', [$workspace, $company], absolute: false),
@@ -418,7 +425,7 @@ file_put_contents($runtime.'/fixture.json', json_encode([
         'PATCH' => ['/api/v1/workspaces/'.$workspace->public_id.'/time-entries/'.$correction->public_id],
     ],
     'receipts' => route('svc.expenses.receipts', [$workspace, $company, $receiptExpense->public_id], absolute: false),
-    'user_id' => $owner->id, 'date' => $date,
+    'user_id' => $taskViewer->id, 'date' => $date,
     'expense_schedule_store' => route('svc.expense-schedules.store', [$workspace, $company], absolute: false),
     'expense_schedule_prefix' => '/workspaces/'.$workspace->public_id.'/expense-schedules/',
     'expense_schedules' => route('clients.expense-schedules', [$workspace, $company], absolute: false),
