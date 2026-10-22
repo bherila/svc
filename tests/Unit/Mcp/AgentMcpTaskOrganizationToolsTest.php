@@ -22,7 +22,7 @@ use Tests\TestCase;
 #[CoversClass(AgentMcpRestCall::class)]
 final class AgentMcpTaskOrganizationToolsTest extends TestCase
 {
-    public function test_every_reflected_input_preserves_public_identity_version_and_payload_bounds(): void
+    private function assertPublicInputBounds(): void
     {
         foreach (['get', 'listsCreate', 'listsUpdate', 'listsArchive', 'listsRestore', 'listsReorder', 'tasksCreate', 'tasksMove', 'tasksReorder'] as $method) {
             foreach ((new ReflectionMethod(AgentMcpTaskOrganizationTools::class, $method))->getParameters() as $parameter) {
@@ -119,6 +119,7 @@ final class AgentMcpTaskOrganizationToolsTest extends TestCase
 
     public function test_every_adapter_dispatches_the_exact_route_body_revisions_confirmation_and_retry_key(): void
     {
+        $this->assertPublicInputBounds();
         $version = str_repeat('a', 64);
         $task = ['title' => 'Synthetic transport task', 'description' => null, 'due_on' => null, 'is_visible_to_client' => false, 'assignee_ids' => []];
         $cases = [

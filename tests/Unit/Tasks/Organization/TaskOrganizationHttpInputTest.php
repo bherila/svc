@@ -12,6 +12,18 @@ use Tests\TestCase;
 #[CoversClass(TaskContainer::class)]
 final class TaskOrganizationHttpInputTest extends TestCase
 {
+    public function test_container_selection_refuses_non_boolean_query_values(): void
+    {
+        foreach (['yes', 'not-a-boolean', 2, [], ['true']] as $value) {
+            try {
+                TaskOrganizationInput::container(['container' => $value]);
+                $this->fail('A malformed container selector must not choose a task scope.');
+            } catch (ValidationException $exception) {
+                $this->assertArrayHasKey('container', $exception->errors());
+            }
+        }
+    }
+
     public function test_read_containers_are_explicit_and_cannot_mix_independent_parent_and_list(): void
     {
         $id = '00000000-0000-4000-8000-000000000001';

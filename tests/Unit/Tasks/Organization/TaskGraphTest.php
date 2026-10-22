@@ -79,6 +79,9 @@ final class TaskGraphTest extends TestCase
         $graph = $this->graph(['a' => [null, null], 'b' => [null, 'private']]);
         $container = new TaskContainer(null, null);
         $changed = $graph->tasks;
+        if (! isset($changed['a'])) {
+            $this->fail('The fixture must retain the sibling whose revision changes.');
+        }
         $changed['a']['version'] = 'new-assignment-revision';
         $this->assertNotSame($graph->containerVersion($container), (new TaskGraph($changed, $graph->lists, 0))->containerVersion($container));
         $this->assertNotSame($graph->containerVersion($container), $graph->containerVersion(new TaskContainer(null, 'private')));
@@ -119,6 +122,9 @@ final class TaskGraphTest extends TestCase
     {
         $graph = $this->graph(['a' => [null, 'private'], 'b' => ['a', null], 'moving' => [null, null]]);
         $lists = $graph->lists;
+        if (! isset($lists['private'])) {
+            $this->fail('The fixture must retain its destination list.');
+        }
         $lists['private']['deleted'] = true;
         $archived = new TaskGraph($graph->tasks, $lists, 1);
         $archived->assertValid();
