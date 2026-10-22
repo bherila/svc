@@ -466,4 +466,18 @@ alone - so an update or delete names the workspace in its own SQL. See
   behavior under `resources/js` through `pnpm test`. Any control that starts an
   Inertia mutation stays disabled until `onFinish`, and its component test must
   prove a second activation cannot dispatch another request. `composer
-  ci:check` runs both suites.
+  ci:check` runs both suites. In Actions, `composer ci:checks` runs the static
+  and frontend checks independently of PHPUnit. SQLite and MariaDB 10.6 each
+  use four shards with four ParaTest workers per runner. The shard planner
+  (`scripts/ci/phpunit-shard.php`) balances files by test count and verifies
+  that each file PHPUnit lists belongs to exactly one nonempty shard. Each
+  MariaDB shard has its own disposable service container. The required `ci`
+  and `Tests on MariaDB` checks aggregate the lanes and reject failed,
+  skipped or cancelled dependencies. Compare the slowest shard's elapsed
+  time after a run before increasing the shard count; file test counts are
+  a balancing estimate rather than measured durations.
+
+  CI caches Composer download archives and the pnpm store by lockfile and
+  architecture. Composer authentication and private VCS clones are excluded
+  from the cache. The default public ARM runner has four vCPUs and 16 GB RAM;
+  sharding adds independent runners rather than more workers to one VM.

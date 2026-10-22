@@ -1,4 +1,4 @@
-# Both database lanes run the PHP suite with four ParaTest workers. Laravel gives
+# Both database lanes use four independent shards, with four ParaTest workers each. Laravel gives
 # each MariaDB worker an isolated `svc_testing_test_<token>` schema, created
 # automatically by the root CI connection inside the ephemeral service container.
 name: tests
@@ -207,7 +207,8 @@ jobs:
           path: test-results/layout/
           retention-days: 7
 
-  ci:
+  checks:
+    name: Static and frontend checks
     runs-on: ubuntu-24.04-arm
 
     steps:
@@ -233,10 +234,27 @@ jobs:
           corepack enable
           corepack prepare pnpm@12.11.2 --activate
 
+      - name: Locate pnpm store
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pnpm store
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
+
       - name: Authorize private MCP bridge dependency
         uses: webfactory/ssh-agent@e83874834305fe9a4a2997156cb26c5de65a8555 # v0.10.0
         with:
           ssh-private-key: ${{ secrets.MCP_BRIDGE_DEPLOY_KEY }}
+
+      # Cache downloaded archives only, never Composer auth or private VCS clones.
+      - name: Cache Composer downloads
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ~/.cache/composer/files
+          key: composer-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('composer.lock') }}
 
       - name: Setup Application
         run: composer setup
@@ -269,7 +287,7 @@ jobs:
           node --test tests/Deployment/verify-oauth-redirect.test.mjs tests/Deployment/verify-hashed-assets.test.mjs
 
       - name: Run CI Checks
-        run: composer ci:check
+        run: composer ci:checks
 
       - name: Upload frontend build artifact
         if: ${{ github.event_name != 'pull_request' }}
@@ -279,9 +297,65 @@ jobs:
           path: public/build/
           retention-days: 2
 
-  mariadb:
-    name: Tests on MariaDB
+  sqlite:
+    name: SQLite shard ${{ matrix.shard }}/4
     runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    env:
+      DB_CONNECTION: sqlite
+      DB_DATABASE: ':memory:'
+      DB_EXPECT_DRIVER: sqlite
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+        with:
+          php-version: '8.5'
+          tools: composer:v2
+          coverage: none
+
+      - name: Authorize private MCP bridge dependency
+        uses: webfactory/ssh-agent@e83874834305fe9a4a2997156cb26c5de65a8555 # v0.10.0
+        with:
+          ssh-private-key: ${{ secrets.MCP_BRIDGE_DEPLOY_KEY }}
+
+      # Cache downloaded archives only, never Composer auth or private VCS clones.
+      - name: Cache Composer downloads
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ~/.cache/composer/files
+          key: composer-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('composer.lock') }}
+
+      # No --prefer-dist: the private bridge dependency is authorised by the SSH
+      # agent above, and a dist install would fetch it from the GitHub API
+      # zipball instead, which that key does not authenticate.
+      - name: Install Composer dependencies
+        run: |
+          composer install --no-interaction
+          test -f .env || cp .env.example .env
+
+      - name: Run the SQLite shard
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: |
+          php -d memory_limit=1G scripts/ci/phpunit-shard.php "$SHARD" 4 "$RUNNER_TEMP/phpunit-shard.xml"
+          php -d memory_limit=1G artisan test --parallel --processes=4 --configuration="$RUNNER_TEMP/phpunit-shard.xml"
+
+  mariadb-tests:
+    name: MariaDB shard ${{ matrix.shard }}/4
+    runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
 
     # The default suite runs on in-memory SQLite; production is MariaDB 10.6
     # reached through Laravel's `mariadb` driver. SQLite stores whatever it is
@@ -290,7 +364,7 @@ jobs:
     # tests. Every schema difference between the two engines is invisible until
     # the suite runs on the engine that ships.
     #
-    # This job is deliberately separate from `ci` rather than replacing its
+    # This lane is deliberately separate from SQLite rather than replacing its
     # database: SQLite keeps the local and CI feedback loop fast, and this run
     # is the one that has to be true.
     services:
@@ -344,6 +418,13 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.MCP_BRIDGE_DEPLOY_KEY }}
 
+      # Cache downloaded archives only, never Composer auth or private VCS clones.
+      - name: Cache Composer downloads
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ~/.cache/composer/files
+          key: composer-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('composer.lock') }}
+
       # No --prefer-dist: the private bridge dependency is authorised by the SSH
       # agent above, and a dist install would fetch it from the GitHub API
       # zipball instead, which that key does not authenticate.
@@ -352,10 +433,14 @@ jobs:
           composer install --no-interaction
           test -f .env || cp .env.example .env
 
-      # No lint or static analysis here; `ci` already runs those and they say
+      # No lint or static analysis here; `checks` runs those and they say
       # nothing about the engine. This job exists for the database alone.
-      - name: Run the test suite against MariaDB
-        run: php artisan test --parallel --processes=4
+      - name: Run the MariaDB shard
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: |
+          php -d memory_limit=1G scripts/ci/phpunit-shard.php "$SHARD" 4 "$RUNNER_TEMP/phpunit-shard.xml"
+          php -d memory_limit=1G artisan test --parallel --processes=4 --configuration="$RUNNER_TEMP/phpunit-shard.xml"
 
   mcp-smoke:
     name: MCP SDK streamable HTTP smoke
@@ -510,6 +595,35 @@ jobs:
               } >> "$GITHUB_STEP_SUMMARY"
             fi
           fi
+
+  mariadb:
+    name: Tests on MariaDB
+    needs: [mariadb-tests]
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Require every MariaDB shard
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: bash scripts/ci/require-success.sh
+
+  ci:
+    needs: [checks, sqlite, mariadb, mcp-smoke]
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Require all required CI lanes
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: bash scripts/ci/require-success.sh
 
   deploy:
     name: Deploy SVC to web1
