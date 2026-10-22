@@ -73,6 +73,10 @@ permissions independently of OAuth deployment switches. Reusing an applied
 request and key replays the existing operation; stale versions and revoked
 permissions are refused.
 
+Task commands use current internal staff authority. An account that also has
+portal access can use its staff permissions locally; REST/MCP treat that account
+as a portal reader and refuse task mutations.
+
 ## Apply Payment
 
 Amounts are integer currency minor units, as in REST. The workspace is required;

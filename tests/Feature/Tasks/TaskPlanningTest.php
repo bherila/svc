@@ -155,19 +155,15 @@ final class TaskPlanningTest extends TestCase
         $this->assertDatabaseCount('client_task_assignments', 1);
     }
 
-    public function test_dual_portal_and_staff_identity_does_not_receive_internal_planning_in_mutation_response(): void
+    public function test_dual_portal_and_staff_identity_cannot_create_tasks_through_agent_requests(): void
     {
         [$workspace, $company, $project, $owner] = $this->fixture();
         ClientCompanyMembership::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'user_id' => $owner->id, 'role' => 'client']);
         $this->actingAsMcp($owner, ['tasks:write']);
-        $response = $this->withHeader('Idempotency-Key', 'synthetic-dual-planning')->postJson('/api/v1'.$this->createPath($workspace, $project), [
+        $this->withHeader('Idempotency-Key', 'synthetic-dual-planning')->postJson('/api/v1'.$this->createPath($workspace, $project), [
             'title' => 'Synthetic dual task', 'starts_on' => '2026-10-22', 'assignee_ids' => [$owner->public_id],
-        ])->assertCreated();
-        $response->assertJsonMissingPath('data.assignees')->assertJsonMissingPath('data.starts_on');
-        $task = ClientTask::query()->where('workspace_id', $workspace->id)->sole();
-        $this->withHeader('Idempotency-Key', 'synthetic-dual-patch')->patchJson('/api/v1'.$this->updatePath($workspace, $task), [
-            'expected_version' => $response->json('data.version'), 'due_on' => '2026-10-23',
-        ])->assertOk()->assertJsonMissingPath('data.assignees')->assertJsonMissingPath('data.due_on');
+        ])->assertForbidden();
+        $this->assertDatabaseCount('client_tasks', 0);
     }
 
     public function test_assignment_limit_duplicates_and_scoped_lookup(): void
@@ -217,7 +213,7 @@ final class TaskPlanningTest extends TestCase
         try {
             app(WorkspaceTaskMutationAction::class)->update($owner, $workspace, $task->public_id, TaskPatchData::fromValidated(['title' => 'Synthetic lock edit']));
             $sequence = LockOrderRecorder::sequences()[0];
-            $this->assertSame([LockResource::BillingMaintenance, LockResource::Workspace, LockResource::ClientTask, LockResource::ClientTaskAssignment, LockResource::WorkspaceMembership, LockResource::ClientProjectMembership], array_values(array_unique($sequence, SORT_REGULAR)));
+            $this->assertSame([LockResource::BillingMaintenance, LockResource::Workspace, LockResource::ClientTask, LockResource::ClientTaskAssignment, LockResource::WorkspaceMembership, LockResource::ClientProjectMembership, LockResource::ClientCompanyMembership], array_values(array_unique($sequence, SORT_REGULAR)));
         } finally {
             LockOrderRecorder::stop();
         }

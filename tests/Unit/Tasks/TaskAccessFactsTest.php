@@ -4,9 +4,12 @@ namespace Tests\Unit\Tasks;
 
 use App\Services\Tasks\TaskAccessFacts;
 use App\Support\AgentApi\ProjectRole;
+use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
+#[CoversClass(TaskAccessFacts::class)]
+#[CoversClass(ProjectRole::class)]
 final class TaskAccessFactsTest extends TestCase
 {
     public static function roles(): iterable

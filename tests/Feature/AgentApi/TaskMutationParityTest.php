@@ -88,7 +88,7 @@ final class TaskMutationParityTest extends TestCase
     }
 
     #[DataProvider('roles')]
-    public function test_shared_task_policy_preserves_web_manager_gate_and_agent_project_roles(string $workspaceRole, ?string $projectRole, bool $agentAllowed, bool $webAllowed): void
+    public function test_shared_task_policy_allows_the_same_current_internal_project_roles(string $workspaceRole, ?string $projectRole, bool $agentAllowed, bool $webAllowed): void
     {
         [$workspace, $company, $project, $owner] = $this->fixture();
         $actor = $workspaceRole === 'owner' ? $owner : User::factory()->create();
@@ -110,7 +110,7 @@ final class TaskMutationParityTest extends TestCase
 
     public static function roles(): array
     {
-        return [['owner', null, true, true], ['admin', null, true, true], ['member', 'owner', true, false], ['member', 'manager', true, false], ['member', 'contributor', false, false], ['member', 'viewer', false, false], ['member', null, false, false], ['portal', null, false, false]];
+        return [['owner', null, true, true], ['admin', null, true, true], ['member', 'owner', true, true], ['member', 'manager', true, true], ['member', 'contributor', false, false], ['member', 'viewer', false, false], ['member', null, false, false], ['portal', null, false, false]];
     }
 
     public function test_replay_noop_revision_stale_conflict_and_revocation_are_preserved_under_task_lock(): void

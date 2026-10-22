@@ -2,6 +2,7 @@
 
 namespace App\Services\Tasks;
 
+use App\Models\ClientCompanyMembership;
 use App\Models\ClientProject;
 use App\Models\ClientProjectMembership;
 use App\Models\ClientTask;
@@ -116,8 +117,10 @@ final class WorkspaceTaskRepository
         foreach ($grants as $membership) {
             $projectRoles[$membership->user_id] = $membership->role;
         }
+        $portal = ClientCompanyMembership::query()->where('workspace_id', $workspace->id)->where('user_id', $actor->id)
+            ->orderBy('id')->tap(Locks::forShare())->get();
 
-        return new TaskAccessFacts($accounts, $staffRoles, $projectRoles);
+        return new TaskAccessFacts($accounts, $staffRoles, $projectRoles, $portal->isNotEmpty());
     }
 
     /** @return array{data: list<array{id: string, name: string}>, has_more: bool} */

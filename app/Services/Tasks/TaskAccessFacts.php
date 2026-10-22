@@ -11,7 +11,7 @@ final readonly class TaskAccessFacts
      * @param  array<int, string>  $staffRoles
      * @param  array<int, ProjectRole>  $projectRoles
      */
-    public function __construct(public array $accounts, private array $staffRoles, private array $projectRoles) {}
+    public function __construct(public array $accounts, private array $staffRoles, private array $projectRoles, public bool $portalMember = false) {}
 
     public function canManage(int $userId): bool
     {
