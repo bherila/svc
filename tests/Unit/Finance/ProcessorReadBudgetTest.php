@@ -20,6 +20,8 @@ namespace Tests\Unit\Finance;
 use App\Support\Finance\ProcessorReadBudget;
 use DomainException;
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\PreserveGlobalState;
+use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 use PHPUnit\Framework\TestCase;
 
 final class ProcessorReadBudgetTest extends TestCase
@@ -58,6 +60,8 @@ final class ProcessorReadBudgetTest extends TestCase
     }
 
     #[DataProvider('durationBoundaries')]
+    #[RunInSeparateProcess]
+    #[PreserveGlobalState(false)]
     public function test_a_read_is_allowed_one_nanosecond_before_the_deadline_and_refused_at_it(?int $maxSeconds): void
     {
         self::$nanoseconds = 10_000_000_000;
