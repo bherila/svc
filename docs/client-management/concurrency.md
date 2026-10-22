@@ -640,3 +640,15 @@ The interleaving tests cover both reservation orders, and the existing lock-orde
 recorder checks the new writer's acquisition order. These single-connection tests
 establish refusal/reservation semantics and lock order, not an independent
 multi-process database stress test.
+
+## Historical sources and contacts
+
+`historical_sources` serializes source-key reservations before native business
+locks. HistoricalRecordRepository takes the source lock before checking or creating
+a snapshot, so concurrent attempts cannot overwrite or retarget the same original.
+Future import transactions must claim that source before native mutation, not
+append a source lock after holding a billing/company lock.
+
+`client_contacts` follows company/project locks. Contact creation locks the company;
+editing locks the contact alone after a workspace/company-scoped lookup. No contact
+operation creates or locks authentication, invitation, or billing records.
