@@ -88,13 +88,18 @@ final class ChangeFeedPage
         $last = null;
         foreach ($rows as $row) {
             $item = $present($row);
-            $size = $maxDataBytes === null ? 0 : strlen(json_encode($item, JSON_THROW_ON_ERROR)) + ($data === [] ? 0 : 1);
-            if ($maxDataBytes !== null && $data !== [] && $bytes + $size > $maxDataBytes) {
-                $hasMore = true;
-                break;
+            if ($maxDataBytes !== null) {
+                $size = strlen(json_encode($item, JSON_THROW_ON_ERROR));
+                if ($data !== []) {
+                    $size++;
+                    if ($bytes + $size > $maxDataBytes) {
+                        $hasMore = true;
+                        break;
+                    }
+                }
+                $bytes += $size;
             }
             $data[] = $item;
-            $bytes += $size;
             $last = $row;
         }
 
