@@ -13,12 +13,17 @@ use App\Support\Square\SquareProcessorMovementFacts;
 use App\Support\WorkspaceClock;
 use Carbon\CarbonImmutable;
 use DomainException;
+use Generator;
+use Illuminate\Support\Facades\Cache;
 use SensitiveParameter;
 
 /**
  * Bounded actual payout-entry reads, then tenant-owned movement writes.
  * Every provider read finishes before any write. Unknown entries remain explicit
  * deferred counts; they are not inferred from statuses or stored as raw payloads.
+ *
+ * @phpstan-type ScanPosition array{locations: list<string>, since: string, until: string, location: int, boundary: string, ties: array<string, true>, pending: list<array{id: string, created_at: string}>, terminal: bool, incomplete: bool}
+ * @phpstan-type MovementResult array{entries_read: int, created: int, unchanged: int, enriched: int, conflict: int, deferred: int, ignored: int}
  */
 final class SquareProcessorMovementSync
 {
@@ -134,6 +139,203 @@ final class SquareProcessorMovementSync
                 $cursor = $next;
             }
         }
+    }
+
+    /**
+     * A durable ascending seek, rather than a persisted provider cursor (Square
+     * cursors expire after five minutes). Only validated identities/timestamps
+     * are cached. The command's existing mutex serializes this one-operator scan.
+     *
+     * @return Generator<int, MovementResult, mixed, bool> Whether any payout in this cycle was incomplete.
+     */
+    public function continuePayouts(#[SensitiveParameter] Workspace $workspace, CarbonImmutable $since, CarbonImmutable $until, string $selection, bool $apply, ProcessorReadBudget $budget): Generator
+    {
+        if ($since->year < 1000 || $since->year > 9999 || $until->year < 1000 || $until->year > 9999 || $since->greaterThan($until)) {
+            throw new DomainException('The payout discovery time range is invalid.');
+        }
+        $configuration = SquareConfiguration::fromConfig();
+        if (! $configuration->servesWorkspace($workspace)) {
+            throw SquareRequestFailed::notConnected();
+        }
+        [$accountKey, $locations] = $this->account($configuration, $budget);
+        sort($locations, SORT_STRING);
+        $key = 'finance:processor-movements:square:scan-v1:'.hash('sha256', json_encode([$workspace->id, $accountKey, $selection], JSON_THROW_ON_ERROR));
+        $position = $this->readScan(Cache::get($key), $locations);
+        $position ??= ['locations' => $locations, 'since' => $since->utc()->toIso8601ZuluString(), 'until' => $until->utc()->toIso8601ZuluString(),
+            'location' => 0, 'boundary' => $since->utc()->toIso8601ZuluString(), 'ties' => [], 'pending' => [], 'terminal' => false, 'incomplete' => false];
+        $this->saveScan($key, $position, $apply);
+        $rowsRead = 0;
+        while (isset($locations[$position['location']])) {
+            $location = $locations[$position['location']];
+            // Saved rows drain before discovery: a new call allowance can finish
+            // a previously denied payout without rereading its listing prefix.
+            $cursor = null;
+            $seenCursors = [];
+            $seenIds = [];
+            $previousTime = null;
+            $beginTime = $position['boundary'];
+            $pages = 0;
+            while (true) {
+                while ($position['pending'] !== []) {
+                    $row = $position['pending'][0];
+                    try {
+                        $result = $this->payoutInAccount($workspace, $row['id'], $apply, $budget, $accountKey, $locations, $location);
+                    } catch (SquareRequestFailed $failure) {
+                        if (! $failure->isRecordSpecific()) {
+                            throw $failure;
+                        }
+                        $result = ['entries_read' => 0, 'created' => 0, 'unchanged' => 0, 'enriched' => 0, 'conflict' => 0, 'deferred' => 1, 'ignored' => 0];
+                    }
+                    if ($row['created_at'] !== $position['boundary']) {
+                        $position['boundary'] = $row['created_at'];
+                        $position['ties'] = [];
+                    }
+                    if (count($position['ties']) >= self::MAX_DISCOVERY_ROWS) {
+                        throw SquareRequestFailed::unreadable();
+                    }
+                    $position['ties'][$row['id']] = true;
+                    $position['incomplete'] = $position['incomplete'] || $result['deferred'] > 0 || $result['conflict'] > 0;
+                    array_shift($position['pending']);
+                    // Persist BEFORE yield: the consumer stops at its record cap
+                    // without resuming this generator even once.
+                    $this->saveScan($key, $position, $apply);
+                    yield $result;
+                }
+                if ($position['terminal']) {
+                    $position['location']++;
+                    $position['boundary'] = $position['since'];
+                    $position['ties'] = [];
+                    $position['terminal'] = false;
+                    $this->saveScan($key, $position, $apply);
+                    break;
+                }
+                if (++$pages > self::MAX_DISCOVERY_PAGES) {
+                    throw SquareRequestFailed::unreadable();
+                }
+                if ($pages === 1) {
+                    $beginTime = $position['boundary'];
+                }
+                $budget->consume();
+                // begin/end remain identical throughout THIS cursor chain even
+                // though completing rows changes the durable next-run boundary.
+                $page = $this->client->listPayouts($location, $beginTime, $cursor, 100, $position['until'], newestFirst: false);
+                $rows = array_key_exists('payouts', $page) ? $page['payouts'] : [];
+                if (! is_array($rows) || ! array_is_list($rows) || count($rows) > 100 || ! empty($page['errors'])) {
+                    throw SquareRequestFailed::unreadable();
+                }
+                $pending = [];
+                foreach ($rows as $row) {
+                    $id = is_array($row) ? ($row['id'] ?? null) : null;
+                    $created = is_array($row) ? $this->discoveryTime($row['created_at'] ?? null) : null;
+                    if (! is_array($row) || ($row['location_id'] ?? null) !== $location
+                        || ! is_string($id) || preg_match(SquareClient::ID_PATTERN, $id) !== 1 || isset($seenIds[$id])
+                        || ++$rowsRead > self::MAX_DISCOVERY_ROWS || $created === null
+                        || $created < $this->discoveryTime($beginTime) || $created > $this->discoveryTime($position['until'])
+                        || ($previousTime !== null && $created < $previousTime)) {
+                        throw SquareRequestFailed::unreadable();
+                    }
+                    $seenIds[$id] = true;
+                    $previousTime = $created;
+                    if ($created === $this->discoveryTime($position['boundary']) && isset($position['ties'][$id])) {
+                        continue;
+                    }
+                    $pending[] = ['id' => $id, 'created_at' => $created];
+                }
+                $next = $page['cursor'] ?? null;
+                if ($next !== null && $next !== '' && (! is_string($next)
+                    || preg_match(SquareClient::CURSOR_PATTERN, $next) !== 1 || isset($seenCursors[$next]))) {
+                    throw SquareRequestFailed::unreadable();
+                }
+                $position['pending'] = $pending;
+                $position['terminal'] = $next === null || $next === '';
+                $this->saveScan($key, $position, $apply);
+                if (is_string($next) && $next !== '') {
+                    $seenCursors[$next] = true;
+                    $cursor = $next;
+                }
+            }
+        }
+        $incomplete = $position['incomplete'];
+        if ($apply && ! Cache::forget($key)) {
+            throw new DomainException('The processor scan position could not be reset.');
+        }
+
+        return $incomplete;
+    }
+
+    /**
+     * A changed connection must not silently replace a partially covered cycle.
+     * Refuse malformed cache data explicitly rather than emitting PHP warnings
+     * or forgetting an earlier incomplete result.
+     *
+     * @param  list<string>  $locations
+     * @return ScanPosition|null
+     */
+    private function readScan(mixed $value, array $locations): ?array
+    {
+        if ($value === null) {
+            return null;
+        }
+        if (! is_array($value) || ($value['locations'] ?? null) !== $locations
+            || ! is_string($value['since'] ?? null) || ($since = $this->discoveryTime($value['since'])) === null
+            || ! is_string($value['until'] ?? null) || ($until = $this->discoveryTime($value['until'])) === null
+            || ! is_string($value['boundary'] ?? null) || ($boundary = $this->discoveryTime($value['boundary'])) === null
+            || $since > $until || $boundary < $since || $boundary > $until
+            || ! is_int($value['location'] ?? null) || $value['location'] < 0 || $value['location'] > count($locations)
+            || ! is_bool($value['incomplete'] ?? null) || ! is_bool($value['terminal'] ?? null)
+            || ! is_array($value['ties'] ?? null) || count($value['ties']) > self::MAX_DISCOVERY_ROWS
+            || ! is_array($value['pending'] ?? null) || ! array_is_list($value['pending']) || count($value['pending']) > 100) {
+            throw SquareRequestFailed::unreadable();
+        }
+        foreach ($value['ties'] as $id => $attempted) {
+            if (preg_match(SquareClient::ID_PATTERN, (string) $id) !== 1 || $attempted !== true) {
+                throw SquareRequestFailed::unreadable();
+            }
+        }
+        $previous = $boundary;
+        $ids = [];
+        foreach ($value['pending'] as $row) {
+            $id = is_array($row) ? ($row['id'] ?? null) : null;
+            $created = is_array($row) ? $this->discoveryTime($row['created_at'] ?? null) : null;
+            if (! is_string($id) || preg_match(SquareClient::ID_PATTERN, $id) !== 1 || isset($ids[$id])
+                || $created === null || $created < $previous || $created > $until
+                || ($created === $boundary && isset($value['ties'][$id]))) {
+                throw SquareRequestFailed::unreadable();
+            }
+            $ids[$id] = true;
+            $previous = $created;
+        }
+        if ($value['location'] === count($locations) && ($value['pending'] !== [] || $value['terminal'])) {
+            throw SquareRequestFailed::unreadable();
+        }
+        /** @var ScanPosition $value */
+        return $value;
+    }
+
+    /** @param  ScanPosition  $position */
+    private function saveScan(string $key, array $position, bool $apply): void
+    {
+        if ($apply && ! Cache::forever($key, $position)) {
+            throw new DomainException('The processor scan position could not be saved.');
+        }
+    }
+
+    /** Normalize RFC 3339 instants without discarding subsecond precision. */
+    private function discoveryTime(mixed $value): ?string
+    {
+        if (! is_string($value) || preg_match('/^([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})(?:\.([0-9]{1,9}))?(Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$/D', $value, $parts) !== 1) {
+            return null;
+        }
+        try {
+            $date = CarbonImmutable::createFromFormat('!Y-m-d\TH:i:sP', $parts[1].$parts[3]);
+            if (! $date instanceof CarbonImmutable || $date->format('Y-m-d\TH:i:s') !== $parts[1]) {
+                return null;
+            }
+        } catch (\Throwable) {
+            return null;
+        }
+
+        return $date->utc()->format('Y-m-d\TH:i:s').'.'.str_pad($parts[2] ?? '', 9, '0').'Z';
     }
 
     /**
