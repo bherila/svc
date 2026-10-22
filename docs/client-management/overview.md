@@ -111,6 +111,12 @@ by default; set to `projects`, the viewer sees only the projects listed in
 unrestricted and an empty list for a scoped user granted nothing — those are
 different answers.
 
+REST and MCP context project capabilities follow the same grants as project
+reads. Selected-project contacts receive no capability IDs for ungranted projects;
+an empty grant returns none. Internal project roles and workspace manager access
+remain independent of portal grants. Capability queries resolve project roles and
+portal company membership in batches rather than once per project.
+
 The rule is that the narrowing is one decision applied wherever a portal surface
 reads, not a filter applied while rendering a project list — scoping only the
 list leaves every direct resource URL working for a project the user was never
@@ -599,6 +605,20 @@ POST   /workspaces/{workspace}/attachments/{recordType}/{recordPublicId}
 GET    /workspaces/{workspace}/attachments/{clientAttachment}
 DELETE /workspaces/{workspace}/attachments/{clientAttachment}
 ```
+
+A download reauthorizes the file's parent on every request. Workspace membership
+alone does not authorize another project's file. Internal project and task files
+require that project; invoice and agreement files reuse `BillingRecordAccess`.
+Company files and financial records without project lineage require a workspace
+manager. Company-level proposals retain their detail screen's company-reachability
+rule. Missing or cross-tenant parent chains are refused before bytes are served.
+
+Portal downloads require company membership, the parent's disclosure/lifecycle
+rules and its current project grants. Invoice files use `PortalInvoiceQuery`, so
+every attributed project (invoice lines and agreement) must be granted to a
+selected-project contact. Company-wide contacts keep company-level invoice access.
+The generic agent file API remains workspace-manager-only for metadata, downloads
+and writes. Only available attachments can be downloaded.
 
 Uploads are two-phase because a database write and a blob write cannot share a
 transaction: stream to a staged object while hashing, create the row, promote
