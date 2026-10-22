@@ -12,6 +12,7 @@ use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Services\Authorization\PortalAccess;
 use App\Services\Authorization\PortalInvoiceQuery;
+use App\Services\Tasks\TaskVisibility;
 use App\Support\ClientHome\ClientHomeViewModel;
 use App\Support\ClientHome\EngagementSummary;
 use App\Support\ClientHome\InvoiceSummary;
@@ -152,10 +153,9 @@ final class PortalClientHomeQuery
             return [];
         }
 
-        return array_values(ClientTask::query()
-            ->where('workspace_id', $company->workspace_id)
-            ->whereIn('client_project_id', $projectIds)
-            ->where('is_visible_to_client', true)
+        return array_values(app(TaskVisibility::class)->constrainVisibleStructure(
+            ClientTask::query()->whereIn('client_project_id', $projectIds), $company->workspace, $company,
+        )
             ->where('status', '!=', 'completed')
             ->orderByDesc('updated_at')
             ->orderByDesc('id')

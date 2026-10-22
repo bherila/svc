@@ -12,6 +12,8 @@ use App\Services\AgentApi\AgentWorkspaceCreationAction;
 use App\Services\Authorization\AgentAccess;
 use App\Services\Authorization\AgentTokenScopes;
 use App\Services\Collaboration\CollaborationAudience;
+use App\Services\Files\AttachmentPageQuery;
+use App\Services\Files\AttachmentUploadPolicy;
 use App\Services\Search\WorkspaceSearch;
 use App\Support\Search\SearchResult;
 use App\Support\Search\SearchResultKind;
@@ -52,7 +54,7 @@ final class AgentWorkspaceMiscController extends Controller
 
     public function index(Request $request, Workspace $workspace, string $recordType, string $recordPublicId): JsonResponse
     {
-        return response()->json($this->files->listing($this->principal($request), $workspace, $recordType, $recordPublicId));
+        return response()->json($this->files->listing($this->principal($request), $workspace, $recordType, $recordPublicId, AttachmentPageQuery::fromInput($request->query())));
     }
 
     public function show(Request $request, Workspace $workspace, string $attachment): JsonResponse
@@ -74,6 +76,8 @@ final class AgentWorkspaceMiscController extends Controller
 
     public function uploadUrl(Request $request, Workspace $workspace, string $recordType, string $recordPublicId): JsonResponse
     {
+        AttachmentUploadPolicy::validateLegacyPayload($request->all());
+
         return response()->json($this->files->uploadUrl($this->principal($request), $workspace, $recordType, $recordPublicId));
     }
 

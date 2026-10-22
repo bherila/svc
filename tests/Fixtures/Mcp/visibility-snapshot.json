@@ -2280,7 +2280,9 @@
                                             "task",
                                             "proposal",
                                             "agreement",
-                                            "invoice"
+                                            "invoice",
+                                            "topic",
+                                            "comment"
                                         ]
                                     },
                                     "record_id": {
@@ -2410,7 +2412,7 @@
                         ],
                         "additionalProperties": false
                     },
-                    "description": "Get generic file metadata and current version. Workspace managers only.",
+                    "description": "Get authorized generic file metadata and current version. Workspace managers only; dual identities use exact Portal grants and file visibility.",
                     "annotations": {
                         "readOnlyHint": true,
                         "destructiveHint": false,
@@ -2456,7 +2458,9 @@
                                             "task",
                                             "proposal",
                                             "agreement",
-                                            "invoice"
+                                            "invoice",
+                                            "topic",
+                                            "comment"
                                         ]
                                     },
                                     "record_id": {
@@ -2517,12 +2521,28 @@
                                     "task",
                                     "proposal",
                                     "agreement",
-                                    "invoice"
+                                    "invoice",
+                                    "topic",
+                                    "comment"
                                 ]
                             },
                             "record_id": {
                                 "type": "string",
                                 "format": "uuid"
+                            },
+                            "limit": {
+                                "type": "integer",
+                                "default": 100,
+                                "minimum": 1,
+                                "maximum": 100
+                            },
+                            "cursor": {
+                                "type": [
+                                    "null",
+                                    "string"
+                                ],
+                                "default": null,
+                                "maxLength": 4096
                             }
                         },
                         "required": [
@@ -2532,7 +2552,7 @@
                         ],
                         "additionalProperties": false
                     },
-                    "description": "List up to 100 generic files on a tenant-owned record, with its parent version. Workspace managers only; expense receipts use separate tools.",
+                    "description": "List up to 100 authorized generic files on a tenant-owned record, with its parent version. Workspace managers only; dual identities use exact Portal grants and file visibility. Expense receipts use separate tools.",
                     "annotations": {
                         "readOnlyHint": true,
                         "destructiveHint": false,
@@ -2544,7 +2564,8 @@
                         "additionalProperties": false,
                         "required": [
                             "data",
-                            "parent_version"
+                            "parent_version",
+                            "meta"
                         ],
                         "properties": {
                             "data": {
@@ -2558,6 +2579,21 @@
                                 "type": "string",
                                 "minLength": 64,
                                 "maxLength": 64
+                            },
+                            "meta": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "next_cursor"
+                                ],
+                                "properties": {
+                                    "next_cursor": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ]
+                                    }
+                                }
                             }
                         },
                         "$defs": {
@@ -2588,7 +2624,9 @@
                                             "task",
                                             "proposal",
                                             "agreement",
-                                            "invoice"
+                                            "invoice",
+                                            "topic",
+                                            "comment"
                                         ]
                                     },
                                     "record_id": {
@@ -12252,6 +12290,20 @@
                             "expense_id": {
                                 "type": "string",
                                 "format": "uuid"
+                            },
+                            "limit": {
+                                "type": "integer",
+                                "default": 100,
+                                "minimum": 1,
+                                "maximum": 100
+                            },
+                            "cursor": {
+                                "type": [
+                                    "null",
+                                    "string"
+                                ],
+                                "default": null,
+                                "maxLength": 4096
                             }
                         },
                         "required": [
@@ -12272,7 +12324,8 @@
                         "additionalProperties": false,
                         "required": [
                             "data",
-                            "expense_version"
+                            "expense_version",
+                            "meta"
                         ],
                         "properties": {
                             "data": {
@@ -12284,6 +12337,21 @@
                             },
                             "expense_version": {
                                 "$ref": "#/$defs/Version"
+                            },
+                            "meta": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "next_cursor"
+                                ],
+                                "properties": {
+                                    "next_cursor": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ]
+                                    }
+                                }
                             }
                         },
                         "$defs": {
@@ -33292,10 +33360,10 @@
                 "agreements.square_series.set": "4c1abd0269ab4c01",
                 "agreements.terminate": "f6d450ee21151a63",
                 "agreements.update": "a789f6d75536d298",
-                "attachments.delete": "ec3bab66781f94b6",
+                "attachments.delete": "9b87ce9ecc2479c5",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
-                "attachments.get": "f54affb3d9e104a3",
-                "attachments.list": "a8f522c87ae2083f",
+                "attachments.get": "e6af5a017d610a3a",
+                "attachments.list": "1800a4dbc598dbc6",
                 "attachments.upload_url": "93c4356b52bfcee3",
                 "billing.audit_missing_billed_overage": "1ce496a1f94756c0",
                 "billing.audit_opening_rollover": "1f761280885e3429",
@@ -33354,7 +33422,7 @@
                 "expenses.list": "b86229a48aa32918",
                 "expenses.log": "fb3edd447d6187db",
                 "expenses.receipts.download": "c8f57d500b304732",
-                "expenses.receipts.list": "3ed3185eeaba5793",
+                "expenses.receipts.list": "9152229f75f498f8",
                 "expenses.receipts.upload_url": "c53d1f0b0ac10262",
                 "expenses.unapprove": "a273945f6b2f8e65",
                 "expenses.update": "c39be146430b74f3",
@@ -34285,8 +34353,8 @@
                 "agreements.get": "347a9902cf7f25ea",
                 "agreements.list": "6fd1c84361d79306",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
-                "attachments.get": "f54affb3d9e104a3",
-                "attachments.list": "a8f522c87ae2083f",
+                "attachments.get": "e6af5a017d610a3a",
+                "attachments.list": "1800a4dbc598dbc6",
                 "billing.audit_missing_billed_overage": "1ce496a1f94756c0",
                 "billing.audit_opening_rollover": "1f761280885e3429",
                 "billing.audit_undated_collectible_invoices": "6309d10a3243dd56",
@@ -34313,7 +34381,7 @@
                 "expense_schedules.list": "dd1832f42c8c0514",
                 "expenses.list": "b86229a48aa32918",
                 "expenses.receipts.download": "c8f57d500b304732",
-                "expenses.receipts.list": "3ed3185eeaba5793",
+                "expenses.receipts.list": "9152229f75f498f8",
                 "finance.invoice_payments.list": "25681f84faec8b6e",
                 "finance.payouts.list": "49fbdd79e642c84c",
                 "finance.processor_movements.list": "770475b882b8312b",
@@ -35045,8 +35113,8 @@
                 "agreements.get": "347a9902cf7f25ea",
                 "agreements.list": "6fd1c84361d79306",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
-                "attachments.get": "f54affb3d9e104a3",
-                "attachments.list": "a8f522c87ae2083f",
+                "attachments.get": "e6af5a017d610a3a",
+                "attachments.list": "1800a4dbc598dbc6",
                 "billing.audit_missing_billed_overage": "1ce496a1f94756c0",
                 "billing.audit_opening_rollover": "1f761280885e3429",
                 "billing.audit_undated_collectible_invoices": "6309d10a3243dd56",
@@ -35072,7 +35140,7 @@
                 "expense_schedules.list": "dd1832f42c8c0514",
                 "expenses.list": "b86229a48aa32918",
                 "expenses.receipts.download": "c8f57d500b304732",
-                "expenses.receipts.list": "3ed3185eeaba5793",
+                "expenses.receipts.list": "9152229f75f498f8",
                 "finance.invoice_payments.list": "25681f84faec8b6e",
                 "finance.payouts.list": "49fbdd79e642c84c",
                 "finance.processor_movements.list": "770475b882b8312b",
@@ -35228,8 +35296,8 @@
                 "agreements.get": "347a9902cf7f25ea",
                 "agreements.list": "6fd1c84361d79306",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
-                "attachments.get": "f54affb3d9e104a3",
-                "attachments.list": "a8f522c87ae2083f",
+                "attachments.get": "e6af5a017d610a3a",
+                "attachments.list": "1800a4dbc598dbc6",
                 "billing.audit_missing_billed_overage": "1ce496a1f94756c0",
                 "billing.audit_opening_rollover": "1f761280885e3429",
                 "billing.audit_undated_collectible_invoices": "6309d10a3243dd56",
@@ -35255,7 +35323,7 @@
                 "expense_schedules.list": "dd1832f42c8c0514",
                 "expenses.list": "b86229a48aa32918",
                 "expenses.receipts.download": "c8f57d500b304732",
-                "expenses.receipts.list": "3ed3185eeaba5793",
+                "expenses.receipts.list": "9152229f75f498f8",
                 "finance.invoice_payments.list": "25681f84faec8b6e",
                 "finance.payouts.list": "49fbdd79e642c84c",
                 "finance.processor_movements.list": "770475b882b8312b",
@@ -36124,8 +36192,8 @@
                 "agreements.get": "347a9902cf7f25ea",
                 "agreements.list": "6fd1c84361d79306",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
-                "attachments.get": "f54affb3d9e104a3",
-                "attachments.list": "a8f522c87ae2083f",
+                "attachments.get": "e6af5a017d610a3a",
+                "attachments.list": "1800a4dbc598dbc6",
                 "billing.audit_missing_billed_overage": "1ce496a1f94756c0",
                 "billing.audit_opening_rollover": "1f761280885e3429",
                 "billing.audit_undated_collectible_invoices": "6309d10a3243dd56",
@@ -36152,7 +36220,7 @@
                 "expense_schedules.list": "dd1832f42c8c0514",
                 "expenses.list": "b86229a48aa32918",
                 "expenses.receipts.download": "c8f57d500b304732",
-                "expenses.receipts.list": "3ed3185eeaba5793",
+                "expenses.receipts.list": "9152229f75f498f8",
                 "finance.invoice_payments.list": "25681f84faec8b6e",
                 "finance.payouts.list": "49fbdd79e642c84c",
                 "finance.processor_movements.list": "770475b882b8312b",
@@ -36305,8 +36373,8 @@
                 "agreements.get": "347a9902cf7f25ea",
                 "agreements.list": "6fd1c84361d79306",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
-                "attachments.get": "f54affb3d9e104a3",
-                "attachments.list": "a8f522c87ae2083f",
+                "attachments.get": "e6af5a017d610a3a",
+                "attachments.list": "1800a4dbc598dbc6",
                 "billing.audit_missing_billed_overage": "1ce496a1f94756c0",
                 "billing.audit_opening_rollover": "1f761280885e3429",
                 "billing.audit_undated_collectible_invoices": "6309d10a3243dd56",
@@ -36333,7 +36401,7 @@
                 "expense_schedules.list": "dd1832f42c8c0514",
                 "expenses.list": "b86229a48aa32918",
                 "expenses.receipts.download": "c8f57d500b304732",
-                "expenses.receipts.list": "3ed3185eeaba5793",
+                "expenses.receipts.list": "9152229f75f498f8",
                 "finance.invoice_payments.list": "25681f84faec8b6e",
                 "finance.payouts.list": "49fbdd79e642c84c",
                 "finance.processor_movements.list": "770475b882b8312b",
@@ -37201,8 +37269,8 @@
                 "agreements.get": "347a9902cf7f25ea",
                 "agreements.list": "6fd1c84361d79306",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
-                "attachments.get": "f54affb3d9e104a3",
-                "attachments.list": "a8f522c87ae2083f",
+                "attachments.get": "e6af5a017d610a3a",
+                "attachments.list": "1800a4dbc598dbc6",
                 "billing.audit_missing_billed_overage": "1ce496a1f94756c0",
                 "billing.audit_opening_rollover": "1f761280885e3429",
                 "billing.audit_undated_collectible_invoices": "6309d10a3243dd56",
@@ -37229,7 +37297,7 @@
                 "expense_schedules.list": "dd1832f42c8c0514",
                 "expenses.list": "b86229a48aa32918",
                 "expenses.receipts.download": "c8f57d500b304732",
-                "expenses.receipts.list": "3ed3185eeaba5793",
+                "expenses.receipts.list": "9152229f75f498f8",
                 "finance.invoice_payments.list": "25681f84faec8b6e",
                 "finance.payouts.list": "49fbdd79e642c84c",
                 "finance.processor_movements.list": "770475b882b8312b",
@@ -37384,8 +37452,8 @@
                 "agreements.get": "347a9902cf7f25ea",
                 "agreements.list": "6fd1c84361d79306",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
-                "attachments.get": "f54affb3d9e104a3",
-                "attachments.list": "a8f522c87ae2083f",
+                "attachments.get": "e6af5a017d610a3a",
+                "attachments.list": "1800a4dbc598dbc6",
                 "billing.audit_missing_billed_overage": "1ce496a1f94756c0",
                 "billing.audit_opening_rollover": "1f761280885e3429",
                 "billing.audit_undated_collectible_invoices": "6309d10a3243dd56",
@@ -37412,7 +37480,7 @@
                 "expense_schedules.list": "dd1832f42c8c0514",
                 "expenses.list": "b86229a48aa32918",
                 "expenses.receipts.download": "c8f57d500b304732",
-                "expenses.receipts.list": "3ed3185eeaba5793",
+                "expenses.receipts.list": "9152229f75f498f8",
                 "finance.invoice_payments.list": "25681f84faec8b6e",
                 "finance.payouts.list": "49fbdd79e642c84c",
                 "finance.processor_movements.list": "770475b882b8312b",
@@ -38238,10 +38306,10 @@
                 "agreements.square_series.set": "4c1abd0269ab4c01",
                 "agreements.terminate": "f6d450ee21151a63",
                 "agreements.update": "a789f6d75536d298",
-                "attachments.delete": "ec3bab66781f94b6",
+                "attachments.delete": "9b87ce9ecc2479c5",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
-                "attachments.get": "f54affb3d9e104a3",
-                "attachments.list": "a8f522c87ae2083f",
+                "attachments.get": "e6af5a017d610a3a",
+                "attachments.list": "1800a4dbc598dbc6",
                 "attachments.upload_url": "93c4356b52bfcee3",
                 "billing.audit_missing_billed_overage": "1ce496a1f94756c0",
                 "billing.audit_opening_rollover": "1f761280885e3429",
@@ -38298,7 +38366,7 @@
                 "expenses.list": "b86229a48aa32918",
                 "expenses.log": "fb3edd447d6187db",
                 "expenses.receipts.download": "c8f57d500b304732",
-                "expenses.receipts.list": "3ed3185eeaba5793",
+                "expenses.receipts.list": "9152229f75f498f8",
                 "expenses.receipts.upload_url": "c53d1f0b0ac10262",
                 "expenses.unapprove": "a273945f6b2f8e65",
                 "expenses.update": "c39be146430b74f3",
@@ -38421,10 +38489,10 @@
                 "agreements.square_series.set": "4c1abd0269ab4c01",
                 "agreements.terminate": "f6d450ee21151a63",
                 "agreements.update": "a789f6d75536d298",
-                "attachments.delete": "ec3bab66781f94b6",
+                "attachments.delete": "9b87ce9ecc2479c5",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
-                "attachments.get": "f54affb3d9e104a3",
-                "attachments.list": "a8f522c87ae2083f",
+                "attachments.get": "e6af5a017d610a3a",
+                "attachments.list": "1800a4dbc598dbc6",
                 "attachments.upload_url": "93c4356b52bfcee3",
                 "billing.audit_missing_billed_overage": "1ce496a1f94756c0",
                 "billing.audit_opening_rollover": "1f761280885e3429",
@@ -38481,7 +38549,7 @@
                 "expenses.list": "b86229a48aa32918",
                 "expenses.log": "fb3edd447d6187db",
                 "expenses.receipts.download": "c8f57d500b304732",
-                "expenses.receipts.list": "3ed3185eeaba5793",
+                "expenses.receipts.list": "9152229f75f498f8",
                 "expenses.receipts.upload_url": "c53d1f0b0ac10262",
                 "expenses.unapprove": "a273945f6b2f8e65",
                 "expenses.update": "c39be146430b74f3",
@@ -39374,8 +39442,8 @@
                 "agreements.terminate": "f6d450ee21151a63",
                 "agreements.update": "a789f6d75536d298",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
-                "attachments.get": "f54affb3d9e104a3",
-                "attachments.list": "a8f522c87ae2083f",
+                "attachments.get": "e6af5a017d610a3a",
+                "attachments.list": "1800a4dbc598dbc6",
                 "billing.audit_missing_billed_overage": "1ce496a1f94756c0",
                 "billing.audit_opening_rollover": "1f761280885e3429",
                 "billing.audit_undated_collectible_invoices": "6309d10a3243dd56",
@@ -39419,7 +39487,7 @@
                 "expense_schedules.list": "dd1832f42c8c0514",
                 "expenses.list": "b86229a48aa32918",
                 "expenses.receipts.download": "c8f57d500b304732",
-                "expenses.receipts.list": "3ed3185eeaba5793",
+                "expenses.receipts.list": "9152229f75f498f8",
                 "finance.invoice_payments.list": "25681f84faec8b6e",
                 "finance.payouts.list": "49fbdd79e642c84c",
                 "finance.processor_movements.list": "770475b882b8312b",
@@ -39555,8 +39623,8 @@
                 "agreements.terminate": "f6d450ee21151a63",
                 "agreements.update": "a789f6d75536d298",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
-                "attachments.get": "f54affb3d9e104a3",
-                "attachments.list": "a8f522c87ae2083f",
+                "attachments.get": "e6af5a017d610a3a",
+                "attachments.list": "1800a4dbc598dbc6",
                 "billing.audit_missing_billed_overage": "1ce496a1f94756c0",
                 "billing.audit_opening_rollover": "1f761280885e3429",
                 "billing.audit_undated_collectible_invoices": "6309d10a3243dd56",
@@ -39600,7 +39668,7 @@
                 "expense_schedules.list": "dd1832f42c8c0514",
                 "expenses.list": "b86229a48aa32918",
                 "expenses.receipts.download": "c8f57d500b304732",
-                "expenses.receipts.list": "3ed3185eeaba5793",
+                "expenses.receipts.list": "9152229f75f498f8",
                 "finance.invoice_payments.list": "25681f84faec8b6e",
                 "finance.payouts.list": "49fbdd79e642c84c",
                 "finance.processor_movements.list": "770475b882b8312b",
@@ -40390,10 +40458,10 @@
                 "agreements.square_series.set": "4c1abd0269ab4c01",
                 "agreements.terminate": "f6d450ee21151a63",
                 "agreements.update": "a789f6d75536d298",
-                "attachments.delete": "ec3bab66781f94b6",
+                "attachments.delete": "9b87ce9ecc2479c5",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
-                "attachments.get": "f54affb3d9e104a3",
-                "attachments.list": "a8f522c87ae2083f",
+                "attachments.get": "e6af5a017d610a3a",
+                "attachments.list": "1800a4dbc598dbc6",
                 "attachments.upload_url": "93c4356b52bfcee3",
                 "billing.audit_missing_billed_overage": "1ce496a1f94756c0",
                 "billing.audit_opening_rollover": "1f761280885e3429",
@@ -40452,7 +40520,7 @@
                 "expenses.list": "b86229a48aa32918",
                 "expenses.log": "fb3edd447d6187db",
                 "expenses.receipts.download": "c8f57d500b304732",
-                "expenses.receipts.list": "3ed3185eeaba5793",
+                "expenses.receipts.list": "9152229f75f498f8",
                 "expenses.receipts.upload_url": "c53d1f0b0ac10262",
                 "expenses.unapprove": "a273945f6b2f8e65",
                 "expenses.update": "c39be146430b74f3",
@@ -40572,10 +40640,10 @@
                 "agreements.square_series.set": "4c1abd0269ab4c01",
                 "agreements.terminate": "f6d450ee21151a63",
                 "agreements.update": "a789f6d75536d298",
-                "attachments.delete": "ec3bab66781f94b6",
+                "attachments.delete": "9b87ce9ecc2479c5",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
-                "attachments.get": "f54affb3d9e104a3",
-                "attachments.list": "a8f522c87ae2083f",
+                "attachments.get": "e6af5a017d610a3a",
+                "attachments.list": "1800a4dbc598dbc6",
                 "attachments.upload_url": "93c4356b52bfcee3",
                 "billing.audit_missing_billed_overage": "1ce496a1f94756c0",
                 "billing.audit_opening_rollover": "1f761280885e3429",
@@ -40634,7 +40702,7 @@
                 "expenses.list": "b86229a48aa32918",
                 "expenses.log": "fb3edd447d6187db",
                 "expenses.receipts.download": "c8f57d500b304732",
-                "expenses.receipts.list": "3ed3185eeaba5793",
+                "expenses.receipts.list": "9152229f75f498f8",
                 "expenses.receipts.upload_url": "c53d1f0b0ac10262",
                 "expenses.unapprove": "a273945f6b2f8e65",
                 "expenses.update": "c39be146430b74f3",
@@ -41487,10 +41555,10 @@
                 "agreements.square_series.set": "4c1abd0269ab4c01",
                 "agreements.terminate": "f6d450ee21151a63",
                 "agreements.update": "a789f6d75536d298",
-                "attachments.delete": "ec3bab66781f94b6",
+                "attachments.delete": "9b87ce9ecc2479c5",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
-                "attachments.get": "f54affb3d9e104a3",
-                "attachments.list": "a8f522c87ae2083f",
+                "attachments.get": "e6af5a017d610a3a",
+                "attachments.list": "1800a4dbc598dbc6",
                 "attachments.upload_url": "93c4356b52bfcee3",
                 "billing.audit_missing_billed_overage": "1ce496a1f94756c0",
                 "billing.audit_opening_rollover": "1f761280885e3429",
@@ -41548,7 +41616,7 @@
                 "expenses.list": "b86229a48aa32918",
                 "expenses.log": "fb3edd447d6187db",
                 "expenses.receipts.download": "c8f57d500b304732",
-                "expenses.receipts.list": "3ed3185eeaba5793",
+                "expenses.receipts.list": "9152229f75f498f8",
                 "expenses.receipts.upload_url": "c53d1f0b0ac10262",
                 "expenses.unapprove": "a273945f6b2f8e65",
                 "expenses.update": "c39be146430b74f3",
@@ -41668,10 +41736,10 @@
                 "agreements.square_series.set": "4c1abd0269ab4c01",
                 "agreements.terminate": "f6d450ee21151a63",
                 "agreements.update": "a789f6d75536d298",
-                "attachments.delete": "ec3bab66781f94b6",
+                "attachments.delete": "9b87ce9ecc2479c5",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
-                "attachments.get": "f54affb3d9e104a3",
-                "attachments.list": "a8f522c87ae2083f",
+                "attachments.get": "e6af5a017d610a3a",
+                "attachments.list": "1800a4dbc598dbc6",
                 "attachments.upload_url": "93c4356b52bfcee3",
                 "billing.audit_missing_billed_overage": "1ce496a1f94756c0",
                 "billing.audit_opening_rollover": "1f761280885e3429",
@@ -41729,7 +41797,7 @@
                 "expenses.list": "b86229a48aa32918",
                 "expenses.log": "fb3edd447d6187db",
                 "expenses.receipts.download": "c8f57d500b304732",
-                "expenses.receipts.list": "3ed3185eeaba5793",
+                "expenses.receipts.list": "9152229f75f498f8",
                 "expenses.receipts.upload_url": "c53d1f0b0ac10262",
                 "expenses.unapprove": "a273945f6b2f8e65",
                 "expenses.update": "c39be146430b74f3",
@@ -43530,10 +43598,10 @@
                 "agreements.square_series.set": "4c1abd0269ab4c01",
                 "agreements.terminate": "f6d450ee21151a63",
                 "agreements.update": "a789f6d75536d298",
-                "attachments.delete": "ec3bab66781f94b6",
+                "attachments.delete": "9b87ce9ecc2479c5",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
-                "attachments.get": "f54affb3d9e104a3",
-                "attachments.list": "a8f522c87ae2083f",
+                "attachments.get": "e6af5a017d610a3a",
+                "attachments.list": "1800a4dbc598dbc6",
                 "attachments.upload_url": "93c4356b52bfcee3",
                 "billing.audit_missing_billed_overage": "1ce496a1f94756c0",
                 "billing.audit_opening_rollover": "1f761280885e3429",
@@ -43588,7 +43656,7 @@
                 "expenses.list": "b86229a48aa32918",
                 "expenses.log": "fb3edd447d6187db",
                 "expenses.receipts.download": "c8f57d500b304732",
-                "expenses.receipts.list": "3ed3185eeaba5793",
+                "expenses.receipts.list": "9152229f75f498f8",
                 "expenses.receipts.upload_url": "c53d1f0b0ac10262",
                 "expenses.unapprove": "a273945f6b2f8e65",
                 "expenses.update": "c39be146430b74f3",
@@ -43714,10 +43782,10 @@
                 "agreements.square_series.set": "4c1abd0269ab4c01",
                 "agreements.terminate": "f6d450ee21151a63",
                 "agreements.update": "a789f6d75536d298",
-                "attachments.delete": "ec3bab66781f94b6",
+                "attachments.delete": "9b87ce9ecc2479c5",
                 "attachments.download_url": "6e6cac2beb6cd5c2",
-                "attachments.get": "f54affb3d9e104a3",
-                "attachments.list": "a8f522c87ae2083f",
+                "attachments.get": "e6af5a017d610a3a",
+                "attachments.list": "1800a4dbc598dbc6",
                 "attachments.upload_url": "93c4356b52bfcee3",
                 "billing.audit_missing_billed_overage": "1ce496a1f94756c0",
                 "billing.audit_opening_rollover": "1f761280885e3429",
@@ -43772,7 +43840,7 @@
                 "expenses.list": "b86229a48aa32918",
                 "expenses.log": "fb3edd447d6187db",
                 "expenses.receipts.download": "c8f57d500b304732",
-                "expenses.receipts.list": "3ed3185eeaba5793",
+                "expenses.receipts.list": "9152229f75f498f8",
                 "expenses.receipts.upload_url": "c53d1f0b0ac10262",
                 "expenses.unapprove": "a273945f6b2f8e65",
                 "expenses.update": "c39be146430b74f3",

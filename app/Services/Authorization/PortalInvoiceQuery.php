@@ -28,6 +28,14 @@ final class PortalInvoiceQuery
         return $this->visible($workspace->id, $viewer);
     }
 
+    /** Exact Portal grants, including for a dual workspace manager. Existing preview callers retain their policy.
+     * @return Builder<ClientInvoice>
+     */
+    public function strictlyVisibleInWorkspace(Workspace $workspace, User|AgentPrincipal $viewer): Builder
+    {
+        return $this->visible($workspace->id, $viewer, false);
+    }
+
     /**
      * Keep membership and project decisions in the invoice query. A workspace
      * can contain many portal companies; listing their invoices must not run
@@ -35,7 +43,7 @@ final class PortalInvoiceQuery
      *
      * @return Builder<ClientInvoice>
      */
-    private function visible(int $workspaceId, User|AgentPrincipal|null $viewer): Builder
+    private function visible(int $workspaceId, User|AgentPrincipal|null $viewer, bool $managerPreview = true): Builder
     {
         $invoices = ClientInvoice::query()
             ->where('workspace_id', $workspaceId)
@@ -51,7 +59,8 @@ final class PortalInvoiceQuery
                 ->select(DB::raw('1'))->from('workspace_memberships')
                 ->whereColumn('workspace_memberships.workspace_id', 'client_invoices.workspace_id')
                 ->where('workspace_memberships.user_id', $viewer->id)
-                ->whereIn('workspace_memberships.role', ['owner', 'admin']))
+                ->whereIn('workspace_memberships.role', ['owner', 'admin'])
+                ->when(! $managerPreview, fn (QueryBuilder $query): QueryBuilder => $query->whereRaw('1 = 0')))
             ->orWhereExists(fn (QueryBuilder $membership): QueryBuilder => $membership
                 ->select(DB::raw('1'))->from('client_company_memberships')
                 ->whereColumn('client_company_memberships.workspace_id', 'client_invoices.workspace_id')

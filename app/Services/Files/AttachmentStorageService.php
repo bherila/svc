@@ -42,11 +42,12 @@ final class AttachmentStorageService
     public function store(Workspace $workspace, Model&WorkspaceOwned $record, UploadedFile $file, User $uploader, ?string $publicId = null): ClientAttachment
     {
         $this->workspaceAuthorization->assertOwnedBy($workspace, $record);
+        $visibleToClient = AttachmentUploadPolicy::defaultVisibility();
         $metadata = $this->stage($workspace, $record, $file, $publicId);
 
         // Keep a recovery row outside the parent-locked publication transaction.
         // A killed uploader can leave either key on disk; repair must know both.
-        $attachment = $this->recordStaged($workspace, $metadata, $uploader);
+        $attachment = $this->recordStaged($workspace, $metadata, $uploader, $visibleToClient);
 
         if (! $record instanceof ClientExpense) {
             return $this->publish($workspace, $metadata, $attachment);
@@ -82,8 +83,9 @@ final class AttachmentStorageService
     public function prepareForPublication(Workspace $workspace, Model&WorkspaceOwned $record, UploadedFile $file, User $uploader): ClientAttachment
     {
         $this->workspaceAuthorization->assertOwnedBy($workspace, $record);
+        $visibleToClient = AttachmentUploadPolicy::defaultVisibility();
         $metadata = $this->stage($workspace, $record, $file);
-        $attachment = $this->recordStaged($workspace, $metadata, $uploader);
+        $attachment = $this->recordStaged($workspace, $metadata, $uploader, $visibleToClient);
         try {
             $this->promoteAndVerify($metadata);
         } catch (Throwable $exception) {
@@ -133,7 +135,7 @@ final class AttachmentStorageService
     }
 
     /** @param array{public_id:string, record_type:string, record_public_id:string, object_key:string, staged_object_key:string, original_filename:string, media_type:string, bytes:int, sha256:string} $metadata */
-    private function recordStaged(Workspace $workspace, array $metadata, User $uploader): ClientAttachment
+    private function recordStaged(Workspace $workspace, array $metadata, User $uploader, bool $visibleToClient): ClientAttachment
     {
         try {
             return DB::transaction(fn (): ClientAttachment => ClientAttachment::query()->create([
@@ -148,6 +150,9 @@ final class AttachmentStorageService
                 'bytes' => $metadata['bytes'],
                 'sha256' => $metadata['sha256'],
                 'uploader_id' => $uploader->id,
+                // The persistent privacy latch survives later app rollback. A
+                // prepared/recovered row keeps this choice through publication.
+                'is_visible_to_client' => AttachmentUploadPolicy::defaultVisibility() && $visibleToClient,
                 'lifecycle_state' => ClientAttachment::STATE_STAGED,
             ]));
         } catch (Throwable $exception) {

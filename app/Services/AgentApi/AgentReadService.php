@@ -21,6 +21,7 @@ use App\Services\Mcp\AgentWithheldTools;
 use App\Services\Tasks\TaskAccess;
 use App\Services\Tasks\TaskMutationOrigin;
 use App\Services\Tasks\TaskPlanningPresenter;
+use App\Services\Tasks\TaskVisibility;
 use App\Support\AgentApi\AgentApiContract;
 use App\Support\AgentApi\AgentApiCursor;
 use App\Support\AgentApi\AgentApiScopes;
@@ -265,7 +266,9 @@ final class AgentReadService
     public function timeEntries(User|AgentPrincipal $user, Workspace $workspace, ?string $projectId, ?string $status, ?string $from, ?string $to, int $limit, ?string $cursor, ?string $allocationState = null, ?bool $isBillable = null, bool $unallocated = false, bool $compact = false): array
     {
         $this->requireWorkspace($user, $workspace);
-        $query = $this->timeQueries->visibleTo($user, $workspace)->with(['project', 'clientCompany', 'task'])->with(AgentTimeEntryPresenter::authorRelations($workspace))->withCapacityPlacement($workspace->id)->orderBy('id');
+        $query = $this->timeQueries->visibleTo($user, $workspace)->with(['project', 'clientCompany'])
+            ->with($this->taskReferenceRelations($user, $workspace))->with(AgentTimeEntryPresenter::authorRelations($workspace))
+            ->withCapacityPlacement($workspace->id)->orderBy('id');
         if ($projectId !== null && $projectId !== '') {
             $query->whereHas('project', fn (Builder $projects) => $projects->where('public_id', $projectId));
         }
@@ -319,7 +322,8 @@ final class AgentReadService
     {
         $this->requireWorkspace($user, $workspace);
         $entries = $this->timeQueries->visibleTo($user, $workspace)
-            ->with(['project', 'clientCompany', 'task'])->with(AgentTimeEntryPresenter::authorRelations($workspace))
+            ->with(['project', 'clientCompany'])->with($this->taskReferenceRelations($user, $workspace))
+            ->with(AgentTimeEntryPresenter::authorRelations($workspace))
             ->withCapacityPlacement($workspace->id)
             ->whereIn('public_id', $ids)
             ->get()
@@ -477,9 +481,7 @@ final class AgentReadService
             return $query->whereRaw('1 = 0');
         }
         if ($origin === TaskMutationOrigin::Agent && $this->access->isWorkspaceClient($user, $workspace)) {
-            return $query->where('is_visible_to_client', true)
-                ->whereHas('project', fn (Builder $projects) => $this->portalAccess
-                    ->constrainProjectQuery($projects->where('is_visible_to_client', true), $user));
+            return app(TaskVisibility::class)->constrainPortal($query, $workspace, $user);
         }
         if ($this->access->isWorkspaceManager($user, $workspace)) {
             return $query;
@@ -488,6 +490,16 @@ final class AgentReadService
         return $query->whereHas('project', fn (Builder $projects) => $projects
             ->whereHas('members', fn (Builder $members) => $members->whereKey($user->id)
                 ->where('client_project_memberships.workspace_id', $workspace->id)));
+    }
+
+    /** Time visibility stands alone. Only its optional task reference is narrowed.
+     * @return array<string, Closure>
+     */
+    private function taskReferenceRelations(User|AgentPrincipal $actor, Workspace $workspace): array
+    {
+        $visible = $this->taskQuery($actor, $workspace)->select('client_tasks.id');
+
+        return ['task' => fn ($tasks) => $tasks->where('workspace_id', $workspace->id)->whereIn('client_tasks.id', $visible)];
     }
 
     /** @return Builder<ClientInvoice> */

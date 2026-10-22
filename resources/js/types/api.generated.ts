@@ -113,7 +113,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Manager-only metadata, excluding storage and uploader identifiers. */
+        /** @description Manager-only metadata, excluding storage and uploader identifiers. Dual identities use exact Portal grants, current parent ancestry and file visibility. */
         get: operations['attachments.get'];
         put?: never;
         post?: never;
@@ -165,7 +165,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Manager-only generic attachment listing, bounded to 100 newest files. Expense receipts use separate routes. */
+        /** @description Manager-only generic attachment listing, bounded to 100 authorized newest files per page, ordered by descending ID. Follow meta.next_cursor; serialized byte limits may shorten a page. Dual identities use exact Portal grants and file visibility. Expense receipts use separate routes. */
         get: operations['attachments.list'];
         put?: never;
         post?: never;
@@ -184,7 +184,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Manager-only multipart upload, at most 50 MiB. Locked parent version checked; actor/client/key receipt binds parent/version/filename/media/length/SHA256, with replay and audit. Uploading adds an immutable file and leaves parent business facts unchanged. */
+        /** @description Staff-manager-only multipart upload, at most 50 MiB. Dual Portal identities are denied. The verified persistent privacy latch chooses ordinary upload defaults; the initial reader deployment retains inheritance. Visibility fields and topic/comment parents remain rejected before staging. Locked parent version checked; actor/client/key receipt binds parent/version/filename/media/length/SHA256, with replay and audit. Uploading adds an immutable file and leaves parent business facts unchanged. */
         post: operations['attachments.upload'];
         delete?: never;
         options?: never;
@@ -951,10 +951,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Manager-only list of the 100 newest available receipts; includes current expense_version. */
+        /** @description Staff-manager-only available receipts, ordered by descending ID, default and maximum 100 per page. Follow meta.next_cursor; serialized byte limits may shorten a page. Includes current expense_version. Dual Portal identities are denied. */
         get: operations['expenses.receipts.list'];
         put?: never;
-        /** @description Manager-only multipart upload, at most 50 MiB. File digest, filename and expense version bind idempotent retries. Version is checked on locked expense and advances on upload. Prepared URLs expire after ten minutes; direct authenticated REST uploads need no preparation. Both expense write flags required. */
+        /** @description Staff-manager-only multipart upload, at most 50 MiB. Dual Portal identities are denied. The verified persistent privacy latch chooses ordinary upload defaults; the initial reader deployment retains inheritance. Visibility fields and topic/comment parents remain rejected before staging. File digest, filename and expense version bind idempotent retries. Version is checked on locked expense and advances on upload. Prepared URLs expire after ten minutes; direct authenticated REST uploads need no preparation. Both expense write flags required. */
         post: operations['expenses.receipts.upload'];
         delete?: never;
         options?: never;
@@ -2223,7 +2223,9 @@ export interface components {
                 | 'task'
                 | 'proposal'
                 | 'agreement'
-                | 'invoice';
+                | 'invoice'
+                | 'topic'
+                | 'comment';
             /** Format: uuid */
             record_id: string;
             filename: string;
@@ -2253,6 +2255,9 @@ export interface components {
         AttachmentListResponse: {
             data: components['schemas']['Attachment'][];
             parent_version: string;
+            meta: {
+                next_cursor: string | null;
+            };
         };
         AttachmentResponse: {
             data: components['schemas']['Attachment'];
@@ -2767,6 +2772,9 @@ export interface components {
         ExpenseReceiptListResponse: {
             data: components['schemas']['ExpenseReceipt'][];
             expense_version: components['schemas']['Version'];
+            meta: {
+                next_cursor: string | null;
+            };
         };
         ExpenseReceiptUploadRequest: {
             expected_version: components['schemas']['Version'];
@@ -5661,7 +5669,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Manager-only metadata, excluding storage and uploader identifiers. */
+            /** @description Manager-only metadata, excluding storage and uploader identifiers. Dual identities use exact Portal grants, current parent ancestry and file visibility. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -5756,7 +5764,10 @@ export interface operations {
     };
     'attachments.list': {
         parameters: {
-            query?: never;
+            query?: {
+                limit?: number;
+                cursor?: string;
+            };
             header?: never;
             path: {
                 workspace: components['parameters']['WorkspaceId'];
@@ -5766,14 +5777,16 @@ export interface operations {
                     | 'task'
                     | 'proposal'
                     | 'agreement'
-                    | 'invoice';
+                    | 'invoice'
+                    | 'topic'
+                    | 'comment';
                 recordPublicId: string;
             };
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description Manager-only generic attachment listing, bounded to 100 newest files. Expense receipts use separate routes. */
+            /** @description Manager-only generic attachment listing, bounded to 100 authorized newest files per page, ordered by descending ID. Follow meta.next_cursor; serialized byte limits may shorten a page. Dual identities use exact Portal grants and file visibility. Expense receipts use separate routes. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -5813,13 +5826,22 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Manager-only multipart upload, at most 50 MiB. Locked parent version checked; actor/client/key receipt binds parent/version/filename/media/length/SHA256, with replay and audit. Uploading adds an immutable file and leaves parent business facts unchanged. */
+            /** @description Staff-manager-only multipart upload, at most 50 MiB. Dual Portal identities are denied. The verified persistent privacy latch chooses ordinary upload defaults; the initial reader deployment retains inheritance. Visibility fields and topic/comment parents remain rejected before staging. Locked parent version checked; actor/client/key receipt binds parent/version/filename/media/length/SHA256, with replay and audit. Uploading adds an immutable file and leaves parent business facts unchanged. */
             201: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     'application/json': components['schemas']['AttachmentResponse'];
+                };
+            };
+            /** @description The durable upload policy cannot be verified. No bytes or recovery rows are staged; ordinary reads remain available. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
                 };
             };
             default: components['responses']['Error'];
@@ -5851,6 +5873,15 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['AttachmentUploadUrlResponse'];
+                };
+            };
+            /** @description The durable upload policy cannot be verified. No bytes or recovery rows are staged; ordinary reads remain available. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
                 };
             };
             default: components['responses']['Error'];
@@ -8880,7 +8911,10 @@ export interface operations {
     };
     'expenses.receipts.list': {
         parameters: {
-            query?: never;
+            query?: {
+                limit?: number;
+                cursor?: string;
+            };
             header?: never;
             path: {
                 workspace: components['parameters']['WorkspaceId'];
@@ -8929,6 +8963,15 @@ export interface operations {
                     'application/json': components['schemas']['ExpenseReceiptUploadResponse'];
                 };
             };
+            /** @description The durable upload policy cannot be verified. No bytes or recovery rows are staged; ordinary reads remain available. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
             default: components['responses']['Error'];
         };
     };
@@ -8951,6 +8994,15 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['ExpenseReceiptUploadUrlResponse'];
+                };
+            };
+            /** @description The durable upload policy cannot be verified. No bytes or recovery rows are staged; ordinary reads remain available. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
                 };
             };
             default: components['responses']['Error'];

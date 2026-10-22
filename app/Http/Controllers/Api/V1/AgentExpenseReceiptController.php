@@ -7,6 +7,8 @@ use App\Models\AgentPrincipal;
 use App\Models\Workspace;
 use App\Services\AgentApi\AgentExpenseReceiptService;
 use App\Services\AgentApi\AgentMutationContextFactory;
+use App\Services\Files\AttachmentPageQuery;
+use App\Services\Files\AttachmentUploadPolicy;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
@@ -18,7 +20,7 @@ final class AgentExpenseReceiptController extends Controller
 
     public function index(Request $request, Workspace $workspace, string $expense): JsonResponse
     {
-        return response()->json($this->receipts->listing($this->actor($request), $workspace, $expense));
+        return response()->json($this->receipts->listing($this->actor($request), $workspace, $expense, AttachmentPageQuery::fromInput($request->query())));
     }
 
     public function download(Request $request, Workspace $workspace, string $expense, string $receipt): JsonResponse
@@ -28,6 +30,8 @@ final class AgentExpenseReceiptController extends Controller
 
     public function uploadUrl(Request $request, Workspace $workspace, string $expense): JsonResponse
     {
+        AttachmentUploadPolicy::validateLegacyPayload($request->all());
+
         return response()->json($this->receipts->uploadUrl($this->actor($request), $workspace, $expense));
     }
 
@@ -43,6 +47,7 @@ final class AgentExpenseReceiptController extends Controller
         if ($request->query('signature') !== null || $request->query('expires') !== null) {
             abort_unless($request->hasValidSignature(absolute: false), 403);
         }
+        AttachmentUploadPolicy::validateLegacyPayload($request->all());
         $context = $this->contexts->fromAuthenticatedClient($request);
         $file = $request->file('file');
         abort_unless($file instanceof UploadedFile, 422, 'A receipt file is required.');

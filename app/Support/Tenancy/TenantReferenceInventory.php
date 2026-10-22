@@ -97,6 +97,9 @@ final class TenantReferenceInventory
 
             // Projects.
             TenantReference::enforcedBy('client_tasks', 'client_project_id', 'client_projects', 'ct_ws_project_fk'),
+            TenantReference::enforcedBy('client_tasks', 'parent_task_id', 'client_tasks', 'tasks_project_parent_fk', ['client_project_id']),
+            TenantReference::enforcedBy('client_tasks', 'client_task_list_id', 'client_task_lists', 'tasks_project_list_fk', ['client_project_id']),
+            TenantReference::enforcedBy('client_task_lists', 'client_project_id', 'client_projects', 'task_lists_ws_project_fk'),
             TenantReference::enforcedBy('client_task_assignments', 'client_task_id', 'client_tasks', 'task_assignments_ws_task_fk'),
             TenantReference::enforcedBy('client_collaboration_topics', 'client_company_id', 'client_companies', 'cct_ws_company_fk'),
             TenantReference::enforcedBy('client_collaboration_topics', 'client_project_id', 'client_projects', 'cct_ws_project_fk'),

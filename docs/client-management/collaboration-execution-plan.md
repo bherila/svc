@@ -220,10 +220,64 @@ and required transport contracts work together.
 - Introduce file-level sharing as a separate explicit slice: retain existing
   native attachments as `is_visible_to_client=true`, even under currently private
   parents, preserving their parent-inherited disclosure when a parent later changes.
-  Historical blobs stay separate. New ordinary uploads default false with an
-  explicit sharing choice. Before this slice, files inherit strict parent access.
-  All listing/metadata/download predicates include the flag once introduced and
-  recheck it on held URLs. A file checkbox narrows its parent's audience only.
+  Historical blobs stay separate. Deliver the following reader release before
+  enabling any private-file or new-parent writers:
+    - **R1 reader release:** add the non-null column with database default **true**
+      and backfill every existing lifecycle row true, including staged, deleting
+      and corrupt rows. The database default must remain true while an older
+      uploader binary can omit the column. Upgraded ordinary upload paths explicitly
+      write true while the persistent privacy latch is absent and the optional
+      `SVC_ATTACHMENT_PRIVATE_UPLOADS_ENABLED` check remains initially false. Reject a supplied
+      private flag or topic/comment upload before staging bytes or inserting a
+      recovery row. Separate readable parent types from uploadable parent types;
+      synthetic reader coverage does not enable uploads. No sharing controls or
+      new-parent upload operations are available in this release.
+    - All R1 listing, metadata and download paths enforce the stored file flag and
+      the full current parent/grant/ancestry policy, including held URLs. Readers
+      enforce a stored false value even while the writer flag is off. Preserve
+      manager-only generic agent file operations, separate expense restrictions
+      and the historical blob library. Apply authorization before counts, limits,
+      filenames or snippets; use the shared task ancestor/root-list predicate for
+      task files and comments. A file checkbox only narrows its parent's audience.
+    - **Verified R1 private defaults:** only after the deployed reader and its
+      retained rollback artifact are verified, install/read back the private 0600
+      marker `storage/app/private/attachment-private-default.enabled`. This fixed
+      LOCAL marker lives in persistent storage and private backups. The upload
+      factory reads it at runtime; a retained marker forces private defaults even
+      with an old false config cache. Requests and rollback never remove it. The
+      optional true `SVC_ATTACHMENT_PRIVATE_UPLOADS_ENABLED` consistency check
+      refuses uploads without a marker before staging; ordinary reads stay up.
+      Check before staging and again at recovery-row creation. Publication and
+      repair preserve stored flags, and old rows stay unchanged.
+    - **R2 writer release:** after that floor and private-default setting are verified,
+      change the database default to **false**. Keep the persistent marker in
+      every release, rollback and private backup. A separate domain flag enables explicit sharing
+      controls and topic/comment uploads across native, first-party, agent and CLI
+      writes; existing agent cutovers do not replace it. Turning those controls off
+      preserves existing private rows and keeps future ordinary uploads private.
+      The deployed reader/writer phase determines the upload default; toggling a
+      controls flag never makes uploads more public. Do not roll back below R1 after
+      private or new-parent
+      rows exist; a schema rollback must refuse retained incompatible rows rather
+      than publishing them. Prepared uploads reauthorize their current parent and
+      actor at publication, and receipt replay rechecks current authority.
+
+    - **Automatic rollback contract:** the verified capable R1 artifact reads the
+      same retained marker, restores service and keeps new ordinary uploads private.
+      Prove that factory with a false old config value; do not depend on cached
+      environment/config state or leaving the service in maintenance. Record exact
+      deployed/fallback identities and marker permissions/readback, and test native,
+      generic Agent and expense upload/recovery paths. Never remove the marker or
+      restore a pre-activation storage backup while serving retained private state.
+      Marker installation and activation remain separate operator actions after
+      reader verification; no deployment or activation is part of this code.
+
+    Reader compatibility tests must exercise an older uploader that omits the
+    column, all upgraded upload adapters throughout R1, and zero staged
+    rows or objects after rejected private/new-parent uploads. Test current grants,
+    hidden/deleted ancestors, exact portal grants for dual identities, cross-tenant
+    lineage and held URLs across metadata and bytes. Prove bounded query counts and
+    actual database defaults on SQLite and MariaDB before enabling R2 writers.
 
 ### 3. Finish workflows and all transports
 

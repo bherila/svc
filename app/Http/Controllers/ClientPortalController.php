@@ -18,7 +18,9 @@ use App\Services\Authorization\PortalInvoiceQuery;
 use App\Services\Billing\DeferredBacklogReadService;
 use App\Services\Collaboration\CollaborationAccess;
 use App\Services\Collaboration\CollaborationAudience;
+use App\Services\Files\AttachmentReader;
 use App\Services\Square\Mirror\SquareInvoicePage;
+use App\Services\Tasks\TaskVisibility;
 use App\Support\Billing\InvoiceLineDetail;
 use App\Support\Billing\InvoiceStatus;
 use App\Support\Engagement\AgreementTermsPayload;
@@ -158,6 +160,8 @@ class ClientPortalController extends Controller
         ClientCompany $clientCompany,
         ClientAgreement $clientAgreement,
     ): Response {
+        $fileActor = $request->user();
+        abort_unless($fileActor instanceof User, 401);
         Gate::authorize('viewPortal', $clientCompany);
 
         abort_unless(
@@ -174,6 +178,9 @@ class ClientPortalController extends Controller
             ->orderBy('sort_order')
             ->orderBy('id')
             ->get();
+
+        $filePage = AttachmentListing::page($clientCompany->workspace, 'agreement', $clientAgreement->public_id, false, $fileActor, app(AttachmentReader::class)->nativePortalAudience($fileActor, $clientCompany->workspace),
+            $request->integer('files_page', 1), route('portal.agreement', [$clientCompany, $clientAgreement], absolute: false));
 
         return Inertia::render('clients/agreement', [
             'company' => [
@@ -195,12 +202,9 @@ class ClientPortalController extends Controller
             // copy of their own agreement is the obvious one. `false` withholds
             // the removal URL; `AttachmentController` re-checks this agreement's
             // visibility, status and project scope on the way to each download.
-            'files' => AttachmentListing::for(
-                $clientCompany->workspace,
-                'agreement',
-                (string) $clientAgreement->public_id,
-                false,
-            ),
+            'files' => $filePage->files,
+            'files_next_href' => $filePage->nextHref,
+            'files_previous_href' => $filePage->previousHref,
             'agreement' => AgreementTermsPayload::for(
                 $clientAgreement,
                 // The project an agreement is scoped to is named only to a
@@ -425,10 +429,11 @@ class ClientPortalController extends Controller
         $scope = $selected === null ? $projects : collect([$selected]);
         $projectNames = $projects->pluck('name', 'id');
 
-        $tasks = ClientTask::query()
-            ->where('workspace_id', $clientCompany->workspace_id)
-            ->whereIn('client_project_id', $scope->pluck('id')->all())
-            ->where('is_visible_to_client', true)
+        // Project authorization above deliberately permits native staff preview.
+        $tasks = app(TaskVisibility::class)->constrainVisibleStructure(
+            ClientTask::query()->whereIn('client_project_id', $scope->pluck('id')->all()),
+            $clientCompany->workspace, $clientCompany,
+        )
             ->orderBy('status')
             ->orderBy('title')
             ->orderBy('id')

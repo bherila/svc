@@ -5,11 +5,14 @@ import { ActivityTimeline } from '@/components/activity-timeline';
 import type { CompanyActivity } from '@/components/activity-timeline';
 import { AppearanceSelector } from '@/components/appearance-selector';
 import { CommandPaletteTrigger } from '@/components/command-palette';
+import { AttachmentPageLinks } from '@/components/files/attachment-page-links';
+import { SHELL_CONTAINER } from '@/lib/layout';
 import {
     predatesInvoiceIssue,
     predatesInvoiceIssueWarning,
 } from '@/lib/payments';
 import { todayIn } from '@/lib/time';
+import { cn } from '@/lib/utils';
 
 type TimeEntry = {
     id: string;
@@ -89,6 +92,8 @@ type Workspace = {
     id: string;
     name: string;
     clients: Client[];
+    files_next_href?: string | null;
+    files_previous_href?: string | null;
     /** The workspace's calendar; date defaults are read on it, not UTC's. */
     timezone: string;
 };
@@ -174,7 +179,7 @@ function AttachmentPanel({
                     <a
                         key={attachment.id}
                         href={attachment.download_url}
-                        className="font-medium text-cyan-700"
+                        className="min-w-0 font-medium wrap-anywhere text-cyan-700"
                     >
                         {attachment.name}
                     </a>
@@ -610,21 +615,27 @@ export default function Operations({ workspace }: { workspace: Workspace }) {
     return (
         <>
             <Head title={`${workspace.name} operations`} />
-            <main
+            <div
                 className="min-h-screen bg-slate-100 text-slate-950"
                 data-appearance-bridge
             >
                 <header className="border-b border-slate-200 bg-white">
-                    <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
-                        <div>
-                            <Link href="/app" className="text-sm text-cyan-700">
-                                ← Workspaces
-                            </Link>
-                            <h1 className="text-2xl font-semibold">
-                                {workspace.name}
-                            </h1>
-                        </div>
-                        <div className="flex items-center gap-4">
+                    <div
+                        className={cn(
+                            SHELL_CONTAINER,
+                            'flex h-12 items-center gap-2',
+                        )}
+                    >
+                        <Link
+                            href="/app"
+                            className="shrink-0 text-sm whitespace-nowrap text-cyan-700"
+                        >
+                            ← Workspaces
+                        </Link>
+                        <nav
+                            aria-label="Workspace operations"
+                            className="ms-auto flex shrink-0 items-center gap-2 whitespace-nowrap"
+                        >
                             <CommandPaletteTrigger />
                             <AppearanceSelector />
                             <Link
@@ -639,14 +650,26 @@ export default function Operations({ workspace }: { workspace: Workspace }) {
                             >
                                 Time sheet
                             </Link>
-                            <span className="text-sm font-semibold tracking-[0.2em]">
+                            <span className="hidden text-sm font-semibold tracking-[0.2em] sm:block">
                                 SVC
                             </span>
-                        </div>
+                        </nav>
                     </div>
                 </header>
 
-                <div className="mx-auto max-w-7xl space-y-8 px-6 py-10">
+                <main
+                    className={cn(
+                        SHELL_CONTAINER,
+                        'space-y-8 py-10 wrap-anywhere',
+                    )}
+                >
+                    <h1 className="text-2xl font-semibold">{workspace.name}</h1>
+                    <div id="files-pagination">
+                        <AttachmentPageLinks
+                            nextHref={workspace.files_next_href}
+                            previousHref={workspace.files_previous_href}
+                        />
+                    </div>
                     {workspace.clients.map((client) => (
                         <section
                             key={client.id}
@@ -899,8 +922,8 @@ export default function Operations({ workspace }: { workspace: Workspace }) {
                             </div>
                         </section>
                     ))}
-                </div>
-            </main>
+                </main>
+            </div>
         </>
     );
 }

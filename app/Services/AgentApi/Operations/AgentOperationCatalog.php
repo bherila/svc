@@ -479,7 +479,7 @@ final class AgentOperationCatalog
             $this->tool(
                 'attachments.list',
                 'List attachments',
-                'List up to 100 generic files on a tenant-owned record, with its parent version. Workspace managers only; expense receipts use separate tools.',
+                'List up to 100 authorized generic files on a tenant-owned record, with its parent version. Workspace managers only; dual identities use exact Portal grants and file visibility. Expense receipts use separate tools.',
                 [AgentMcpWriteTools::class, 'attachmentsList'],
                 Effect::Read,
                 true,
@@ -489,7 +489,7 @@ final class AgentOperationCatalog
             $this->tool(
                 'attachments.get',
                 'Get attachment',
-                'Get generic file metadata and current version. Workspace managers only.',
+                'Get authorized generic file metadata and current version. Workspace managers only; dual identities use exact Portal grants and file visibility.',
                 [AgentMcpWriteTools::class, 'attachmentsGet'],
                 Effect::Read,
                 true,

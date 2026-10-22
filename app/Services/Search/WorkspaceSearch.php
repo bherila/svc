@@ -16,6 +16,7 @@ use App\Services\Authorization\PortalInvoiceQuery;
 use App\Services\Authorization\ProjectAccess;
 use App\Services\Collaboration\CollaborationAudience;
 use App\Services\History\HistorySearch;
+use App\Services\Tasks\TaskVisibility;
 use App\Support\Search\SearchResult;
 use App\Support\Search\SearchResultKind;
 use Illuminate\Database\Eloquent\Builder;
@@ -65,6 +66,7 @@ final class WorkspaceSearch
         private readonly CollaborationSearch $collaboration,
         private readonly PortalAccess $portal,
         private readonly PortalInvoiceQuery $portalInvoices,
+        private readonly TaskVisibility $taskVisibility,
     ) {}
 
     /**
@@ -171,7 +173,7 @@ final class WorkspaceSearch
             ->orderByDesc('issue_date')->limit(self::PER_KIND)->get();
 
         $tasks = ClientTask::query()
-            ->when($isPortal, fn (Builder $query) => $query->where('is_visible_to_client', true))
+            ->when($isPortal, fn (Builder $query) => $this->taskVisibility->constrainPortal($query, $workspace, $user))
             ->when($kinds !== [] && ! in_array(SearchResultKind::Task, $kinds, true), fn (Builder $q) => $q->whereRaw('1 = 0'))
             ->where('workspace_id', $workspace->id)
             ->when($viewableProjectIds !== null, fn (Builder $q) => $q->whereIn('client_project_id', $viewableProjectIds ?? []))

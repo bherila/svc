@@ -9,6 +9,7 @@ import {
 import { DeferredBacklogCard } from '@/components/agreements/deferred-backlog';
 import type { DeferredBacklog } from '@/components/agreements/deferred-backlog';
 import { DeferredBuyDownForm } from '@/components/agreements/deferred-buydown';
+import { AttachmentPageLinks } from '@/components/files/attachment-page-links';
 import {
     AlertDialog,
     AlertDialogAction,
@@ -73,9 +74,14 @@ function Term({
     unset?: string;
 }) {
     return (
-        <div className="flex gap-2">
-            <dt className="text-muted-foreground">{label}</dt>
-            <dd className={value === null ? 'text-muted-foreground' : ''}>
+        <div className="flex min-w-0 gap-2">
+            <dt className="shrink-0 text-muted-foreground">{label}</dt>
+            <dd
+                className={cn(
+                    'min-w-0 wrap-anywhere',
+                    value === null && 'text-muted-foreground',
+                )}
+            >
                 {value ?? unset}
             </dd>
         </div>
@@ -88,6 +94,8 @@ export default function ClientAgreementDetail({
     audience,
     actions,
     files,
+    files_next_href: nextFilesHref = null,
+    files_previous_href: previousFilesHref = null,
     agreement,
     recurring_items: recurringItems,
     deferred_backlog: deferredBacklog,
@@ -98,6 +106,8 @@ export default function ClientAgreementDetail({
     audience: 'operator' | 'client';
     actions: AgreementActions;
     files: AgreementFile[];
+    files_next_href?: string | null;
+    files_previous_href?: string | null;
     agreement: AgreementTerms;
     recurring_items: RecurringItem[];
     /** Managers, or portal readers where the agreement explicitly opts in. */
@@ -214,7 +224,7 @@ export default function ClientAgreementDetail({
                                 onDone={() => setEditingTerms(false)}
                             />
                         ) : (
-                            <dl className="grid gap-2 text-sm sm:grid-cols-2">
+                            <dl className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
                                 <Term
                                     label="Term"
                                     value={`${formatDay(agreement.starts_on)} → ${agreement.ends_on === null ? 'open' : formatDay(agreement.ends_on)}`}
@@ -379,12 +389,14 @@ export default function ClientAgreementDetail({
 
                 <Card>
                     <CardHeader>
-                        <CardTitle>Files</CardTitle>
+                        <CardTitle id="files">Files</CardTitle>
                     </CardHeader>
                     <CardContent className="grid grid-cols-1 gap-4">
                         {files.length === 0 ? (
                             <p className="text-sm text-muted-foreground">
-                                Nothing is attached to this agreement.
+                                {previousFilesHref
+                                    ? 'No files on this page.'
+                                    : 'Nothing is attached to this agreement.'}
                             </p>
                         ) : (
                             <ul className="grid grid-cols-1 gap-2 text-sm">
@@ -419,6 +431,11 @@ export default function ClientAgreementDetail({
                                 ))}
                             </ul>
                         )}
+
+                        <AttachmentPageLinks
+                            nextHref={nextFilesHref}
+                            previousHref={previousFilesHref}
+                        />
 
                         {actions.upload_file !== null && (
                             <AgreementFileUpload

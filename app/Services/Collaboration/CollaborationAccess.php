@@ -14,13 +14,15 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\PortalAccess;
 use App\Services\Authorization\ProjectAccess;
+use App\Services\Tasks\TaskAncestryRepository;
+use App\Services\Tasks\TaskVisibility;
 use App\Support\AgentApi\ProjectRole;
 use Illuminate\Database\Eloquent\Builder;
 
 /** One audience-aware policy shared by presentation, search and transport adapters. */
 final class CollaborationAccess
 {
-    public function __construct(private readonly ProjectAccess $projects, private readonly PortalAccess $portal, private readonly CollaborationRepository $records) {}
+    public function __construct(private readonly ProjectAccess $projects, private readonly PortalAccess $portal, private readonly CollaborationRepository $records, private readonly TaskVisibility $tasks, private readonly TaskAncestryRepository $ancestry) {}
 
     public function companyWide(User|AgentPrincipal $actor, Workspace $workspace, ClientCompany $company, CollaborationAudience $audience): bool
     {
@@ -101,7 +103,7 @@ final class CollaborationAccess
         $tasks = ClientTask::query()->where('workspace_id', $workspace->id)
             ->whereColumn('client_tasks.client_project_id', 'client_comments.client_project_id')
             ->whereIn('client_project_id', $projects)
-            ->when($audience === CollaborationAudience::Portal, fn (Builder $query) => $query->where('is_visible_to_client', true))->select('id');
+            ->when($audience === CollaborationAudience::Portal, fn (Builder $query) => $this->tasks->constrainPortal($query, $workspace, $actor))->select('id');
 
         return ClientComment::query()->where('workspace_id', $workspace->id)
             ->whereIn('client_company_id', ClientCompany::query()->where('workspace_id', $workspace->id)->select('id'))
@@ -150,6 +152,9 @@ final class CollaborationAccess
         if ($audience === CollaborationAudience::Internal) {
             return $project === null ? $this->companyWide($actor, $workspace, $company, $audience) : $this->projects->canView($actor, $project);
         }
+        if ($parent instanceof ClientTask) {
+            return $this->tasks->constrainPortal(ClientTask::query()->whereKey($parent->id), $workspace, $actor, $company)->exists();
+        }
         if (! $this->effectiveVisible($workspace, $company, $parent)) {
             return false;
         }
@@ -192,9 +197,16 @@ final class CollaborationAccess
 
     public function effectiveVisible(Workspace $workspace, ClientCompany $company, ClientTask|ClientCollaborationTopic $parent): bool
     {
-        $project = $parent instanceof ClientTask ? $parent->project : $this->records->topicProject($workspace, $company, $parent);
+        if ($parent instanceof ClientTask) {
+            if ($company->workspace_id !== $workspace->id || $parent->project->client_company_id !== $company->id) {
+                return false;
+            }
+
+            return ($this->ancestry->factsBatch($workspace, [$parent->id])[$parent->id] ?? null)?->visibleToClient === true;
+        }
+        $project = $this->records->topicProject($workspace, $company, $parent);
 
         return $parent->is_visible_to_client && ($project === null || $project->is_visible_to_client)
-            && (! $parent instanceof ClientCollaborationTopic || $parent->deleted_at === null);
+            && $parent->deleted_at === null;
     }
 }
