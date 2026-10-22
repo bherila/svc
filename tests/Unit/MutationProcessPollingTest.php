@@ -46,7 +46,8 @@ final class MutationProcessPollingTest extends TestCase
 
     private function child(string $script): MutantProcess
     {
-        $process = new Process([PHP_BINARY, '-r', $script], timeout: 0.2);
+        // These children exercise poll order, without unrelated PHP extension startup.
+        $process = new Process([PHP_BINARY, '-n', '-r', $script], timeout: 0.2);
         $mutant = $this->getMockBuilder(MutantProcess::class)
             ->disableOriginalConstructor()
             ->onlyMethods(['getProcess'])
