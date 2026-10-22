@@ -7,6 +7,7 @@ use App\Models\ClientPortalInvitation;
 use App\Models\ClientProject;
 use App\Models\ClientProjectMembership;
 use App\Models\ClientProposal;
+use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
 use App\Models\InvoiceReminderLog;
 use App\Models\User;
@@ -173,6 +174,11 @@ if (getenv('SVC_LAYOUT_TASKS') === '1') {
         'description' => str_repeat('Synthetic task description with planning context and enough prose to wrap. ', 24),
         'is_visible_to_client' => true, 'starts_on' => '2026-10-20', 'due_on' => '2026-10-30', 'assignee_ids' => $taskAssignees,
     ]));
+    for ($index = 0; $index < 53; $index++) {
+        ClientTask::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $project->id,
+            'title' => 'ZZZ Synthetic paginated task '.str_repeat('UnbrokenTitle', 8).' '.str_pad((string) $index, 3, '0', STR_PAD_LEFT),
+            'status' => 'open', 'is_visible_to_client' => true]);
+    }
 }
 
 // Portal contacts on the settings page: one reaching the whole client, one limited to the

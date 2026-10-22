@@ -271,7 +271,7 @@ try {
         const screenshot = `${screen}-${state}-${width}.png`;
         await page.screenshot({
             path: path.join(artifacts, screenshot),
-            fullPage: true,
+            fullPage: !(screen === 'task_list' && state.startsWith('create-')),
             animations: 'disabled',
         });
         results.push({
@@ -346,6 +346,28 @@ try {
                 });
 
             if (screen === 'task_list') {
+                await expect(
+                    page.getByRole('link', { name: 'Next tasks', exact: true }),
+                ).toBeVisible();
+                await page
+                    .getByRole('link', { name: 'Next tasks', exact: true })
+                    .click();
+                await expect(
+                    page.getByRole('link', {
+                        name: 'Previous tasks',
+                        exact: true,
+                    }),
+                ).toBeVisible();
+                await expect(
+                    page.getByRole('link', { name: 'Next tasks', exact: true }),
+                ).toHaveCount(0);
+                await capture(screen, 'last-page', width);
+                await page
+                    .getByRole('link', { name: 'Previous tasks', exact: true })
+                    .click();
+                await expect(
+                    page.getByRole('link', { name: 'Next tasks', exact: true }),
+                ).toBeVisible();
                 await page
                     .getByRole('button', { name: 'New task', exact: true })
                     .click();
@@ -365,6 +387,9 @@ try {
                     .fill('2026-11-02');
                 await expect(page.getByRole('checkbox').first()).toBeVisible();
                 await page.getByRole('checkbox').first().check();
+                await page
+                    .getByRole('button', { name: 'Create task', exact: true })
+                    .scrollIntoViewIfNeeded();
                 await capture(screen, 'create-dialog', width);
 
                 if (width === 1440) {
@@ -385,6 +410,22 @@ try {
                 } else {
                     await page.keyboard.press('Escape');
                 }
+            }
+
+            if (screen === 'task_project') {
+                const allTasks = page.getByRole('link', {
+                    name: 'View all tasks',
+                    exact: true,
+                });
+                await expect(allTasks).toBeVisible();
+                const allTasksHref = await allTasks.getAttribute('href');
+                expect(allTasksHref).toContain('?project=');
+                await allTasks.click();
+                await expect(
+                    page.getByRole('link', { name: 'Next tasks', exact: true }),
+                ).toBeVisible();
+                await capture(screen, 'project-filtered-list', width);
+                await page.goto(origin + fixture.task_project);
             }
 
             if (screen === 'task_editor') {
@@ -445,6 +486,26 @@ try {
                 await expect(page.getByText(/^SyntheticAssignee/)).toHaveCount(
                     0,
                 );
+                await page
+                    .getByRole('link', { name: 'Next tasks', exact: true })
+                    .click();
+                await expect(page).toHaveURL(/\/portal\//);
+                await expect(
+                    page.getByRole('link', {
+                        name: 'Previous tasks',
+                        exact: true,
+                    }),
+                ).toBeVisible();
+                await expect(
+                    page.getByRole('button', { name: 'New task', exact: true }),
+                ).toHaveCount(0);
+                await capture(screen, 'last-page', width);
+                await page
+                    .getByRole('link', { name: 'Previous tasks', exact: true })
+                    .click();
+                await expect(
+                    page.getByRole('link', { name: 'Next tasks', exact: true }),
+                ).toBeVisible();
             }
 
             if (screen.startsWith('square_')) {
@@ -1161,7 +1222,7 @@ try {
             '# Browser layout evidence',
             '',
             tasksOnly
-                ? 'Synthetic native project-manager task list, create dialog, editor with ten assignees and stale conflict, and read-only portal tasks at every required width.'
+                ? 'Synthetic native project-manager paginated task list and project preview, create dialog, editor with ten assignees and stale conflict, and read-only paginated portal tasks at every required width.'
                 : portalOnly
                   ? 'Synthetic portal contacts and invitations on client settings; initial, project selection, removal and invitation withdrawal confirmation states at every required width.'
                   : squareOnly

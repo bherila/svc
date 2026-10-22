@@ -2,6 +2,7 @@ import { Head, Link } from '@inertiajs/react';
 import { TaskCreateDialog } from '@/components/tasks/task-create-dialog';
 import type { TaskEditorProject } from '@/components/tasks/task-editor';
 import { Badge } from '@/components/ui/badge';
+import { buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
     Table,
@@ -53,6 +54,7 @@ export default function ClientProjectDetail({
     time,
     agreements,
     task_management = null,
+    tasks_next_href = null,
 }: {
     workspace: { id: string };
     company: { id: string; name: string };
@@ -65,6 +67,7 @@ export default function ClientProjectDetail({
     };
     tasks: ProjectTask[];
     task_management?: { projects: TaskEditorProject[] } | null;
+    tasks_next_href?: string | null;
     time: TimeByStatus[];
     agreements: CompanyAgreement[];
 }) {
@@ -153,6 +156,17 @@ export default function ClientProjectDetail({
                                 <TaskCreateDialog
                                     projects={task_management.projects}
                                 />
+                            )}
+                            {tasks_next_href !== null && (
+                                <Link
+                                    href={tasks_next_href}
+                                    className={buttonVariants({
+                                        variant: 'outline',
+                                        size: 'sm',
+                                    })}
+                                >
+                                    View all tasks
+                                </Link>
                             )}
                         </div>
                     </CardHeader>
