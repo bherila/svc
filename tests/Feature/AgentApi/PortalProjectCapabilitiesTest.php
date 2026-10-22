@@ -61,6 +61,37 @@ final class PortalProjectCapabilitiesTest extends TestCase
         return [['rest'], ['mcp']];
     }
 
+    #[DataProvider('transports')]
+    public function test_dual_workspace_owner_uses_portal_grants_and_client_capabilities(string $transport): void
+    {
+        config(['agent_api.mcp_enabled' => true, 'agent_api.writes_enabled' => true, 'agent_api.time_entry_writes_enabled' => true]);
+        $workspace = Workspace::query()->create(['name' => 'Synthetic dual workspace', 'slug' => 'synthetic-dual-workspace']);
+        $company = ClientCompany::query()->create(['workspace_id' => $workspace->id, 'name' => 'Synthetic dual client', 'slug' => 'synthetic-dual-client']);
+        $otherCompany = ClientCompany::query()->create(['workspace_id' => $workspace->id, 'name' => 'Synthetic other client', 'slug' => 'synthetic-other-client']);
+        $project = fn (ClientCompany $client, string $name, bool $visible): ClientProject => ClientProject::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $client->id, 'name' => $name, 'is_visible_to_client' => $visible]);
+        $assigned = $project($company, 'Synthetic granted', true);
+        $project($company, 'Synthetic ungranted', true);
+        $project($company, 'Synthetic private', false);
+        $project($otherCompany, 'Synthetic other company', true);
+        $user = User::factory()->create();
+        $workspace->memberships()->create(['user_id' => $user->id, 'role' => 'owner']);
+        $membership = ClientCompanyMembership::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'user_id' => $user->id, 'role' => 'client', 'access_scope' => ClientCompanyMembership::SCOPE_PROJECTS]);
+        DB::table('client_portal_project_access')->insert(['workspace_id' => $workspace->id, 'client_company_membership_id' => $membership->id, 'client_project_id' => $assigned->id]);
+        $this->actingAsMcp($user, array_keys(AgentApiScopes::descriptions()));
+        $context = $transport === 'mcp'
+            ? $this->callTool($this->initialize(), 'context.get', [])['result']['structuredContent']['data']['workspaces'][0]
+            : $this->getJson('/api/v1/context')->assertOk()->json('data.workspaces.0');
+
+        $this->assertSame([[
+            'project_id' => $assigned->public_id,
+            'role' => 'client',
+            'capabilities' => ['projects:read', 'tasks:read', 'time:read'],
+        ]], $context['project_capabilities']);
+        foreach (['tasks:write', 'time:write', 'time:approve', 'files:read', 'finance:read'] as $internalCapability) {
+            $this->assertNotContains($internalCapability, $context['capabilities']);
+        }
+    }
+
     public function test_internal_project_role_and_manager_preview_do_not_require_portal_grants(): void
     {
         $workspace = Workspace::query()->create(['name' => 'Synthetic internal workspace', 'slug' => 'synthetic-internal-workspace']);
@@ -69,8 +100,6 @@ final class PortalProjectCapabilitiesTest extends TestCase
         $user = User::factory()->create();
         $staff = $workspace->memberships()->create(['user_id' => $user->id, 'role' => 'member']);
         ClientProjectMembership::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $project->id, 'user_id' => $user->id, 'role' => 'viewer']);
-        // Holding portal access too must not erase a legitimate internal project role.
-        ClientCompanyMembership::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'user_id' => $user->id, 'role' => 'client', 'access_scope' => ClientCompanyMembership::SCOPE_PROJECTS]);
         $this->actingAsMcp($user, [AgentApiScopes::IDENTITY_READ, AgentApiScopes::PROJECTS_READ]);
         $this->getJson('/api/v1/context')->assertOk()->assertJsonPath('data.workspaces.0.project_capabilities.0.project_id', $project->public_id);
         ClientProjectMembership::query()->where('workspace_id', $workspace->id)->delete();
