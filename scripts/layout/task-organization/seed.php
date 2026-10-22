@@ -104,6 +104,7 @@ foreach (['client_tasks', 'client_task_lists', 'client_task_graph_states', 'clie
     $fingerprints[$table] = hash('sha256', json_encode(DB::table($table)->orderBy('id')->get()->all(), JSON_THROW_ON_ERROR));
 }
 $fixture = ['user_id' => $owner->id, 'workspace_id' => $workspace->public_id, 'project_id' => $project->public_id, 'company_name' => $company->name,
+    'advisory_task_page' => collect($organization['container']['tasks'])->firstWhere('id', $root)['task_href'],
     'pages' => $pages, 'labels' => ['public_list' => $organization['lists'][0]['name'], 'private_list' => str_repeat('SyntheticPrivateList', 12), 'archived_list' => str_repeat('SyntheticArchivedList', 11), 'root' => str_repeat('SyntheticRoot', 18), 'child' => str_repeat('SyntheticChild', 17), 'destination' => str_repeat('SyntheticDestination', 11)],
     'writes' => array_map(static fn (array $paths): array => array_values(array_unique($paths)), $writes),
     'verify_ids' => ['project_hidden' => $hiddenProject->public_id, 'root' => $root, 'child' => $child, 'grandchild' => $grandchild, 'destination' => $destination, 'private_parent' => $privateParent, 'private_parent_child' => $privateParentChild, 'private_list_task' => $privateListTask, 'archived_task' => $archivedTask, 'hidden_task' => $hiddenTask],
