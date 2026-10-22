@@ -84,6 +84,12 @@ one provider consuming the other's daily budget. No background queue worker is
 needed. `--provider=all` remains available for a bounded manual run, with one
 shared call budget that may leave the second provider incomplete.
 
+Both scheduled runs are withheld until `SVC_PROCESSOR_MOVEMENTS_SCHEDULED_APPLY=true`
+(`svc.processor_movements.scheduled_apply`). A new deployment previews first, has
+the figures approved, then turns the schedule on and re-caches config; no redeploy
+is needed, and turning it back off withholds the next run the same way. Manual
+`--apply` runs are not gated by the setting.
+
 Read recorded facts through `svc:finance:processor-movements`, or the corresponding
 read-only finance API change feed. Incomplete coverage and a held entry require
 review; neither means a missing movement had zero value.

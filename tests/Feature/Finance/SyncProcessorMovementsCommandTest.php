@@ -388,6 +388,22 @@ final class SyncProcessorMovementsCommandTest extends TestCase
         }
     }
 
+    public function test_the_daily_provider_schedules_are_withheld_until_scheduled_apply_is_enabled(): void
+    {
+        $events = array_values(array_filter(app(Schedule::class)->events(), static fn ($event): bool => str_contains($event->command ?? '', 'svc:finance:sync-processor-movements')));
+        $this->assertCount(2, $events);
+
+        $this->assertFalse(config('svc.processor_movements.scheduled_apply'));
+        foreach ($events as $event) {
+            $this->assertFalse($event->filtersPass($this->app));
+        }
+
+        config(['svc.processor_movements.scheduled_apply' => true]);
+        foreach ($events as $event) {
+            $this->assertTrue($event->filtersPass($this->app));
+        }
+    }
+
     /** @param array<string, mixed> $options
      * @return array<string, mixed>
      */
