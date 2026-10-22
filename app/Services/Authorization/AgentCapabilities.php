@@ -4,12 +4,14 @@ namespace App\Services\Authorization;
 
 use App\Models\AgentPrincipal;
 use App\Models\ClientProject;
+use App\Models\ClientProjectMembership;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Support\AgentApi\AgentApiScopes;
 use App\Support\AgentApi\AgentWriteCutover;
 use App\Support\AgentApi\ProjectRole;
 use Closure;
+use Illuminate\Database\Eloquent\Builder;
 
 final class AgentCapabilities
 {
@@ -22,6 +24,7 @@ final class AgentCapabilities
     public function __construct(
         private readonly AgentAccess $access,
         private readonly ProjectAccess $projects,
+        private readonly PortalAccess $portal,
     ) {}
 
     /**
@@ -32,41 +35,54 @@ final class AgentCapabilities
         $projectEntries = [];
         $workspaceCapabilities = [];
         $canDiscloseProjects = $allowsScope(AgentApiScopes::PROJECTS_READ);
+        $viewable = $this->projects->workspaceRole($user, $workspace) === null
+            ? [] : $this->projects->viewableProjectIds($user, $workspace);
+        $manager = $viewable === null;
+        $portalCompanyIds = $this->access->portalCompanyIdsIn($user, $workspace);
+        $roles = $manager ? collect() : ClientProjectMembership::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('user_id', $user->id)
+            ->whereIn('client_project_id', $viewable)
+            ->get()->keyBy('client_project_id');
 
         $projects = ClientProject::query()
             ->where('workspace_id', $workspace->id)
+            ->whereHas('clientCompany', fn (Builder $companies): Builder => $companies->where('workspace_id', $workspace->id))
+            ->when(! $manager, fn (Builder $query): Builder => $query->where(fn (Builder $grants): Builder => $grants
+                ->whereIn('id', $viewable ?? [])
+                ->orWhere(fn (Builder $portal): Builder => $this->portal->constrainProjectQuery(
+                    $portal->where('is_visible_to_client', true), $user))))
             ->with(['workspace', 'clientCompany'])
             ->orderBy('id')
-            ->get()
-            ->filter(fn (ClientProject $project): bool => $this->access->canViewProject($user, $project));
+            ->get();
 
         foreach ($projects as $project) {
-            $capabilities = $this->forProject($user, $project, $allowsScope);
+            $role = $manager ? ProjectRole::Owner : $roles->get($project->id)?->role;
+            $capabilities = $this->forProject($role, in_array($project->client_company_id, $portalCompanyIds, true), $allowsScope);
             $workspaceCapabilities = [...$workspaceCapabilities, ...$capabilities];
             if ($canDiscloseProjects) {
-                $role = $this->projects->projectRole($user, $project)?->value;
                 $projectEntries[] = [
                     'project_id' => $project->public_id,
-                    'role' => $role ?? 'client',
+                    'role' => $role->value ?? 'client',
                     'capabilities' => $capabilities,
                 ];
             }
         }
 
-        if ($this->access->isWorkspaceManager($user, $workspace)) {
+        if ($manager) {
             $workspaceCapabilities = [...$workspaceCapabilities, ...$this->managerCapabilities($allowsScope)];
         }
         if ($allowsScope(AgentApiScopes::BILLING_READ)
-            && ($this->access->isWorkspaceManager($user, $workspace) || $this->access->isWorkspaceClient($user, $workspace))) {
+            && ($manager || $portalCompanyIds !== [])) {
             $workspaceCapabilities[] = 'billing:read';
         }
 
         if ($allowsScope(AgentApiScopes::PAYMENTS_READ)
-            && ($this->access->isWorkspaceManager($user, $workspace) || $this->access->isWorkspaceClient($user, $workspace))) {
+            && ($manager || $portalCompanyIds !== [])) {
             $workspaceCapabilities[] = 'payments:read';
         }
 
-        if ($this->access->isWorkspaceManager($user, $workspace) || $this->access->isWorkspaceClient($user, $workspace)) {
+        if ($manager || $portalCompanyIds !== []) {
             if ($allowsScope(AgentApiScopes::PROPOSALS_READ)) {
                 $workspaceCapabilities[] = 'proposals:read';
             }
@@ -82,11 +98,9 @@ final class AgentCapabilities
     }
 
     /** @return list<string> */
-    private function forProject(User|AgentPrincipal $user, ClientProject $project, Closure $allowsScope): array
+    private function forProject(?ProjectRole $role, bool $client, Closure $allowsScope): array
     {
         $capabilities = [];
-        $role = $this->projects->projectRole($user, $project);
-        $client = $this->access->isCompanyMember($user, $project->clientCompany);
 
         if ($allowsScope(AgentApiScopes::PROJECTS_READ)) {
             $capabilities[] = 'projects:read';
