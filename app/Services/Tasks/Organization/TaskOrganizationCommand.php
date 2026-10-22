@@ -52,7 +52,7 @@ final readonly class TaskOrganizationCommand
                 + array_combine(array_map(static fn (string $key): string => 'task.'.$key, array_keys(TaskInputRules::create())), array_values(TaskInputRules::create())),
             'lists.create' => ['expected_graph_version' => $version, 'name' => ['required', 'string', 'max:255'], 'is_visible_to_client' => ['sometimes', 'boolean']],
             'lists.update' => ['list_id' => $identity, 'expected_version' => $version, 'expected_graph_version' => $version,
-                'name' => ['sometimes', 'string', 'min:1', 'max:255'], 'is_visible_to_client' => ['sometimes', 'boolean']],
+                'name' => ['sometimes', 'filled', 'string', 'min:1', 'max:255'], 'is_visible_to_client' => ['sometimes', 'boolean']],
             'lists.archive' => ['list_id' => $identity, 'expected_version' => $version, 'expected_graph_version' => $version, 'confirm' => ['required', new ExplicitConfirmation]],
             'lists.restore' => ['list_id' => $identity, 'expected_version' => $version, 'expected_graph_version' => $version],
             'tasks.move' => ['task_id' => $identity, 'expected_version' => $version, 'expected_graph_version' => $version] + $container,

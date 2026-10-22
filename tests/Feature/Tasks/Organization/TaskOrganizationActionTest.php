@@ -35,6 +35,24 @@ final class TaskOrganizationActionTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_creation_appends_after_manual_order_and_same_container_moves_preserve_that_order(): void
+    {
+        [$workspace, $project, $owner] = $this->fixture();
+        $first = $this->task($workspace, $project, 'Synthetic older task');
+        $second = $this->task($workspace, $project, 'Synthetic newer task');
+        $action = app(TaskOrganizationAction::class);
+        $root = new TaskContainer(null, null);
+        $graph = $action->inspect($owner, $workspace, $project->public_id);
+        $action->perform($owner, $workspace, $project->public_id, TaskOrganizationCommand::fromInput('tasks.reorder',
+            ['parent_id' => null, 'list_id' => null, 'ordered_ids' => [$second->public_id, $first->public_id], 'expected_container_version' => $graph->containerVersion($root)]));
+        $this->move($action, $owner, $workspace, $project, $second, null, null);
+        $graph = $action->inspect($owner, $workspace, $project->public_id);
+        $this->assertSame([$second->public_id, $first->public_id], $graph->siblings($root));
+        $thirdId = $action->perform($owner, $workspace, $project->public_id, TaskOrganizationCommand::fromInput('tasks.create',
+            ['parent_id' => null, 'list_id' => null, 'task' => ['title' => 'Synthetic appended task'], 'expected_graph_version' => $graph->graphVersion()]))[0];
+        $this->assertSame([$second->public_id, $first->public_id, $thirdId], $action->inspect($owner, $workspace, $project->public_id)->siblings($root));
+    }
+
     public function test_organization_caps_do_not_block_existing_metadata_on_large_flat_projects(): void
     {
         [$workspace, $project, $owner] = $this->fixture();

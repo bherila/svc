@@ -91,9 +91,23 @@ final readonly class TaskGraph
 
     public function move(string $id, TaskContainer $target): self
     {
+        return $this->place($id, $target, false);
+    }
+
+    /** A newly created task has no established order even if it starts unlisted. */
+    public function append(string $id, TaskContainer $target): self
+    {
+        return $this->place($id, $target, true);
+    }
+
+    private function place(string $id, TaskContainer $target, bool $append): self
+    {
         $this->assertValid();
         $this->assertPlacement($target);
         $task = $this->tasks[$id] ?? throw new DomainException('The requested task is unavailable.');
+        if (! $append && $task['parent'] === $target->parentId && $task['list'] === $target->listId) {
+            return $this;
+        }
 
         $tasks = $this->tasks;
         $tasks[$id] = [...$task, 'parent' => $target->parentId, 'list' => $target->listId, 'position' => count($this->siblings($target))];
@@ -110,6 +124,21 @@ final readonly class TaskGraph
         if ($inherited !== null && $this->lists[$inherited]['deleted']) {
             throw new DomainException('The destination list is archived.');
         }
+    }
+
+    public function assertCanCreate(TaskContainer $target): void
+    {
+        if (count($this->tasks) >= self::MAX_TASKS) {
+            throw new DomainException('Organization operations support at most 1000 tasks per project.');
+        }
+        $probe = '__new_task__';
+        while (isset($this->tasks[$probe])) {
+            $probe .= '_';
+        }
+        $tasks = $this->tasks;
+        $tasks[$probe] = ['id' => PHP_INT_MAX, 'parent' => null, 'list' => null, 'position' => 0, 'version' => 'preview'];
+        $placed = (new self($tasks, $this->lists, $this->stateVersion))->append($probe, $target);
+        $placed->reorder($target, $placed->siblings($target));
     }
 
     /** @param list<string> $ids */

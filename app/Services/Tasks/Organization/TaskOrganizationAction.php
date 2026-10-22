@@ -2,6 +2,7 @@
 
 namespace App\Services\Tasks\Organization;
 
+use App\Models\ClientCompany;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\AgentAccess;
@@ -20,7 +21,23 @@ use Illuminate\Validation\ValidationException;
 /** Graph writes never alter task lifecycle, billing claims, ownership or grants. */
 final class TaskOrganizationAction
 {
-    public function __construct(private readonly TaskOrganizationRepository $organization, private readonly WorkspaceTaskRepository $tasks, private readonly TaskAccess $access, private readonly WorkspaceClock $clock = new WorkspaceClock) {}
+    public function __construct(private readonly TaskOrganizationRepository $organization, private readonly WorkspaceTaskRepository $tasks, private readonly TaskAccess $access, private readonly TaskOrganizationNativePresenter $native, private readonly WorkspaceClock $clock = new WorkspaceClock) {}
+
+    public function nativeView(User $actor, Workspace $workspace, ClientCompany $company, string $projectId, TaskContainer $container, ?string $movingId): TaskOrganizationNativeView
+    {
+        TaskOrganizationGate::assertEnabled();
+        abort_unless($company->workspace_id === $workspace->id, 404);
+
+        return DB::transaction(function () use ($actor, $workspace, $company, $projectId, $container, $movingId): TaskOrganizationNativeView {
+            $records = $this->lock($actor, $workspace, $projectId, TaskMutationOrigin::Internal)->records;
+            abort_unless($records->project->client_company_id === $company->id, 404);
+            try {
+                return $this->native->present($workspace, $company, $records, $this->graph($records), $container, $movingId);
+            } catch (DomainException $exception) {
+                throw ValidationException::withMessages(['organization' => $exception->getMessage()]);
+            }
+        });
+    }
 
     public function inspect(User $actor, Workspace $workspace, string $projectId, TaskMutationOrigin $origin = TaskMutationOrigin::Internal, bool $current = false): TaskGraph
     {
@@ -101,14 +118,11 @@ final class TaskOrganizationAction
                 }
                 $container = new TaskContainer($data['parent_id'], $data['list_id']);
                 if ($creation !== null) {
-                    if (count($graph->tasks) >= TaskGraph::MAX_TASKS) {
-                        throw new DomainException('Organization operations support at most 1000 tasks per project.');
-                    }
                     // Validate placement before creating either a task or assignments.
-                    $graph->assertPlacement($container);
+                    $graph->assertCanCreate($container);
                     $task = $this->tasks->create($workspace, $records->project, $creation, $context->access);
                     $records->tasks->push($task);
-                    $next = $this->organization->graph($records)->move($task->public_id, $container);
+                    $next = $this->organization->graph($records)->append($task->public_id, $container);
                     $next = $next->reorder($container, $next->siblings($container));
                     $this->organization->apply($workspace, $records, $next, $task->public_id);
 

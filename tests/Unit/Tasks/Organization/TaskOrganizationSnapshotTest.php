@@ -56,6 +56,8 @@ final class TaskOrganizationSnapshotTest extends TestCase
         $this->assertLessThanOrEqual(2_097_152, strlen($encoded));
         $this->assertLessThanOrEqual(4_194_304, strlen(json_encode(new Response('synthetic-organization-budget', $result), JSON_THROW_ON_ERROR)));
         $this->assertCount(1000, $view->data['tree']);
+        $this->assertSame(1, $view->data['tree'][0]['position']);
+        $this->assertSame(1000, $view->data['tree'][999]['position']);
         $this->assertCount(100, $view->data['lists']);
         $this->assertCount(100, $view->data['container']['tasks']);
         $this->assertStringNotContainsString('Synthetic private long description', $encoded);

@@ -66,6 +66,14 @@ final class TaskGraphTest extends TestCase
         }
     }
 
+    public function test_same_container_moves_preserve_order_while_new_creation_placement_appends(): void
+    {
+        $graph = $this->graph(['a' => [null, null], 'b' => [null, null]]);
+        $root = new TaskContainer(null, null);
+        $this->assertSame(['a', 'b'], $graph->move('a', $root)->siblings($root));
+        $this->assertSame(['b', 'a'], $graph->append('a', $root)->siblings($root));
+    }
+
     public function test_current_sibling_versions_and_container_identity_change_the_revision(): void
     {
         $graph = $this->graph(['a' => [null, null], 'b' => [null, 'private']]);

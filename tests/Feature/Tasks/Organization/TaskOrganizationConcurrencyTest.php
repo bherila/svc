@@ -68,7 +68,14 @@ final class TaskOrganizationConcurrencyTest extends TestCase
         }
     }
 
-    public function test_new_company_portal_membership_blocks_replay_even_when_preflight_holds_an_old_snapshot(): void
+    public static function agentPublication(): iterable
+    {
+        yield 'fresh write' => [false];
+        yield 'receipt replay' => [true];
+    }
+
+    #[DataProvider('agentPublication')]
+    public function test_new_company_portal_membership_blocks_publication_even_when_preflight_holds_an_old_snapshot(bool $replay): void
     {
         $original = $this->bootRace();
         try {
@@ -76,7 +83,9 @@ final class TaskOrganizationConcurrencyTest extends TestCase
             $action = app(TaskOrganizationAction::class);
             $writes = app(AgentTaskOrganizationMutationAction::class);
             $input = ['name' => 'Synthetic replay list', 'expected_graph_version' => $action->inspect($owner, $workspace, $project->public_id)->graphVersion()];
-            $writes->execute($owner, $workspace, 'synthetic-org-race-client', 'synthetic-org-replay', $project->public_id, 'lists.create', $input);
+            if ($replay) {
+                $writes->execute($owner, $workspace, 'synthetic-org-race-client', 'synthetic-org-replay', $project->public_id, 'lists.create', $input);
+            }
             DB::transaction(function () use ($workspace, $project, $owner, $writes, $input): void {
                 $this->assertSame(0, ClientCompanyMembership::query()->count());
                 $worker = $this->worker($workspace, $project, $owner, 'portal', [], $owner);
@@ -90,9 +99,9 @@ final class TaskOrganizationConcurrencyTest extends TestCase
                     $this->assertSame(403, $exception->getStatusCode());
                 }
             });
-            $this->assertDatabaseCount('client_task_lists', 1);
-            $this->assertDatabaseCount('client_task_graph_states', 1);
-            $this->assertDatabaseCount('agent_mutation_receipts', 1);
+            $this->assertDatabaseCount('client_task_lists', $replay ? 1 : 0);
+            $this->assertDatabaseCount('client_task_graph_states', $replay ? 1 : 0);
+            $this->assertDatabaseCount('agent_mutation_receipts', $replay ? 1 : 0);
         } finally {
             config(['database.default' => $original]);
         }

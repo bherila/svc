@@ -4,8 +4,8 @@ namespace App\Console\Commands\Tasks;
 
 use App\Console\Commands\Concerns\FindsUserByPublicId;
 use App\Console\Commands\MutationCommand;
+use App\Http\Requests\TaskOrganizationInput;
 use App\Services\AgentApi\AgentTaskOrganizationMutationAction;
-use App\Services\Tasks\Organization\TaskContainer;
 use App\Services\Tasks\Organization\TaskOrganizationAction;
 use App\Services\Tasks\Organization\TaskOrganizationGate;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -52,7 +52,7 @@ final class TaskOrganizationCommand extends MutationCommand
                 ['project' => ['required', 'uuid'], 'parent' => ['nullable', 'uuid'], 'list' => ['nullable', 'uuid'],
                     'key' => [$operation === 'get' ? 'nullable' : 'required', 'string', 'max:255']])->validate();
             if ($operation === 'get') {
-                $container = $this->option('container') ? new TaskContainer($options['parent'], $options['list']) : null;
+                $container = TaskOrganizationInput::container(['container' => $this->option('container'), 'parent_id' => $options['parent'], 'list_id' => $options['list']]);
                 $result = ['data' => $organization->snapshot($actor, $workspace, $options['project'], $container)->data];
             } else {
                 $input = $this->option('input');

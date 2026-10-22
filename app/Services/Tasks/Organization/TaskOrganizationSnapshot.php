@@ -19,7 +19,7 @@ final readonly class TaskOrganizationSnapshot
         }
         $tree = [];
         foreach ($graph->tasks as $id => $task) {
-            $tree[] = ['id' => $id, 'parent_id' => $task['parent'], 'list_id' => $task['list'], 'version' => $task['version']];
+            $tree[] = ['id' => $id, 'parent_id' => $task['parent'], 'list_id' => $task['list'], 'position' => $task['position'], 'version' => $task['version']];
         }
         $siblings = null;
         if ($container !== null) {

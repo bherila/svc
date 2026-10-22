@@ -14,6 +14,20 @@ use Tests\TestCase;
 #[CoversClass(ExplicitConfirmation::class)]
 final class TaskOrganizationCommandTest extends TestCase
 {
+    public function test_optional_list_name_preserves_omission_but_rejects_raw_cli_empty_whitespace_and_null(): void
+    {
+        $input = ['list_id' => '00000000-0000-4000-8000-000000000001', 'expected_version' => str_repeat('a', 64), 'expected_graph_version' => str_repeat('b', 64)];
+        $this->assertSame($input, TaskOrganizationCommand::fromInput('lists.update', $input)->data);
+        foreach (['', '   ', null] as $name) {
+            try {
+                TaskOrganizationCommand::fromInput('lists.update', $input + ['name' => $name]);
+                $this->fail('An empty/blank/null list name was accepted.');
+            } catch (ValidationException $exception) {
+                $this->assertArrayHasKey('name', $exception->errors());
+            }
+        }
+    }
+
     public function test_mutation_versions_and_complete_nullable_container_identity_are_required(): void
     {
         $version = str_repeat('a', 64);
