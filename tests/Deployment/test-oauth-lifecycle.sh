@@ -14,7 +14,9 @@ export FIXTURE_ACCOUNT="$fixture/account" FIXTURE_CRONTAB="$fixture/crontab"
 mkdir -p "$FIXTURE_ACCOUNT/.config/svc" "$fixture/bin"
 cat >"$fixture/bin/php" <<'MOCK'
 #!/usr/bin/env bash
-case "$*" in *check-oauth-config.php*) exec "$FIXTURE_REAL_PHP" "$@" ;; esac
+for argument in "$@"; do
+    [ "$argument" != -- ] || exec "$FIXTURE_REAL_PHP" "$@"
+done
 while [ "${1:-}" = -d ]; do shift 2; done
 [ "${1:-}" != artisan ] || shift
 case ${1:-} in
@@ -67,8 +69,8 @@ begin() {
     # Match the workflow's default policy; maintenance is exercised separately below.
     atomic begin svc-laravel "$release" "$commit" 7200 0 "${2:-rollback}" "$commit" stable-directory storage >/dev/null
     candidate="$FIXTURE_ACCOUNT/.deployments/svc-laravel/releases/$release"
-    mkdir -p "$candidate/"{scripts/deploy,vendor,bootstrap,storage/framework,public}
-    cp "$repository/scripts/deploy/check-oauth-config.php" "$candidate/scripts/deploy/"
+    mkdir -p "$candidate/"{vendor,bootstrap,storage/framework,public}
+    test ! -e "$candidate/scripts" || fail 'fixture uploaded scripts outside the deployment payload'
     ln -s "$repository/vendor/autoload.php" "$candidate/vendor/autoload.php"
     touch "$candidate/artisan" "$candidate/bootstrap/app.php"
     cp "$config" "$candidate/.env"

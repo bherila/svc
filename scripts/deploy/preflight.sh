@@ -75,10 +75,47 @@ require_private_file "$key_root/oauth-public.key" oauth-public.key
 # Both the incoming configuration and the currently served endpoint must be ready.
 # The action then owns the whole pause/resume via maintenance and Artisan drain.
 # Do not source deployment.env: it contains private values and is not shell code.
-"$php_binary" -d display_errors=0 -d log_errors=0 \
-    "$account_root/$candidate_dir/scripts/deploy/check-oauth-config.php" \
+# The hook itself is streamed over SSH; scripts/ is not in the default upload.
+# Feed the checker to PHP separately so it needs only the uploaded autoloader.
+if ! "$php_binary" -d display_errors=0 -d log_errors=0 -- \
     "$account_root/$candidate_dir/vendor/autoload.php" "$account_root/.config/svc/deployment.env" \
-    >/dev/null 2>&1 || fail 'incoming OAuth issuance is disabled or its configuration could not be verified; live service was not changed'
+    >/dev/null 2>&1 <<'SVC_OAUTH_CONFIG'
+<?php
+use Dotenv\Parser\Parser;
+
+if (count($argv) !== 3) {
+    exit(2);
+}
+
+$status = 1;
+ob_start();
+try {
+    require $argv[1];
+    $contents = file_get_contents($argv[2], false, null, 0, 1048577);
+    if (is_string($contents) && strlen($contents) <= 1048576) {
+        $enabled = null;
+        $seen = 0;
+        foreach ((new Parser)->parse($contents) as $entry) {
+            if ($entry->getName() === 'AGENT_API_OAUTH_SERVER_ENABLED') {
+                $seen++;
+                $value = $entry->getValue()->getOrElse(null);
+                if ($value !== null && $value->getVars() === []) {
+                    $enabled = $value->getChars();
+                }
+            }
+        }
+        // Omitted, duplicate, interpolated and ambiguous flags fail closed.
+        $status = $seen === 1 && is_string($enabled) && in_array(strtolower($enabled), ['true', '(true)', '1'], true) ? 0 : 1;
+    }
+} catch (Throwable) {
+    // Dotenv errors may contain private values; never relay them.
+}
+ob_end_clean();
+exit($status);
+SVC_OAUTH_CONFIG
+then
+    fail 'incoming OAuth issuance is disabled or its configuration could not be verified; live service was not changed'
+fi
 if ! oauth_response=$(curl --silent --connect-timeout 5 --max-time 10 \
     --output /dev/null --write-out '%{http_code} %{content_type}' \
     https://svc.bherila.net/.well-known/oauth-authorization-server); then
