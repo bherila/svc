@@ -234,12 +234,29 @@ try {
                                   child.getBoundingClientRect().width > 0,
                           )
                         : [];
+                    const tabs = document.querySelector(
+                        'nav[aria-label="Client sections"]',
+                    );
+                    const selected = tabs?.querySelector(
+                        '[aria-current="page"]',
+                    );
+                    const tabsBounds = tabs?.getBoundingClientRect();
+                    const selectedBounds = selected?.getBoundingClientRect();
+                    const selectedTabVisible =
+                        !tabsBounds || tabsBounds.width === 0
+                            ? true
+                            : Boolean(
+                                  selectedBounds &&
+                                  selectedBounds.left >= tabsBounds.left - 1 &&
+                                  selectedBounds.right <= tabsBounds.right + 1,
+                              );
 
                     return {
                         documentWidth: document.documentElement.scrollWidth,
                         viewport: innerWidth,
                         navbarHeight:
                             row?.getBoundingClientRect().height ?? null,
+                        selectedTabVisible,
                         centers: children.map((child) => {
                             const rect = child.getBoundingClientRect();
 
@@ -250,6 +267,7 @@ try {
                 const passes =
                     metrics.documentWidth <= width &&
                     metrics.navbarHeight === 48 &&
+                    metrics.selectedTabVisible &&
                     metrics.centers.length > 0 &&
                     Math.max(...metrics.centers) -
                         Math.min(...metrics.centers) <=
@@ -264,7 +282,7 @@ try {
 
                 if (!passes) {
                     failures.push(
-                        `${state}/${width}: document overflow or navbar wrapped.`,
+                        `${state}/${width}: document overflow, navbar wrapped or selected tab clipped.`,
                     );
                 }
             }
@@ -314,6 +332,34 @@ try {
             await capture('archive-list-dialog');
             await page.keyboard.press('Escape');
             await expect(page.getByRole('dialog')).toHaveCount(0);
+            const staffResponse = page.waitForResponse((response) => {
+                const actual = new URL(response.url());
+                const expected = new URL(
+                    fixture.advisory_assignees_page,
+                    origin,
+                );
+
+                return (
+                    actual.origin === expected.origin &&
+                    actual.pathname === expected.pathname &&
+                    actual.searchParams.get('q') === ''
+                );
+            });
+            await page.goto(new URL(fixture.advisory_task_page, origin).href);
+            expect((await staffResponse).status()).toBe(200);
+            await page
+                .getByRole('combobox', { name: 'Status', exact: true })
+                .click();
+            await page
+                .getByRole('option', { name: 'Completed', exact: true })
+                .click();
+            await expect(
+                page.getByText(
+                    'This task has unfinished subtasks. Completing it leaves those subtasks unchanged.',
+                    { exact: true },
+                ),
+            ).toBeVisible();
+            await capture('completion-advisory');
             await context.close();
         }
     }
