@@ -120,6 +120,19 @@ are not touched; revoke those by name with `svc:auth:revoke-token` (see
 
 ## Recovery and rollback
 
+Production deploys use a dedicated cPanel account and an account-specific SSH key.
+The stable application directory is `~/svc-laravel`; `~/public_html` points to its
+`public` directory. That primary webroot is provisioned once outside the release
+action; stable-directory activation preserves its target without replacing it.
+Account-specific configuration is stored under `~/.config/svc`.
+Absolute runtime paths and database ownership must be verified when moving accounts;
+preserve application and OAuth keys rather than regenerating them.
+
+`retain-releases: '0'` keeps prior code during the deployment and any recovery,
+then removes inactive code once finalization proves the selected application is
+serving. Incomplete transactions and persistent storage are preserved. To roll back
+after a completed deployment, redeploy a previously verified source commit.
+
 1. Confirm the affected capability's feature flag remains false while the
    incident is investigated.
 2. Reproduce only with synthetic `.test` data and a short-lived test OAuth
@@ -216,8 +229,9 @@ OAuth server metadata for up to 300 seconds before issuing any smoke token.
 The coordinator re-enables issuance in the server-held deployment environment
 and the selected release, and rebuilds its configuration cache. Verification
 then runs the normal authenticated MCP smoke and revokes its credentials.
-A timeout leaves the deployment failed under its existing maintenance policy;
-no smoke check is skipped. Late unregistered old-process grants require fresh
+A timeout fails the deployment and restores the retained prior release and scheduler
+entries through `failure-policy: rollback`; no smoke check is skipped. Shared data and
+applied migrations remain intact, so migrations must preserve prior-code compatibility. Late unregistered old-process grants require fresh
 authorization. Check the website integration and any affected clients after
 issuance is re-enabled.
 
