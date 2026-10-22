@@ -25,8 +25,10 @@ $workspace = Workspace::query()->whereKey($input['workspace'])->firstOrFail();
 $project = ClientProject::query()->where('workspace_id', $workspace->id)->whereKey($input['project'])->firstOrFail();
 $owner = User::query()->whereKey($input['owner'])->firstOrFail();
 $actor = User::query()->whereKey($input['actor'])->firstOrFail();
-if ($input['operation'] === 'portal_granted') {
-    $company = ClientCompany::query()->where('workspace_id', $workspace->id)->whereKey($project->client_company_id)->firstOrFail();
+if (in_array($input['operation'], ['portal_granted', 'portal_granted_new_company'], true)) {
+    $company = $input['operation'] === 'portal_granted_new_company'
+        ? ClientCompany::query()->create(['workspace_id' => $workspace->id, 'name' => 'Synthetic new portal company', 'slug' => 'synthetic-new-portal-company'])
+        : ClientCompany::query()->where('workspace_id', $workspace->id)->whereKey($project->client_company_id)->firstOrFail();
     app(WorkspaceAccess::class)->grantPortal(AccessMutationContext::user($owner), $company, $actor, PortalAccessScope::Company);
 } elseif ($input['operation'] === 'staff_demoted') {
     app(WorkspaceAccess::class)->changeStaffRole(AccessMutationContext::user($owner), $workspace, $actor, StaffRole::Member);

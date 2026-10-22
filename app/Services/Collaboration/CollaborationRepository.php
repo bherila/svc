@@ -74,8 +74,9 @@ final class CollaborationRepository
         $staff = WorkspaceMembership::query()->where('workspace_id', $workspace->id)->where('user_id', $actor->id)->tap(Locks::forShare())->first();
         $grant = $project === null ? null : ClientProjectMembership::query()->where('workspace_id', $workspace->id)
             ->where('client_project_id', $project->id)->where('user_id', $actor->id)->tap(Locks::forShare())->first();
+        // Read current membership rows directly; an ordinary company subquery
+        // could consume an older outer RR snapshot. The composite FK binds tenant lineage.
         $portal = ClientCompanyMembership::query()->where('workspace_id', $workspace->id)->where('user_id', $actor->id)
-            ->whereHas('clientCompany', fn (Builder $query) => $query->where('workspace_id', $workspace->id))
             ->orderBy('id')->tap(Locks::forShare())->get();
 
         return new CollaborationAccessFacts($staff?->role, $grant?->role, $project === null, $portal->isNotEmpty());

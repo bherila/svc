@@ -34,6 +34,7 @@ final class CollaborationSnapshotConcurrencyTest extends TestCase
         yield 'comment author loses access' => ['project_demoted', 'comment'];
         yield 'receipt replay loses authority' => ['project_demoted', 'replay'];
         yield 'agent gains portal identity' => ['portal_granted', 'topic'];
+        yield 'agent gains portal identity in a newly created company' => ['portal_granted_new_company', 'topic'];
     }
 
     #[DataProvider('interleavings')]
