@@ -179,11 +179,24 @@ try {
     expect(wrongHost).toBe(403);
 
     if (process.argv.includes('--probe')) {
+        const assetVersion = spawnSync(
+            'php',
+            ['-r', "echo hash_file('xxh128', 'public/build/manifest.json');"],
+            { cwd: root, env, encoding: 'utf8' },
+        );
+
+        if (assetVersion.status !== 0 || !assetVersion.stdout.trim()) {
+            throw new Error(
+                'Cannot determine the actual Inertia asset version.',
+            );
+        }
+
         for (const href of Object.values(fixture.pages)) {
             const response = await fetch(new URL(href, origin), {
                 headers: {
                     ...headers,
                     'X-Inertia': 'true',
+                    'X-Inertia-Version': assetVersion.stdout.trim(),
                     Accept: 'application/json',
                 },
             });
