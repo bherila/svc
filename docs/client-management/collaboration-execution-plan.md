@@ -15,9 +15,17 @@ native operator routes and CLI use their current staff permissions.
 
 Transport ceilings remain bounded: MCP request 1 MiB, capability result 2 MiB,
 and complete response 4 MiB. REST/MCP comment lists default to one row, with a
-configurable limit of 1–30; native UI pages retain 30. Private CLI JSON input is
+configurable maximum of 1–30. Agent REST/MCP and native CLI comment lists use
+opaque ascending cursors bound to workspace, company, parent, actor and audience.
+Serialized byte bounds can shorten a page; clients follow `meta.next_cursor` or
+`next_href` until null, with `previous_href` always null. Offset/focus parameters
+are reserved for native thread pages, which retain 30 rows and focused links. Private CLI JSON input is
 limited to 1 MiB. Focused checks cover a full 50,000-character Unicode body and
 current locked authority under real MariaDB repeatable-read snapshots.
+
+For CLI continuation, `svc:collaboration comments.list` takes the parent UUID in
+private JSON `id`, its `parent_type`, and optional `payload.limit` and
+`payload.cursor`. It returns the same opaque `meta.next_cursor` as REST/MCP.
 
 This checkpoint does not complete the later task graph or attachment-sharing
 slices below. Add their shared readers and parent guards before their writers;
@@ -57,16 +65,16 @@ them into active tasks or collectible invoices nor reactivates people or grants.
 The checkbox answers whether content may be disclosed to an authorized client.
 It does not create membership, add a project grant, permit editing, or send mail.
 
-| Content | Client disclosure rule |
-|---|---|
-| Existing project/task/proposal/agreement/invoice/time | Preserve current behavior and documented lifecycle rules |
-| Project note or discussion | Current company/project grant, visible project, own checkbox |
-| Company-wide note or discussion | Current company-wide portal grant and own checkbox; one project grant is insufficient |
-| Task comment | Current grant, visible project, task and its task/list ancestors, own checkbox |
-| Topic comment | Current grant, visible topic and its applicable ancestors, own checkbox |
-| New attachment | Same parent authorization plus its own checkbox when file-level sharing is introduced |
-| Task lists and subtasks | A private containing list or task ancestor hides its descendants from clients |
-| Labels and assignee metadata | Present only fields authorized for the audience; never disclose a hidden related record's title or identity |
+| Content                                               | Client disclosure rule                                                                                      |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Existing project/task/proposal/agreement/invoice/time | Preserve current behavior and documented lifecycle rules                                                    |
+| Project note or discussion                            | Current company/project grant, visible project, own checkbox                                                |
+| Company-wide note or discussion                       | Current company-wide portal grant and own checkbox; one project grant is insufficient                       |
+| Task comment                                          | Current grant, visible project, task and its task/list ancestors, own checkbox                              |
+| Topic comment                                         | Current grant, visible topic and its applicable ancestors, own checkbox                                     |
+| New attachment                                        | Same parent authorization plus its own checkbox when file-level sharing is introduced                       |
+| Task lists and subtasks                               | A private containing list or task ancestor hides its descendants from clients                               |
+| Labels and assignee metadata                          | Present only fields authorized for the audience; never disclose a hidden related record's title or identity |
 
 New notes, discussions, staff comments and ordinary task creation default to
 internal. Omitted visibility on update means unchanged. Existing project creation,
@@ -246,12 +254,12 @@ retries and retain delivery failures without rolling back committed content.
 All initial worktrees start from the planning baseline. Rebase dependent slices
 onto reviewed prerequisite commits; merge in dependency order, not completion order.
 
-| Lane | Worktree / branch | Owned implementation |
-|---|---|---|
-| Coordinator | `svc-collaboration-plan` / `plan/client-collaboration-execution` | Plan, shared routes/catalog/scopes, generated artifacts, integration, contacts parity initially |
-| Visibility/files | `svc-client-visibility` / `feat/client-visibility` | Parent authorization, capability filtering, attachment resolver/controller/storage, focused permission tests |
-| Tasks | `svc-task-management` / `feat/task-management` | Task DTO/repository/action/model/migrations, organization, task components and focused tests |
-| Collaboration | `svc-project-collaboration` / `feat/project-collaboration` | New topic/comment models/migrations/actions/controllers/components and focused tests |
+| Lane             | Worktree / branch                                                | Owned implementation                                                                                         |
+| ---------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Coordinator      | `svc-collaboration-plan` / `plan/client-collaboration-execution` | Plan, shared routes/catalog/scopes, generated artifacts, integration, contacts parity initially              |
+| Visibility/files | `svc-client-visibility` / `feat/client-visibility`               | Parent authorization, capability filtering, attachment resolver/controller/storage, focused permission tests |
+| Tasks            | `svc-task-management` / `feat/task-management`                   | Task DTO/repository/action/model/migrations, organization, task components and focused tests                 |
+| Collaboration    | `svc-project-collaboration` / `feat/project-collaboration`       | New topic/comment models/migrations/actions/controllers/components and focused tests                         |
 
 Reserve `AgentReadService`, directory/portal controller integration,
 `WorkspaceSearch`, activity registration, lock resource registry, tenant reference

@@ -37,9 +37,9 @@ final class CollaborationTransportService
     public function read(User|AgentPrincipal $actor, Workspace $workspace, string $companyId, string $operation, ?string $id, ?string $parentType, array $query, CollaborationAudience $audience): array
     {
         $company = $this->records->company($workspace, $companyId);
-        /** @var array{kind?:string|null,project_id?:string|null,page?:int,comments_page?:int,comment?:string|null,limit?:int} $data */
+        /** @var array{kind?:string|null,project_id?:string|null,page?:int,cursor?:string|null,limit?:int} $data */
         $data = Validator::make($query, ['kind' => ['nullable', 'in:note,discussion'], 'project_id' => ['nullable', 'uuid'],
-            'page' => ['sometimes', 'integer', 'min:1', 'max:100000'], 'comments_page' => ['sometimes', 'integer', 'min:1', 'max:100000'], 'comment' => ['nullable', 'uuid'], 'limit' => ['sometimes', 'integer', 'min:1', 'max:30']])->validate();
+            'page' => ['sometimes', 'integer', 'min:1', 'max:100000'], 'comments_page' => ['missing'], 'comment' => ['missing'], 'cursor' => ['sometimes', 'nullable', 'string', 'max:4096'], 'limit' => ['sometimes', 'integer', 'min:1', 'max:30']])->validate();
         if ($operation === 'topics.list') {
             $result = $this->read->listing($actor, $workspace, $company, $audience, isset($data['kind']) ? TopicKind::from($data['kind']) : null, $data['project_id'] ?? null, (int) ($data['page'] ?? 1));
 
@@ -53,16 +53,18 @@ final class CollaborationTransportService
         }
         abort_unless(is_string($id), 422);
         if ($operation === 'topics.get') {
-            $result = $this->read->detail($actor, $workspace, $company, $id, $audience);
+            $result = $this->read->detail($actor, $workspace, $company, $id, $audience, includeThread: false);
 
             return ['data' => $this->content($result['topic'])];
         }
         abort_unless($operation === 'comments.list' && in_array($parentType, ['task', 'topic'], true), 422);
-        $result = $this->read->thread($actor, $workspace, $company, $parentType, $id, $audience, (int) ($data['comments_page'] ?? 1), $data['comment'] ?? null, (int) ($data['limit'] ?? 1));
+        $result = $this->read->commentPage($actor, $workspace, $company, $parentType, $id, $audience, (int) ($data['limit'] ?? 1), $data['cursor'] ?? null);
+        $cursor = $result['meta']['next_cursor'];
 
-        return ['data' => array_map($this->content(...), $result['comments']), 'parent_version' => $result['parent_version'],
-            'next_href' => $this->pageUrl('comments.index', $workspace, $company, $result['next_href'], $data, ['parentType' => $parentType, 'parentPublicId' => $id]),
-            'previous_href' => $this->pageUrl('comments.index', $workspace, $company, $result['previous_href'], $data, ['parentType' => $parentType, 'parentPublicId' => $id])];
+        return ['data' => array_map($this->content(...), $result['data']), 'parent_version' => $result['parent_version'], 'meta' => $result['meta'],
+            'next_href' => $cursor === null ? null : route('agent-api.v1.collaboration.comments.index', ['workspace' => $workspace, 'client' => $company->public_id,
+                'parentType' => $parentType, 'parentPublicId' => $id, 'limit' => $data['limit'] ?? 1, 'cursor' => $cursor], absolute: false),
+            'previous_href' => null];
     }
 
     /** Agent requests derive their audience; no body field can choose the operator view.
@@ -114,7 +116,7 @@ final class CollaborationTransportService
                 $this->actions->assertReplayAllowed($actor, $workspace, $company, $name, $ids[0], $payload, $origin);
             });
         if (str_starts_with($operation, 'topics.')) {
-            return ['data' => $this->content($this->read->detail($actor, $workspace, $company, $ids[0], CollaborationAudience::Internal)['topic'])];
+            return ['data' => $this->content($this->read->detail($actor, $workspace, $company, $ids[0], CollaborationAudience::Internal, includeThread: false)['topic'])];
         }
         $comment = $this->records->comment($workspace, $company, $ids[0]);
         $parent = $this->records->commentParent($workspace, $company, $comment);

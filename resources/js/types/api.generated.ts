@@ -565,7 +565,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Native collaboration uses current tenant and parent authorization. Portal and dual identities are read-only and receive only disclosed ancestors. Staff authors edit their own text; managers publish and moderate. Writes require the global and collaboration cutovers; versioned writes also require collaboration:read. All writes use idempotency receipts and current locked authority, including on replay. Deletion creates a tombstone and requires confirm true. No imported history, grants, billing amounts or email are changed. */
+        /** @description Comment lists use ascending opaque cursor pagination; limit is a maximum row count and serialized byte bounds may shorten a page. Follow meta.next_cursor or next_href until null; previous_href is always null. REST, MCP and CLI share this contract; native thread pages retain focused comment links. Native collaboration uses current tenant and parent authorization. Portal and dual identities are read-only and receive only disclosed ancestors. Staff authors edit their own text; managers publish and moderate. Writes require the global and collaboration cutovers; versioned writes also require collaboration:read. All writes use idempotency receipts and current locked authority, including on replay. Deletion creates a tombstone and requires confirm true. No imported history, grants, billing amounts or email are changed. */
         get: operations['collaboration.comments.list'];
         put?: never;
         /** @description Native collaboration uses current tenant and parent authorization. Portal and dual identities are read-only and receive only disclosed ancestors. Staff authors edit their own text; managers publish and moderate. Writes require the global and collaboration cutovers; versioned writes also require collaboration:read. All writes use idempotency receipts and current locked authority, including on replay. Deletion creates a tombstone and requires confirm true. No imported history, grants, billing amounts or email are changed. */
@@ -2362,6 +2362,9 @@ export interface components {
             parent_version: string;
             next_href: string | null;
             previous_href: string | null;
+            meta: {
+                next_cursor: string | null;
+            };
         };
         CollaborationCommentResponse: {
             data: components['schemas']['CollaborationComment'];
@@ -7067,8 +7070,7 @@ export interface operations {
         parameters: {
             query?: {
                 limit?: number;
-                comments_page?: number;
-                comment?: string;
+                cursor?: string;
             };
             header?: never;
             path: {

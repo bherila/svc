@@ -11,6 +11,8 @@ use App\Models\ClientTask;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Support\AgentApi\AgentApiVersion;
+use App\Support\AgentApi\AgentPageBudget;
+use App\Support\AgentApi\CursorPage;
 
 final class CollaborationReadService
 {
@@ -63,7 +65,7 @@ final class CollaborationReadService
     }
 
     /** @return array<string, mixed> */
-    public function detail(User|AgentPrincipal $actor, Workspace $workspace, ClientCompany $company, string $id, CollaborationAudience $audience, int $page = 1, ?string $focusId = null): array
+    public function detail(User|AgentPrincipal $actor, Workspace $workspace, ClientCompany $company, string $id, CollaborationAudience $audience, int $page = 1, ?string $focusId = null, bool $includeThread = true): array
     {
         $topic = $this->records->topic($workspace, $company, $id);
         abort_unless($this->access->canViewParent($actor, $workspace, $company, $topic, $audience), 404);
@@ -83,7 +85,7 @@ final class CollaborationReadService
                 'update_href' => $this->access->canEditTopic($actor, $workspace, $company, $topic, $audience) ? $this->url('update', $workspace, $company, $audience, ['topic' => $topic->public_id]) : null,
                 'visibility_update_href' => $publisher && ! $deleted ? $this->url('update', $workspace, $company, $audience, ['topic' => $topic->public_id]) : null,
                 'delete_href' => $publisher && ! $deleted ? $this->url('destroy', $workspace, $company, $audience, ['topic' => $topic->public_id]) : null],
-            'thread' => $deleted ? null : $this->thread($actor, $workspace, $company, 'topic', $id, $audience, $page, $focusId)];
+            'thread' => $deleted || ! $includeThread ? null : $this->thread($actor, $workspace, $company, 'topic', $id, $audience, $page, $focusId)];
     }
 
     /** Shared task/topic thread; task pages may embed this DTO without extra route assumptions.
@@ -116,22 +118,55 @@ final class CollaborationReadService
             'parent_version' => AgentApiVersion::for($parent), 'href' => $href,
             'store_href' => $canComment ? $this->url('comments.store', $workspace, $company, $audience, ['parentType' => $type, 'parentPublicId' => $id]) : null,
             'visibility_store_href' => $publisher && $canComment ? $this->url('comments.store', $workspace, $company, $audience, ['parentType' => $type, 'parentPublicId' => $id]) : null,
-            'comments' => array_map(function (ClientComment $comment) use ($workspace, $company, $audience, $canComment, $publisher, $actor, $href, $effective): array {
-                $live = $comment->deleted_at === null;
-                $author = $comment->author_user_id === $actor->id && $canComment;
-                $params = ['comment' => $comment->public_id];
-
-                return ['id' => $comment->public_id, 'body' => $live ? $comment->body : null, 'author_name' => $comment->author_name,
-                    'created_at' => $comment->created_at?->toISOString(), 'edited_at' => $comment->edited_at?->toISOString(), 'deleted' => ! $live,
-                    'version' => AgentApiVersion::for($comment), 'href' => $href.'?comment='.$comment->public_id.'#comment-'.$comment->public_id,
-                    'is_visible_to_client' => $audience === CollaborationAudience::Internal ? $comment->is_visible_to_client : null,
-                    'effective_visible_to_client' => $audience === CollaborationAudience::Internal ? $effective && $comment->is_visible_to_client && $live : null,
-                    'update_href' => $live && $author ? $this->url('comments.update', $workspace, $company, $audience, $params) : null,
-                    'visibility_update_href' => $live && $publisher ? $this->url('comments.update', $workspace, $company, $audience, $params) : null,
-                    'delete_href' => $live && ($author || $publisher) ? $this->url('comments.destroy', $workspace, $company, $audience, $params) : null];
-            }, $rows->items()),
+            'comments' => array_map(fn (ClientComment $comment): array => $this->presentComment($comment, $workspace, $company, $audience, $actor, $canComment, $publisher, $href, $effective), $rows->items()),
             'next_href' => $rows->hasMorePages() ? $href.'?comments_page='.($page + 1) : null,
             'previous_href' => $page > 1 ? $href.'?comments_page='.($page - 1) : null];
+    }
+
+    /** Authorized Agent/CLI comments in stable ascending order; byte bounds never skip unreturned rows.
+     * @return array{data:list<array<string,mixed>>,meta:array{next_cursor:?string},parent_version:string}
+     */
+    public function commentPage(User|AgentPrincipal $actor, Workspace $workspace, ClientCompany $company, string $type, string $id, CollaborationAudience $audience, int $limit, ?string $cursor): array
+    {
+        abort_unless($limit >= 1 && $limit <= 30, 422);
+        $parent = $this->records->parent($workspace, $company, $type, $id);
+        abort_unless($this->access->canViewParent($actor, $workspace, $company, $parent, $audience), 404);
+        abort_if($parent instanceof ClientCollaborationTopic && $parent->deleted_at !== null, 404);
+        $project = $parent instanceof ClientTask ? $parent->project : $this->records->topicProject($workspace, $company, $parent);
+        $publisher = $this->access->canPublish($actor, $workspace, $company, $project, $audience);
+        $canComment = $this->access->canComment($actor, $workspace, $company, $parent, $audience);
+        $query = $this->records->comments($workspace, $parent);
+        if ($audience === CollaborationAudience::Portal) {
+            $query->where('is_visible_to_client', true);
+        }
+        $href = $parent instanceof ClientCollaborationTopic
+            ? $this->url('show', $workspace, $company, $audience, ['topic' => $id])
+            : $this->url('comments.index', $workspace, $company, $audience, ['parentType' => $type, 'parentPublicId' => $id]);
+        $effective = $this->access->effectiveVisible($workspace, $company, $parent);
+        $key = implode(':', ['collaboration.comments', $company->public_id, $type, $id, $actor->public_id, $audience->value, 'id-asc-tombstones-v1']);
+        $result = CursorPage::run($workspace, $key, $limit, $cursor,
+            fn (int $take, ?int $after) => (clone $query)->when($after !== null, fn ($rows) => $rows->where('id', '>', $after))->orderBy('id')->limit($take)->get(),
+            fn (ClientComment $comment): array => $this->presentComment($comment, $workspace, $company, $audience, $actor, $canComment, $publisher, $href, $effective),
+            maxDataBytes: AgentPageBudget::dataBytes(), allowLegacyCursor: false);
+
+        return [...$result, 'parent_version' => AgentApiVersion::for($parent)];
+    }
+
+    /** @return array<string,mixed> */
+    private function presentComment(ClientComment $comment, Workspace $workspace, ClientCompany $company, CollaborationAudience $audience, User|AgentPrincipal $actor, bool $canComment, bool $publisher, string $href, bool $effective): array
+    {
+        $live = $comment->deleted_at === null;
+        $author = $comment->author_user_id === $actor->id && $canComment;
+        $params = ['comment' => $comment->public_id];
+
+        return ['id' => $comment->public_id, 'body' => $live ? $comment->body : null, 'author_name' => $comment->author_name,
+            'created_at' => $comment->created_at?->toISOString(), 'edited_at' => $comment->edited_at?->toISOString(), 'deleted' => ! $live,
+            'version' => AgentApiVersion::for($comment), 'href' => $href.'?comment='.$comment->public_id.'#comment-'.$comment->public_id,
+            'is_visible_to_client' => $audience === CollaborationAudience::Internal ? $comment->is_visible_to_client : null,
+            'effective_visible_to_client' => $audience === CollaborationAudience::Internal ? $effective && $comment->is_visible_to_client && $live : null,
+            'update_href' => $live && $author ? $this->url('comments.update', $workspace, $company, $audience, $params) : null,
+            'visibility_update_href' => $live && $publisher ? $this->url('comments.update', $workspace, $company, $audience, $params) : null,
+            'delete_href' => $live && ($author || $publisher) ? $this->url('comments.destroy', $workspace, $company, $audience, $params) : null];
     }
 
     /** @param array<string, mixed> $params */

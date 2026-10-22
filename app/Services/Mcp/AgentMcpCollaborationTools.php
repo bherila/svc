@@ -53,11 +53,10 @@ final class AgentMcpCollaborationTools
     /** @return array<string, mixed> */
     public function commentsList(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $client_id,
         #[Schema(enum: ['task', 'topic'])] string $parent_type, #[Schema(format: 'uuid')] string $parent_id,
-        #[Schema(minimum: 1, maximum: 30)] int $limit = 1, #[Schema(minimum: 1, maximum: 100000)] int $comments_page = 1,
-        #[Schema(format: 'uuid')] ?string $comment = null): array
+        #[Schema(minimum: 1, maximum: 30)] int $limit = 1, #[Schema(maxLength: 4096)] ?string $cursor = null): array
     {
         return $this->rest->call('collaboration.comments.list', ['workspace' => $workspace_id, 'client' => $client_id, 'parentType' => $parent_type, 'parentPublicId' => $parent_id],
-            query: array_filter(compact('limit', 'comments_page', 'comment'), static fn (mixed $value): bool => $value !== null));
+            query: array_filter(compact('limit', 'cursor'), static fn (mixed $value): bool => $value !== null));
     }
 
     /** @return array<string, mixed> */
