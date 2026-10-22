@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\ClientAgreement;
 use App\Models\ClientAgreementRecurringItem;
 use App\Models\ClientCompany;
+use App\Models\ClientContact;
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceAdministratorNotification;
 use App\Models\ClientInvoiceEmailDelivery;
@@ -28,6 +29,7 @@ use App\Services\Billing\DeferredBacklogReadService;
 use App\Services\Billing\InvoiceCorrectionReadService;
 use App\Services\Billing\InvoiceCorrectionService;
 use App\Services\Billing\InvoiceEmailService;
+use App\Services\Clients\CompanyProfile;
 use App\Services\Finance\FinanceReconciliationBadges;
 use App\Services\Square\Mirror\SquareInvoicePage;
 use App\Services\Square\SquareLinkRepository;
@@ -781,7 +783,22 @@ class ClientDirectoryController extends Controller
             ->map(fn (mixed $membership): ?User => $membership->user)
             ->filter(fn (?User $member): bool => $member instanceof User);
 
+        $contacts = ClientContact::query()->where('workspace_id', $workspace->id)
+            ->where('client_company_id', $clientCompany->id)
+            ->orderBy('is_archived')->orderBy('last_name')->orderBy('first_name')->get();
+
         return Inertia::render('clients/settings', [
+            'company_profile' => app(CompanyProfile::class)->read($clientCompany),
+            'profile_action' => route('clients.profile.update', [$workspace, $clientCompany]),
+            'contact_create_action' => route('contacts.store', [$workspace, $clientCompany]),
+            'contacts' => $contacts->map(fn (ClientContact $contact): array => [
+                'id' => $contact->public_id,
+                'first_name' => $contact->first_name, 'last_name' => $contact->last_name,
+                'title' => $contact->title, 'email' => $contact->email,
+                'phone' => $contact->phone, 'notes' => $contact->notes,
+                'is_archived' => $contact->is_archived, 'lock_version' => $contact->lock_version,
+                'update_action' => route('contacts.update', [$workspace, $clientCompany, $contact]),
+            ])->all(),
             'workspace' => ['id' => $workspace->public_id],
             'company' => [
                 'id' => $clientCompany->public_id,

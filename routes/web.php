@@ -1,11 +1,13 @@
 <?php
 
 use App\Http\Controllers\ClientCompanyController;
+use App\Http\Controllers\ClientContactController;
 use App\Http\Controllers\ClientDirectoryController;
 use App\Http\Controllers\ClientPortalController;
 use App\Http\Controllers\ClientProjectAccessController;
 use App\Http\Controllers\ClientProjectController;
 use App\Http\Controllers\ClientTaskController;
+use App\Http\Controllers\CompanyProfileController;
 use App\Http\Controllers\Finance\FinancePaymentLinkController;
 use App\Http\Controllers\McpSetupController;
 use App\Http\Controllers\OAuthLoginController;
@@ -132,6 +134,10 @@ Route::middleware('auth')->group(function (): void {
         Route::get('/portal/{clientCompany}/proposals/{clientProposal}', [ClientPortalController::class, 'proposal'])
             ->name('portal.proposal');
     });
+
+    Route::patch('/workspaces/{workspace}/clients/{clientCompany}/profile', [CompanyProfileController::class, 'update'])->name('clients.profile.update');
+    Route::post('/workspaces/{workspace}/clients/{clientCompany}/contacts', [ClientContactController::class, 'store'])->name('contacts.store');
+    Route::patch('/workspaces/{workspace}/clients/{clientCompany}/contacts/{clientContact}', [ClientContactController::class, 'update'])->name('contacts.update');
 
     Route::patch('/workspaces/{workspace}/clients/{clientCompany}', [ClientCompanyController::class, 'update'])
         ->name('clients.update');
