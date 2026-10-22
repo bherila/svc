@@ -4818,6 +4818,8 @@ export interface components {
                 id: string;
                 name: string;
             }[];
+            /** @description Optional internal planning advice about unfinished subtasks. Withheld from Portal and dual-identity responses and while task organization is disabled. Informational only; completion does not change subtasks. */
+            completion_advisory?: string | null;
         };
         TaskCreateRequest: {
             title: string;
