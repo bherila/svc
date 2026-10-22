@@ -2,6 +2,30 @@
 
 Planning baseline: `fa6d72a8f34af60386dfc876abc190b0404cb74a`.
 
+## Implementation checkpoint (2026-10-22)
+
+The first native collaboration slice now supplies company/project notes and
+discussions, flat comments on both topic kinds and tasks, escaped plain text,
+server authorship, optimistic versions and tombstones. Website, REST, MCP and
+native CLI share scoped actions; metadata-only activity, authorized text search,
+Notes/Discussions navigation and stable comment permalinks are integrated.
+Portal clients and dual agent identities remain read-only. Agent writes require
+the global cutover and the separate collaboration cutover, which defaults off;
+native operator routes and CLI use their current staff permissions.
+
+Transport ceilings remain bounded: MCP request 1 MiB, capability result 2 MiB,
+and complete response 4 MiB. REST/MCP comment lists default to one row, with a
+configurable limit of 1–30; native UI pages retain 30. Private CLI JSON input is
+limited to 1 MiB. Focused checks cover a full 50,000-character Unicode body and
+current locked authority under real MariaDB repeatable-read snapshots.
+
+This checkpoint does not complete the later task graph or attachment-sharing
+slices below. Add their shared readers and parent guards before their writers;
+register no topic/comment file parents until attachment authorization is
+integrated. Existing file disclosure and grants remain intact. Portal write
+opt-in remains a separate unanswered product decision, and no new client write
+grant or collaboration email delivery is inferred.
+
 ## Outcome
 
 Make SVC useful for everyday project work: assign and organize tasks, hold
