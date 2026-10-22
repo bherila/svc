@@ -84,6 +84,13 @@ export function AccountMenu({
                     </DropdownMenuGroup>
                 )}
 
+                {navigation?.history_href && (
+                    <DropdownMenuItem
+                        render={<Link href={navigation.history_href} />}
+                    >
+                        History
+                    </DropdownMenuItem>
+                )}
                 {navigation?.square_href && (
                     <DropdownMenuGroup>
                         <DropdownMenuItem asChild>

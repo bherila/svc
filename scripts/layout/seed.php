@@ -20,6 +20,8 @@ use App\Services\Billing\InvoiceLifecycleService;
 use App\Services\Billing\RecordReceivedPayment;
 use App\Services\Files\AttachmentStorageService;
 use App\Services\Finance\PaymentReconciliationService;
+use App\Services\History\HistoricalLibraryRepository;
+use App\Services\History\HistoricalRecordRepository;
 use App\Services\Square\Mirror\SquareMirrorRepository;
 use App\Services\Square\Mirror\SquareSnapshotMapper;
 use App\Services\Square\SquareLinkService;
@@ -29,6 +31,8 @@ use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Billing\BillingCadence;
 use App\Support\Billing\ReceivedPaymentData;
 use App\Support\Expenses\NewExpense;
+use App\Support\History\HistoryDocument;
+use App\Support\History\HistoryKind;
 use App\Support\Square\SquareInvoiceReference;
 use App\Support\Square\SquareMatchMethod;
 use App\Support\WorkspaceClock;
@@ -335,7 +339,35 @@ if (getenv('SVC_LAYOUT_DEFERRED_BACKLOG') === '1') {
     $backlogCreatePath = route('agent-api.v1.agreements.deferred-backlog.create', [$workspace, $backlogAgreement], absolute: false);
 }
 
+$historyRecords = app(HistoricalRecordRepository::class);
+$historySource = $historyRecords->source($workspace, 'synthetic', hash('sha256', 'synthetic-layout-history'), 'Synthetic history');
+$historyProjectRecord = $historyRecords->remember($workspace, $historySource, 'projects', '1', ['name' => 'Synthetic historical project']);
+$historyProject = app(HistoricalLibraryRepository::class)->publish($workspace, $historyProjectRecord,
+    new HistoryDocument(HistoryKind::Project, 'Synthetic historical project', 'Preserved project description'), $company);
+$historyDiscussionRecord = $historyRecords->remember($workspace, $historySource, 'discussions', '1', ['title' => 'Synthetic discussion']);
+$historyDiscussion = app(HistoricalLibraryRepository::class)->publish($workspace, $historyDiscussionRecord,
+    new HistoryDocument(HistoryKind::Discussion, str_repeat('SyntheticHistoricalDiscussion', 12), str_repeat('SyntheticHistoricalBodyWithoutBreaks', 25)."\n<script>Displayed as text only</script>",
+        str_repeat('SyntheticHistoricalAuthor', 8), '2020-03-04 12:34:56', [['label' => 'Original project', 'value' => str_repeat('SyntheticHistoricalProject', 12)]]), $company, $historyProjectRecord);
+foreach ([HistoryKind::Comment, HistoryKind::Note] as $historyKind) {
+    $historyRecord = $historyRecords->remember($workspace, $historySource, $historyKind->value.'s', '1', ['body' => 'Synthetic preserved content']);
+    app(HistoricalLibraryRepository::class)->publish($workspace, $historyRecord,
+        new HistoryDocument($historyKind, str_repeat('SyntheticHistorical'.$historyKind->label(), 12), 'Synthetic preserved content', 'Casey Example', '2020-03-05'), $company, $historyDiscussionRecord);
+}
+$historyInvoiceRecord = $historyRecords->remember($workspace, $historySource, 'invoices', '1', ['total' => '2.99', 'discount' => '0.01']);
+$historyInvoice = app(HistoricalLibraryRepository::class)->publish($workspace, $historyInvoiceRecord,
+    new HistoryDocument(HistoryKind::Invoice, 'SYNTHETIC-HISTORICAL-'.str_repeat('INVOICE', 35), 'Original invoice note', 'Casey Example', '2020-03-04', [
+        ['label' => 'Original billing name', 'value' => str_repeat('SyntheticOriginalBillTo', 12)],
+        ['label' => 'Subtotal', 'value' => 'USD 3.00'], ['label' => 'Discount', 'value' => 'USD 0.01'],
+        ['label' => 'Total', 'value' => 'USD 2.99'], ['label' => 'Paid', 'value' => 'USD 2.99'], ['label' => 'Original balance', 'value' => 'USD 0.00'],
+    ], [
+        ['label' => 'Invoice items', 'columns' => ['Description', 'Quantity', 'Unit cost', 'Original discount', 'Gross total'], 'rows' => array_fill(0, 3, [str_repeat('SyntheticHistoricalLineDescription', 16), '1.00', '1.00', '0.00400', '1.00'])],
+        ['label' => 'Payments', 'columns' => ['Method', 'Date', 'Amount'], 'rows' => [['Historical manual receipt', '2020-03-10', 'USD 2.99']]],
+    ]), $company);
+
 file_put_contents($runtime.'/fixture.json', json_encode([
+    'history_index' => route('history.index', $workspace, absolute: false),
+    'history_discussion' => route('history.show', [$workspace, $historyDiscussion], absolute: false),
+    'history_invoice' => route('history.show', [$workspace, $historyInvoice], absolute: false),
     'agreement' => $backlogAgreementPath,
     'buydown_create' => $backlogCreatePath,
     'reminder_invoice' => route('clients.invoice', [$workspace, $company, $reminderInvoice], absolute: false),

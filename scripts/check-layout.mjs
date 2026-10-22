@@ -40,6 +40,7 @@ const squareOnly = process.argv.includes('--square');
 const remindersOnly = process.argv.includes('--reminders');
 const timeOnly = process.argv.includes('--time');
 const backlogOnly = process.argv.includes('--deferred-backlog');
+const historyOnly = process.argv.includes('--history');
 const results = [];
 const failures = [];
 const serverLog = [];
@@ -280,7 +281,9 @@ try {
     for (const width of widths) {
         await page.setViewportSize({ width, height: 1000 });
 
-        for (const screen of portalOnly
+        for (const screen of historyOnly
+            ? ['history_index', 'history_discussion', 'history_invoice']
+            : portalOnly
             ? ['settings']
             : correctionOnly
               ? ['invoice_review']
@@ -398,6 +401,23 @@ try {
                         name: 'Automatically remind this client about unpaid invoices',
                     }),
                 ).toBeChecked();
+            }
+
+            if (screen === 'history_index') {
+                await expect(page.getByLabel('Search history')).toBeVisible();
+                await expect(page.getByRole('link', { name: 'SyntheticHistoricalDiscussion'.repeat(12) })).toBeVisible();
+            }
+
+            if (screen === 'history_discussion') {
+                await expect(page.getByRole('heading', { name: 'Related records' })).toBeVisible();
+                await expect(page.locator('main script')).toHaveCount(0);
+                await expect(page.getByText('<script>Displayed as text only</script>', { exact: false })).toBeVisible();
+            }
+
+            if (screen === 'history_invoice') {
+                await expect(page.getByRole('heading', { name: 'Invoice items' })).toBeVisible();
+                await expect(page.getByText('0.00400', { exact: true })).toHaveCount(3);
+                await expect(page.getByRole('button', { name: /send|charge|collect|remind/i })).toHaveCount(0);
             }
 
             if (screen === 'proposal_acceptance') {

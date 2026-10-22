@@ -71,6 +71,10 @@ final class TenantReferenceInventory
     {
         return [
             // Companies own everything below them.
+            TenantReference::enforcedBy('historical_entries', 'historical_record_id', 'historical_records', 'history_entry_record_fk'),
+            TenantReference::enforcedBy('historical_entries', 'parent_record_id', 'historical_records', 'history_entry_parent_fk'),
+            TenantReference::enforcedBy('historical_entries', 'client_company_id', 'client_companies', 'history_entry_company_fk'),
+            TenantReference::enforcedBy('historical_blobs', 'historical_entry_id', 'historical_entries', 'history_blob_entry_fk'),
             TenantReference::enforcedBy('client_contacts', 'client_company_id', 'client_companies', 'contacts_ws_company_fk'),
             TenantReference::enforcedBy('historical_records', 'historical_source_id', 'historical_sources', 'historical_records_ws_source_fk'),
             TenantReference::enforcedBy('client_company_memberships', 'client_company_id', 'client_companies', 'ccm_ws_company_fk'),

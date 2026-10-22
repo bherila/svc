@@ -61,4 +61,5 @@ export type WorkspaceNavigation = {
     mcp_setup_href: string | null;
     /** The Square mirror's explore screen, for managers where Square is connected. */
     square_href: string | null;
+    history_href?: string | null;
 };

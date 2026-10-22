@@ -110,6 +110,7 @@ final class WorkspaceNavigationFactory
             // The Square mirror's explore screen (#438): managers of the one
             // workspace Square is connected to.
             squareHref: $manages && SquareConfiguration::fromConfig()->servesWorkspace($workspace) ? route('square.explore', $workspace, absolute: false) : null,
+            historyHref: $manages ? route('history.index', $workspace, absolute: false) : null,
         );
     }
 
