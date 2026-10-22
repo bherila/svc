@@ -51,6 +51,40 @@ billing detail as text output. OAuth prune wraps the vendor's report text in
 `{ "dry_run": true|false, "exit_code": number, "report": string }`.
 Existing credential commands that already emit JSON by default keep doing so.
 
+## Business contacts
+
+Company and business-contact listings apply both a maximum row count and a
+serialized byte budget. Large profiles/notes can produce shorter pages in REST,
+MCP and CLI. Continue with `meta.next_cursor` until it is null; a short page does
+not imply completion. Full notes remain available on every returned record.
+
+`svc:clients:contacts` lists, reads, creates, updates, archives and restores
+business contacts. The acting `--actor` must currently be an owner or admin of
+the workspace. Workspace, company and contact identifiers are public UUIDs.
+These records describe people at a client company; editing them does not create
+login accounts, send invitations or change portal access.
+
+```bash
+php artisan svc:clients:contacts list WORKSPACE_UUID COMPANY_UUID --actor=USER_UUID --format=json
+php artisan svc:clients:contacts get WORKSPACE_UUID COMPANY_UUID --actor=USER_UUID --contact=CONTACT_UUID --format=json
+php artisan svc:clients:contacts create WORKSPACE_UUID COMPANY_UUID --actor=USER_UUID --input=contact.json --key=unique-retry-key --format=json
+```
+
+Mutations preview and roll back by default. Add `--apply` to persist. `--input=-`
+reads a JSON object from standard input; files and standard input accept at most
+1 MiB. Use the same body as `clients.contacts.create`, `update`, `archive` or
+`restore` in REST/MCP. Updates merge only the fields supplied, and explicit
+`null` clears an optional field. At least one name must remain. Update, archive
+and restore require the current opaque `expected_version` returned by reads;
+archive additionally requires `"confirm": true`. Keep the request and `--key`
+unchanged when retrying an applied operation. List accepts `--status=active` or
+`archived`, `--limit=1..100` and a continuation `--cursor` bound to that company
+and status. Local commands use current internal account permissions independently of
+OAuth deployment switches. REST/MCP business-contact operations treat any current
+portal identity in the workspace as the client audience, including dual-role
+accounts, and refuse those private reads and writes. Native CLI authority remains
+internal and is rechecked on each write and replay.
+
 ## Apply Payment
 
 Amounts are integer currency minor units, as in REST. The workspace is required;

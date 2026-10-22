@@ -5,9 +5,12 @@ namespace Tests\Unit\AgentApi;
 use App\Exceptions\InvalidAgentApiCursor;
 use App\Support\AgentApi\ChangeFeedCursor;
 use Illuminate\Support\Facades\Crypt;
+use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
+#[CoversClass(InvalidAgentApiCursor::class)]
+#[CoversClass(ChangeFeedCursor::class)]
 final class ChangeFeedCursorPrecisionTest extends TestCase
 {
     public function test_the_default_cursor_keeps_the_existing_second_precision_payload(): void

@@ -9,9 +9,12 @@ use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use PDOException;
+use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
+#[CoversClass(CreateWorkspace::class)]
+#[CoversClass(User::class)]
 final class CreateWorkspaceTest extends TestCase
 {
     use RefreshDatabase;

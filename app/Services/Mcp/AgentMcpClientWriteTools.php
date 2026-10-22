@@ -23,7 +23,7 @@ final class AgentMcpClientWriteTools
         RequestContext $request,
         #[Schema(maxLength: 255)] ?string $billing_email = null,
     ): array {
-        return $this->rest->call('clients.create', ['workspace' => $workspace_id], compact('name') + $this->provided($request, ['billing_email']), $idempotency_key);
+        return $this->rest->call('clients.create', ['workspace' => $workspace_id], compact('name') + $this->provided($request, array_keys(ClientMutationRules::clientCreate())), $idempotency_key);
     }
 
     /** @return array<string, mixed> */

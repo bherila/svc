@@ -32,6 +32,16 @@ skipped at workflow detection time. Their feature tests, static rules, and
 normal CI remain authoritative; this lane asks the narrower question, “do the
 fast focused tests discriminate this changed PHP behavior?”
 
+Laravel-backed Unit tests should declare the classes whose behavior they assert
+with PHPUnit's `CoversClass` attributes, including deliberately tested domain
+collaborators. Otherwise application startup can attribute an unrelated API
+catalog to hundreds of tests. Infection adds their recorded execution times and
+can skip a mutant before running it when that estimate exceeds the timeout.
+Inspect the coverage XML and JUnit timings before treating skips as hung tests;
+keep direct catalog contracts covered by fast registry tests. Do not remove
+assertions or use `CoversNothing` to conceal application behavior. The hosted
+lane preserves its summary, mutation log, coverage XML and timings for seven days.
+
 The per-mutant timeout is 120 seconds: about three times the idle cost of
 booting the Unit suite for a service-provider mutant, so a loaded hosted runner
 running one child per core does not read as a timeout. A unit mutation taking
