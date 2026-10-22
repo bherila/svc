@@ -45,7 +45,7 @@ class DeploymentSafetyTest extends TestCase
         $this->assertStringContainsString('deployment-mode: atomic', $workflow);
         $this->assertStringContainsString('persistent-paths: storage', $workflow);
         $this->assertStringContainsString("retain-releases: '0'", $workflow);
-        $this->assertStringContainsString('webroot-symlink: public_html', $workflow);
+        $this->assertStringNotContainsString('webroot-symlink:', $workflow);
         $this->assertStringContainsString('failure-policy: rollback', $workflow);
         $this->assertStringContainsString("operational-audit: 'true'", $workflow);
         $this->assertStringContainsString("runtime-audit: 'true'", $workflow);
@@ -245,7 +245,7 @@ class DeploymentSafetyTest extends TestCase
 
         $this->assertIsString($script);
         $this->assertStringContainsString('PROJECT="svc"', $script);
-        $this->assertStringContainsString('REMOTE_HOST="ssh-bwh-php"', $script);
+        $this->assertStringContainsString('REMOTE_HOST="ssh-svc"', $script);
         $this->assertStringContainsString('REMOTE_PATH="svc-laravel/storage/app/private"', $script);
         $this->assertStringContainsString('rsync "${RSYNC_OPTS[@]}" --delete --chmod=Du=rwx,Dgo=,Fu=rw,Fgo= "${REMOTE}/" "${LOCAL_PATH}/"', $script);
         $this->assertStringContainsString('find "$LOCAL_PATH" -type d -exec chmod 700 {} +', $script);
@@ -266,7 +266,7 @@ class DeploymentSafetyTest extends TestCase
 
         $this->assertIsString($script);
         $this->assertStringContainsString('PROJECT="svc"', $script);
-        $this->assertStringContainsString('REMOTE_HOST="ssh-bwh-php"', $script);
+        $this->assertStringContainsString('REMOTE_HOST="ssh-svc"', $script);
         $this->assertStringContainsString('REMOTE_PROJECT_PATH="svc-laravel"', $script);
         $this->assertStringContainsString('LOCAL_DIRECTORY="${DB_SNAPSHOT_DIR:-$X_DATA/${PROJECT}-database}"', $script);
         $this->assertStringNotContainsString('$X_DATA/$PROJECT/database', $script);
