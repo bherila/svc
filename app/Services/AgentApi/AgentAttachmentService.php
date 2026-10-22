@@ -110,6 +110,7 @@ final class AgentAttachmentService
     public function uploadUrl(User|AgentPrincipal $user, Workspace $workspace, string $type, string $id): array
     {
         $this->authorize($user, $workspace, true);
+        AttachmentUploadPolicy::defaultVisibility();
         $this->validateRecord($type, $id, true);
         $record = $this->records->resolve($workspace, $type, $id);
 

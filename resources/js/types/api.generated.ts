@@ -184,7 +184,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Staff-manager-only multipart upload, at most 50 MiB. Dual Portal identities are denied. Reader release keeps legacy inheritance and rejects visibility fields and topic/comment parents before staging. Locked parent version checked; actor/client/key receipt binds parent/version/filename/media/length/SHA256, with replay and audit. Uploading adds an immutable file and leaves parent business facts unchanged. */
+        /** @description Staff-manager-only multipart upload, at most 50 MiB. Dual Portal identities are denied. The verified persistent privacy latch chooses ordinary upload defaults; the initial reader deployment retains inheritance. Visibility fields and topic/comment parents remain rejected before staging. Locked parent version checked; actor/client/key receipt binds parent/version/filename/media/length/SHA256, with replay and audit. Uploading adds an immutable file and leaves parent business facts unchanged. */
         post: operations['attachments.upload'];
         delete?: never;
         options?: never;
@@ -954,7 +954,7 @@ export interface paths {
         /** @description Staff-manager-only available receipts, ordered by descending ID, default and maximum 100 per page. Follow meta.next_cursor; serialized byte limits may shorten a page. Includes current expense_version. Dual Portal identities are denied. */
         get: operations['expenses.receipts.list'];
         put?: never;
-        /** @description Staff-manager-only multipart upload, at most 50 MiB. Dual Portal identities are denied. Reader release keeps legacy inheritance and rejects visibility fields and topic/comment parents before staging. File digest, filename and expense version bind idempotent retries. Version is checked on locked expense and advances on upload. Prepared URLs expire after ten minutes; direct authenticated REST uploads need no preparation. Both expense write flags required. */
+        /** @description Staff-manager-only multipart upload, at most 50 MiB. Dual Portal identities are denied. The verified persistent privacy latch chooses ordinary upload defaults; the initial reader deployment retains inheritance. Visibility fields and topic/comment parents remain rejected before staging. File digest, filename and expense version bind idempotent retries. Version is checked on locked expense and advances on upload. Prepared URLs expire after ten minutes; direct authenticated REST uploads need no preparation. Both expense write flags required. */
         post: operations['expenses.receipts.upload'];
         delete?: never;
         options?: never;
@@ -5826,13 +5826,22 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Staff-manager-only multipart upload, at most 50 MiB. Dual Portal identities are denied. Reader release keeps legacy inheritance and rejects visibility fields and topic/comment parents before staging. Locked parent version checked; actor/client/key receipt binds parent/version/filename/media/length/SHA256, with replay and audit. Uploading adds an immutable file and leaves parent business facts unchanged. */
+            /** @description Staff-manager-only multipart upload, at most 50 MiB. Dual Portal identities are denied. The verified persistent privacy latch chooses ordinary upload defaults; the initial reader deployment retains inheritance. Visibility fields and topic/comment parents remain rejected before staging. Locked parent version checked; actor/client/key receipt binds parent/version/filename/media/length/SHA256, with replay and audit. Uploading adds an immutable file and leaves parent business facts unchanged. */
             201: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     'application/json': components['schemas']['AttachmentResponse'];
+                };
+            };
+            /** @description The durable upload policy cannot be verified. No bytes or recovery rows are staged; ordinary reads remain available. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
                 };
             };
             default: components['responses']['Error'];
@@ -5864,6 +5873,15 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['AttachmentUploadUrlResponse'];
+                };
+            };
+            /** @description The durable upload policy cannot be verified. No bytes or recovery rows are staged; ordinary reads remain available. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
                 };
             };
             default: components['responses']['Error'];
@@ -8945,6 +8963,15 @@ export interface operations {
                     'application/json': components['schemas']['ExpenseReceiptUploadResponse'];
                 };
             };
+            /** @description The durable upload policy cannot be verified. No bytes or recovery rows are staged; ordinary reads remain available. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
             default: components['responses']['Error'];
         };
     };
@@ -8967,6 +8994,15 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['ExpenseReceiptUploadUrlResponse'];
+                };
+            };
+            /** @description The durable upload policy cannot be verified. No bytes or recovery rows are staged; ordinary reads remain available. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
                 };
             };
             default: components['responses']['Error'];

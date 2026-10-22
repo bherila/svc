@@ -226,8 +226,8 @@ and required transport contracts work together.
       and backfill every existing lifecycle row true, including staged, deleting
       and corrupt rows. The database default must remain true while an older
       uploader binary can omit the column. Upgraded ordinary upload paths explicitly
-      write true throughout R1, regardless of later sharing-control configuration.
-      Reject a supplied
+      write true while the persistent privacy latch is absent and the optional
+      `SVC_ATTACHMENT_PRIVATE_UPLOADS_ENABLED` check remains initially false. Reject a supplied
       private flag or topic/comment upload before staging bytes or inserting a
       recovery row. Separate readable parent types from uploadable parent types;
       synthetic reader coverage does not enable uploads. No sharing controls or
@@ -239,9 +239,19 @@ and required transport contracts work together.
       and the historical blob library. Apply authorization before counts, limits,
       filenames or snippets; use the shared task ancestor/root-list predicate for
       task files and comments. A file checkbox only narrows its parent's audience.
-    - **R2 writer release:** only after the deployed reader floor is verified,
-      change the database default to **false** and make ordinary uploads explicitly
-      private in every adapter. A separate domain flag enables explicit sharing
+    - **Verified R1 private defaults:** only after the deployed reader and its
+      retained rollback artifact are verified, install/read back the private 0600
+      marker `storage/app/private/attachment-private-default.enabled`. This fixed
+      LOCAL marker lives in persistent storage and private backups. The upload
+      factory reads it at runtime; a retained marker forces private defaults even
+      with an old false config cache. Requests and rollback never remove it. The
+      optional true `SVC_ATTACHMENT_PRIVATE_UPLOADS_ENABLED` consistency check
+      refuses uploads without a marker before staging; ordinary reads stay up.
+      Check before staging and again at recovery-row creation. Publication and
+      repair preserve stored flags, and old rows stay unchanged.
+    - **R2 writer release:** after that floor and private-default setting are verified,
+      change the database default to **false**. Keep the persistent marker in
+      every release, rollback and private backup. A separate domain flag enables explicit sharing
       controls and topic/comment uploads across native, first-party, agent and CLI
       writes; existing agent cutovers do not replace it. Turning those controls off
       preserves existing private rows and keeps future ordinary uploads private.
@@ -252,14 +262,15 @@ and required transport contracts work together.
       than publishing them. Prepared uploads reauthorize their current parent and
       actor at publication, and receipt replay rechecks current authority.
 
-    - **R2 rollback floor:** R1 is only a retained-state reader floor: its
-      explicit-true uploader resumes
-      inherited new uploads if that application binary is restored. Before R2
-      private defaults are enabled, verify and retain a writer-compatible rollback
-      artifact that explicitly keeps ordinary uploads private, or independently
-      disable every upload/preparation/publication path before R1 fallback. Prove
-      all adapter defaults and rejection-before-staging behavior in a rollback
-      drill; a false database default cannot override an explicit-true uploader.
+    - **Automatic rollback contract:** the verified capable R1 artifact reads the
+      same retained marker, restores service and keeps new ordinary uploads private.
+      Prove that factory with a false old config value; do not depend on cached
+      environment/config state or leaving the service in maintenance. Record exact
+      deployed/fallback identities and marker permissions/readback, and test native,
+      generic Agent and expense upload/recovery paths. Never remove the marker or
+      restore a pre-activation storage backup while serving retained private state.
+      Marker installation and activation remain separate operator actions after
+      reader verification; no deployment or activation is part of this code.
 
     Reader compatibility tests must exercise an older uploader that omits the
     column, all upgraded upload adapters throughout R1, and zero staged

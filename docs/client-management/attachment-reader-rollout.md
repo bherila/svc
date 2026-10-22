@@ -1,44 +1,61 @@
 # Attachment reader compatibility
 
-The first release adds readers before private files or collaboration uploads can
-be written. It does not activate historical blobs or imported attachment copies.
+The first deployment adds readers while ordinary uploads retain legacy
+inheritance. Its verified artifact can later honor the persistent private-default
+latch, including during rollback. Historical blobs and imported copies stay separate.
 
 ## Release phases
 
-| Phase                                     | Database default | Upgraded ordinary uploader                        | Sharing and topic/comment uploads                          |
-| ----------------------------------------- | ---------------- | ------------------------------------------------- | ---------------------------------------------------------- |
-| Before R1                                 | No file flag     | Existing parent inheritance                       | Unavailable                                                |
-| R1 reader                                 | `true`           | Explicit `true` in the central staged-row factory | Rejected before bytes or recovery rows                     |
-| R2 writer, after verified R1 reader floor | `false`          | Explicit private, even when controls are disabled | Separate domain controls flag; private remains the default |
+| Phase                                | Database default | Ordinary uploader                                            | Sharing and topic/comment uploads          |
+| ------------------------------------ | ---------------- | ------------------------------------------------------------ | ------------------------------------------ |
+| Before R1                            | No file flag     | Existing parent inheritance                                  | Unavailable                                |
+| R1 initial reader deployment         | `true`           | Explicit inherited `true`; no latch and config check off     | Rejected before bytes or recovery rows     |
+| Verified R1, privacy latch installed | `true`           | Explicit private `false`, including with an old config cache | Still rejected before staging              |
+| R2 controls, after verified floor    | `false`          | Explicit private `false`; persistent latch retained          | Separate disabled-by-default controls gate |
 
 R1 keeps every existing lifecycle row true, including files under a currently
 private parent and staged/deleting/corrupt rows. An old uploader omitting the new
-column therefore retains existing inheritance. R1 has no switch that enables
-private or new-parent uploads. A supplied visibility field is rejected rather
-than ignored, including null or true. Existing Agent cutovers remain additional
-requirements and cannot enable these future writers.
+column therefore retains existing inheritance. The first reader deployment has
+no privacy latch and `SVC_ATTACHMENT_PRIVATE_UPLOADS_ENABLED=false`; every active
+ordinary uploader explicitly writes true. A supplied visibility field is rejected
+rather than ignored, including null or true. No setting admits topic/comment
+uploads or sharing controls. Existing Agent cutovers remain additional requirements.
 
 All R1 readers enforce a stored false value independently of writer controls.
-Once R2 writes incompatible rows, rollback below R1 is unsafe. The R1 down
+Only after the deployed reader floor and its retained rollback artifact are
+verified may the operator install the private 0600 marker at
+`storage/app/private/attachment-private-default.enabled`. This fixed LOCAL path is
+inside the deployment's persistent storage and private backup, independent of the
+attachment disk adapter. The application and rollback never create or remove it.
+The upload policy reads it at runtime, clearing stat cache, so an old `.env` or
+Laravel config cache cannot restore public defaults. A retained entry forces
+private defaults, including a broken alias; an unreadable or missing policy
+directory refuses uploads instead of guessing public.
+
+`SVC_ATTACHMENT_PRIVATE_UPLOADS_ENABLED=true` is an optional consistency check,
+not the durable authority. Without the marker it refuses upload preparation and
+publication with 503 before staging bytes or recovery rows; ordinary reads remain
+available. With the marker, all ordinary factories explicitly write false even
+when that config value is false. The policy is checked before staging and again
+when persisting the recovery row. Prepared publication, deletion and repair keep
+the stored choice; existing rows are never backfilled private during activation.
+
+Automatic rollback to the verified capable R1 artifact restores service while
+new ordinary uploads stay private, because the selected artifact reads the same
+retained marker. Before activation, prove this using an old config value of false
+and synthetic native, generic Agent and expense uploads. Check private staged
+rows, publication, repair and held URLs; record exact deployed/fallback artifact
+identities and marker permissions/readback. Local capability tests do not prove a
+production fallback has been verified. Never remove the marker or restore a
+pre-activation storage backup while serving retained private state.
+
+R2 may change the database default to false only after that floor is verified.
+Its separate sharing/new-parent controls gate starts off. Disabling those controls
+or restoring an old config cache never defeats the privacy latch. Rollback below
+the verified capable R1 artifact is unsupported after activation. The R1 down
 migration refuses retained private files or topic/comment parents; it never
-publishes or reassigns them. Disabling R2 sharing controls must not turn future
-ordinary uploads public: every R2 adapter keeps its private default.
-
-The retained-state reader floor and the future-upload writer floor are distinct.
-Rolling the application back to R1 preserves reads of existing private files but
-resumes its explicit-true ordinary uploader, even if the R2 database default is
-still false. Before enabling R2 privacy defaults, verify a rollback artifact whose
-ordinary upload adapters also explicitly persist false; that becomes the minimum
-operational writer version. If fallback to R1 is unavoidable, all upload paths
-must be independently disabled before traffic reaches that binary. Changing the
-column default alone cannot make an R1 uploader private.
-
-The R2 rollout drill must exercise native uploads, Agent prepared URLs and
-multipart publication, both generic files and expense receipts, and any future
-CLI uploader. With sharing/new-parent controls disabled, ordinary uploads must
-remain private on both the release and its writer-compatible fallback. A fallback
-that cannot meet that contract must reject preparation and publication before
-staging bytes or recovery rows. These are R2 prerequisites, not new R1 writers.
+publishes or reassigns them. Historical blobs stay separate. Activation, marker
+installation and deployment are separate operator actions; this code does none.
 
 ## Shared readers and adapters
 
@@ -93,7 +110,8 @@ readers; it conveys no foreign ancestor names or identifiers.
 | Historical library/blob download              | Separate manager-only history contract, unchanged                                                                                        |
 
 The central `AttachmentStorageService::recordStaged` creates every active native
-attachment row and explicitly persists true in R1. No native attachment CRUD CLI
+attachment row and explicitly persists the latch-selected flag: true during
+the initial deployment, false after verified activation. No native attachment CRUD CLI
 exists yet. R2 must add any new CLI operation through shared actions, exact actor
 UUIDs, private JSON and preview/apply semantics. Preview must not stage physical
 objects or leave recovery rows; a database rollback alone cannot undo staging.
@@ -164,6 +182,15 @@ affected SQLite selection passed 118 tests / 2,993 assertions; the added policy
 allowlist test passed 1 test / 9 assertions. The five exact regressions passed
 on MariaDB with 110 assertions. Operations now proves equal query counts for
 one and four companies, including the two shared-reader authority reads.
+
+The rollback-capable latch follow-up passed 106 focused workflow/contract tests
+with 1,147 assertions, scoped PHPStan and Pint. The exact activation/default
+selection passed 28 MariaDB cases / 132 assertions, covering all seven native
+parents plus both Agent upload families with initial, latched and old-cache
+settings. A separate callback probe installs the latch during staging and proves
+no public recovery row is created. The latch is installed only in isolated local
+test directories; no production activation or verified fallback deployment is
+claimed here.
 
 Before foundation integration, one local production-asset build and the synthetic
 browser harness passed 44 page states at

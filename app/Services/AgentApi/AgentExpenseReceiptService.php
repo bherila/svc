@@ -61,6 +61,7 @@ final class AgentExpenseReceiptService
     {
         abort_unless(AgentWriteCutover::expenses(), 404);
         $this->authorizeWrite($actor, $workspace);
+        AttachmentUploadPolicy::defaultVisibility();
         $expense = $this->expense($actor, $workspace, $expenseId);
         $expires = $this->clock->now($workspace)->addMinutes(10);
 

@@ -7,6 +7,7 @@ use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
 use App\Models\Concerns\IncrementsAgentRevision;
 use App\Services\Files\AttachmentRecordResolver;
+use App\Services\Files\AttachmentUploadPolicy;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -68,8 +69,12 @@ class ClientAttachment extends Model implements WorkspaceOwned
     protected static function booted(): void
     {
         static::creating(function (self $attachment): void {
-            if (array_key_exists('is_visible_to_client', $attachment->getAttributes()) && ! $attachment->is_visible_to_client) {
-                throw new LogicException('Private attachment writers are unavailable in the reader release.');
+            $defaultVisibility = AttachmentUploadPolicy::defaultVisibility();
+            if (! $defaultVisibility || ! array_key_exists('is_visible_to_client', $attachment->getAttributes())) {
+                $attachment->is_visible_to_client = $defaultVisibility;
+            }
+            if (! $attachment->is_visible_to_client && $defaultVisibility) {
+                throw new LogicException('The private upload default has not been enabled.');
             }
             if (! in_array($attachment->record_type, AttachmentRecordResolver::uploadableTypes(), true)) {
                 throw new LogicException('This attachment parent is read-only in the reader release.');

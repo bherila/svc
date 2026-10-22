@@ -41,6 +41,14 @@ final class AttachmentReaderOperationContractTest extends TestCase
         $this->assertPagination($parameters[2], $parameters[3]);
     }
 
+    public function test_each_upload_door_documents_policy_unavailability_without_enabling_new_writers(): void
+    {
+        $documents = AgentRestDocumentation::operations();
+        foreach (['attachments.upload', 'attachments.upload_url', 'expenses.receipts.upload', 'expenses.receipts.upload_url'] as $operation) {
+            $this->assertSame([503], array_keys($documents[$operation]['errors'] ?? []), $operation);
+        }
+    }
+
     /** @param array<string, mixed> $limit
      * @param  array<string, mixed>  $cursor
      */
