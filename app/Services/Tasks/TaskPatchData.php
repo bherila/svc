@@ -16,6 +16,7 @@ final readonly class TaskPatchData
     /** @param array<string, mixed> $attributes */
     public static function fromValidated(array $attributes): self
     {
+        TaskInputRules::assertAssigneeArray($attributes);
         /** @var array<string, mixed>&array{assignee_ids?: list<string>} $data */
         $data = Validator::make($attributes, TaskInputRules::patch())->validate();
         $assignees = $data['assignee_ids'] ?? null;

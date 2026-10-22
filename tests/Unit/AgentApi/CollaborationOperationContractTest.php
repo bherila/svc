@@ -80,6 +80,14 @@ final class CollaborationOperationContractTest extends TestCase
         $cutovers = match ($method) {
             'GET' => [], 'POST', 'PATCH', 'DELETE' => ['AGENT_API_WRITES_ENABLED', 'AGENT_API_COLLABORATION_WRITES_ENABLED'],
         };
+        // Keep the disclosure and continuation instructions meaningful without
+        // freezing editorial wording or unrelated descriptions.
+        $this->assertStringContainsString('Portal and dual identities are read-only', $operation->description, $id);
+        if ($name === 'comments.list') {
+            $this->assertStringContainsString('meta.next_cursor', $operation->description, $id);
+        } else {
+            $this->assertStringNotContainsString('meta.next_cursor', $operation->description, $id);
+        }
         $this->assertSame([AgentMcpCollaborationTools::class, $handler], $operation->mcp->handler, $id);
         $this->assertSame($method, $operation->rest->method, $id);
         $this->assertSame('/workspaces/{workspace}/clients/{client}/collaboration'.$suffix, $operation->rest->path, $id);
@@ -139,6 +147,14 @@ final class CollaborationOperationContractTest extends TestCase
                 ];
             }
             $scopes = $method === 'GET' ? ['collaboration:read'] : ($name === 'topics.create' ? ['collaboration:write'] : ['collaboration:write', 'collaboration:read']);
+            $description = $document['description'];
+            $this->assertIsString($description);
+            $this->assertStringContainsString('Portal and dual identities are read-only', $description, $id);
+            if ($name === 'comments.list') {
+                $this->assertStringContainsString('meta.next_cursor', $description, $id);
+            } else {
+                $this->assertStringNotContainsString('meta.next_cursor', $description, $id);
+            }
             $this->assertSame($method, $document['method'], $id);
             $this->assertSame($scopes, $document['scopes'], $id);
             $this->assertSame($parameters, $document['parameters'], $id);

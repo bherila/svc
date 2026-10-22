@@ -14,7 +14,7 @@ final readonly class AttachmentPrivacyLatch
     {
         $directory = $this->directory ?? storage_path('app/private');
         clearstatcache(true, $directory);
-        abort_unless(is_dir($directory) && is_readable($directory), 503, 'The durable upload policy cannot be verified.');
+        abort_unless(is_dir($directory) && is_readable($directory) && is_executable($directory), 503, 'The durable upload policy cannot be verified.');
         $marker = $directory.'/'.self::MARKER;
         clearstatcache(true, $marker);
 

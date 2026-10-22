@@ -53,7 +53,8 @@ R2 may change the database default to false only after that floor is verified.
 Its separate sharing/new-parent controls gate starts off. Disabling those controls
 or restoring an old config cache never defeats the privacy latch. Rollback below
 the verified capable R1 artifact is unsupported after activation. The R1 down
-migration refuses retained private files or topic/comment parents; it never
+migration refuses retained private files, topic/comment parents, or an activated
+latch even before its first private row; it never
 publishes or reassigns them. Historical blobs stay separate. Activation, marker
 installation and deployment are separate operator actions; this code does none.
 
@@ -99,7 +100,7 @@ readers; it conveys no foreign ancestor names or identifiers.
 
 | Entry point                                   | R1 integration                                                                                                                           |
 | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| Native file upload/download/delete            | Existing routes; legacy true uploads, shared held-URL read authorization                                                                 |
+| Native file upload/download/delete            | Existing routes; latch-selected upload defaults, shared held-URL read authorization                                                                 |
 | Operator and Portal agreement file lists      | Shared bounded reader; exact Portal or verified native preview; no Portal management                                                     |
 | Operations overview file metadata             | Shared authorized query before its result bound                                                                                          |
 | Expense receipt screen                        | Existing manager policy plus the shared reader                                                                                           |

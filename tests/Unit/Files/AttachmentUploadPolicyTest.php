@@ -108,6 +108,29 @@ final class AttachmentUploadPolicyTest extends TestCase
         $this->assertFalse(AttachmentUploadPolicy::defaultVisibility());
     }
 
+    public function test_a_readable_but_unsearchable_directory_cannot_hide_the_retained_marker(): void
+    {
+        File::put($this->directory.'/'.AttachmentPrivacyLatch::MARKER, "enabled\n");
+        config(['svc.attachments.private_uploads_enabled' => false]);
+        chmod($this->directory, 0400);
+        try {
+            clearstatcache();
+            if (is_executable($this->directory)) {
+                $this->markTestSkipped('The current privileged user bypasses directory search permissions.');
+            }
+            $this->assertTrue(is_readable($this->directory));
+            $this->assertFalse(file_exists($this->directory.'/'.AttachmentPrivacyLatch::MARKER));
+            try {
+                AttachmentUploadPolicy::defaultVisibility();
+                $this->fail('An unsearchable directory cannot establish the public default.');
+            } catch (HttpException $exception) {
+                $this->assertSame(503, $exception->getStatusCode());
+            }
+        } finally {
+            chmod($this->directory, 0700);
+        }
+    }
+
     public function test_production_default_path_is_fixed_under_local_persistent_storage(): void
     {
         $original = $this->app->storagePath();

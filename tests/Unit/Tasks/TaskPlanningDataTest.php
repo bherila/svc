@@ -19,6 +19,7 @@ final class TaskPlanningDataTest extends TestCase
         $data = TaskCreateData::fromValidated(['title' => 'Synthetic new task', 'status' => 'completed', 'completed_at' => '2026-10-20',
             'workspace_id' => 99, 'client_project_id' => 99, 'milestone_price_amount' => 1, 'client_invoice_line_id' => 99]);
         $attributes = $data->attributes();
+        $this->assertSame('Synthetic new task', $attributes['title']);
         $this->assertSame('open', $attributes['status']);
         $this->assertFalse($attributes['is_visible_to_client']);
         $this->assertNull($attributes['starts_on']);
@@ -30,6 +31,55 @@ final class TaskPlanningDataTest extends TestCase
         }
     }
 
+    public function test_create_preserves_explicit_planning_and_visibility_without_putting_assignments_in_task_columns(): void
+    {
+        $ids = ['00000000-0000-4000-8000-000000000001'];
+        $data = TaskCreateData::fromValidated(['title' => 'Synthetic planned task', 'description' => 'Synthetic planning detail',
+            'is_visible_to_client' => true, 'starts_on' => '2026-10-20', 'due_on' => '2026-10-30', 'assignee_ids' => $ids]);
+        $this->assertSame(['title' => 'Synthetic planned task', 'description' => 'Synthetic planning detail', 'is_visible_to_client' => true,
+            'starts_on' => '2026-10-20', 'due_on' => '2026-10-30', 'status' => 'open'], $data->attributes());
+        $this->assertSame($ids, $data->assigneeIds);
+    }
+
+    public function test_create_requires_a_title_and_rejects_reversed_calendar_dates(): void
+    {
+        foreach ([['title', []], ['title', ['title' => '']],
+            ['due_on', ['title' => 'Synthetic reversed dates', 'starts_on' => '2026-10-30', 'due_on' => '2026-10-20']]] as [$field, $input]) {
+            try {
+                TaskCreateData::fromValidated($input);
+                $this->fail('Invalid required title or calendar order must be refused.');
+            } catch (ValidationException $exception) {
+                $this->assertArrayHasKey($field, $exception->errors());
+            }
+        }
+    }
+
+    public function test_visibility_accepts_boolean_inputs_and_refuses_other_values(): void
+    {
+        foreach ([[true, true], [false, false], [1, true], [0, false], ['1', true], ['0', false]] as [$input, $expected]) {
+            $this->assertSame($expected, TaskCreateData::fromValidated(['title' => 'Synthetic visibility', 'is_visible_to_client' => $input])->visibleToClient);
+        }
+        foreach (['', '   ', null, 2, 'false', 'yes', []] as $input) {
+            foreach ([TaskCreateData::class, TaskPatchData::class] as $factory) {
+                try {
+                    $factory::fromValidated(['title' => 'Synthetic visibility', 'is_visible_to_client' => $input]);
+                    $this->fail('Only supported boolean inputs may change client visibility.');
+                } catch (ValidationException $exception) {
+                    $this->assertArrayHasKey('is_visible_to_client', $exception->errors());
+                }
+            }
+        }
+    }
+
+    public function test_each_calendar_endpoint_can_be_absent_or_cleared_independently(): void
+    {
+        $this->assertSame('2026-10-20', TaskCreateData::fromValidated(['title' => 'Synthetic start only', 'starts_on' => '2026-10-20'])->startsOn);
+        $this->assertSame('2026-10-30', TaskCreateData::fromValidated(['title' => 'Synthetic due only', 'due_on' => '2026-10-30'])->dueOn);
+        $this->assertSame(['due_on' => null], TaskPatchData::fromValidated(['due_on' => null])->attributes('2026-10-20', '2026-10-30'));
+        $this->assertSame(['starts_on' => null], TaskPatchData::fromValidated(['starts_on' => null])->attributes('2026-10-20', '2026-10-30'));
+        $this->assertSame([], TaskPatchData::fromValidated([])->attributes(null, null));
+    }
+
     public function test_partial_updates_distinguish_omitted_fields_from_explicit_clears(): void
     {
         $omitted = TaskPatchData::fromValidated(['title' => 'Synthetic title']);
@@ -38,6 +88,21 @@ final class TaskPlanningDataTest extends TestCase
         $cleared = TaskPatchData::fromValidated(['starts_on' => null, 'description' => null, 'assignee_ids' => [], 'milestone_price_amount' => 1]);
         $this->assertSame([], $cleared->assigneeIds);
         $this->assertSame(['description' => null, 'starts_on' => null], $cleared->attributes('2026-10-20', '2026-10-30'));
+    }
+
+    public function test_patch_refuses_blank_nonnullable_fields_while_omitted_fields_stay_unchanged(): void
+    {
+        $this->assertSame([], TaskPatchData::fromValidated([])->attributes('2026-10-20', '2026-10-30'));
+        foreach (['title', 'status'] as $field) {
+            foreach (['', '   ', null] as $blank) {
+                try {
+                    TaskPatchData::fromValidated([$field => $blank]);
+                    $this->fail('A present nonnullable field must not be blank.');
+                } catch (ValidationException $exception) {
+                    $this->assertArrayHasKey($field, $exception->errors());
+                }
+            }
+        }
     }
 
     public function test_date_order_uses_the_merged_stored_start_not_just_the_patch(): void
@@ -56,7 +121,7 @@ final class TaskPlanningDataTest extends TestCase
         $id = '00000000-0000-4000-8000-000000000001';
         $ten = array_map(fn (int $index): string => sprintf('00000000-0000-4000-8000-%012d', $index), range(1, 10));
         $this->assertSame($ten, TaskPatchData::fromValidated(['assignee_ids' => $ten])->assigneeIds);
-        foreach ([[$id, $id], ['named' => $id], array_map(fn (int $index): string => sprintf('00000000-0000-4000-8000-%012d', $index), range(1, 11))] as $ids) {
+        foreach ([[$id, $id], ['named' => $id], [''], array_map(fn (int $index): string => sprintf('00000000-0000-4000-8000-%012d', $index), range(1, 11))] as $ids) {
             try {
                 TaskPatchData::fromValidated(['assignee_ids' => $ids]);
                 $this->fail('Non-list, duplicate or oversized responsibility input must be refused.');
@@ -64,5 +129,21 @@ final class TaskPlanningDataTest extends TestCase
                 $this->assertNotSame([], $exception->errors());
             }
         }
+    }
+
+    public function test_assignee_shape_errors_are_validation_failures_and_an_empty_list_remains_a_valid_clear(): void
+    {
+        foreach (['', '   ', null, 17, true, '00000000-0000-4000-8000-000000000001'] as $input) {
+            foreach ([TaskCreateData::class, TaskPatchData::class] as $factory) {
+                try {
+                    $factory::fromValidated(['title' => 'Synthetic assignee shape', 'assignee_ids' => $input]);
+                    $this->fail('Non-array assignees must be refused as a validation error.');
+                } catch (ValidationException $exception) {
+                    $this->assertArrayHasKey('assignee_ids', $exception->errors());
+                }
+            }
+        }
+        $this->assertSame([], TaskCreateData::fromValidated(['title' => 'Synthetic empty assignment', 'assignee_ids' => []])->assigneeIds);
+        $this->assertSame([], TaskPatchData::fromValidated(['assignee_ids' => []])->assigneeIds);
     }
 }
