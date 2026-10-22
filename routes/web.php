@@ -162,7 +162,7 @@ Route::middleware('auth')->group(function (): void {
             ['delete', '/lists/{list}', 'lists.archive', 'lists.archive'], ['post', '/lists/{list}/restore', 'lists.restore', 'lists.restore'],
             ['put', '/lists/order', 'lists.reorder', 'lists.reorder'], ['post', '/tasks', 'tasks.store', 'tasks.create'],
             ['patch', '/tasks/{task}/container', 'tasks.move', 'tasks.move'], ['put', '/tasks/order', 'tasks.reorder', 'tasks.reorder']] as [$verb, $suffix, $name, $operation]) {
-            Route::$verb($suffix, [ClientTaskOrganizationController::class, 'mutate'])
+            Route::$verb($suffix, [ClientTaskOrganizationController::class, $operation === 'lists.archive' ? 'archiveList' : 'mutate'])
                 ->whereUuid(['project', 'list', 'task'])
                 ->defaults('task_organization_operation', $operation)->name('tasks.organization.'.$name);
         }

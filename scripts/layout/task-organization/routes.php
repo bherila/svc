@@ -18,7 +18,7 @@ Route::middleware(['web', 'auth:web', ResolveWorkspaceNavigation::class])->group
         ['delete', '/lists/{list}', 'lists.archive', 'lists.archive'], ['post', '/lists/{list}/restore', 'lists.restore', 'lists.restore'],
         ['put', '/lists/order', 'lists.reorder', 'lists.reorder'], ['post', '/tasks', 'tasks.store', 'tasks.create'],
         ['patch', '/tasks/{task}/container', 'tasks.move', 'tasks.move'], ['put', '/tasks/order', 'tasks.reorder', 'tasks.reorder']] as [$verb, $suffix, $name, $operation]) {
-        Route::$verb('/synthetic-organization/{workspace}/projects/{project}'.$suffix, [ClientTaskOrganizationController::class, 'mutate'])
+        Route::$verb('/synthetic-organization/{workspace}/projects/{project}'.$suffix, [ClientTaskOrganizationController::class, $operation === 'lists.archive' ? 'archiveList' : 'mutate'])
             ->defaults('task_organization_operation', $operation)->name('tasks.organization.'.$name);
     }
 });

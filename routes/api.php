@@ -147,7 +147,7 @@ Route::prefix('v1')
             ->whereUuid('project');
         $workspaceOperation('task_organization.get', [AgentTaskOrganizationController::class, 'show'])->whereUuid('project');
         foreach (['lists.create', 'lists.update', 'lists.archive', 'lists.restore', 'lists.reorder', 'tasks.create', 'tasks.move', 'tasks.reorder'] as $organizationOperation) {
-            $workspaceOperation('task_organization.'.$organizationOperation, [AgentTaskOrganizationController::class, 'mutate'])
+            $workspaceOperation('task_organization.'.$organizationOperation, [AgentTaskOrganizationController::class, $organizationOperation === 'lists.archive' ? 'archiveList' : 'mutate'])
                 ->whereUuid(['project', 'list', 'task'])
                 ->defaults('task_organization_operation', $organizationOperation);
         }

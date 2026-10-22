@@ -18,7 +18,7 @@ final class TaskOrganizationCommand extends MutationCommand
 {
     use FindsUserByPublicId;
 
-    protected $signature = 'svc:task-organization
+    protected $signature = 'svc:tasks:organization
         {operation : get, lists.create/update/archive/restore/reorder, or tasks.create/move/reorder}
         {workspace : Workspace public UUID}
         {project : Project public UUID}
