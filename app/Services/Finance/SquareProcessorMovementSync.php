@@ -310,6 +310,7 @@ final class SquareProcessorMovementSync
         if ($value['location'] === count($locations) && ($value['pending'] !== [] || $value['terminal'])) {
             throw SquareRequestFailed::unreadable();
         }
+
         /** @var ScanPosition $value */
         return $value;
     }
