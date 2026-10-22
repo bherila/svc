@@ -373,6 +373,9 @@ final class AgentOperationCatalog
                 true,
                 'mcp.read',
             ),
+            // MCP lists invoice snapshots for every authorized viewer. The
+            // REST-only change window is gated to workspace owners/admins by
+            // AgentReadService; it must not make this whole tool manager-only.
             $this->tool(
                 'invoices.list',
                 'List invoices',
