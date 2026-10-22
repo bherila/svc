@@ -49,6 +49,26 @@ class CollaborationWorkflowTest extends TestCase
         $this->assertDatabaseCount('client_invoices', 0);
     }
 
+    public function test_task_comment_threads_are_discoverable_for_staff_and_read_only_portal_viewers(): void
+    {
+        [$manager, $workspace, $company, $project] = $this->tenant('task-links');
+        $task = ClientTask::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $project->id, 'title' => 'Synthetic task comment link', 'status' => 'pending', 'is_visible_to_client' => true]);
+        $internal = route('collaboration.comments.index', [$workspace, $company, 'task', $task->public_id], absolute: false);
+        $this->actingAs($manager)->get(route('tasks.show', [$workspace, $task]))->assertOk()->assertInertia(fn (Assert $page) => $page->where('comment_thread_url', $internal));
+        $this->get(route('portal.tasks', $company))->assertOk()->assertInertia(fn (Assert $page) => $page->where('tasks.0.comment_thread_url', null));
+        $contributor = $this->member($workspace, $project, 'contributor', 'task-comment-links');
+        $this->actingAs($contributor)->get(route('clients.tasks', [$workspace, $company]))->assertOk()->assertInertia(fn (Assert $page) => $page->where('tasks.0.comment_thread_url', $internal)->where('tasks.0.detail_url', null));
+        $this->get(route('clients.project', [$workspace, $company, $project]))->assertOk()->assertInertia(fn (Assert $page) => $page->where('tasks.0.comment_thread_url', $internal));
+        $this->get($internal)->assertOk()->assertInertia(fn (Assert $page) => $page->where('thread.parent_kind', 'task')->where('thread.store_href', $internal));
+        $portal = $this->portalUser($company, 'task-comment-links');
+        $external = route('portal.collaboration.comments.index', [$company, 'task', $task->public_id], absolute: false);
+        $this->actingAs($portal)->get(route('portal.tasks', $company))->assertOk()->assertInertia(fn (Assert $page) => $page->where('tasks.0.comment_thread_url', $external));
+        $this->get($external)->assertOk()->assertInertia(fn (Assert $page) => $page->where('thread.store_href', null));
+        $task->update(['is_visible_to_client' => false]);
+        $this->get(route('portal.tasks', $company))->assertOk()->assertInertia(fn (Assert $page) => $page->has('tasks', 0));
+        $this->get($external)->assertNotFound();
+    }
+
     public function test_project_managers_can_create_project_topics_but_not_company_wide_topics(): void
     {
         [, $workspace, $company, $project] = $this->tenant('project-manager');

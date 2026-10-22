@@ -713,6 +713,7 @@ class ClientDirectoryController extends Controller
                 'starts_on' => $task->starts_on?->toDateString(),
                 'due_on' => $task->due_on?->toDateString(),
                 'detail_url' => $canManageTasks ? route('tasks.show', [$workspace, $task]) : null,
+                'comment_thread_url' => route('collaboration.comments.index', [$workspace, $clientCompany, 'task', $task->public_id], absolute: false),
             ])->values()->all(),
             'time' => $minutesByStatus->map(fn (ClientTimeEntry $row): array => [
                 'status' => (string) $row->status,
@@ -1046,6 +1047,7 @@ class ClientDirectoryController extends Controller
                 'starts_on' => $task->starts_on?->toDateString(),
                 'due_on' => $task->due_on?->toDateString(),
                 'detail_url' => isset($taskProjectIds[$task->client_project_id]) ? route('tasks.show', [$workspace, $task]) : null,
+                'comment_thread_url' => route('collaboration.comments.index', [$workspace, $clientCompany, 'task', $task->public_id], absolute: false),
             ])->values()->all(),
         ]);
     }

@@ -16,6 +16,13 @@ final class CollaborationReadService
 {
     public function __construct(private readonly CollaborationRepository $records, private readonly CollaborationAccess $access) {}
 
+    public function taskThreadHref(User|AgentPrincipal $actor, Workspace $workspace, ClientCompany $company, ClientTask $task, CollaborationAudience $audience): ?string
+    {
+        return $this->access->canViewParent($actor, $workspace, $company, $task, $audience)
+            ? $this->url('comments.index', $workspace, $company, $audience, ['parentType' => 'task', 'parentPublicId' => $task->public_id])
+            : null;
+    }
+
     /** @return array<string, mixed> */
     public function listing(User|AgentPrincipal $actor, Workspace $workspace, ClientCompany $company, CollaborationAudience $audience, ?TopicKind $kind, ?string $projectId, int $page): array
     {

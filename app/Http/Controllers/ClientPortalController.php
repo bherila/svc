@@ -16,6 +16,8 @@ use App\Queries\ClientHome\PortalClientHomeQuery;
 use App\Services\Authorization\PortalAccess;
 use App\Services\Authorization\PortalInvoiceQuery;
 use App\Services\Billing\DeferredBacklogReadService;
+use App\Services\Collaboration\CollaborationAccess;
+use App\Services\Collaboration\CollaborationAudience;
 use App\Services\Square\Mirror\SquareInvoicePage;
 use App\Support\Billing\InvoiceLineDetail;
 use App\Support\Billing\InvoiceStatus;
@@ -431,6 +433,10 @@ class ClientPortalController extends Controller
             ->orderBy('title')
             ->get();
 
+        $viewer = $this->viewer($request);
+        abort_unless($viewer instanceof User, 401);
+        $commentProjects = array_fill_keys(app(CollaborationAccess::class)->visibleProjects($viewer, $clientCompany->workspace, $clientCompany, CollaborationAudience::Portal)->pluck('id')->all(), true);
+
         return Inertia::render('clients/tasks', [
             'company' => [
                 'id' => $clientCompany->public_id,
@@ -451,6 +457,8 @@ class ClientPortalController extends Controller
                 'project' => $projectNames[$task->client_project_id] ?? null,
                 'is_visible_to_client' => true,
                 'completed_at' => $task->completed_at?->toDateString(),
+                'comment_thread_url' => isset($commentProjects[$task->client_project_id])
+                    ? route('portal.collaboration.comments.index', [$clientCompany, 'task', $task->public_id], absolute: false) : null,
             ])->values()->all(),
         ]);
     }

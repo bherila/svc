@@ -1,4 +1,4 @@
-import { fireEvent, render } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import ExpenseSchedules from '@/pages/clients/expense-schedules';
@@ -226,11 +226,16 @@ describe('client screens under data that does not fit', () => {
                         project: LONG_NAME,
                         is_visible_to_client: true,
                         completed_at: null,
+                        comment_thread_url: '/synthetic/task-comments',
                     },
                 ]}
             />,
         );
 
+        expect(screen.getByRole('link', { name: 'Comments' })).toHaveAttribute(
+            'href',
+            '/synthetic/task-comments',
+        );
         expect(horizontalOverflowRisks(container)).toEqual([]);
     });
 
