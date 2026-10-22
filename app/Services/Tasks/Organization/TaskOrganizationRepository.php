@@ -4,9 +4,9 @@ namespace App\Services\Tasks\Organization;
 
 use App\Models\ClientProject;
 use App\Models\ClientTask;
-use App\Models\ClientTaskGraphState;
 use App\Models\ClientTaskList;
 use App\Models\Workspace;
+use App\Services\Tasks\TaskGraphRevisionRepository;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Concurrency\Locks;
 use Illuminate\Database\Eloquent\Builder;
@@ -14,14 +14,15 @@ use Illuminate\Database\Eloquent\Builder;
 /** The only persistence boundary for task organization, always tenant and project scoped. */
 final class TaskOrganizationRepository
 {
+    public function __construct(private readonly TaskGraphRevisionRepository $revisions) {}
+
     public function load(Workspace $workspace, ClientProject $project, bool $lock, bool $initialize = false): TaskOrganizationRecords
     {
-        $states = ClientTaskGraphState::query()->where('workspace_id', $workspace->id)->where('client_project_id', $project->id);
-        if ($lock) {
-            $states->tap(Locks::forUpdate());
-        }
-        $state = ($lock && $initialize ? $states->createOrFirst(['workspace_id' => $workspace->id, 'client_project_id' => $project->id]) : $states->first())
-            ?? new ClientTaskGraphState(['workspace_id' => $workspace->id, 'client_project_id' => $project->id]);
+        $state = $lock && $initialize
+            ? $this->revisions->lockForMutation($workspace, $project)
+            : $this->revisions->read($workspace, $project, current: $lock);
+        // Retain the verified scope for revision writes without a lazy lookup.
+        $project->setRelation('workspace', $workspace);
         $tasks = ClientTask::query()->where('workspace_id', $workspace->id)->where('client_project_id', $project->id)
             ->orderBy('id')->limit(TaskGraph::MAX_TASKS + 1)->when($lock, fn (Builder $query) => $query->tap(Locks::forUpdate()))
             ->get(['id', 'public_id', 'workspace_id', 'client_project_id', 'parent_task_id', 'client_task_list_id', 'organization_position', 'lock_version', 'title', 'status', 'is_visible_to_client']);
@@ -101,6 +102,6 @@ final class TaskOrganizationRepository
 
     private function advance(TaskOrganizationRecords $records): void
     {
-        $records->state->forceFill(['lock_version' => (int) $records->state->lock_version + 1])->save();
+        $this->revisions->advance($records->project->workspace, $records->project, $records->state);
     }
 }
