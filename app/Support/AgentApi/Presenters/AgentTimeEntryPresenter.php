@@ -37,13 +37,19 @@ final class AgentTimeEntryPresenter
         $author = $entry->user;
         $authorId = $author !== null && $author->workspaces->contains('id', $workspace->id) ? $author->public_id : null;
         $allocation = TimeEntryAllocation::fromEntry($entry);
+        $task = $entry->task;
+        // The reader scopes this optional relation through task disclosure.
+        // An old malformed same-workspace cross-project link must also be null.
+        $taskId = $task !== null && (int) $task->workspace_id === (int) $workspace->id
+            && (int) $entry->workspace_id === (int) $workspace->id
+            && (int) $task->client_project_id === (int) $entry->client_project_id ? $task->public_id : null;
         $payload = [
             'invoice_id' => $allocation->invoiceId,
             'allocation_state' => $allocation->state,
             'id' => $entry->public_id,
             'author_id' => $authorId,
             'project_id' => $entry->project->public_id,
-            'task_id' => $entry->task?->public_id,
+            'task_id' => $taskId,
             'worked_on' => $entry->worked_on->toDateString(),
             'minutes' => $entry->minutes,
             'description' => $compact ? null : ($useClientDescription
