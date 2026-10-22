@@ -209,7 +209,8 @@ final class SquareProcessorMovementSync
                     $this->saveScan($key, $position, $apply);
                     break;
                 }
-                if (++$pages > self::MAX_DISCOVERY_PAGES) {
+                $pages++;
+                if ($pages > self::MAX_DISCOVERY_PAGES) {
                     throw SquareRequestFailed::unreadable();
                 }
                 if ($pages === 1) {
@@ -225,11 +226,12 @@ final class SquareProcessorMovementSync
                 }
                 $pending = [];
                 foreach ($rows as $row) {
+                    $rowsRead++;
                     $id = is_array($row) ? ($row['id'] ?? null) : null;
                     $created = is_array($row) ? $this->discoveryTime($row['created_at'] ?? null) : null;
                     if (! is_array($row) || ($row['location_id'] ?? null) !== $location
                         || ! is_string($id) || preg_match(SquareClient::ID_PATTERN, $id) !== 1 || isset($seenIds[$id])
-                        || ++$rowsRead > self::MAX_DISCOVERY_ROWS || $created === null
+                        || $rowsRead > self::MAX_DISCOVERY_ROWS || $created === null
                         || $created < $this->discoveryTime($beginTime) || $created > $this->discoveryTime($position['until'])
                         || ($previousTime !== null && $created < $previousTime)) {
                         throw SquareRequestFailed::unreadable();
