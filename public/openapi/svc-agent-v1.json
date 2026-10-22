@@ -4146,7 +4146,7 @@
                         "$ref": "#/components/responses/Error"
                     }
                 },
-                "x-agent-effect": "local_write",
+                "x-agent-effect": "destructive",
                 "x-agent-idempotent": true,
                 "x-agent-write-safety": {
                     "idempotency_key": "header_and_argument",
@@ -4690,7 +4690,7 @@
                         "$ref": "#/components/responses/Error"
                     }
                 },
-                "x-agent-effect": "local_write",
+                "x-agent-effect": "destructive",
                 "x-agent-idempotent": true,
                 "x-agent-write-safety": {
                     "idempotency_key": "header_and_argument",

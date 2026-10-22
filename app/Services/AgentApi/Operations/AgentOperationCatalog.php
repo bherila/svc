@@ -289,7 +289,7 @@ final class AgentOperationCatalog
             $read = in_array($name, ['topics.list', 'topics.get', 'comments.list'], true);
             $tools[] = $this->tool('collaboration.'.$name, $title,
                 ($name === 'comments.list' ? 'Ascending opaque cursor pages; limit is a maximum of 1–30 rows (default 1), and a byte budget may shorten pages. Follow meta.next_cursor or next_href until null; previous_href is null. ' : '').'Native notes, discussions and flat comments. Current staff roles, authorship, parent visibility and portal grants apply. Portal and dual identities are read-only; no history is activated and no mail is sent.',
-                [AgentMcpCollaborationTools::class, $handler], $read ? Effect::Read : Effect::LocalWrite, true,
+                [AgentMcpCollaborationTools::class, $handler], $read ? Effect::Read : (str_ends_with($name, '.delete') ? Effect::Destructive : Effect::LocalWrite), true,
                 $read ? 'mcp.read' : 'mcp.write', cutovers: $read ? [] : [AgentDeploymentFlags::COLLABORATION]);
         }
 
