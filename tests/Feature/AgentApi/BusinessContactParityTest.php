@@ -10,6 +10,7 @@ use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Concurrency\LockOrderRecorder;
 use App\Support\Concurrency\LockResource;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Notification;
 use Tests\Concerns\CallsMcp;
@@ -65,6 +66,44 @@ final class BusinessContactParityTest extends TestCase
         $this->assertDatabaseCount('client_portal_invitations', 0);
         Mail::assertNothingSent();
         Notification::assertNothingSent();
+    }
+
+    public function test_dual_managers_use_portal_agent_authority_while_native_cli_remains_internal(): void
+    {
+        [$workspace, $owner, $company, $base] = $this->fixture();
+        $this->actingAsMcp($owner, ['mcp:use', 'identity:read', 'clients:read', 'clients:write']);
+        $body = ['first_name' => 'Synthetic private contact', 'phone' => '555-0130'];
+        $created = $this->withHeader('Idempotency-Key', 'synthetic-before-portal')->postJson($base, $body)->assertCreated();
+        $id = $created->json('data.id');
+        $company->portalUsers()->attach($owner->id, ['role' => 'client', 'access_scope' => 'company']);
+        $this->getJson($base)->assertNotFound();
+        $this->getJson($base.'/'.$id)->assertNotFound();
+        $this->withHeader('Idempotency-Key', 'synthetic-before-portal')->postJson($base, $body)->assertForbidden();
+        $this->withHeader('Idempotency-Key', 'synthetic-dual-edit')->patchJson($base.'/'.$id, ['expected_version' => $created->json('data.version'), 'phone' => '555-0131'])->assertForbidden();
+        $reply = $this->callTool($this->initialize(), 'clients.contacts.get', ['workspace_id' => $workspace->public_id, 'client_id' => $company->public_id, 'contact_id' => $id]);
+        $this->assertTrue($reply['result']['isError']);
+        $this->assertSame('555-0130', ClientContact::query()->where('workspace_id', $workspace->id)->where('public_id', $id)->sole()->phone);
+        $this->assertSame(0, Artisan::call('svc:clients:contacts', [
+            'operation' => 'get', 'workspace' => $workspace->public_id, 'company' => $company->public_id,
+            '--actor' => $owner->public_id, '--contact' => $id, '--format' => 'json',
+        ]));
+        $this->assertSame('555-0130', json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['data']['phone']);
+        $this->assertDatabaseCount('client_contacts', 1);
+        $this->assertDatabaseCount('client_company_memberships', 1);
+        $input = tempnam(sys_get_temp_dir(), 'svc-contact-dual-cli-');
+        try {
+            file_put_contents($input, json_encode(['first_name' => 'Synthetic native CLI contact'], JSON_THROW_ON_ERROR));
+            $command = ['operation' => 'create', 'workspace' => $workspace->public_id, 'company' => $company->public_id,
+                '--actor' => $owner->public_id, '--input' => $input, '--key' => 'synthetic-dual-native', '--format' => 'json'];
+            $this->assertSame(0, Artisan::call('svc:clients:contacts', $command));
+            $this->assertTrue(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['dry_run']);
+            $this->assertDatabaseCount('client_contacts', 1);
+            $this->assertSame(0, Artisan::call('svc:clients:contacts', $command + ['--apply' => true]));
+            $this->assertDatabaseCount('client_contacts', 2);
+            $this->assertDatabaseCount('client_company_memberships', 1);
+        } finally {
+            unlink($input);
+        }
     }
 
     public function test_versions_scope_validation_and_revoked_replays_are_enforced(): void

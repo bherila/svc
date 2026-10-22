@@ -74,8 +74,11 @@ and restore require the current opaque `expected_version` returned by reads;
 archive additionally requires `"confirm": true`. Keep the request and `--key`
 unchanged when retrying an applied operation. List accepts `--status=active` or
 `archived`, `--limit=1..100` and a continuation `--cursor` bound to that company
-and status. Local commands use current account permissions independently of
-OAuth deployment switches.
+and status. Local commands use current internal account permissions independently of
+OAuth deployment switches. REST/MCP business-contact operations treat any current
+portal identity in the workspace as the client audience, including dual-role
+accounts, and refuse those private reads and writes. Native CLI authority remains
+internal and is rechecked on each write and replay.
 
 ## Apply Payment
 

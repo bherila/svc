@@ -4,6 +4,7 @@ namespace App\Services\AgentApi;
 
 use App\Http\Requests\SaveClientContactRequest;
 use App\Models\ClientCompany;
+use App\Models\ClientCompanyMembership;
 use App\Models\ClientContact;
 use App\Models\User;
 use App\Models\Workspace;
@@ -11,6 +12,7 @@ use App\Models\WorkspaceMembership;
 use App\Services\Authorization\AgentAccess;
 use App\Services\Clients\ClientContactRepository;
 use App\Services\Clients\ContactDetails;
+use App\Services\Clients\ContactMutationOrigin;
 use App\Services\Clients\ContactPatch;
 use App\Support\AgentApi\ExplicitConfirmation;
 use App\Support\Concurrency\Locks;
@@ -23,7 +25,7 @@ final class AgentClientContactMutationAction
     public function __construct(private readonly AgentMutationExecutor $receipts, private readonly AgentAccess $access, private readonly ClientContactRepository $contacts) {}
 
     /** @param array<string, mixed> $payload */
-    public function perform(User $actor, Workspace $workspace, string $companyId, string $operation, ?string $contactId, array $payload, string $clientId, string $key): string
+    public function perform(User $actor, Workspace $workspace, string $companyId, string $operation, ?string $contactId, array $payload, string $clientId, string $key, ContactMutationOrigin $origin): string
     {
         abort_unless(in_array($operation, ['create', 'update', 'archive', 'restore'], true), 404);
         // Agent cutovers belong to the registry-backed REST/MCP route. The
@@ -35,12 +37,20 @@ final class AgentClientContactMutationAction
 
             return ClientCompany::query()->where('workspace_id', $workspace->id)->where('public_id', $companyId)->firstOrFail();
         };
-        $currentManager = static function () use ($actor, $workspace): void {
+        $currentManager = static function () use ($actor, $workspace, $origin): void {
             // A locking read sees a committed revocation even when the caller
             // entered this operation with an older repeatable-read snapshot.
             $membership = WorkspaceMembership::query()->where('workspace_id', $workspace->id)
                 ->where('user_id', $actor->id)->tap(Locks::forShare())->first();
             abort_unless($membership !== null && in_array($membership->role, ['owner', 'admin'], true), 403);
+            if ($origin === ContactMutationOrigin::Agent) {
+                // A direct locking read also sees a portal grant to a company
+                // created after the caller's repeatable-read snapshot. Legacy
+                // malformed membership rows deny rather than widen authority.
+                $portal = ClientCompanyMembership::query()->where('workspace_id', $workspace->id)
+                    ->where('user_id', $actor->id)->orderBy('id')->tap(Locks::forShare())->get(['id']);
+                abort_unless($portal->isEmpty(), 403);
+            }
         };
 
         return $this->receipts->run($actor, $workspace, $clientId, 'clients.contacts.'.$operation, $key,

@@ -51,6 +51,34 @@ final class BusinessContactOperationContractTest extends TestCase
                 ], $operation->requirement->flags, $id);
                 $this->assertSame($write ? ['AGENT_API_WRITES_ENABLED', 'AGENT_API_CLIENT_WRITES_ENABLED'] : [], $operation->extensions['x-svc-flags'] ?? [], $id);
                 $this->assertSame($name === 'create' ? [201] : [200], $operation->rest->successStatuses, $id);
+                $path = '/workspaces/{workspace}/clients/{client}/contacts';
+                if (! in_array($name, ['list', 'create'], true)) {
+                    $path .= '/{contact}';
+                }
+                if (in_array($name, ['archive', 'restore'], true)) {
+                    $path .= '/'.$name;
+                }
+                $this->assertSame($path, $operation->rest->path, $id);
+                $this->assertIsArray($operation->input);
+                $this->assertFalse($operation->input['additionalProperties'], $id);
+                foreach (['workspace_id', 'client_id'] as $identity) {
+                    $this->assertContains($identity, $operation->input['required'], $id);
+                    $this->assertSame(['type' => 'string', 'format' => 'uuid'], $operation->input['properties'][$identity], $id);
+                }
+                if (! in_array($name, ['list', 'create'], true)) {
+                    $this->assertContains('contact_id', $operation->input['required'], $id);
+                    $this->assertSame(['type' => 'string', 'format' => 'uuid'], $operation->input['properties']['contact_id'], $id);
+                }
+                if ($write) {
+                    $this->assertContains('idempotency_key', $operation->input['required'], $id);
+                    $this->assertSame(['type' => 'string', 'minLength' => 1, 'maxLength' => 255], $operation->input['properties']['idempotency_key'], $id);
+                }
+                if ($name === 'list') {
+                    $this->assertSame(['type' => 'integer', 'minimum' => 1, 'maximum' => 100, 'default' => 25], $operation->input['properties']['limit']);
+                    $this->assertSame(['type' => ['string', 'null'], 'maxLength' => 2048], $operation->input['properties']['cursor']);
+                    $this->assertSame(['type' => ['string', 'null'], 'enum' => ['active', 'archived', null]], $operation->input['properties']['status']);
+                }
+
             }
         } finally {
             AgentApiResponseSchemaCatalog::flush();

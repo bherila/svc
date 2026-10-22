@@ -36,6 +36,25 @@ final class ClientCompanyProfileParityTest extends TestCase
         $this->assertSame('https://client.example', $company->fresh()->website_url);
     }
 
+    public function test_mcp_preserves_valid_maximum_unicode_profile_fields(): void
+    {
+        config(['agent_api.writes_enabled' => true, 'agent_api.client_writes_enabled' => true]);
+        $owner = User::factory()->create();
+        $workspace = Workspace::query()->create(['name' => 'Synthetic Unicode profile', 'slug' => 'synthetic-unicode-profile']);
+        $workspace->memberships()->create(['user_id' => $owner->id, 'role' => 'owner']);
+        $this->actingAsMcp($owner, ['mcp:use', 'identity:read', 'clients:read', 'clients:write']);
+        $notes = str_repeat('🚀', 20000);
+        $address = str_repeat('🧭', 10000);
+        $reply = $this->callTool($this->initialize(), 'clients.create', ['workspace_id' => $workspace->public_id,
+            'idempotency_key' => 'synthetic-max-unicode-profile', 'name' => 'Synthetic Unicode company',
+            'notes' => $notes, 'billing_address' => $address]);
+        $this->assertFalse($reply['result']['isError'] ?? true, json_encode($reply));
+        $company = $reply['result']['structuredContent']['data'];
+        $this->assertSame($notes, $company['notes']);
+        $this->assertSame($address, $company['billing_address']);
+        $this->assertSame(1, ClientCompany::query()->where('workspace_id', $workspace->id)->count());
+    }
+
     public function test_creation_keeps_profile_fields_and_manager_only_reads(): void
     {
         config(['agent_api.writes_enabled' => true, 'agent_api.client_writes_enabled' => true]);

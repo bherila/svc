@@ -6,6 +6,7 @@ use App\Console\Commands\Concerns\FindsUserByPublicId;
 use App\Console\Commands\MutationCommand;
 use App\Services\AgentApi\AgentClientContactMutationAction;
 use App\Services\AgentApi\AgentClientContactReadService;
+use App\Services\Clients\ContactMutationOrigin;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Validation\ValidationException;
 use JsonException;
@@ -76,7 +77,7 @@ final class BusinessContactsCommand extends MutationCommand
                     return self::INVALID;
                 }
                 $result = $this->preview(function () use ($writes, $reads, $actor, $workspace, $company, $operation, $contact, $payload): array {
-                    $id = $writes->perform($actor, $workspace, $company, $operation, is_string($contact) ? $contact : null, $payload, 'svc-cli-business-contacts', (string) $this->option('key'));
+                    $id = $writes->perform($actor, $workspace, $company, $operation, is_string($contact) ? $contact : null, $payload, 'svc-cli-business-contacts', (string) $this->option('key'), ContactMutationOrigin::Internal);
 
                     return ['data' => $reads->get($actor, $workspace, $company, $id)];
                 });
