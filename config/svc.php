@@ -3,6 +3,13 @@
 return [
     'filesystem_disk' => env('SVC_FILESYSTEM_DISK', 'svc_files'),
 
+    // Keep false for the first reader deployment. After the floor is verified,
+    // install the persistent local privacy latch before enabling this check.
+    // The latch overrides an old config cache during rollback. Controls are separate.
+    'attachments' => [
+        'private_uploads_enabled' => (bool) env('SVC_ATTACHMENT_PRIVATE_UPLOADS_ENABLED', false),
+    ],
+
     // Inviting portal contacts who have never signed in (#430). Off by default:
     // it asks the identity provider to admit the invited address, so the
     // provider must also be configured for this application

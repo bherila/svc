@@ -3,6 +3,7 @@
 namespace Tests\Feature\Tasks\Organization;
 
 use App\Http\Controllers\ClientTaskOrganizationController;
+use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\ResolveWorkspaceNavigation;
 use App\Models\ClientCompany;
 use App\Models\ClientProject;
@@ -13,6 +14,7 @@ use App\Models\Workspace;
 use App\Services\Tasks\Organization\TaskContainer;
 use App\Services\Tasks\Organization\TaskOrganizationAction;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use Tests\TestCase;
 
@@ -48,16 +50,17 @@ final class TaskOrganizationNativeViewTest extends TestCase
         $this->assertSame(['parent_id' => null, 'list_id' => null], $view['organization']['unlisted']['move_target']);
         $this->assertStringContainsString('moving_task_id='.$root->public_id, $row['browse_href']);
         $this->assertStringContainsString('/tasks/'.$root->public_id, $row['task_href']);
-        $this->assertStringNotContainsString('Synthetic private full description', json_encode($view));
+        $this->assertStringNotContainsString('Synthetic private full description', json_encode($view, JSON_THROW_ON_ERROR));
         $descendants = $action->nativeView($owner, $workspace, $company, $project->public_id, new TaskContainer($root->public_id, null), $root->public_id)->data['organization'];
         $this->assertNull($descendants['container']['move_target']);
         $this->assertNull($descendants['container']['tasks'][0]['move_target']);
         $this->assertSame(['Synthetic private list', 'Synthetic root'], array_column($descendants['container']['breadcrumbs'], 'label'));
         $this->assertSame(['parent_id' => $child->public_id, 'list_id' => null], $descendants['container']['tasks'][0]['child_target']);
         $this->assertDatabaseCount('client_task_graph_states', 0);
-        $this->actingAs($owner, 'web')->withHeader('X-Inertia', 'true')->get(route('tasks.organization.show', [$workspace, $company, $project->public_id]))
+        $this->actingAs($owner, 'web')->withHeaders(['X-Inertia' => 'true', 'X-Inertia-Version' => (app(HandleInertiaRequests::class)->version(Request::create('/')) ?? '')])->get(route('tasks.organization.show', [$workspace, $company, $project->public_id]))
             ->assertOk()->assertJsonPath('component', 'clients/task-organization')->assertJsonPath('props.workspaceNavigation.current_client_id', $company->public_id)
             ->assertJsonPath('props.organization.container.title', 'Unlisted tasks');
+        $this->withoutHeader('X-Inertia')->withoutHeader('X-Inertia-Version');
         $this->assertDatabaseCount('client_task_graph_states', 0);
     }
 

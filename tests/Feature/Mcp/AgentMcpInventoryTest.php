@@ -66,6 +66,15 @@ final class AgentMcpInventoryTest extends TestCase
         'clients.portal_invitations.revoke',
         'clients.restore',
         'clients.update',
+        'collaboration.comments.create',
+        'collaboration.comments.delete',
+        'collaboration.comments.list',
+        'collaboration.comments.update',
+        'collaboration.topics.create',
+        'collaboration.topics.delete',
+        'collaboration.topics.get',
+        'collaboration.topics.list',
+        'collaboration.topics.update',
         'companies.payment_reminders.get',
         'companies.payment_reminders.set',
         'companies.square_customer.clear',
@@ -154,6 +163,15 @@ final class AgentMcpInventoryTest extends TestCase
         'square.series.get',
         'square.series.list',
         'square.sync',
+        'task_organization.get',
+        'task_organization.lists.archive',
+        'task_organization.lists.create',
+        'task_organization.lists.reorder',
+        'task_organization.lists.restore',
+        'task_organization.lists.update',
+        'task_organization.tasks.create',
+        'task_organization.tasks.move',
+        'task_organization.tasks.reorder',
         'tasks.create',
         'tasks.get',
         'tasks.list',
@@ -177,6 +195,7 @@ final class AgentMcpInventoryTest extends TestCase
             'payment_writes_enabled' => ['payments.record', 'payments.correct', 'payments.set_status', 'payments.refund', 'payments.reverse_refund'],
             'client_writes_enabled' => ['clients.contacts.create', 'clients.contacts.update', 'clients.contacts.archive', 'clients.contacts.restore', 'clients.portal_access.grant', 'clients.portal_access.update', 'clients.portal_access.revoke',
                 'clients.portal_invitations.create', 'clients.portal_invitations.resend', 'clients.portal_invitations.revoke', 'clients.create', 'clients.update', 'clients.archive', 'clients.restore', 'agreements.create', 'agreements.update', 'agreements.activate', 'agreements.terminate', 'companies.square_customer.set', 'companies.square_customer.clear', 'agreements.square_series.set', 'agreements.square_series.clear', 'square.import_customer', 'companies.payment_reminders.set'],
+            'collaboration_writes_enabled' => ['collaboration.topics.create', 'collaboration.topics.update', 'collaboration.topics.delete', 'collaboration.comments.create', 'collaboration.comments.update', 'collaboration.comments.delete'],
             'project_writes_enabled' => ['projects.create', 'projects.update', 'projects.archive', 'projects.members.update'],
             'proposal_writes_enabled' => ['proposals.create', 'proposals.send', 'proposals.accept'],
             'workspace_writes_enabled' => ['workspaces.create'],
@@ -190,7 +209,7 @@ final class AgentMcpInventoryTest extends TestCase
         foreach (self::gatedTools() as $flag => $names) {
             yield $flag => [$flag, $names];
         }
-        $outer = ['time_entries.approve', 'time_entries.unapprove', 'tasks.create', 'tasks.update', 'square.sync', 'invoices.square_reconcile'];
+        $outer = ['task_organization.lists.archive', 'task_organization.lists.create', 'task_organization.lists.reorder', 'task_organization.lists.restore', 'task_organization.lists.update', 'task_organization.tasks.create', 'task_organization.tasks.move', 'task_organization.tasks.reorder', 'time_entries.approve', 'time_entries.unapprove', 'tasks.create', 'tasks.update', 'square.sync', 'invoices.square_reconcile'];
         foreach (self::gatedTools() as $flag => $names) {
             if ($flag !== 'time_entry_writes_enabled') {
                 $outer = [...$outer, ...$names];
@@ -215,10 +234,10 @@ final class AgentMcpInventoryTest extends TestCase
             app(AgentWithheldTools::class)->for(fn (string $scope): bool => true, true));
     }
 
-    public function test_inventory_retains_all_144_tools_when_every_cutover_is_disabled(): void
+    public function test_inventory_retains_all_162_tools_when_every_cutover_is_disabled(): void
     {
         $this->enableAll();
-        $disabled = ['time_entries.approve', 'tasks.create', 'tasks.update', 'square.sync', 'invoices.square_reconcile'];
+        $disabled = ['task_organization.lists.archive', 'task_organization.lists.create', 'task_organization.lists.reorder', 'task_organization.lists.restore', 'task_organization.lists.update', 'task_organization.tasks.create', 'task_organization.tasks.move', 'task_organization.tasks.reorder', 'time_entries.approve', 'tasks.create', 'tasks.update', 'square.sync', 'invoices.square_reconcile'];
         foreach (self::gatedTools() as $flag => $names) {
             config(['agent_api.'.$flag => false]);
             $disabled = [...$disabled, ...$names];
@@ -226,14 +245,14 @@ final class AgentMcpInventoryTest extends TestCase
         config(['agent_api.writes_enabled' => false]);
         $disabled = array_values(array_unique($disabled));
         sort($disabled);
-        $this->assertCount(144, self::TOOLS);
+        $this->assertCount(162, self::TOOLS);
         $this->assertSame(self::TOOLS, $this->inventory());
         $this->assertSame(array_values(array_diff(self::TOOLS, $disabled)), $this->deployed());
         $this->assertSame(array_map(fn (string $name): array => ['name' => $name, 'reason' => 'deployment_disabled'], $disabled),
             app(AgentWithheldTools::class)->for(fn (string $scope): bool => true, true));
     }
 
-    public function test_actual_mcp_discovery_and_context_partition_all_144_tools_after_every_cutover_is_disabled(): void
+    public function test_actual_mcp_discovery_and_context_partition_all_162_tools_after_every_cutover_is_disabled(): void
     {
         $this->enableAll();
         $owner = User::factory()->create();
@@ -371,10 +390,21 @@ final class AgentMcpInventoryTest extends TestCase
             app(AgentWithheldTools::class)->for(fn (string $scope): bool => false, false));
     }
 
+    public function test_task_organization_product_switch_withholds_exactly_all_nine_operations(): void
+    {
+        $this->enableAll();
+        config(['task_organization.enabled' => false]);
+        $organization = ['task_organization.get', 'task_organization.lists.archive', 'task_organization.lists.create', 'task_organization.lists.reorder', 'task_organization.lists.restore', 'task_organization.lists.update', 'task_organization.tasks.create', 'task_organization.tasks.move', 'task_organization.tasks.reorder'];
+        $this->assertSame(self::TOOLS, $this->inventory());
+        $this->assertSame(array_values(array_diff(self::TOOLS, $organization)), $this->deployed());
+        $this->assertSame(array_map(fn (string $name): array => ['name' => $name, 'reason' => 'deployment_disabled'], $organization),
+            app(AgentWithheldTools::class)->for(fn (string $scope): bool => true, true));
+    }
+
     private function enableAll(): void
     {
         $configuration = ['agent_api.writes_enabled' => true, 'agent_api.mcp_enabled' => true, 'agent_api.mcp_feature_flags' => [],
-            'services.square.access_token' => 'synthetic-square-token', 'services.square.workspace' => 'synthetic-square-workspace', 'svc.portal_invitations.enabled' => true];
+            'services.square.access_token' => 'synthetic-square-token', 'services.square.workspace' => 'synthetic-square-workspace', 'svc.portal_invitations.enabled' => true, 'task_organization.enabled' => true];
         foreach (array_keys(self::gatedTools()) as $name) {
             $configuration['agent_api.'.$name] = true;
         }

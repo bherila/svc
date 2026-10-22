@@ -76,12 +76,21 @@ final class TasksCommand extends MutationCommand
                 }
                 $rules = $operation === 'create' ? TaskInputRules::create() : ['expected_version' => ['required', 'string', 'size:64']] + TaskInputRules::patch();
                 $data = validator($payload, $rules)->validate();
-                $result = $this->preview(function () use ($writes, $reads, $actor, $workspace, $operation, $options, $data): array {
+                // Keep the pre-completion warning in a preview even when its
+                // simulated response already describes the completed parent.
+                $completing = config('task_organization.enabled') === true && $operation === 'update' && ($data['status'] ?? null) === 'completed';
+                $advisory = $completing ? ($reads->task($actor, $workspace, $options['task'], TaskMutationOrigin::Internal)['completion_advisory'] ?? null) : null;
+                $result = $this->preview(function () use ($writes, $reads, $actor, $workspace, $operation, $options, $data, $completing, $advisory): array {
                     $task = $operation === 'create'
                         ? $writes->createInternal($actor, $workspace, 'svc-cli-tasks', $options['key'], $options['project'], $data)
                         : $writes->updateInternal($actor, $workspace, 'svc-cli-tasks', $options['key'], $options['task'], $data);
 
-                    return ['data' => $reads->task($actor, $workspace, $task->public_id, TaskMutationOrigin::Internal)];
+                    $presented = $reads->task($actor, $workspace, $task->public_id, TaskMutationOrigin::Internal);
+                    if ($completing) {
+                        $presented['completion_advisory'] = $advisory;
+                    }
+
+                    return ['data' => $presented];
                 });
                 $result['dry_run'] = ! $this->applying();
             } else {

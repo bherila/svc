@@ -11,6 +11,9 @@ use App\Services\AgentApi\AgentMutationContextFactory;
 use App\Services\AgentApi\AgentWorkspaceCreationAction;
 use App\Services\Authorization\AgentAccess;
 use App\Services\Authorization\AgentTokenScopes;
+use App\Services\Collaboration\CollaborationAudience;
+use App\Services\Files\AttachmentPageQuery;
+use App\Services\Files\AttachmentUploadPolicy;
 use App\Services\Search\WorkspaceSearch;
 use App\Support\Search\SearchResult;
 use App\Support\Search\SearchResultKind;
@@ -41,16 +44,17 @@ final class AgentWorkspaceMiscController extends Controller
             SearchResultKind::Project => $scopes->allows($request, 'projects:read'),
             SearchResultKind::Invoice => $scopes->allows($request, 'billing:read'),
             SearchResultKind::Task => $scopes->allows($request, 'tasks:read'),
+            SearchResultKind::Note, SearchResultKind::Discussion, SearchResultKind::Comment => $scopes->allows($request, 'collaboration:read'),
             SearchResultKind::History => false,
         }));
-        $results = $search->forWorkspace(User::query()->findOrFail($principal->id), $workspace, $data['q'], $kinds);
+        $results = $search->forWorkspace(User::query()->findOrFail($principal->id), $workspace, $data['q'], $kinds, $access->isWorkspaceClient($principal, $workspace) ? CollaborationAudience::Portal : CollaborationAudience::Internal);
 
         return response()->json(['data' => array_map(fn (SearchResult $result): array => $result->toArray(), $results)]);
     }
 
     public function index(Request $request, Workspace $workspace, string $recordType, string $recordPublicId): JsonResponse
     {
-        return response()->json($this->files->listing($this->principal($request), $workspace, $recordType, $recordPublicId));
+        return response()->json($this->files->listing($this->principal($request), $workspace, $recordType, $recordPublicId, AttachmentPageQuery::fromInput($request->query())));
     }
 
     public function show(Request $request, Workspace $workspace, string $attachment): JsonResponse
@@ -72,6 +76,8 @@ final class AgentWorkspaceMiscController extends Controller
 
     public function uploadUrl(Request $request, Workspace $workspace, string $recordType, string $recordPublicId): JsonResponse
     {
+        AttachmentUploadPolicy::validateLegacyPayload($request->all());
+
         return response()->json($this->files->uploadUrl($this->principal($request), $workspace, $recordType, $recordPublicId));
     }
 

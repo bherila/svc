@@ -8,7 +8,10 @@ use App\Models\ClientProject;
 use App\Models\ClientTask;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Collaboration\CollaborationAudience;
+use App\Services\Collaboration\CollaborationReadService;
 use App\Services\Tasks\TaskAccess;
+use App\Services\Tasks\TaskCompletionAdvisory;
 use App\Services\Tasks\TaskCreateData;
 use App\Services\Tasks\TaskEditorPresenter;
 use App\Services\Tasks\TaskPatchData;
@@ -28,12 +31,16 @@ class ClientTaskController extends Controller
         $authorization->assertOwnedBy($workspace, $clientTask);
         $task = $tasks->find($workspace, $clientTask->public_id);
         $this->authorizeProject($request, $workspace, $task->project);
+        app(TaskCompletionAdvisory::class)->load($workspace, [$task]);
         $company = $task->project->clientCompany;
+        $actor = $request->user();
+        abort_unless($actor instanceof User, 401);
 
         return Inertia::render('clients/task', [
             'company' => ['name' => $company->name],
             'project' => ['name' => $task->project->name],
             'task' => $presenter->task($workspace, $task),
+            'comment_thread_url' => app(CollaborationReadService::class)->taskThreadHref($actor, $workspace, $company, $task, CollaborationAudience::Internal),
         ]);
     }
 

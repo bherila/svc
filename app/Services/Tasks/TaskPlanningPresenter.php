@@ -18,7 +18,7 @@ final class TaskPlanningPresenter
         return ['assignments' => fn ($query) => $query->where('workspace_id', $workspace->id)->with('user')->orderBy('id')];
     }
 
-    /** @return array{starts_on: ?string, due_on: ?string, assignees: list<array{id: string, name: string}>} */
+    /** @return array{starts_on: ?string, due_on: ?string, assignees: list<array{id: string, name: string}>,completion_advisory?:?string} */
     public function fields(ClientTask $task): array
     {
         if (! $task->relationLoaded('assignments')) {
@@ -31,6 +31,6 @@ final class TaskPlanningPresenter
             'assignees' => array_values($task->assignments->map(fn (ClientTaskAssignment $assignment): array => [
                 'id' => $assignment->user->public_id, 'name' => $assignment->user->name,
             ])->all()),
-        ];
+        ] + app(TaskCompletionAdvisory::class)->fields($task);
     }
 }

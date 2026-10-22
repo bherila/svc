@@ -110,8 +110,10 @@ final class AgentMcpServerFactory
             AgentMcpSquareLinkTools::class => new AgentMcpSquareLinkTools(app(InternalAgentApiTransport::class), $this->requestArguments),
             AgentMcpPaymentReminderTools::class => new AgentMcpPaymentReminderTools($rest),
             AgentMcpDeferredBuyDownTools::class => new AgentMcpDeferredBuyDownTools($rest, $this->requestArguments),
+            AgentMcpCollaborationTools::class => new AgentMcpCollaborationTools($rest, $this->requestArguments),
             AgentMcpFinanceTools::class => new AgentMcpFinanceTools($rest),
             AgentMcpPortalInvitationTools::class => new AgentMcpPortalInvitationTools($rest, $this->requestArguments),
+            AgentMcpTaskOrganizationTools::class => new AgentMcpTaskOrganizationTools($rest, $this->requestArguments),
             AgentMcpWriteTools::class => $writes,
             AgentMcpPrompts::class => $this->prompts,
         ];

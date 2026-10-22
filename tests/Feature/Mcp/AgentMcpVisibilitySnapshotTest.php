@@ -37,7 +37,7 @@ final class AgentMcpVisibilitySnapshotTest extends TestCase
     private const array WRITE_FLAGS = [
         'writes_enabled', 'time_entry_writes_enabled', 'invoice_writes_enabled', 'expense_writes_enabled',
         'payment_writes_enabled', 'client_writes_enabled', 'project_writes_enabled', 'proposal_writes_enabled',
-        'workspace_writes_enabled', 'file_writes_enabled',
+        'workspace_writes_enabled', 'file_writes_enabled', 'collaboration_writes_enabled',
     ];
 
     /** @var array<string, User> */
@@ -94,7 +94,7 @@ final class AgentMcpVisibilitySnapshotTest extends TestCase
         // it is unconfigured and its read-only tools are withheld. Portal
         // invitations (#430) are a product switch, likewise off on install.
         $on = ['agent_api.mcp_enabled' => true, 'agent_api.mcp_feature_flags' => [],
-            'services.square.access_token' => 'synthetic-square-token', 'services.square.workspace' => 'synthetic-square-workspace', 'svc.portal_invitations.enabled' => true];
+            'services.square.access_token' => 'synthetic-square-token', 'services.square.workspace' => 'synthetic-square-workspace', 'svc.portal_invitations.enabled' => true, 'task_organization.enabled' => true];
         foreach (self::WRITE_FLAGS as $flag) {
             $on['agent_api.'.$flag] = true;
         }
@@ -106,6 +106,7 @@ final class AgentMcpVisibilitySnapshotTest extends TestCase
         foreach (self::WRITE_FLAGS as $flag) {
             $installDefaults['agent_api.'.$flag] = $flag === 'time_entry_writes_enabled';
         }
+        $installDefaults['task_organization.enabled'] = false;
         $installDefaults['services.square.access_token'] = null;
         $installDefaults['svc.portal_invitations.enabled'] = false;
 

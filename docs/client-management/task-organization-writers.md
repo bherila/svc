@@ -17,6 +17,15 @@ Ordering rejects more than 100 siblings and requires the complete current UUID
 set and container revision. These limits do not affect ordinary task metadata or
 assignment operations. Errors never supply omitted or foreign sibling identities.
 
+With organization management enabled, internal task reads and the native task
+editor supply an optional `completion_advisory` when a task has unfinished direct
+subtasks. This is a warning before explicit completion: completing a parent leaves
+every child's status, billing and assignments unchanged. The advisory contains no
+child identities or counts, is absent from Portal/dual Agent responses, and is
+absent when the writer flag is off. Child checks use batches of at most 100
+authorized parents with exact workspace/project lineage. CLI completion previews
+retain the pre-completion warning and roll back all simulated writes.
+
 Writes take the existing shared billing-maintenance lock, exclusive workspace
 mutex, graph state, ascending task rows, ascending list rows, then current
 membership rows. Graph revisions and current task/list revisions invalidate stale

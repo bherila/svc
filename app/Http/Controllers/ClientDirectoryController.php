@@ -30,6 +30,8 @@ use App\Services\Billing\InvoiceCorrectionReadService;
 use App\Services\Billing\InvoiceCorrectionService;
 use App\Services\Billing\InvoiceEmailService;
 use App\Services\Clients\CompanyProfile;
+use App\Services\Files\AttachmentAudience;
+use App\Services\Files\AttachmentFilePage;
 use App\Services\Finance\FinanceReconciliationBadges;
 use App\Services\Square\Mirror\SquareInvoicePage;
 use App\Services\Square\SquareLinkRepository;
@@ -492,6 +494,15 @@ class ClientDirectoryController extends Controller
         // assemble - and every endpoint behind one authorizes again.
         $manages = Gate::forUser($user)->allows('manage', $workspace);
         $attachmentBase = "/workspaces/{$workspace->public_id}/attachments";
+        // Legacy malformed project references remain inspectable as terms,
+        // without resolving another company's name or authorizing its files.
+        $validFileParent = $clientAgreement->client_project_id === null || $projectNames->has((int) $clientAgreement->client_project_id)
+            || ClientProject::query()->where('workspace_id', $workspace->id)->where('client_company_id', $clientCompany->id)
+                ->whereKey($clientAgreement->client_project_id)->exists();
+        $filePage = $validFileParent
+            ? AttachmentListing::page($workspace, 'agreement', $clientAgreement->public_id, $manages, $user, AttachmentAudience::Native,
+                $request->integer('files_page', 1), route('clients.agreement', [$workspace, $clientCompany, $clientAgreement], absolute: false))
+            : new AttachmentFilePage([], null, null);
 
         return Inertia::render('clients/agreement', [
             'company' => [
@@ -511,11 +522,13 @@ class ClientDirectoryController extends Controller
                     'preview' => route('agent-api.v1.agreements.deferred-backlog.preview', [$workspace, $clientAgreement], absolute: false),
                     'create' => route('agent-api.v1.agreements.deferred-backlog.create', [$workspace, $clientAgreement], absolute: false),
                 ] : null,
-                'upload_file' => $manages
+                'upload_file' => $manages && $validFileParent
                     ? "{$attachmentBase}/agreement/{$clientAgreement->public_id}"
                     : null,
             ],
-            'files' => AttachmentListing::for($workspace, 'agreement', (string) $clientAgreement->public_id, $manages),
+            'files' => $filePage->files,
+            'files_next_href' => $filePage->nextHref,
+            'files_previous_href' => $filePage->previousHref,
             'agreement' => $this->agreements->present($clientAgreement, $projectNames->get((int) $clientAgreement->client_project_id)) + [
                 // Terms the summary has no room for. Hours rather than minutes
                 // where the operator reads hours, and null rather than zero
@@ -695,6 +708,8 @@ class ClientDirectoryController extends Controller
 
         return Inertia::render('clients/project', [
             'workspace' => ['id' => $workspace->public_id],
+            'organization_href' => $canManageTasks && config('task_organization.enabled') === true
+                ? route('tasks.organization.show', [$workspace, $clientCompany, $clientProject->public_id]) : null,
             'task_management' => $canManageTasks
                 ? ['projects' => [app(TaskEditorPresenter::class)->project($workspace, $clientProject)]]
                 : null,
@@ -718,6 +733,7 @@ class ClientDirectoryController extends Controller
                 'starts_on' => $task->starts_on?->toDateString(),
                 'due_on' => $task->due_on?->toDateString(),
                 'detail_url' => $canManageTasks ? route('tasks.show', [$workspace, $task]) : null,
+                'comment_thread_url' => route('collaboration.comments.index', [$workspace, $clientCompany, 'task', $task->public_id], absolute: false),
             ])->values()->all(),
             'tasks_next_href' => $moreTasks ? route('clients.tasks', [$workspace, $clientCompany, 'project' => $clientProject->public_id]) : null,
             'time' => $minutesByStatus->map(fn (ClientTimeEntry $row): array => [
@@ -1053,6 +1069,7 @@ class ClientDirectoryController extends Controller
                 'starts_on' => $task->starts_on?->toDateString(),
                 'due_on' => $task->due_on?->toDateString(),
                 'detail_url' => isset($taskProjectIds[$task->client_project_id]) ? route('tasks.show', [$workspace, $task]) : null,
+                'comment_thread_url' => route('collaboration.comments.index', [$workspace, $clientCompany, 'task', $task->public_id], absolute: false),
             ])->values()->all(),
             'pagination' => ['previous_href' => $tasks->previousPageUrl(), 'next_href' => $tasks->nextPageUrl()],
         ]);

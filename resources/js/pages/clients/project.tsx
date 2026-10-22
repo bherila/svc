@@ -29,6 +29,7 @@ type ProjectTask = {
     starts_on?: string | null;
     due_on?: string | null;
     detail_url?: string | null;
+    comment_thread_url?: string | null;
 };
 
 type TimeByStatus = {
@@ -55,6 +56,7 @@ export default function ClientProjectDetail({
     agreements,
     task_management = null,
     tasks_next_href = null,
+    organization_href = null,
 }: {
     workspace: { id: string };
     company: { id: string; name: string };
@@ -68,6 +70,7 @@ export default function ClientProjectDetail({
     tasks: ProjectTask[];
     task_management?: { projects: TaskEditorProject[] } | null;
     tasks_next_href?: string | null;
+    organization_href?: string | null;
     time: TimeByStatus[];
     agreements: CompanyAgreement[];
 }) {
@@ -152,6 +155,17 @@ export default function ClientProjectDetail({
                     <CardHeader>
                         <div className="flex flex-wrap items-center justify-between gap-3">
                             <CardTitle>Tasks</CardTitle>
+                            {organization_href !== null && (
+                                <Link
+                                    href={organization_href}
+                                    className={buttonVariants({
+                                        variant: 'outline',
+                                        size: 'sm',
+                                    })}
+                                >
+                                    Organize tasks
+                                </Link>
+                            )}
                             {task_management !== null && (
                                 <TaskCreateDialog
                                     projects={task_management.projects}
@@ -203,6 +217,16 @@ export default function ClientProjectDetail({
                                                         </Link>
                                                     ) : (
                                                         task.title
+                                                    )}
+                                                    {task.comment_thread_url && (
+                                                        <Link
+                                                            href={
+                                                                task.comment_thread_url
+                                                            }
+                                                            className="mt-1 block text-sm font-normal underline underline-offset-4"
+                                                        >
+                                                            Comments
+                                                        </Link>
                                                     )}
                                                     {task.starts_on && (
                                                         <p className="mt-1 text-xs text-muted-foreground">

@@ -207,9 +207,65 @@ final class AgentRestDocumentation
     /**
      * @return array<string, array{method: string, scopes: list<string>, description: string|false, parameters: list<string|array<string, mixed>>, request?: string, request_types?: list<string>, response?: string, response_description?: string, binary?: array{0: string, 1: string}, errors?: array<int, string>, deprecation?: string}>
      */
+    private static function collaborationOperations(): array
+    {
+        $definitions = [
+            'topics.list' => ['GET', null, 'CollaborationTopicListResponse'],
+            'topics.get' => ['GET', null, 'CollaborationTopicResponse'],
+            'topics.create' => ['POST', 'CollaborationTopicCreateRequest', 'CollaborationTopicResponse'],
+            'topics.update' => ['PATCH', 'CollaborationTopicUpdateRequest', 'CollaborationTopicResponse'],
+            'topics.delete' => ['DELETE', 'CollaborationDeleteRequest', 'CollaborationTopicResponse'],
+            'comments.list' => ['GET', null, 'CollaborationCommentListResponse'],
+            'comments.create' => ['POST', 'CollaborationCommentCreateRequest', 'CollaborationCommentResponse'],
+            'comments.update' => ['PATCH', 'CollaborationCommentUpdateRequest', 'CollaborationCommentResponse'],
+            'comments.delete' => ['DELETE', 'CollaborationDeleteRequest', 'CollaborationCommentResponse'],
+        ];
+        $operations = [];
+        foreach ($definitions as $name => [$method, $request, $response]) {
+            $parameters = ['WorkspaceId', self::uuidPath('client')];
+            if (in_array($name, ['topics.get', 'topics.update', 'topics.delete'], true)) {
+                $parameters[] = self::uuidPath('topic');
+            }
+            if (in_array($name, ['comments.list', 'comments.create'], true)) {
+                $parameters[] = ['name' => 'parentType', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'string', 'enum' => ['task', 'topic']]];
+                $parameters[] = self::uuidPath('parentPublicId');
+            }
+            if (in_array($name, ['comments.update', 'comments.delete'], true)) {
+                $parameters[] = self::uuidPath('comment');
+            }
+            if ($method !== 'GET') {
+                $parameters[] = 'IdempotencyKey';
+            }
+            if ($name === 'topics.list') {
+                $parameters = [...$parameters, self::query('kind', ['type' => 'string', 'enum' => ['note', 'discussion']]),
+                    self::query('project_id', ['type' => 'string', 'format' => 'uuid']), self::query('page', ['type' => 'integer', 'minimum' => 1, 'maximum' => 100000])];
+            }
+            if ($name === 'comments.list') {
+                $parameters = [...$parameters, self::query('limit', ['type' => 'integer', 'minimum' => 1, 'maximum' => 30, 'default' => 1]),
+                    self::query('cursor', ['type' => 'string', 'maxLength' => 4096])];
+            }
+            $scopes = $method === 'GET' ? ['collaboration:read'] : ($name === 'topics.create' ? ['collaboration:write'] : ['collaboration:write', 'collaboration:read']);
+            $operations['collaboration.'.$name] = ['method' => $method, 'scopes' => $scopes, 'parameters' => $parameters,
+                'description' => ($name === 'comments.list' ? 'Comment lists use ascending opaque cursor pagination; limit is a maximum row count and serialized byte bounds may shorten a page. Follow meta.next_cursor or next_href until null; previous_href is always null. REST, MCP and CLI share this contract; native thread pages retain focused comment links. ' : '').'Native collaboration uses current tenant and parent authorization. Portal and dual identities are read-only and receive only disclosed ancestors. Staff authors edit their own text; managers publish and moderate. Writes require the global and collaboration cutovers; versioned writes also require collaboration:read. All writes use idempotency receipts and current locked authority, including on replay. Deletion creates a tombstone and requires confirm true. No imported history, grants, billing amounts or email are changed.',
+                'response' => $response, 'response_description' => 'Authorized native collaboration result',
+                'errors' => [401 => 'Authentication is required.', 403 => 'Scope or current role does not permit this operation.', 404 => 'A parent or tenant is not visible, or the agent write cutover is off.',
+                    409 => 'Expected version is stale or the idempotency key was reused with different input.', 422 => 'An input field or idempotency key is invalid.', 429 => 'Too many requests.']];
+            if ($request !== null) {
+                $operations['collaboration.'.$name]['request'] = $request;
+            }
+        }
+
+        return $operations;
+    }
+
+    /**
+     * @return array<string, array{method: string, scopes: list<string>, description: string|false, parameters: list<string|array<string, mixed>>, request?: string, request_types?: list<string>, response?: string, response_description?: string, binary?: array{0: string, 1: string}, errors?: array<int, string>, deprecation?: string}>
+     */
     public static function operations(): array
     {
         return [
+            ...TaskOrganizationOperations::documentation(),
+            ...self::collaborationOperations(),
             'agreements.activate' => [
                 'method' => 'POST',
                 'scopes' => ['clients:write', 'billing:read'],
@@ -330,15 +386,15 @@ final class AgentRestDocumentation
             'attachments.get' => [
                 'method' => 'GET',
                 'scopes' => ['files:read'],
-                'description' => 'Manager-only metadata, excluding storage and uploader identifiers.',
+                'description' => 'Manager-only metadata, excluding storage and uploader identifiers. Dual identities use exact Portal grants, current parent ancestry and file visibility.',
                 'parameters' => ['WorkspaceId', self::uuidPath('attachment')],
                 'response' => 'AttachmentResponse',
-                'response_description' => 'Manager-only metadata, excluding storage and uploader identifiers.',
+                'response_description' => 'Manager-only metadata, excluding storage and uploader identifiers. Dual identities use exact Portal grants, current parent ancestry and file visibility.',
             ],
             'attachments.list' => [
                 'method' => 'GET',
                 'scopes' => ['files:read'],
-                'description' => 'Manager-only generic attachment listing, bounded to 100 newest files. Expense receipts use separate routes.',
+                'description' => 'Manager-only generic attachment listing, bounded to 100 authorized newest files per page, ordered by descending ID. Follow meta.next_cursor; serialized byte limits may shorten a page. Dual identities use exact Portal grants and file visibility. Expense receipts use separate routes.',
                 'parameters' => [
                     'WorkspaceId',
                     [
@@ -347,18 +403,20 @@ final class AgentRestDocumentation
                         'required' => true,
                         'schema' => [
                             'type' => 'string',
-                            'enum' => ['company', 'project', 'task', 'proposal', 'agreement', 'invoice'],
+                            'enum' => ['company', 'project', 'task', 'proposal', 'agreement', 'invoice', 'topic', 'comment'],
                         ],
                     ],
                     self::uuidPath('recordPublicId'),
+                    self::filePageLimit(),
+                    self::filePageCursor(),
                 ],
                 'response' => 'AttachmentListResponse',
-                'response_description' => 'Manager-only generic attachment listing, bounded to 100 newest files. Expense receipts use separate routes.',
+                'response_description' => 'Manager-only generic attachment listing, bounded to 100 authorized newest files per page, ordered by descending ID. Follow meta.next_cursor; serialized byte limits may shorten a page. Dual identities use exact Portal grants and file visibility. Expense receipts use separate routes.',
             ],
             'attachments.upload' => [
                 'method' => 'POST',
                 'scopes' => ['files:write'],
-                'description' => 'Manager-only multipart upload, at most 50 MiB. Locked parent version checked; actor/client/key receipt binds parent/version/filename/media/length/SHA256, with replay and audit. Uploading adds an immutable file and leaves parent business facts unchanged.',
+                'description' => 'Staff-manager-only multipart upload, at most 50 MiB. Dual Portal identities are denied. The verified persistent privacy latch chooses ordinary upload defaults; the initial reader deployment retains inheritance. Visibility fields and topic/comment parents remain rejected before staging. Locked parent version checked; actor/client/key receipt binds parent/version/filename/media/length/SHA256, with replay and audit. Uploading adds an immutable file and leaves parent business facts unchanged.',
                 'parameters' => [
                     'WorkspaceId',
                     [
@@ -388,7 +446,8 @@ final class AgentRestDocumentation
                 'request' => 'AttachmentUploadRequest',
                 'request_types' => ['multipart/form-data'],
                 'response' => 'AttachmentResponse',
-                'response_description' => 'Manager-only multipart upload, at most 50 MiB. Locked parent version checked; actor/client/key receipt binds parent/version/filename/media/length/SHA256, with replay and audit. Uploading adds an immutable file and leaves parent business facts unchanged.',
+                'response_description' => 'Staff-manager-only multipart upload, at most 50 MiB. Dual Portal identities are denied. The verified persistent privacy latch chooses ordinary upload defaults; the initial reader deployment retains inheritance. Visibility fields and topic/comment parents remain rejected before staging. Locked parent version checked; actor/client/key receipt binds parent/version/filename/media/length/SHA256, with replay and audit. Uploading adds an immutable file and leaves parent business facts unchanged.',
+                'errors' => [503 => 'The durable upload policy cannot be verified. No bytes or recovery rows are staged; ordinary reads remain available.'],
             ],
             'attachments.upload_url' => [
                 'method' => 'POST',
@@ -409,6 +468,7 @@ final class AgentRestDocumentation
                 ],
                 'response' => 'AttachmentUploadUrlResponse',
                 'response_description' => 'Authorizes a later upload; preparing a URL does not reserve idempotency or persist bytes. Both file and workflow write flags and manager permission required. Upload file plus expected_version with same bearer credential and Idempotency-Key to returned URL.',
+                'errors' => [503 => 'The durable upload policy cannot be verified. No bytes or recovery rows are staged; ordinary reads remain available.'],
             ],
             'billing_audit.stale_and_missing' => [
                 'method' => 'GET',
@@ -917,20 +977,21 @@ final class AgentRestDocumentation
             'expenses.receipts.list' => [
                 'method' => 'GET',
                 'scopes' => ['expenses:read'],
-                'description' => 'Manager-only list of the 100 newest available receipts; includes current expense_version.',
-                'parameters' => ['WorkspaceId', 'ExpenseId'],
+                'description' => 'Staff-manager-only available receipts, ordered by descending ID, default and maximum 100 per page. Follow meta.next_cursor; serialized byte limits may shorten a page. Includes current expense_version. Dual Portal identities are denied.',
+                'parameters' => ['WorkspaceId', 'ExpenseId', self::filePageLimit(), self::filePageCursor()],
                 'response' => 'ExpenseReceiptListResponse',
                 'response_description' => 'Successful operation',
             ],
             'expenses.receipts.upload' => [
                 'method' => 'POST',
                 'scopes' => ['expenses:read', 'expenses:write'],
-                'description' => 'Manager-only multipart upload, at most 50 MiB. File digest, filename and expense version bind idempotent retries. Version is checked on locked expense and advances on upload. Prepared URLs expire after ten minutes; direct authenticated REST uploads need no preparation. Both expense write flags required.',
+                'description' => 'Staff-manager-only multipart upload, at most 50 MiB. Dual Portal identities are denied. The verified persistent privacy latch chooses ordinary upload defaults; the initial reader deployment retains inheritance. Visibility fields and topic/comment parents remain rejected before staging. File digest, filename and expense version bind idempotent retries. Version is checked on locked expense and advances on upload. Prepared URLs expire after ten minutes; direct authenticated REST uploads need no preparation. Both expense write flags required.',
                 'parameters' => ['WorkspaceId', 'ExpenseId', 'IdempotencyKey'],
                 'request' => 'ExpenseReceiptUploadRequest',
                 'request_types' => ['multipart/form-data'],
                 'response' => 'ExpenseReceiptUploadResponse',
                 'response_description' => 'Successful operation',
+                'errors' => [503 => 'The durable upload policy cannot be verified. No bytes or recovery rows are staged; ordinary reads remain available.'],
             ],
             'expenses.receipts.upload_url' => [
                 'method' => 'GET',
@@ -939,6 +1000,7 @@ final class AgentRestDocumentation
                 'parameters' => ['WorkspaceId', 'ExpenseId'],
                 'response' => 'ExpenseReceiptUploadUrlResponse',
                 'response_description' => 'Successful operation',
+                'errors' => [503 => 'The durable upload policy cannot be verified. No bytes or recovery rows are staged; ordinary reads remain available.'],
             ],
             'expenses.unapprove' => [
                 'method' => 'POST',
@@ -1400,7 +1462,7 @@ final class AgentRestDocumentation
             'search' => [
                 'method' => 'GET',
                 'scopes' => ['identity:read'],
-                'description' => 'Search authorized clients, projects, invoices and tasks; each kind additionally requires its read scope. Bounded to five results per kind.',
+                'description' => 'Search authorized clients, projects, invoices, tasks, native notes, discussions and comments; each kind additionally requires its read scope. Collaboration kinds require collaboration:read and exact audience authorization. Bounded to five results per kind.',
                 'parameters' => [
                     'WorkspaceId',
                     [
@@ -1411,7 +1473,7 @@ final class AgentRestDocumentation
                     ],
                 ],
                 'response' => 'SearchResponse',
-                'response_description' => 'Search authorized clients, projects, invoices and tasks; each kind additionally requires its read scope. Bounded to five results per kind.',
+                'response_description' => 'Search authorized clients, projects, invoices, tasks, native notes, discussions and comments; each kind additionally requires its read scope. Collaboration kinds require collaboration:read and exact audience authorization. Bounded to five results per kind.',
             ],
             'tasks.create' => [
                 'method' => 'POST',
@@ -1983,6 +2045,20 @@ final class AgentRestDocumentation
             'description' => "Send `read` to receive {$answer}, when the token also holds {$scope}; without that scope the response keeps the write shape. Any other value is refused before anything is written, and the view is not part of the request an Idempotency-Key binds.",
             'schema' => ['type' => 'string', 'enum' => [ReadView::READ]],
         ];
+    }
+
+    /** @return array<string, mixed> */
+    private static function filePageLimit(): array
+    {
+        return ['name' => 'limit', 'in' => 'query', 'required' => false,
+            'schema' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 100, 'default' => 100]];
+    }
+
+    /** @return array<string, mixed> */
+    private static function filePageCursor(): array
+    {
+        return ['name' => 'cursor', 'in' => 'query', 'required' => false,
+            'schema' => ['type' => 'string', 'maxLength' => 4096]];
     }
 
     /** @return array<string, mixed> */

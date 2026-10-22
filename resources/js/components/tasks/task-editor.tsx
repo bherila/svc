@@ -28,6 +28,7 @@ export type EditableTask = {
     version: string;
     update_action: string;
     assignees_action: string;
+    completion_advisory?: string | null;
 };
 export type TaskEditorProject = {
     id: string;
@@ -329,6 +330,12 @@ export function TaskEditor({
                             ))}
                         </SelectContent>
                     </Select>
+                    {form.data.status === 'completed' &&
+                        task.completion_advisory && (
+                            <p className="text-sm wrap-anywhere text-muted-foreground">
+                                {task.completion_advisory}
+                            </p>
+                        )}
                 </div>
             )}
             <AssigneePicker

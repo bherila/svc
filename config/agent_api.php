@@ -21,6 +21,7 @@ return [
     'client_writes_enabled' => (bool) env('AGENT_API_CLIENT_WRITES_ENABLED', false),
     // Project administration and membership changes require this nested cutover.
     'project_writes_enabled' => (bool) env('AGENT_API_PROJECT_WRITES_ENABLED', false),
+    'collaboration_writes_enabled' => (bool) env('AGENT_API_COLLABORATION_WRITES_ENABLED', false),
     'workspace_writes_enabled' => (bool) env('AGENT_API_WORKSPACE_WRITES_ENABLED', false),
     'file_writes_enabled' => (bool) env('AGENT_API_FILE_WRITES_ENABLED', false),
     // Global MCP emergency stop and optional reviewed capability kill switches.

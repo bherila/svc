@@ -22,6 +22,65 @@ use Tests\TestCase;
 #[CoversClass(AgentMcpRestCall::class)]
 final class AgentMcpTaskOrganizationToolsTest extends TestCase
 {
+    private function assertPublicInputBounds(): void
+    {
+        foreach (['get', 'listsCreate', 'listsUpdate', 'listsArchive', 'listsRestore', 'listsReorder', 'tasksCreate', 'tasksMove', 'tasksReorder'] as $method) {
+            foreach ((new ReflectionMethod(AgentMcpTaskOrganizationTools::class, $method))->getParameters() as $parameter) {
+                $name = $parameter->getName();
+                if ($name === 'request') {
+                    continue;
+                }
+                if ($name === 'container') {
+                    $this->assertFalse($parameter->getDefaultValue());
+
+                    continue;
+                }
+                if ($name === 'is_visible_to_client') {
+                    $this->assertTrue($parameter->allowsNull());
+                    $this->assertNull($parameter->getDefaultValue());
+
+                    continue;
+                }
+                if ($name === 'confirm') {
+                    $this->assertFalse($parameter->isOptional());
+                    $this->assertFalse($parameter->allowsNull());
+
+                    continue;
+                }
+                $attributes = $parameter->getAttributes(Schema::class);
+                $this->assertCount(1, $attributes, $method.'/'.$name);
+                $schema = $attributes[0]->newInstance();
+                if ($name === 'task') {
+                    $this->assertSame(['type' => 'object', 'additionalProperties' => false, 'required' => ['title'], 'properties' => [
+                        'title' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 255],
+                        'description' => ['type' => ['string', 'null'], 'maxLength' => 10000],
+                        'is_visible_to_client' => ['type' => 'boolean'],
+                        'starts_on' => ['type' => ['string', 'null'], 'format' => 'date'],
+                        'due_on' => ['type' => ['string', 'null'], 'format' => 'date'],
+                        'assignee_ids' => ['type' => 'array', 'maxItems' => 10, 'uniqueItems' => true, 'items' => ['type' => 'string', 'format' => 'uuid']],
+                    ]], $schema->definition);
+                } elseif ($name === 'ordered_ids') {
+                    $this->assertSame([100, true, ['type' => 'string', 'format' => 'uuid']], [$schema->maxItems, $schema->uniqueItems, $schema->items]);
+                } elseif (str_starts_with($name, 'expected_')) {
+                    $this->assertSame([64, 64], [$schema->minLength, $schema->maxLength]);
+                } elseif ($name === 'name' || $name === 'idempotency_key') {
+                    $this->assertSame([1, 255], [$schema->minLength, $schema->maxLength]);
+                } else {
+                    $this->assertSame('uuid', $schema->format, $method.'/'.$name);
+                }
+                if ($name === 'name' && $method === 'listsUpdate') {
+                    $this->assertTrue($parameter->allowsNull());
+                    $this->assertNull($parameter->getDefaultValue());
+                } elseif (in_array($name, ['parent_id', 'list_id'], true) && $method === 'get') {
+                    $this->assertTrue($parameter->allowsNull());
+                    $this->assertNull($parameter->getDefaultValue());
+                } else {
+                    $this->assertFalse($parameter->isOptional(), $method.'/'.$name);
+                }
+            }
+        }
+    }
+
     public function test_schema_requires_explicit_containers_closed_task_fields_and_bounded_complete_orders(): void
     {
         $create = new ReflectionMethod(AgentMcpTaskOrganizationTools::class, 'tasksCreate');
@@ -60,6 +119,7 @@ final class AgentMcpTaskOrganizationToolsTest extends TestCase
 
     public function test_every_adapter_dispatches_the_exact_route_body_revisions_confirmation_and_retry_key(): void
     {
+        $this->assertPublicInputBounds();
         $version = str_repeat('a', 64);
         $task = ['title' => 'Synthetic transport task', 'description' => null, 'due_on' => null, 'is_visible_to_client' => false, 'assignee_ids' => []];
         $cases = [

@@ -2,9 +2,13 @@
 
 use App\Http\Requests\TaskOrganizationInput;
 use App\Models\ClientCompany;
+use App\Models\ClientTask;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Tasks\Organization\TaskOrganizationAction;
+use App\Services\Tasks\TaskCompletionAdvisory;
+use App\Services\Tasks\TaskEditorPresenter;
+use App\Services\Tasks\WorkspaceTaskRepository;
 use Illuminate\Support\Facades\DB;
 
 if (PHP_SAPI !== 'cli') {
@@ -46,6 +50,22 @@ if ($root['effective_visible_to_client'] !== true || $movingRoot['move_target'] 
     || $views['move_destination']['container']['move_target'] === null
     || $views['archived_list']['container']['create_task_href'] !== null) {
     throw new RuntimeException('The publication, archive or filtered move-target fixtures changed.');
+}
+$advisoryTask = app(WorkspaceTaskRepository::class)->find($workspace, $fixture['verify_ids']['root']);
+app(TaskCompletionAdvisory::class)->load($workspace, [$advisoryTask]);
+$editor = app(TaskEditorPresenter::class)->task($workspace, $advisoryTask);
+if ($editor['completion_advisory'] !== 'This task has unfinished subtasks. Completing it leaves those subtasks unchanged.'
+    || $editor['status'] !== 'open' || $editor['completed_at'] !== null
+    || route('tasks.show', [$workspace, $advisoryTask]) !== $fixture['advisory_task_page']
+    || $editor['assignees_action'] !== $fixture['advisory_assignees_page']) {
+    throw new RuntimeException('The native editor fixture lost its pre-completion advisory.');
+}
+foreach (['child', 'grandchild'] as $key) {
+    $descendant = ClientTask::query()->where('workspace_id', $workspace->id)->where('client_project_id', $advisoryTask->client_project_id)
+        ->where('public_id', $fixture['verify_ids'][$key])->sole();
+    if ($descendant->status !== 'open' || $descendant->completed_at !== null) {
+        throw new RuntimeException('The native editor journey changed an unfinished descendant.');
+    }
 }
 foreach ($fixture['fingerprints'] as $table => $expected) {
     $actual = hash('sha256', json_encode(DB::table($table)->orderBy('id')->get()->all(), JSON_THROW_ON_ERROR));

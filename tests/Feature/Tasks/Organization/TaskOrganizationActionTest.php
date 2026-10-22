@@ -35,6 +35,27 @@ final class TaskOrganizationActionTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_nested_raw_cli_assignees_use_the_foundation_array_guard_and_preview_never_creates_rows(): void
+    {
+        [$workspace, $project, $owner] = $this->fixture();
+        $version = app(TaskOrganizationAction::class)->inspect($owner, $workspace, $project->public_id)->graphVersion();
+        $input = tempnam(sys_get_temp_dir(), 'svc-organization-assignees-');
+        try {
+            foreach (['', ' ', null, 17] as $index => $assignees) {
+                file_put_contents($input, json_encode(['parent_id' => null, 'list_id' => null, 'expected_graph_version' => $version,
+                    'task' => ['title' => 'Synthetic nested raw task', 'assignee_ids' => $assignees]], JSON_THROW_ON_ERROR));
+                $this->assertSame(2, Artisan::call('svc:tasks:organization', ['operation' => 'tasks.create', 'workspace' => $workspace->public_id,
+                    'project' => $project->public_id, '--actor' => $owner->public_id, '--input' => $input, '--key' => 'synthetic-invalid-nested-assignees-'.$index, '--format' => 'json']));
+                $this->assertStringContainsString('assignee_ids', Artisan::output());
+                foreach (['client_tasks', 'client_task_assignments', 'client_task_graph_states', 'agent_mutation_receipts', 'agent_mutation_audits'] as $table) {
+                    $this->assertDatabaseCount($table, 0);
+                }
+            }
+        } finally {
+            unlink($input);
+        }
+    }
+
     public function test_raw_cli_empty_visibility_is_rejected_before_preview_or_apply_and_preserves_existing_publication(): void
     {
         [$workspace, $project, $owner] = $this->fixture();
@@ -52,7 +73,7 @@ final class TaskOrganizationActionTest extends TestCase
                 $args = ['operation' => 'lists.update', 'workspace' => $workspace->public_id, 'project' => $project->public_id,
                     '--actor' => $owner->public_id, '--input' => $input, '--key' => 'synthetic-invalid-visibility-'.$index, '--format' => 'json'];
                 foreach ([false, true] as $apply) {
-                    $this->assertSame(2, Artisan::call('svc:task-organization', $args + ($apply ? ['--apply' => true] : [])));
+                    $this->assertSame(2, Artisan::call('svc:tasks:organization', $args + ($apply ? ['--apply' => true] : [])));
                     $this->assertTrue($list->fresh()->is_visible_to_client);
                     $this->assertSame($version, AgentApiVersion::for($list->fresh()));
                     $this->assertSame($graph->graphVersion(), $action->inspect($owner, $workspace, $project->public_id)->graphVersion());
@@ -147,27 +168,27 @@ final class TaskOrganizationActionTest extends TestCase
                 'expected_graph_version' => $action->inspect($owner, $workspace, $project->public_id)->graphVersion(),
                 'task' => ['title' => 'Synthetic CLI child', 'assignee_ids' => [$owner->public_id]]], JSON_THROW_ON_ERROR));
             $command = $base + ['operation' => 'tasks.create', '--key' => 'synthetic-cli-organization', '--input' => $input];
-            $this->assertSame(0, Artisan::call('svc:task-organization', $command));
+            $this->assertSame(0, Artisan::call('svc:tasks:organization', $command));
             $this->assertTrue(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['dry_run']);
             foreach (['client_tasks', 'client_task_assignments', 'client_task_graph_states', 'agent_mutation_receipts', 'agent_mutation_audits'] as $table) {
                 $this->assertDatabaseCount($table, 0);
             }
-            $this->assertSame(0, Artisan::call('svc:task-organization', $base + ['operation' => 'get']));
+            $this->assertSame(0, Artisan::call('svc:tasks:organization', $base + ['operation' => 'get']));
             $this->assertDatabaseCount('client_task_graph_states', 0);
-            $this->assertSame(0, Artisan::call('svc:task-organization', $command + ['--apply' => true]));
+            $this->assertSame(0, Artisan::call('svc:tasks:organization', $command + ['--apply' => true]));
             $this->assertFalse(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['dry_run']);
-            $this->assertSame(0, Artisan::call('svc:task-organization', $command + ['--apply' => true]));
+            $this->assertSame(0, Artisan::call('svc:tasks:organization', $command + ['--apply' => true]));
             foreach (['client_tasks', 'client_task_assignments', 'client_task_graph_states', 'agent_mutation_receipts'] as $table) {
                 $this->assertDatabaseCount($table, 1);
             }
-            $this->assertSame(0, Artisan::call('svc:task-organization', $base + ['operation' => 'get', '--container' => true]));
+            $this->assertSame(0, Artisan::call('svc:tasks:organization', $base + ['operation' => 'get', '--container' => true]));
             $view = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['data'];
             $this->assertSame('Synthetic CLI child', $view['container']['tasks'][0]['title']);
             $this->assertArrayNotHasKey('workspace_id', $view['tree'][0]);
             $this->assertArrayNotHasKey('description', $view['container']['tasks'][0]);
             config(['task_organization.enabled' => false]);
             $this->assertTrue(app(\App\Console\Commands\Tasks\TaskOrganizationCommand::class)->isHidden());
-            $this->assertSame(1, Artisan::call('svc:task-organization', $command + ['--apply' => true]));
+            $this->assertSame(1, Artisan::call('svc:tasks:organization', $command + ['--apply' => true]));
             $this->assertDatabaseCount('client_tasks', 1);
             $this->assertDatabaseCount('agent_mutation_receipts', 1);
         } finally {
@@ -329,8 +350,8 @@ final class TaskOrganizationActionTest extends TestCase
             $this->move($action, $owner, $workspace, $project, $task, $foreign->public_id, null);
             $this->fail('A foreign project parent was accepted.');
         } catch (ValidationException $exception) {
-            $this->assertStringNotContainsString($foreign->title, json_encode($exception->errors()));
-            $this->assertStringNotContainsString($foreign->public_id, json_encode($exception->errors()));
+            $this->assertStringNotContainsString($foreign->title, json_encode($exception->errors(), JSON_THROW_ON_ERROR));
+            $this->assertStringNotContainsString($foreign->public_id, json_encode($exception->errors(), JSON_THROW_ON_ERROR));
         }
         $graph = $action->inspect($owner, $workspace, $project->public_id);
         $command = TaskOrganizationCommand::fromInput('lists.create', ['name' => 'Synthetic dual list', 'expected_graph_version' => $graph->graphVersion()]);

@@ -79,6 +79,9 @@ final class TaskGraphTest extends TestCase
         $graph = $this->graph(['a' => [null, null], 'b' => [null, 'private']]);
         $container = new TaskContainer(null, null);
         $changed = $graph->tasks;
+        if (! isset($changed['a'])) {
+            $this->fail('The fixture must retain the sibling whose revision changes.');
+        }
         $changed['a']['version'] = 'new-assignment-revision';
         $this->assertNotSame($graph->containerVersion($container), (new TaskGraph($changed, $graph->lists, 0))->containerVersion($container));
         $this->assertNotSame($graph->containerVersion($container), $graph->containerVersion(new TaskContainer(null, 'private')));
@@ -119,6 +122,9 @@ final class TaskGraphTest extends TestCase
     {
         $graph = $this->graph(['a' => [null, 'private'], 'b' => ['a', null], 'moving' => [null, null]]);
         $lists = $graph->lists;
+        if (! isset($lists['private'])) {
+            $this->fail('The fixture must retain its destination list.');
+        }
         $lists['private']['deleted'] = true;
         $archived = new TaskGraph($graph->tasks, $lists, 1);
         $archived->assertValid();
@@ -126,6 +132,90 @@ final class TaskGraphTest extends TestCase
         $this->assertNull($archived->move('b', new TaskContainer(null, null))->rootList('b'));
         $this->expectExceptionMessage('The destination list is archived.');
         $archived->move('moving', new TaskContainer('b', null));
+    }
+
+    public function test_container_keys_keep_distinct_parent_identities_and_the_root_list_identity(): void
+    {
+        $this->assertSame('["a",null]', (new TaskContainer('a', null))->key());
+        $this->assertSame('["b",null]', (new TaskContainer('b', null))->key());
+        $this->assertSame('[null,"private"]', (new TaskContainer(null, 'private'))->key());
+        $this->assertSame('[null,null]', (new TaskContainer(null, null))->key());
+    }
+
+    public function test_missing_parents_lists_and_cycles_have_the_same_safe_invalid_organization_error(): void
+    {
+        foreach ([['a' => ['missing', null]], ['a' => [null, 'missing']], ['a' => ['b', null], 'b' => ['a', null]]] as $nodes) {
+            try {
+                $this->graph($nodes)->rootList('a');
+                $this->fail('Malformed organization was accepted.');
+            } catch (DomainException $exception) {
+                $this->assertSame('The task organization is invalid.', $exception->getMessage());
+            }
+        }
+    }
+
+    public function test_unavailable_containers_fail_before_reading_or_previewing_their_siblings(): void
+    {
+        $graph = $this->graph(['a' => [null, null]]);
+        $graph->assertPlacement(new TaskContainer('a', null));
+        $graph->assertPlacement(new TaskContainer(null, 'private'));
+        foreach ([new TaskContainer('foreign-parent', null), new TaskContainer(null, 'foreign-list')] as $container) {
+            foreach (['siblings', 'assertPlacement'] as $method) {
+                try {
+                    $graph->$method($container);
+                    $this->fail('An unavailable container was accepted.');
+                } catch (DomainException $exception) {
+                    $this->assertSame('The requested container is unavailable.', $exception->getMessage());
+                }
+            }
+        }
+    }
+
+    public function test_project_state_revision_invalidates_graph_and_unchanged_container_tokens(): void
+    {
+        $graph = $this->graph(['a' => [null, null]]);
+        $newRevision = new TaskGraph($graph->tasks, $graph->lists, 1);
+        $this->assertNotSame($graph->graphVersion(), $newRevision->graphVersion());
+        $this->assertNotSame($graph->containerVersion(new TaskContainer(null, null)), $newRevision->containerVersion(new TaskContainer(null, null)));
+    }
+
+    public function test_even_noop_moves_and_local_reorders_refuse_unrelated_malformed_ancestry(): void
+    {
+        $graph = $this->graph(['a' => [null, null], 'broken' => ['foreign', null]]);
+        $container = new TaskContainer(null, null);
+        foreach (['move', 'reorder'] as $operation) {
+            try {
+                if ($operation === 'move') {
+                    $graph->move('a', $container);
+                } else {
+                    $graph->reorder($container, ['a']);
+                }
+                $this->fail('An operation ignored malformed project ancestry.');
+            } catch (DomainException $exception) {
+                $this->assertSame('The task organization is invalid.', $exception->getMessage());
+            }
+        }
+    }
+
+    public function test_moving_root_tasks_changes_the_list_identity_and_leaves_the_original_snapshot_intact(): void
+    {
+        $graph = $this->graph(['a' => [null, null], 'b' => [null, 'private']]);
+        $listed = $graph->move('a', new TaskContainer(null, 'private'));
+        $this->assertSame('private', $listed->tasks['a']['list']);
+        $this->assertSame('private', $listed->rootList('a'));
+        $this->assertSame(['b', 'a'], $listed->siblings(new TaskContainer(null, 'private')));
+        $this->assertNull($graph->tasks['a']['list']);
+        $unlisted = $graph->move('b', new TaskContainer(null, null));
+        $this->assertNull($unlisted->tasks['b']['list']);
+        $this->assertSame(['a', 'b'], $unlisted->siblings(new TaskContainer(null, null)));
+        $this->assertSame('private', $graph->tasks['b']['list']);
+    }
+
+    public function test_a_foreign_source_task_cannot_be_moved_into_an_authorized_container(): void
+    {
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('The requested task is unavailable.');
+        $this->graph(['a' => [null, null]])->move('foreign', new TaskContainer(null, 'private'));
     }
 
     /** @param array<string, array{?string, ?string}> $nodes */

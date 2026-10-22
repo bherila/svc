@@ -29,6 +29,13 @@ final class AgentTaskOrganizationController extends Controller
         return response()->json(['data' => $organization->snapshot($actor, $workspace, $project, $container, TaskMutationOrigin::Agent)->data]);
     }
 
+    /** Keep PATCH and DELETE on the same URI distinct for generated route clients. */
+    public function archiveList(Request $request, Workspace $workspace, string $project,
+        AgentMutationContextFactory $contexts, AgentTaskOrganizationMutationAction $writes): JsonResponse
+    {
+        return $this->mutate($request, $workspace, $project, $contexts, $writes);
+    }
+
     public function mutate(Request $request, Workspace $workspace, string $project,
         AgentMutationContextFactory $contexts, AgentTaskOrganizationMutationAction $writes): JsonResponse
     {

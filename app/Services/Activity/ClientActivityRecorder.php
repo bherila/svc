@@ -5,6 +5,8 @@ namespace App\Services\Activity;
 use App\Contracts\WorkspaceOwned;
 use App\Models\AgentPrincipal;
 use App\Models\ClientAgreement;
+use App\Models\ClientCollaborationTopic;
+use App\Models\ClientComment;
 use App\Models\ClientCompany;
 use App\Models\ClientCompanyActivity;
 use App\Models\ClientInvoice;
@@ -123,6 +125,8 @@ final class ClientActivityRecorder
     {
         return match (true) {
             $subject instanceof ClientCompany => 'client_company',
+            $subject instanceof ClientCollaborationTopic => 'client_collaboration_topic',
+            $subject instanceof ClientComment => 'client_comment',
             $subject instanceof ClientAgreement => 'client_agreement',
             $subject instanceof ClientInvoice => 'client_invoice',
             $subject instanceof ClientInvoicePayment => 'client_invoice_payment',

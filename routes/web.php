@@ -7,6 +7,7 @@ use App\Http\Controllers\ClientPortalController;
 use App\Http\Controllers\ClientProjectAccessController;
 use App\Http\Controllers\ClientProjectController;
 use App\Http\Controllers\ClientTaskController;
+use App\Http\Controllers\ClientTaskOrganizationController;
 use App\Http\Controllers\CompanyProfileController;
 use App\Http\Controllers\Finance\FinancePaymentLinkController;
 use App\Http\Controllers\HistoricalLibraryController;
@@ -91,6 +92,7 @@ Route::middleware('auth')->group(function (): void {
         ->name('workspaces.operations');
 
     Route::middleware(ResolveWorkspaceNavigation::class)->group(function (): void {
+        Route::get('/workspaces/{workspace}/clients/{clientCompany}/projects/{project}/task-organization', [ClientTaskOrganizationController::class, 'page'])->whereUuid('project')->name('tasks.organization.show');
         Route::get('/workspaces/{workspace}/tasks/{clientTask}', [ClientTaskController::class, 'show'])->name('tasks.show');
         Route::get('/workspaces/{workspace}/projects/{clientProject}/task-assignees', [ClientTaskController::class, 'assignees'])->name('tasks.assignees');
         Route::get('/workspaces/{workspace}/history', [HistoricalLibraryController::class, 'index'])->name('history.index');
@@ -154,6 +156,17 @@ Route::middleware('auth')->group(function (): void {
     Route::post('/workspaces/{workspace}/clients', [ClientCompanyController::class, 'store'])->name('clients.store');
     Route::post('/workspaces/{workspace}/clients/{clientCompany}/projects', [ClientProjectController::class, 'store'])
         ->name('projects.store');
+    Route::prefix('/workspaces/{workspace}/projects/{project}/task-organization')->group(function (): void {
+        Route::get('/', [ClientTaskOrganizationController::class, 'show'])->whereUuid('project')->name('tasks.organization.snapshot');
+        foreach ([['post', '/lists', 'lists.store', 'lists.create'], ['patch', '/lists/{list}', 'lists.update', 'lists.update'],
+            ['delete', '/lists/{list}', 'lists.archive', 'lists.archive'], ['post', '/lists/{list}/restore', 'lists.restore', 'lists.restore'],
+            ['put', '/lists/order', 'lists.reorder', 'lists.reorder'], ['post', '/tasks', 'tasks.store', 'tasks.create'],
+            ['patch', '/tasks/{task}/container', 'tasks.move', 'tasks.move'], ['put', '/tasks/order', 'tasks.reorder', 'tasks.reorder']] as [$verb, $suffix, $name, $operation]) {
+            Route::$verb($suffix, [ClientTaskOrganizationController::class, $operation === 'lists.archive' ? 'archiveList' : 'mutate'])
+                ->whereUuid(['project', 'list', 'task'])
+                ->defaults('task_organization_operation', $operation)->name('tasks.organization.'.$name);
+        }
+    });
     Route::post('/workspaces/{workspace}/projects/{clientProject}/tasks', [ClientTaskController::class, 'store'])
         ->name('tasks.store');
     Route::patch('/workspaces/{workspace}/tasks/{clientTask}', [ClientTaskController::class, 'update'])
@@ -165,3 +178,4 @@ require __DIR__.'/expenses.php';
 require __DIR__.'/expenses.php';
 require __DIR__.'/billing.php';
 require __DIR__.'/files.php';
+require __DIR__.'/collaboration.php';

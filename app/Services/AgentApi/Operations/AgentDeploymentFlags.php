@@ -38,6 +38,8 @@ final class AgentDeploymentFlags implements DeploymentFlags
 
     public const string CLIENTS = 'agent.writes.clients';
 
+    public const string COLLABORATION = 'agent.writes.collaboration';
+
     public const string PROJECTS = 'agent.writes.projects';
 
     public const string PROPOSALS = 'agent.writes.proposals';
@@ -48,6 +50,9 @@ final class AgentDeploymentFlags implements DeploymentFlags
 
     /** The read-only Square pass-through: on only while Square is configured. */
     public const string SQUARE = 'square.connected';
+
+    /** Product availability; first-party sessions never bypass it. */
+    public const string TASK_ORGANIZATION = 'tasks.organization';
 
     /**
      * Portal invitations (#430), a product switch rather than an agent
@@ -72,6 +77,7 @@ final class AgentDeploymentFlags implements DeploymentFlags
         self::PAYMENTS => ['key' => 'agent_api.payment_writes_enabled', 'parents' => [self::WRITES]],
         self::EXPENSES => ['key' => 'agent_api.expense_writes_enabled', 'parents' => [self::WRITES]],
         self::CLIENTS => ['key' => 'agent_api.client_writes_enabled', 'parents' => [self::WRITES]],
+        self::COLLABORATION => ['key' => 'agent_api.collaboration_writes_enabled', 'parents' => [self::WRITES]],
         self::PROJECTS => ['key' => 'agent_api.project_writes_enabled', 'parents' => [self::WRITES]],
         self::PROPOSALS => ['key' => 'agent_api.proposal_writes_enabled', 'parents' => [self::WRITES]],
         self::WORKSPACES => ['key' => 'agent_api.workspace_writes_enabled', 'parents' => [self::WRITES]],
@@ -91,6 +97,7 @@ final class AgentDeploymentFlags implements DeploymentFlags
         self::PAYMENTS => 'AGENT_API_PAYMENT_WRITES_ENABLED',
         self::EXPENSES => 'AGENT_API_EXPENSE_WRITES_ENABLED',
         self::CLIENTS => 'AGENT_API_CLIENT_WRITES_ENABLED',
+        self::COLLABORATION => 'AGENT_API_COLLABORATION_WRITES_ENABLED',
         self::PROJECTS => 'AGENT_API_PROJECT_WRITES_ENABLED',
         self::PROPOSALS => 'AGENT_API_PROPOSAL_WRITES_ENABLED',
         self::WORKSPACES => 'AGENT_API_WORKSPACE_WRITES_ENABLED',
@@ -135,6 +142,11 @@ final class AgentDeploymentFlags implements DeploymentFlags
     {
         $switches = [];
         foreach ($flags as $flag) {
+            if ($flag === self::TASK_ORGANIZATION) {
+                $switches[] = 'TASK_ORGANIZATION_WRITES_ENABLED';
+
+                continue;
+            }
             foreach (self::lineage($flag) as $cutover) {
                 $switches[] = self::ENVIRONMENT[$cutover];
             }
@@ -167,11 +179,15 @@ final class AgentDeploymentFlags implements DeploymentFlags
 
     public static function isAvailabilityPrecondition(string $flag): bool
     {
-        return $flag === self::SQUARE;
+        return in_array($flag, [self::SQUARE, self::TASK_ORGANIZATION], true);
     }
 
     public function enabled(string $flag): bool
     {
+        if ($flag === self::TASK_ORGANIZATION) {
+            return config('task_organization.enabled') === true;
+        }
+
         if ($flag === self::SQUARE) {
             return SquareConfiguration::fromConfig()->isConfigured();
         }

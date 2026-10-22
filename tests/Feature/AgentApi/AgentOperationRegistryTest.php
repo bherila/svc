@@ -46,12 +46,13 @@ final class AgentOperationRegistryTest extends TestCase
             'attachments.delete', 'billing_schedules.generate', 'clients.archive', 'clients.contacts.archive',
             'clients.portal_access.grant', 'clients.portal_access.revoke', 'clients.portal_access.update',
             'clients.portal_invitations.create', 'clients.portal_invitations.resend', 'clients.portal_invitations.revoke',
+            'collaboration.topics.delete', 'collaboration.comments.delete',
             'companies.square_customer.clear', 'companies.square_customer.set', 'expense_schedules.generate',
             'finance.reconciliations.acknowledge',
             'invoices.correct', 'invoices.discard_draft', 'invoices.generate_period', 'invoices.issue',
             'invoices.release_delivery', 'invoices.send', 'invoices.send_reminder', 'invoices.square_cover', 'invoices.square_link', 'invoices.square_uncover', 'invoices.square_unlink', 'invoices.void',
             'payments.correct', 'payments.record', 'payments.refund', 'payments.reverse_refund', 'payments.set_status', 'projects.archive', 'projects.create', 'projects.members.update', 'projects.update',
-            'proposals.accept', 'proposals.send', 'square.import_customer',
+            'proposals.accept', 'proposals.send', 'square.import_customer', 'task_organization.lists.archive',
         ];
         sort($expected);
         $document = AgentOpenApi::checked()->full();

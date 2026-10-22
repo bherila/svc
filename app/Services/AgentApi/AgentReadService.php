@@ -19,6 +19,7 @@ use App\Services\Billing\DeferredBacklogReadService;
 use App\Services\Billing\InvoiceCorrectionReadService;
 use App\Services\Mcp\AgentWithheldTools;
 use App\Services\Tasks\TaskAccess;
+use App\Services\Tasks\TaskCompletionAdvisory;
 use App\Services\Tasks\TaskMutationOrigin;
 use App\Services\Tasks\TaskPlanningPresenter;
 use App\Services\Tasks\TaskVisibility;
@@ -244,7 +245,14 @@ final class AgentReadService
         }
 
         return CursorPage::run($workspace, 'tasks|project_id='.($projectId ?? ''), $limit, $cursor,
-            fn (int $take, ?int $after) => (clone $query)->when($after !== null, fn (Builder $page) => $page->where('client_tasks.id', '>', $after))->limit($take)->get(),
+            function (int $take, ?int $after) use ($query, $workspace, $includePlanning) {
+                $tasks = (clone $query)->when($after !== null, fn (Builder $page) => $page->where('client_tasks.id', '>', $after))->limit($take)->get();
+                if ($includePlanning) {
+                    app(TaskCompletionAdvisory::class)->load($workspace, $tasks);
+                }
+
+                return $tasks;
+            },
             fn (ClientTask $task): array => $this->taskPresenter->present($workspace, $task, includePlanning: $includePlanning,
                 canManage: $manageable === null || in_array((int) $task->client_project_id, $manageable, true)),
             maxDataBytes: $maxDataBytes,
@@ -258,6 +266,9 @@ final class AgentReadService
         $includePlanning = $origin === TaskMutationOrigin::Internal || ! $this->access->isWorkspaceClient($user, $workspace);
         $manageable = $includePlanning ? app(TaskAccess::class)->manageableProjectIds($user, $workspace) : [];
         $record = $this->taskQuery($user, $workspace, $origin)->where('public_id', $taskId)->with('project.clientCompany')->when($includePlanning, fn (Builder $planning): Builder => $planning->with(TaskPlanningPresenter::relations($workspace)))->firstOrFail();
+        if ($includePlanning) {
+            app(TaskCompletionAdvisory::class)->load($workspace, [$record]);
+        }
 
         return $this->taskPresenter->present($workspace, $record, includePlanning: $includePlanning, canManage: $manageable === null || in_array((int) $record->client_project_id, $manageable, true));
     }

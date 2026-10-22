@@ -168,6 +168,8 @@ final class WorkspaceNavigationFactory
             time: route('clients.time', $parameters, absolute: false),
             expenses: route('clients.expenses', $parameters, absolute: false),
             tasks: route('clients.tasks', $parameters, absolute: false),
+            notes: route('collaboration.index', [...$parameters, 'kind' => 'note'], absolute: false),
+            discussions: route('collaboration.index', [...$parameters, 'kind' => 'discussion'], absolute: false),
         );
     }
 
@@ -191,6 +193,8 @@ final class WorkspaceNavigationFactory
             // belongs to the commit that makes it, not to this one.
             expenses: null,
             tasks: route('portal.tasks', $company, absolute: false),
+            notes: route('portal.collaboration.index', [$company, 'kind' => 'note'], absolute: false),
+            discussions: route('portal.collaboration.index', [$company, 'kind' => 'discussion'], absolute: false),
         );
     }
 }

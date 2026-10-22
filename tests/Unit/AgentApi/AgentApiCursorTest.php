@@ -4,8 +4,10 @@ namespace Tests\Unit\AgentApi;
 
 use App\Support\AgentApi\AgentApiCursor;
 use InvalidArgumentException;
+use PHPUnit\Framework\Attributes\CoversClass;
 use Tests\TestCase;
 
+#[CoversClass(AgentApiCursor::class)]
 final class AgentApiCursorTest extends TestCase
 {
     public function test_it_encrypts_and_binds_new_cursors_to_workspace_and_query(): void
@@ -35,6 +37,17 @@ final class AgentApiCursorTest extends TestCase
         config(['agent_api.accept_legacy_cursors' => false]);
         $this->expectException(InvalidArgumentException::class);
         AgentApiCursor::decode($legacy, 'workspace-a', 'projects');
+    }
+
+    public function test_strict_new_listings_reject_legacy_even_while_old_clients_keep_the_compatibility_window(): void
+    {
+        config(['agent_api.accept_legacy_cursors' => true]);
+        $this->assertNull(AgentApiCursor::decode(null, 'workspace-a', 'files', allowLegacy: false));
+        $opaque = AgentApiCursor::encode(42, 'workspace-a', 'files');
+        $this->assertSame(42, AgentApiCursor::decode($opaque, 'workspace-a', 'files', allowLegacy: false));
+        $this->assertSame(42, AgentApiCursor::decode(base64_encode('42'), 'workspace-a', 'old-list'));
+        $this->expectException(InvalidArgumentException::class);
+        AgentApiCursor::decode(base64_encode('42'), 'workspace-a', 'files', allowLegacy: false);
     }
 
     public function test_cursor_round_trips_across_a_range_of_bound_workspace_and_query_values(): void

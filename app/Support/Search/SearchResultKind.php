@@ -15,6 +15,9 @@ enum SearchResultKind: string
     case Project = 'project';
     case Invoice = 'invoice';
     case Task = 'task';
+    case Note = 'note';
+    case Discussion = 'discussion';
+    case Comment = 'comment';
     case History = 'history';
 
     /**
@@ -31,7 +34,10 @@ enum SearchResultKind: string
             self::Project => 1,
             self::Invoice => 2,
             self::Task => 3,
-            self::History => 4,
+            self::Note => 4,
+            self::Discussion => 5,
+            self::Comment => 6,
+            self::History => 7,
         };
     }
 
@@ -43,6 +49,9 @@ enum SearchResultKind: string
             self::Project => 'Projects',
             self::Invoice => 'Invoices',
             self::Task => 'Tasks',
+            self::Note => 'Notes',
+            self::Discussion => 'Discussions',
+            self::Comment => 'Comments',
             self::History => 'History',
         };
     }
