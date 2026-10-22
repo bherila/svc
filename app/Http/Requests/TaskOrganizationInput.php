@@ -40,7 +40,7 @@ final class TaskOrganizationInput
         } elseif (($query['container'] ?? null) === 'false') {
             $query['container'] = false;
         }
-        $data = Validator::make($query, ['container' => ['sometimes', 'boolean'], 'parent_id' => ['nullable', 'uuid'], 'list_id' => ['nullable', 'uuid']])->validate();
+        $data = Validator::make($query, ['container' => ['boolean'], 'parent_id' => ['nullable', 'uuid'], 'list_id' => ['nullable', 'uuid']])->validate();
         if (! ($data['container'] ?? false)) {
             if (($data['parent_id'] ?? null) !== null || ($data['list_id'] ?? null) !== null) {
                 throw ValidationException::withMessages(['organization' => 'Choose a container before supplying its parent or list.']);
