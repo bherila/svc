@@ -350,8 +350,8 @@ final class TaskOrganizationActionTest extends TestCase
             $this->move($action, $owner, $workspace, $project, $task, $foreign->public_id, null);
             $this->fail('A foreign project parent was accepted.');
         } catch (ValidationException $exception) {
-            $this->assertStringNotContainsString($foreign->title, json_encode($exception->errors()));
-            $this->assertStringNotContainsString($foreign->public_id, json_encode($exception->errors()));
+            $this->assertStringNotContainsString($foreign->title, json_encode($exception->errors(), JSON_THROW_ON_ERROR));
+            $this->assertStringNotContainsString($foreign->public_id, json_encode($exception->errors(), JSON_THROW_ON_ERROR));
         }
         $graph = $action->inspect($owner, $workspace, $project->public_id);
         $command = TaskOrganizationCommand::fromInput('lists.create', ['name' => 'Synthetic dual list', 'expected_graph_version' => $graph->graphVersion()]);

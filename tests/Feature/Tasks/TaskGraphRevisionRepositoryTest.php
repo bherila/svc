@@ -96,6 +96,7 @@ final class TaskGraphRevisionRepositoryTest extends TestCase
         $this->assertDatabaseCount('client_task_graph_states', 0);
     }
 
+    /** @return array{Workspace, ClientProject} */
     private function fixture(string $suffix = 'local'): array
     {
         $workspace = Workspace::query()->create(['name' => 'Synthetic graph '.$suffix, 'slug' => 'synthetic-graph-'.$suffix]);

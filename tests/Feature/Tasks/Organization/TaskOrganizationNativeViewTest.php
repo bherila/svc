@@ -50,7 +50,7 @@ final class TaskOrganizationNativeViewTest extends TestCase
         $this->assertSame(['parent_id' => null, 'list_id' => null], $view['organization']['unlisted']['move_target']);
         $this->assertStringContainsString('moving_task_id='.$root->public_id, $row['browse_href']);
         $this->assertStringContainsString('/tasks/'.$root->public_id, $row['task_href']);
-        $this->assertStringNotContainsString('Synthetic private full description', json_encode($view));
+        $this->assertStringNotContainsString('Synthetic private full description', json_encode($view, JSON_THROW_ON_ERROR));
         $descendants = $action->nativeView($owner, $workspace, $company, $project->public_id, new TaskContainer($root->public_id, null), $root->public_id)->data['organization'];
         $this->assertNull($descendants['container']['move_target']);
         $this->assertNull($descendants['container']['tasks'][0]['move_target']);
