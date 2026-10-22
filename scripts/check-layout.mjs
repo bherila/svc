@@ -1161,7 +1161,7 @@ try {
             '# Browser layout evidence',
             '',
             tasksOnly
-                ? 'Synthetic native task list, create dialog, manager editor with ten assignees and stale conflict, and read-only portal tasks at every required width.'
+                ? 'Synthetic native project-manager task list, create dialog, editor with ten assignees and stale conflict, and read-only portal tasks at every required width.'
                 : portalOnly
                   ? 'Synthetic portal contacts and invitations on client settings; initial, project selection, removal and invitation withdrawal confirmation states at every required width.'
                   : squareOnly

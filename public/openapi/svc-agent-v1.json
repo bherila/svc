@@ -22611,7 +22611,7 @@
                     "worked_on": {
                         "type": "string",
                         "format": "date",
-                        "description": "Workspace calendar date within the time sheet\u2019s twelve-month window, through the end of the current month."
+                        "description": "Workspace calendar date within the time sheet’s twelve-month window, through the end of the current month."
                     },
                     "minutes": {
                         "type": "integer",
@@ -22645,7 +22645,7 @@
                             "null"
                         ],
                         "format": "uuid",
-                        "description": "Omit to preserve the task; null clears it. A task must belong to this entry\u2019s project."
+                        "description": "Omit to preserve the task; null clears it. A task must belong to this entry’s project."
                     }
                 },
                 "allOf": [
