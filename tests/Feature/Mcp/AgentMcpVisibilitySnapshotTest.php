@@ -37,7 +37,7 @@ final class AgentMcpVisibilitySnapshotTest extends TestCase
     private const array WRITE_FLAGS = [
         'writes_enabled', 'time_entry_writes_enabled', 'invoice_writes_enabled', 'expense_writes_enabled',
         'payment_writes_enabled', 'client_writes_enabled', 'project_writes_enabled', 'proposal_writes_enabled',
-        'workspace_writes_enabled', 'file_writes_enabled',
+        'workspace_writes_enabled', 'file_writes_enabled', 'collaboration_writes_enabled',
     ];
 
     /** @var array<string, User> */

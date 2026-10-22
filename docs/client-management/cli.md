@@ -396,3 +396,24 @@ allocated money and active state stay unchanged, including an allocation above
 payment net. A stale revision or cleared review fails and requires refetching,
 so the same confirmation never clears a later review. There is no browser action.
 See the [finance acknowledgement contract](../finance-api.md#acknowledge-an-allocation-review).
+
+## Native collaboration
+
+`php artisan svc:collaboration <operation> <workspace-uuid> <client-uuid>
+--actor=<user-uuid> --input=<private-json-path>` accepts the same nine short
+operations as REST: `topics.list/get/create/update/delete` and
+`comments.list/create/update/delete`. Input may also come from stdin with
+`--input=-`. Files must be regular, non-symlink files readable only by their
+owner; the input limit is 1 MiB, including Unicode bodies.
+
+The JSON object contains `payload` (the REST body or read query), optional `id`
+(the topic/comment UUID, or parent UUID for comment list/create), optional
+`parent_type` (`task` or `topic`), and a required `idempotency_key` for writes.
+`--format=json` returns the canonical result plus `dry_run` and `operation`.
+Writes preview by default and roll back content, activity and receipts; use
+`--apply` for the reviewed change. Reusing a key with different input fails.
+Versioned writes require `expected_version`; deletes also require `confirm:
+true`. The explicit actor's current staff role and parent access are checked,
+even on receipt replay. Native CLI is independent of agent deployment flags;
+portal access does not become a client write grant. No history or email is
+changed.

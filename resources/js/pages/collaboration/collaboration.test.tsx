@@ -78,6 +78,7 @@ const topic: CollaborationTopic = {
     ...comment,
     id: 'synthetic-topic',
     title: 'SyntheticTopic'.repeat(20),
+    kind: 'note',
     kind_label: 'Note',
     project_id: 'synthetic-project',
     scope_label: 'SyntheticProject'.repeat(15),
@@ -86,6 +87,7 @@ const topic: CollaborationTopic = {
     delete_href: '/synthetic/topic/delete',
 };
 const thread: CollaborationThread = {
+    parent_kind: 'note',
     parent_title: topic.title,
     parent_version: 'p'.repeat(64),
     href: '/synthetic/thread',

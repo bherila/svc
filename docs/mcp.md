@@ -55,10 +55,10 @@ least one of `due_date` or `lines` must be supplied.
   matching, independent service-Host validation, bounded CORS preflight, and
   SDK-version-aware protocol handling before `AgentMcpController` runs its
   `StreamableHttpResponder`. Maximum request size is
-  `AGENT_API_MCP_MAX_BODY_BYTES` (262144 by default); capability results are
-  bounded after serialization by `AGENT_API_MCP_MAX_RESULT_BYTES` (also 262144
+  `AGENT_API_MCP_MAX_BODY_BYTES` (1048576 by default); capability results are
+  bounded after serialization by `AGENT_API_MCP_MAX_RESULT_BYTES` (2097152
   by default), while complete non-streamed transport responses are independently capped by
-  `AGENT_API_MCP_MAX_RESPONSE_BODY_BYTES` (1048576 by default). Responses are
+  `AGENT_API_MCP_MAX_RESPONSE_BODY_BYTES` (4194304 by default). Responses are
   `private, no-store`. When the global
   `AGENT_API_MCP_ENABLED` kill switch is false, authenticated POST and DELETE
   requests receive a stable no-store `503` with `Retry-After`; the application
@@ -1629,3 +1629,35 @@ allocation path arguments. It only clears the exact current review; stale or
 already-cleared proof returns a conflict requiring a fresh read. There is no
 idempotency key or replay receipt. See [allocation review acknowledgement](finance-api.md#acknowledge-an-allocation-review)
 for the effect-idempotent retry contract and unchanged money/activity rules.
+
+### Native collaboration
+
+`collaboration.topics.list/get/create/update/delete` and
+`collaboration.comments.list/create/update/delete` expose native notes,
+discussions and flat task/topic comments through the same REST actions as MCP.
+They never activate imported history. Both topic kinds accept comments.
+`collaboration:read` permits reads; creates need `collaboration:write`, and
+versioned writes also need `collaboration:read`. Agent writes require both
+`AGENT_API_WRITES_ENABLED` and `AGENT_API_COLLABORATION_WRITES_ENABLED` (the latter
+defaults false). Signed-in first-party web sessions bypass these deployment
+switches. Native web and CLI use their current staff permissions independently.
+
+The server chooses the audience: an agent actor with any current portal
+membership in the workspace, including a dual staff identity, receives the
+portal view and cannot write. Portal reads require the exact company/project
+grants and each ancestor's disclosure. Client replies remain disabled.
+Internal authors may edit their own text with current access; managers publish
+and moderate. Authors, kind and parent lineage are immutable. Text is plain
+text. Deletes require `confirm: true` and an `expected_version`, create
+tombstones, and preserve attribution. Receipts recheck current locked authority
+on replay. No collaboration operation emails anyone.
+
+Bodies allow 50,000 Unicode characters. Transport ceilings stay bounded and
+are global: request 1 MiB (`AGENT_API_MCP_MAX_BODY_BYTES`), capability result
+2 MiB (`AGENT_API_MCP_MAX_RESULT_BYTES`), complete response 4 MiB
+(`AGENT_API_MCP_MAX_RESPONSE_BODY_BYTES`). The latter accommodates both MCP text
+and structured representations of a valid worst-case Unicode body. Comment
+lists default to one row, with `limit` from 1 to 30; native UI pages retain 30.
+A list containing several maximal bodies can exceed the result ceiling: reduce
+`limit` and follow `next_href`. Comment `web_url` uses an authorized comment UUID
+focus, so API page size never changes the native permalink destination.

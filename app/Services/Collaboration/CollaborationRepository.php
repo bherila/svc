@@ -5,9 +5,13 @@ namespace App\Services\Collaboration;
 use App\Models\ClientCollaborationTopic;
 use App\Models\ClientComment;
 use App\Models\ClientCompany;
+use App\Models\ClientCompanyMembership;
 use App\Models\ClientProject;
+use App\Models\ClientProjectMembership;
 use App\Models\ClientTask;
+use App\Models\User;
 use App\Models\Workspace;
+use App\Models\WorkspaceMembership;
 use App\Support\Concurrency\Locks;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -43,12 +47,38 @@ final class CollaborationRepository
         return ClientCompany::query()->where('workspace_id', $workspace->id)->where('public_id', $id)->firstOrFail();
     }
 
-    public function project(Workspace $workspace, ClientCompany $company, string $id): ClientProject
+    public function project(Workspace $workspace, ClientCompany $company, string $id, bool $lock = false): ClientProject
     {
         $this->assertCompany($workspace, $company);
-        $project = ClientProject::query()->where('workspace_id', $workspace->id)->where('client_company_id', $company->id)->where('public_id', $id)->firstOrFail();
+        $project = ClientProject::query()->where('workspace_id', $workspace->id)->where('client_company_id', $company->id)->where('public_id', $id)
+            ->when($lock, fn (Builder $query) => $query->tap(Locks::forUpdate()))->firstOrFail();
 
         return $project->setRelation('workspace', $workspace)->setRelation('clientCompany', $company);
+    }
+
+    public function lockParentProject(Workspace $workspace, ClientCompany $company, ClientTask|ClientCollaborationTopic $parent): ?ClientProject
+    {
+        if ($parent->client_project_id === null) {
+            return null;
+        }
+        $project = ClientProject::query()->where('workspace_id', $workspace->id)->where('client_company_id', $company->id)->whereKey($parent->client_project_id)
+            ->tap(Locks::forUpdate())->firstOrFail();
+        $project->setRelation('workspace', $workspace)->setRelation('clientCompany', $company);
+        $parent->setRelation($parent instanceof ClientTask ? 'project' : 'collaborationProject', $project);
+
+        return $project;
+    }
+
+    public function currentAccess(Workspace $workspace, ?ClientProject $project, User $actor): CollaborationAccessFacts
+    {
+        $staff = WorkspaceMembership::query()->where('workspace_id', $workspace->id)->where('user_id', $actor->id)->tap(Locks::forShare())->first();
+        $grant = $project === null ? null : ClientProjectMembership::query()->where('workspace_id', $workspace->id)
+            ->where('client_project_id', $project->id)->where('user_id', $actor->id)->tap(Locks::forShare())->first();
+        $portal = ClientCompanyMembership::query()->where('workspace_id', $workspace->id)->where('user_id', $actor->id)
+            ->whereHas('clientCompany', fn (Builder $query) => $query->where('workspace_id', $workspace->id))
+            ->orderBy('id')->tap(Locks::forShare())->get();
+
+        return new CollaborationAccessFacts($staff?->role, $grant?->role, $project === null, $portal->isNotEmpty());
     }
 
     /** @return Builder<ClientCollaborationTopic> */

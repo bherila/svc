@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\V1\AgentBillingAuditController;
 use App\Http\Controllers\Api\V1\AgentBillingScheduleController;
 use App\Http\Controllers\Api\V1\AgentCapacityLedgerController;
 use App\Http\Controllers\Api\V1\AgentClientController;
+use App\Http\Controllers\Api\V1\AgentCollaborationController;
 use App\Http\Controllers\Api\V1\AgentConnectionController;
 use App\Http\Controllers\Api\V1\AgentExpenseController;
 use App\Http\Controllers\Api\V1\AgentExpenseReceiptController;
@@ -75,6 +76,15 @@ Route::prefix('v1')
     ->name('agent-api.v1.')
     ->middleware([ExpectOAuthResource::class.':rest', AuthenticateFirstPartySession::class, 'auth:api', ThrottleOuterAgentRequests::class.':60,1', NoStoreAgentResponse::class])
     ->group(function () use ($operation, $workspaceOperation): void {
+        $workspaceOperation('collaboration.topics.list', [AgentCollaborationController::class, 'read'])->whereUuid('client');
+        $workspaceOperation('collaboration.topics.get', [AgentCollaborationController::class, 'read'])->whereUuid('client')->whereUuid('topic');
+        $workspaceOperation('collaboration.topics.create', [AgentCollaborationController::class, 'write'])->whereUuid('client');
+        $workspaceOperation('collaboration.topics.update', [AgentCollaborationController::class, 'write'])->whereUuid('client')->whereUuid('topic');
+        $workspaceOperation('collaboration.topics.delete', [AgentCollaborationController::class, 'write'])->whereUuid('client')->whereUuid('topic');
+        $workspaceOperation('collaboration.comments.list', [AgentCollaborationController::class, 'read'])->whereUuid('client')->whereIn('parentType', ['task', 'topic'])->whereUuid('parentPublicId');
+        $workspaceOperation('collaboration.comments.create', [AgentCollaborationController::class, 'write'])->whereUuid('client')->whereIn('parentType', ['task', 'topic'])->whereUuid('parentPublicId');
+        $workspaceOperation('collaboration.comments.update', [AgentCollaborationController::class, 'write'])->whereUuid('client')->whereUuid('comment');
+        $workspaceOperation('collaboration.comments.delete', [AgentCollaborationController::class, 'write'])->whereUuid('client')->whereUuid('comment');
         $operation('context.get', [AgentReadController::class, 'context']);
         $operation('connections.disconnect', [AgentConnectionController::class, 'disconnect']);
         $operation('workspaces.create', [AgentWorkspaceMiscController::class, 'create']);
