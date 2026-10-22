@@ -2,6 +2,7 @@
 
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
+use App\Models\ClientContact;
 use App\Models\ClientPortalInvitation;
 use App\Models\ClientProject;
 use App\Models\ClientProposal;
@@ -104,6 +105,19 @@ foreach (['5f0d7c1e-0000-4000-8000-000000000001', '5f0d7c1e-0000-4000-8000-00000
         'allocated_amount' => 500, 'currency' => 'USD', 'is_active' => true,
     ]);
 }
+$company->forceFill([
+    'billing_address' => str_repeat('SyntheticAddressWithoutBreaks', 12),
+    'phone' => '+1 555 0100', 'website_url' => 'https://client.example.test',
+    'tax_id' => str_repeat('SyntheticTaxIdentifier', 8), 'currency' => 'USD',
+    'notes' => str_repeat('SyntheticCompanyNotesWithoutBreaks', 16),
+])->save();
+ClientContact::query()->create([
+    'workspace_id' => $workspace->id, 'client_company_id' => $company->id,
+    'first_name' => str_repeat('SyntheticContact', 6), 'last_name' => 'Example',
+    'title' => str_repeat('SyntheticRole', 12), 'email' => 'contact@example.test',
+    'phone' => '555-0101', 'notes' => str_repeat('SyntheticContactNotesWithoutBreaks', 12),
+    'is_archived' => true,
+]);
 $company->forceFill([
     'billing_email' => 'billing-notifications@synthetic-layout.example.test',
     'automatic_invoice_email_enabled' => true,

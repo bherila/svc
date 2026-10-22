@@ -35,8 +35,14 @@ final class WebApiParityTest extends TestCase
         'bherila-auth.credentials.tokens.destroy' => 'deliberate:credentials are managed only by the signed-in person',
         'bherila-auth.credentials.tokens.store' => 'deliberate:credentials are issued only by the signed-in person',
         'clients.manage' => 'web-only:redirect',
+        // Historical profiles and contacts share scoped repositories with the
+        // import foundation. REST/MCP mutation contracts are not exposed yet;
+        // keep that gap explicit rather than misclassifying them as web-only.
+        'clients.profile.update' => 'missing',
         'clients.store' => 'operation:clients.create',
         'clients.update' => 'operation:clients.update',
+        'contacts.store' => 'missing',
+        'contacts.update' => 'missing',
         'logout' => 'web-only:sign-out',
         'projects.access.update' => 'operation:projects.members.update',
         'projects.store' => 'operation:projects.create',

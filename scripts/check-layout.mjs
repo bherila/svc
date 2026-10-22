@@ -372,6 +372,28 @@ try {
 
             if (screen === 'settings') {
                 await expect(
+                    page.getByLabel('Billing address', { exact: true }),
+                ).toHaveValue('SyntheticAddressWithoutBreaks'.repeat(12));
+                await expect(
+                    page.getByLabel('Tax ID', { exact: true }),
+                ).toHaveValue('SyntheticTaxIdentifier'.repeat(8));
+                const historicalContact = page
+                    .locator('summary')
+                    .filter({ hasText: 'SyntheticContact'.repeat(6) });
+                await historicalContact.click();
+                await expect(
+                    page.getByRole('button', {
+                        name: 'Save contact',
+                        exact: true,
+                    }),
+                ).toBeVisible();
+                await expect(
+                    page.getByText(
+                        'Adding a contact does not grant portal access or send an invitation.',
+                        { exact: false },
+                    ),
+                ).toBeVisible();
+                await expect(
                     page.getByRole('switch', {
                         name: 'Automatically remind this client about unpaid invoices',
                     }),

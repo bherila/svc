@@ -30,8 +30,9 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 #[Fillable([
     'workspace_id', 'name', 'slug', 'billing_email', 'automatic_invoice_email_enabled',
     'automatic_invoice_email_delay_days', 'is_active', 'payment_reminders_enabled_at',
+    'billing_address', 'phone', 'website_url', 'tax_id', 'currency', 'notes',
 ])]
-#[Hidden(['id', 'workspace_id', 'lock_version', 'credit_revision'])]
+#[Hidden(['id', 'workspace_id', 'lock_version', 'credit_revision', 'billing_address', 'phone', 'website_url', 'tax_id', 'currency', 'notes'])]
 class ClientCompany extends Model implements WorkspaceOwned
 {
     use BelongsToWorkspace, HasPublicId, IncrementsAgentRevision;
