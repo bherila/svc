@@ -1,5 +1,10 @@
 # Historical client data
 
+Company profile and contact editing currently use manager-only browser forms.
+Their tenant-scoped repositories are also available to the import workflow;
+REST/MCP mutation contracts are a remaining API parity gap, recorded explicitly
+in `WebApiParityTest`, rather than being described as browser-only by design.
+
 Client settings now holds a company's billing/contact profile and people who
 belong to that company. Business contacts are independent of authenticating
 `User` accounts: adding or archiving a contact never creates a login, workspace
