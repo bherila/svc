@@ -272,6 +272,20 @@ same application, are untouched; a personal API token, which shares one client
 with the person's other personal tokens, ends only itself. An MCP connection
 uses `connections.revoke` instead.
 
+A client that needs to discard just its current credential uses
+`DELETE /api/v1/oauth/token` (`oauth.token.revoke`), sending that credential as
+its bearer with no request body. It returns 204 and revokes only that access
+token's durable family, including tracked rotations and refresh tokens. Other
+connections of the same person and client, other people's credentials and
+unexchanged authorization grants remain active. A replay returns 204 or 401.
+Both REST and MCP resource credentials are admitted, including personal OAuth
+tokens, without additional scopes; normal signature, issuer, expiry, owner,
+resource binding and scope-ceiling checks still apply. A browser session or
+Sanctum token cannot substitute for the OAuth bearer. SVC's existing policy
+refuses client-credentials issuance, so all supported credentials act for a
+person. The operation is explicitly REST-only: credential disposal is a
+connecting client's lifecycle responsibility, not an MCP agent tool.
+
 ## Public capability inventory
 
 With all read scopes, discovery exposes these read-only tools, in this order:

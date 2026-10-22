@@ -1383,6 +1383,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    '/oauth/token': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** @description Revokes only the OAuth access token making this request and its tracked refresh-token family, including rotated access tokens. Other connections of the same person or client, other people, and pending authorization codes from other grants are unaffected. Any supported OAuth access token can call this endpoint with no additional scopes, for either the REST or MCP resource; personal OAuth tokens can revoke themselves too. SVC does not issue client-credentials tokens. No token id or request body is accepted. Repeating the request returns 204 or 401 once authentication sees the revocation. This is a client credential lifecycle endpoint and is deliberately not an MCP tool. */
+        delete: operations['oauth.token.revoke'];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     '/workspaces/{workspace}/summary': {
         parameters: {
             query?: never;
@@ -9975,6 +9992,43 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['InvoiceMutationResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'oauth.token.revoke': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Calling token family revoked */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The OAuth bearer is missing, invalid, expired or already revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
                 };
             };
             default: components['responses']['Error'];

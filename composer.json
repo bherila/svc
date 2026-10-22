@@ -67,7 +67,7 @@
             "pint --parallel"
         ],
         "lint:check": [
-            "pint --parallel --test"
+            "pint --parallel --test --verbose"
         ],
         "registry:manifest": [
             "@php scripts/registry-manifest.php"
