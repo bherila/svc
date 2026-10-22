@@ -105,6 +105,7 @@ final class AttachmentStorageService
             ->where('record_type', $this->recordTypeFor($record))
             ->where('record_public_id', $record->getAttribute('public_id'))
             ->where('lifecycle_state', ClientAttachment::STATE_STAGED)
+            ->where('is_visible_to_client', true) // R1 cannot publish a prepared private file.
             ->tap(Locks::forUpdate())->firstOrFail();
         $attachment->forceFill(['staged_object_key' => null, 'lifecycle_state' => ClientAttachment::STATE_AVAILABLE,
             'available_at' => $this->clock->now($workspace)])->save();
@@ -148,6 +149,8 @@ final class AttachmentStorageService
                 'bytes' => $metadata['bytes'],
                 'sha256' => $metadata['sha256'],
                 'uploader_id' => $uploader->id,
+                // R1 must preserve legacy inheritance even when an old uploader runs.
+                'is_visible_to_client' => true,
                 'lifecycle_state' => ClientAttachment::STATE_STAGED,
             ]));
         } catch (Throwable $exception) {

@@ -6,6 +6,7 @@ use App\Contracts\WorkspaceOwned;
 use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
 use App\Models\Concerns\IncrementsAgentRevision;
+use App\Services\Files\AttachmentRecordResolver;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -24,6 +25,7 @@ use LogicException;
  * @property string|null $staged_object_key
  * @property string $original_filename
  * @property string $media_type
+ * @property bool $is_visible_to_client
  * @property int $bytes
  * @property string $sha256
  * @property int|null $uploader_id
@@ -41,6 +43,7 @@ use LogicException;
     'original_filename',
     'media_type',
     'bytes',
+    'is_visible_to_client',
     'sha256',
     'uploader_id',
     'lifecycle_state',
@@ -64,6 +67,14 @@ class ClientAttachment extends Model implements WorkspaceOwned
 
     protected static function booted(): void
     {
+        static::creating(function (self $attachment): void {
+            if (array_key_exists('is_visible_to_client', $attachment->getAttributes()) && ! $attachment->is_visible_to_client) {
+                throw new LogicException('Private attachment writers are unavailable in the reader release.');
+            }
+            if (! in_array($attachment->record_type, AttachmentRecordResolver::uploadableTypes(), true)) {
+                throw new LogicException('This attachment parent is read-only in the reader release.');
+            }
+        });
         static::updating(function (self $attachment): void {
             foreach ([
                 'public_id',
@@ -76,6 +87,7 @@ class ClientAttachment extends Model implements WorkspaceOwned
                 'bytes',
                 'sha256',
                 'uploader_id',
+                'is_visible_to_client',
             ] as $attribute) {
                 if ($attachment->isDirty($attribute)) {
                     throw new LogicException("Attachment attribute [{$attribute}] is immutable.");
@@ -90,6 +102,7 @@ class ClientAttachment extends Model implements WorkspaceOwned
         return [
             'original_filename' => 'encrypted',
             'bytes' => 'integer',
+            'is_visible_to_client' => 'boolean',
             'available_at' => 'immutable_datetime',
             'deleted_at' => 'immutable_datetime',
         ];

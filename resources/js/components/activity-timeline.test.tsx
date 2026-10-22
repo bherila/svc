@@ -30,6 +30,43 @@ const activities: CompanyActivity[] = [
 ];
 
 describe('activity timeline', () => {
+    it('shows collaboration events with plain labels and no content payload', () => {
+        const actions = [
+            'topic_created',
+            'topic_updated',
+            'topic_deleted',
+            'comment_created',
+            'comment_updated',
+            'comment_deleted',
+        ];
+        render(
+            <ActivityTimeline
+                activities={actions.map((action) => ({
+                    id: action,
+                    action: `collaboration.${action}`,
+                    actor_name: 'Synthetic author',
+                    payload: {},
+                    created_at: null,
+                }))}
+            />,
+        );
+
+        for (const label of [
+            'Note or discussion added',
+            'Note or discussion updated',
+            'Note or discussion removed',
+            'Comment added',
+            'Comment updated',
+            'Comment removed',
+        ]) {
+            expect(screen.getByText(label)).toBeVisible();
+        }
+
+        expect(
+            screen.queryByText(/system activity|collaboration\./i),
+        ).not.toBeInTheDocument();
+    });
+
     it('exposes the server-provided correction evidence capability', () => {
         const href =
             '/workspaces/synthetic/invoices/synthetic/corrections/synthetic';

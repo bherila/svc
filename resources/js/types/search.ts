@@ -10,7 +10,14 @@
  */
 
 export type SearchResultKind =
-    'client' | 'project' | 'invoice' | 'task' | 'history';
+    | 'client'
+    | 'project'
+    | 'invoice'
+    | 'task'
+    | 'note'
+    | 'discussion'
+    | 'comment'
+    | 'history';
 
 export type SearchResult = {
     kind: SearchResultKind;

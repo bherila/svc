@@ -7,6 +7,8 @@ use App\Http\Requests\Files\StoreAttachmentRequest;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Files\AttachmentAction;
+use App\Services\Files\AttachmentAudience;
+use App\Services\Files\AttachmentReader;
 use App\Services\Files\AttachmentRecordResolver;
 use App\Services\Files\AttachmentStorageService;
 use Illuminate\Http\RedirectResponse;
@@ -43,19 +45,18 @@ class AttachmentController extends Controller
         string $clientAttachment,
         AttachmentStorageService $storage,
         AttachmentRecordResolver $recordResolver,
+        AttachmentReader $reader,
     ): StreamedResponse {
         $attachment = $storage->findForWorkspace($workspace, $clientAttachment);
         $user = $request->user();
         abort_unless($user instanceof User, 401);
+        $recordResolver->resolve($workspace, $attachment->record_type, $attachment->record_public_id);
         if ($attachment->record_type === 'expense') {
             Gate::authorize('manage', $workspace);
-            $recordResolver->resolve($workspace, 'expense', $attachment->record_public_id);
-
-            return $storage->download($attachment);
         }
 
         abort_unless(
-            $recordResolver->userCanView($user, $workspace, $attachment),
+            $reader->canView($user, $workspace, $attachment, AttachmentAudience::Native),
             403,
         );
 

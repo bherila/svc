@@ -10,6 +10,7 @@ use App\Services\Mcp\AgentMcpCapacityLedgerTools;
 use App\Services\Mcp\AgentMcpClientContactTools;
 use App\Services\Mcp\AgentMcpClientTools;
 use App\Services\Mcp\AgentMcpClientWriteTools;
+use App\Services\Mcp\AgentMcpCollaborationTools;
 use App\Services\Mcp\AgentMcpContextResource;
 use App\Services\Mcp\AgentMcpDeferredBuyDownTools;
 use App\Services\Mcp\AgentMcpFinanceTools;
@@ -64,6 +65,15 @@ final class AgentOperationCatalog
      */
     private const array ROUTES = [
         ...TaskOrganizationOperations::ROUTES,
+        'collaboration.topics.list' => ['collaboration.topics.index', '/workspaces/{workspace}/clients/{client}/collaboration/topics', [200]],
+        'collaboration.topics.get' => ['collaboration.topics.show', '/workspaces/{workspace}/clients/{client}/collaboration/topics/{topic}', [200]],
+        'collaboration.topics.create' => ['collaboration.topics.store', '/workspaces/{workspace}/clients/{client}/collaboration/topics', [201]],
+        'collaboration.topics.update' => ['collaboration.topics.update', '/workspaces/{workspace}/clients/{client}/collaboration/topics/{topic}', [200]],
+        'collaboration.topics.delete' => ['collaboration.topics.destroy', '/workspaces/{workspace}/clients/{client}/collaboration/topics/{topic}', [200]],
+        'collaboration.comments.list' => ['collaboration.comments.index', '/workspaces/{workspace}/clients/{client}/collaboration/comments/{parentType}/{parentPublicId}', [200]],
+        'collaboration.comments.create' => ['collaboration.comments.store', '/workspaces/{workspace}/clients/{client}/collaboration/comments/{parentType}/{parentPublicId}', [201]],
+        'collaboration.comments.update' => ['collaboration.comments.update', '/workspaces/{workspace}/clients/{client}/collaboration/comments/{comment}', [200]],
+        'collaboration.comments.delete' => ['collaboration.comments.destroy', '/workspaces/{workspace}/clients/{client}/collaboration/comments/{comment}', [200]],
         'agreements.activate' => ['agreements.activate', '/workspaces/{workspace}/agreements/{agreement}/activate', [200]],
         'agreements.create' => ['agreements.store', '/workspaces/{workspace}/clients/{client}/agreements', [201]],
         'agreements.get' => ['agreements.show', '/workspaces/{workspace}/agreements/{agreement}', [200]],
@@ -263,9 +273,36 @@ final class AgentOperationCatalog
     }
 
     /** @return list<Operation> */
+    private function collaborationTools(): array
+    {
+        $definitions = [
+            'topics.list' => ['topicsList', 'List native topics'],
+            'topics.get' => ['topicsGet', 'Get native topic'],
+            'topics.create' => ['topicsCreate', 'Create native topic'],
+            'topics.update' => ['topicsUpdate', 'Update native topic'],
+            'topics.delete' => ['topicsDelete', 'Remove native topic'],
+            'comments.list' => ['commentsList', 'List native comments'],
+            'comments.create' => ['commentsCreate', 'Create native comment'],
+            'comments.update' => ['commentsUpdate', 'Update native comment'],
+            'comments.delete' => ['commentsDelete', 'Remove native comment'],
+        ];
+        $tools = [];
+        foreach ($definitions as $name => [$handler, $title]) {
+            $read = in_array($name, ['topics.list', 'topics.get', 'comments.list'], true);
+            $tools[] = $this->tool('collaboration.'.$name, $title,
+                ($name === 'comments.list' ? 'Ascending opaque cursor pages; limit is a maximum of 1–30 rows (default 1), and a byte budget may shorten pages. Follow meta.next_cursor or next_href until null; previous_href is null. ' : '').'Native notes, discussions and flat comments. Current staff roles, authorship, parent visibility and portal grants apply. Portal and dual identities are read-only; no history is activated and no mail is sent.',
+                [AgentMcpCollaborationTools::class, $handler], $read ? Effect::Read : (str_ends_with($name, '.delete') ? Effect::Destructive : Effect::LocalWrite), true,
+                $read ? 'mcp.read' : 'mcp.write', cutovers: $read ? [] : [AgentDeploymentFlags::COLLABORATION]);
+        }
+
+        return $tools;
+    }
+
+    /** @return list<Operation> */
     private function tools(): array
     {
         return [
+            ...$this->collaborationTools(),
             $this->tool(
                 'context.get',
                 'Get context',
@@ -444,7 +481,7 @@ final class AgentOperationCatalog
             $this->tool(
                 'attachments.list',
                 'List attachments',
-                'List up to 100 generic files on a tenant-owned record, with its parent version. Workspace managers only; expense receipts use separate tools.',
+                'List up to 100 authorized generic files on a tenant-owned record, with its parent version. Workspace managers only; dual identities use exact Portal grants and file visibility. Expense receipts use separate tools.',
                 [AgentMcpWriteTools::class, 'attachmentsList'],
                 Effect::Read,
                 true,
@@ -454,7 +491,7 @@ final class AgentOperationCatalog
             $this->tool(
                 'attachments.get',
                 'Get attachment',
-                'Get generic file metadata and current version. Workspace managers only.',
+                'Get authorized generic file metadata and current version. Workspace managers only; dual identities use exact Portal grants and file visibility.',
                 [AgentMcpWriteTools::class, 'attachmentsGet'],
                 Effect::Read,
                 true,

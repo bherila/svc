@@ -59,10 +59,10 @@ final class AgentMcpWriteTools
 
     /** @return array<string,mixed> */
     public function attachmentsList(#[Schema(format: 'uuid')] string $workspace_id,
-        #[Schema(enum: ['company', 'project', 'task', 'proposal', 'agreement', 'invoice'])] string $record_type,
-        #[Schema(format: 'uuid')] string $record_id): array
+        #[Schema(enum: ['company', 'project', 'task', 'proposal', 'agreement', 'invoice', 'topic', 'comment'])] string $record_type,
+        #[Schema(format: 'uuid')] string $record_id, #[Schema(minimum: 1, maximum: 100)] int $limit = 100, #[Schema(maxLength: 4096)] ?string $cursor = null): array
     {
-        return $this->rest->call('attachments.list', ['workspace' => $workspace_id, 'recordType' => $record_type, 'recordPublicId' => $record_id], null);
+        return $this->rest->call('attachments.list', ['workspace' => $workspace_id, 'recordType' => $record_type, 'recordPublicId' => $record_id], query: compact('limit', 'cursor'));
     }
 
     /** @return array<string,mixed> */
@@ -283,9 +283,9 @@ final class AgentMcpWriteTools
     }
 
     /** @return array<string,mixed> */
-    public function expenseReceiptsList(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $expense_id): array
+    public function expenseReceiptsList(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $expense_id, #[Schema(minimum: 1, maximum: 100)] int $limit = 100, #[Schema(maxLength: 4096)] ?string $cursor = null): array
     {
-        return $this->rest->call('expenses.receipts.list', ['workspace' => $workspace_id, 'expense' => $expense_id], null);
+        return $this->rest->call('expenses.receipts.list', ['workspace' => $workspace_id, 'expense' => $expense_id], query: compact('limit', 'cursor'));
     }
 
     /** @return array<string,mixed> */

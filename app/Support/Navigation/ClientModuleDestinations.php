@@ -28,10 +28,12 @@ final class ClientModuleDestinations
         public readonly ?string $time,
         public readonly ?string $expenses,
         public readonly ?string $tasks,
+        public readonly ?string $notes,
+        public readonly ?string $discussions,
     ) {}
 
     /**
-     * @return array{home: string, invoices: string|null, time: string|null, expenses: string|null, tasks: string|null}
+     * @return array{home: string, invoices: string|null, time: string|null, expenses: string|null, tasks: string|null, notes: string|null, discussions: string|null}
      */
     public function toArray(): array
     {
@@ -41,6 +43,8 @@ final class ClientModuleDestinations
             'time' => $this->time,
             'expenses' => $this->expenses,
             'tasks' => $this->tasks,
+            'notes' => $this->notes,
+            'discussions' => $this->discussions,
         ];
     }
 }

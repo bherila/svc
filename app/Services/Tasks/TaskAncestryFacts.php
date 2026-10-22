@@ -30,6 +30,7 @@ final readonly class TaskAncestryFacts
             if ($row === null || isset($seen[$taskId]) || $row['project_id'] !== $origin['project_id']) {
                 return self::invalid();
             }
+            // @infection-ignore-all Only isset reads this set: true and false are both non-null, so visitation depends on the key alone.
             $seen[$taskId] = true;
             $visible = $visible && $row['visible'];
             if ($row['parent_id'] !== null) {

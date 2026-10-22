@@ -1,4 +1,4 @@
-import { Head } from '@inertiajs/react';
+import { Head, Link } from '@inertiajs/react';
 import { TaskEditor } from '@/components/tasks/task-editor';
 import type { EditableTask } from '@/components/tasks/task-editor';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -10,10 +10,12 @@ export default function ClientTaskDetail({
     company,
     project,
     task,
+    comment_thread_url = null,
 }: {
     company: { name: string };
     project: { name: string };
     task: EditableTask;
+    comment_thread_url?: string | null;
 }) {
     return (
         <WorkspaceShell activeModule="tasks">
@@ -30,7 +32,15 @@ export default function ClientTaskDetail({
                             {company.name} · {project.name}
                         </p>
                     </CardHeader>
-                    <CardContent>
+                    <CardContent className="space-y-4">
+                        {comment_thread_url && (
+                            <Link
+                                href={comment_thread_url}
+                                className="block text-sm underline underline-offset-4"
+                            >
+                                Comments
+                            </Link>
+                        )}
                         <TaskEditor key={task.version} task={task} />
                     </CardContent>
                 </Card>
