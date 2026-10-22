@@ -237,7 +237,7 @@ with no known reader, both compared as exact sets. Adding a branch therefore
 means editing a constant in the same commit — which is the point, and also a
 guaranteed conflict as soon as two branches add one. Hand-resolving a sorted
 70-line constant is the friction that gets a guard deleted rather than fixed;
-with this, resolving is *take both sides, re-run, commit*.
+with this, resolving is _take both sides, re-run, commit_.
 
 It cannot weaken anything by itself: it derives the manifests from `REGISTRY`, so
 running it after a branch is deleted produces a manifest that agrees with the
@@ -356,7 +356,7 @@ php artisan svc:billing:audit-missing-billed-overage --format=json   # machine-r
 Three sums total the overage an agreement has already been charged so the next
 period does not charge it again. All three are `SUM(hours_billed_at_rate)`, and
 SQL aggregation contributes nothing for a null — so a charged invoice with a
-null there reads as *zero already billed*, and its hours can be sold a second
+null there reads as _zero already billed_, and its hours can be sold a second
 time.
 
 Same defect class as #135 by a different route: there a `<=` answered false for
@@ -365,7 +365,7 @@ value it contributes vanishes.
 
 **No fix is implied, and none should be inferred from the count.**
 `service_period_end` could be read fail-closed because the question was which
-side of a window a row falls on. This one cannot: the question is *how much* was
+side of a window a row falls on. This one cannot: the question is _how much_ was
 billed, and a null is not a quantity. Coercing it to zero is the current
 behaviour and is the bug; coercing it to anything else invents a number. The
 decision is to refuse on unknown, or to establish the column is never null on a
@@ -375,7 +375,7 @@ The agreement count is the one that sizes the exposure, because the sums are per
 agreement: ten such invoices on one agreement leave one figure unknown, one on
 each of ten leaves ten.
 
-It says *may* throughout, deliberately. A null proves the contribution is
+It says _may_ throughout, deliberately. A null proves the contribution is
 unknown — not that the invoice carried overage — so a flagged sum may read
 short and may be exactly right. This audit exists to establish whether #144 is
 live at all, and claiming more than counts can support is how an audit stops
@@ -463,3 +463,24 @@ allocated money and active state stay unchanged, including an allocation above
 payment net. A stale revision or cleared review fails and requires refetching,
 so the same confirmation never clears a later review. There is no browser action.
 See the [finance acknowledgement contract](../finance-api.md#acknowledge-an-allocation-review).
+
+## Native collaboration
+
+`php artisan svc:collaboration <operation> <workspace-uuid> <client-uuid>
+--actor=<user-uuid> --input=<private-json-path>` accepts the same nine short
+operations as REST: `topics.list/get/create/update/delete` and
+`comments.list/create/update/delete`. Input may also come from stdin with
+`--input=-`. Files must be regular, non-symlink files readable only by their
+owner; the input limit is 1 MiB, including Unicode bodies.
+
+The JSON object contains `payload` (the REST body or read query), optional `id`
+(the topic/comment UUID, or parent UUID for comment list/create), optional
+`parent_type` (`task` or `topic`), and a required `idempotency_key` for writes.
+`--format=json` returns the canonical result plus `dry_run` and `operation`.
+Writes preview by default and roll back content, activity and receipts; use
+`--apply` for the reviewed change. Reusing a key with different input fails.
+Versioned writes require `expected_version`; deletes also require `confirm:
+true`. The explicit actor's current staff role and parent access are checked,
+even on receipt replay. Native CLI is independent of agent deployment flags;
+portal access does not become a client write grant. No history or email is
+changed.

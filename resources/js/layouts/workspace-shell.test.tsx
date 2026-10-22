@@ -82,11 +82,13 @@ describe('workspace shell', () => {
         // The exit button carries an icon and no text, so its entry is empty.
         expect(order[0]).toBe('');
         expect(order[1]).toBe('Aa Synthetic Client');
-        expect(order.slice(2, 6)).toEqual([
+        expect(order.slice(2, 8)).toEqual([
             'Client Home',
             'Invoices',
             'Time',
             'Tasks',
+            'Notes',
+            'Discussions',
         ]);
     });
 
@@ -240,6 +242,8 @@ describe('workspace shell', () => {
                         time: null,
                         expenses: null,
                         tasks: null,
+                        notes: null,
+                        discussions: null,
                     },
                 },
             ],
@@ -370,6 +374,8 @@ describe('workspace shell', () => {
             'Invoices',
             'Time',
             'Tasks',
+            'Notes',
+            'Discussions',
         ]);
     });
 

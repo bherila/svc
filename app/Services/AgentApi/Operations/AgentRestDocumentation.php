@@ -207,9 +207,64 @@ final class AgentRestDocumentation
     /**
      * @return array<string, array{method: string, scopes: list<string>, description: string|false, parameters: list<string|array<string, mixed>>, request?: string, request_types?: list<string>, response?: string, response_description?: string, binary?: array{0: string, 1: string}, errors?: array<int, string>, deprecation?: string}>
      */
+    private static function collaborationOperations(): array
+    {
+        $definitions = [
+            'topics.list' => ['GET', null, 'CollaborationTopicListResponse'],
+            'topics.get' => ['GET', null, 'CollaborationTopicResponse'],
+            'topics.create' => ['POST', 'CollaborationTopicCreateRequest', 'CollaborationTopicResponse'],
+            'topics.update' => ['PATCH', 'CollaborationTopicUpdateRequest', 'CollaborationTopicResponse'],
+            'topics.delete' => ['DELETE', 'CollaborationDeleteRequest', 'CollaborationTopicResponse'],
+            'comments.list' => ['GET', null, 'CollaborationCommentListResponse'],
+            'comments.create' => ['POST', 'CollaborationCommentCreateRequest', 'CollaborationCommentResponse'],
+            'comments.update' => ['PATCH', 'CollaborationCommentUpdateRequest', 'CollaborationCommentResponse'],
+            'comments.delete' => ['DELETE', 'CollaborationDeleteRequest', 'CollaborationCommentResponse'],
+        ];
+        $operations = [];
+        foreach ($definitions as $name => [$method, $request, $response]) {
+            $parameters = ['WorkspaceId', self::uuidPath('client')];
+            if (in_array($name, ['topics.get', 'topics.update', 'topics.delete'], true)) {
+                $parameters[] = self::uuidPath('topic');
+            }
+            if (in_array($name, ['comments.list', 'comments.create'], true)) {
+                $parameters[] = ['name' => 'parentType', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'string', 'enum' => ['task', 'topic']]];
+                $parameters[] = self::uuidPath('parentPublicId');
+            }
+            if (in_array($name, ['comments.update', 'comments.delete'], true)) {
+                $parameters[] = self::uuidPath('comment');
+            }
+            if ($method !== 'GET') {
+                $parameters[] = 'IdempotencyKey';
+            }
+            if ($name === 'topics.list') {
+                $parameters = [...$parameters, self::query('kind', ['type' => 'string', 'enum' => ['note', 'discussion']]),
+                    self::query('project_id', ['type' => 'string', 'format' => 'uuid']), self::query('page', ['type' => 'integer', 'minimum' => 1, 'maximum' => 100000])];
+            }
+            if ($name === 'comments.list') {
+                $parameters = [...$parameters, self::query('limit', ['type' => 'integer', 'minimum' => 1, 'maximum' => 30, 'default' => 1]),
+                    self::query('cursor', ['type' => 'string', 'maxLength' => 4096])];
+            }
+            $scopes = $method === 'GET' ? ['collaboration:read'] : ($name === 'topics.create' ? ['collaboration:write'] : ['collaboration:write', 'collaboration:read']);
+            $operations['collaboration.'.$name] = ['method' => $method, 'scopes' => $scopes, 'parameters' => $parameters,
+                'description' => ($name === 'comments.list' ? 'Comment lists use ascending opaque cursor pagination; limit is a maximum row count and serialized byte bounds may shorten a page. Follow meta.next_cursor or next_href until null; previous_href is always null. REST, MCP and CLI share this contract; native thread pages retain focused comment links. ' : '').'Native collaboration uses current tenant and parent authorization. Portal and dual identities are read-only and receive only disclosed ancestors. Staff authors edit their own text; managers publish and moderate. Writes require the global and collaboration cutovers; versioned writes also require collaboration:read. All writes use idempotency receipts and current locked authority, including on replay. Deletion creates a tombstone and requires confirm true. No imported history, grants, billing amounts or email are changed.',
+                'response' => $response, 'response_description' => 'Authorized native collaboration result',
+                'errors' => [401 => 'Authentication is required.', 403 => 'Scope or current role does not permit this operation.', 404 => 'A parent or tenant is not visible, or the agent write cutover is off.',
+                    409 => 'Expected version is stale or the idempotency key was reused with different input.', 422 => 'An input field or idempotency key is invalid.', 429 => 'Too many requests.']];
+            if ($request !== null) {
+                $operations['collaboration.'.$name]['request'] = $request;
+            }
+        }
+
+        return $operations;
+    }
+
+    /**
+     * @return array<string, array{method: string, scopes: list<string>, description: string|false, parameters: list<string|array<string, mixed>>, request?: string, request_types?: list<string>, response?: string, response_description?: string, binary?: array{0: string, 1: string}, errors?: array<int, string>, deprecation?: string}>
+     */
     public static function operations(): array
     {
         return [
+            ...self::collaborationOperations(),
             'agreements.activate' => [
                 'method' => 'POST',
                 'scopes' => ['clients:write', 'billing:read'],
@@ -1400,7 +1455,7 @@ final class AgentRestDocumentation
             'search' => [
                 'method' => 'GET',
                 'scopes' => ['identity:read'],
-                'description' => 'Search authorized clients, projects, invoices and tasks; each kind additionally requires its read scope. Bounded to five results per kind.',
+                'description' => 'Search authorized clients, projects, invoices, tasks, native notes, discussions and comments; each kind additionally requires its read scope. Collaboration kinds require collaboration:read and exact audience authorization. Bounded to five results per kind.',
                 'parameters' => [
                     'WorkspaceId',
                     [
@@ -1411,7 +1466,7 @@ final class AgentRestDocumentation
                     ],
                 ],
                 'response' => 'SearchResponse',
-                'response_description' => 'Search authorized clients, projects, invoices and tasks; each kind additionally requires its read scope. Bounded to five results per kind.',
+                'response_description' => 'Search authorized clients, projects, invoices, tasks, native notes, discussions and comments; each kind additionally requires its read scope. Collaboration kinds require collaboration:read and exact audience authorization. Bounded to five results per kind.',
             ],
             'tasks.create' => [
                 'method' => 'POST',

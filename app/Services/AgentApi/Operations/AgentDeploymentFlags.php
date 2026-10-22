@@ -38,6 +38,8 @@ final class AgentDeploymentFlags implements DeploymentFlags
 
     public const string CLIENTS = 'agent.writes.clients';
 
+    public const string COLLABORATION = 'agent.writes.collaboration';
+
     public const string PROJECTS = 'agent.writes.projects';
 
     public const string PROPOSALS = 'agent.writes.proposals';
@@ -72,6 +74,7 @@ final class AgentDeploymentFlags implements DeploymentFlags
         self::PAYMENTS => ['key' => 'agent_api.payment_writes_enabled', 'parents' => [self::WRITES]],
         self::EXPENSES => ['key' => 'agent_api.expense_writes_enabled', 'parents' => [self::WRITES]],
         self::CLIENTS => ['key' => 'agent_api.client_writes_enabled', 'parents' => [self::WRITES]],
+        self::COLLABORATION => ['key' => 'agent_api.collaboration_writes_enabled', 'parents' => [self::WRITES]],
         self::PROJECTS => ['key' => 'agent_api.project_writes_enabled', 'parents' => [self::WRITES]],
         self::PROPOSALS => ['key' => 'agent_api.proposal_writes_enabled', 'parents' => [self::WRITES]],
         self::WORKSPACES => ['key' => 'agent_api.workspace_writes_enabled', 'parents' => [self::WRITES]],
@@ -91,6 +94,7 @@ final class AgentDeploymentFlags implements DeploymentFlags
         self::PAYMENTS => 'AGENT_API_PAYMENT_WRITES_ENABLED',
         self::EXPENSES => 'AGENT_API_EXPENSE_WRITES_ENABLED',
         self::CLIENTS => 'AGENT_API_CLIENT_WRITES_ENABLED',
+        self::COLLABORATION => 'AGENT_API_COLLABORATION_WRITES_ENABLED',
         self::PROJECTS => 'AGENT_API_PROJECT_WRITES_ENABLED',
         self::PROPOSALS => 'AGENT_API_PROPOSAL_WRITES_ENABLED',
         self::WORKSPACES => 'AGENT_API_WORKSPACE_WRITES_ENABLED',

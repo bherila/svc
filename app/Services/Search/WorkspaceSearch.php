@@ -3,6 +3,7 @@
 namespace App\Services\Search;
 
 use App\Models\ClientCompany;
+use App\Models\ClientCompanyMembership;
 use App\Models\ClientInvoice;
 use App\Models\ClientProject;
 use App\Models\ClientTask;
@@ -10,7 +11,10 @@ use App\Models\HistoricalEntry;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\BillingRecordAccess;
+use App\Services\Authorization\PortalAccess;
+use App\Services\Authorization\PortalInvoiceQuery;
 use App\Services\Authorization\ProjectAccess;
+use App\Services\Collaboration\CollaborationAudience;
 use App\Services\History\HistorySearch;
 use App\Support\Search\SearchResult;
 use App\Support\Search\SearchResultKind;
@@ -58,6 +62,9 @@ final class WorkspaceSearch
         private readonly ProjectAccess $access,
         private readonly BillingRecordAccess $records,
         private readonly HistorySearch $history,
+        private readonly CollaborationSearch $collaboration,
+        private readonly PortalAccess $portal,
+        private readonly PortalInvoiceQuery $portalInvoices,
     ) {}
 
     /**
@@ -80,7 +87,7 @@ final class WorkspaceSearch
         $results = [];
 
         foreach ($this->workspacesFor($user) as $workspace) {
-            foreach ($this->searchOneWorkspace($user, $workspace, $term) as $result) {
+            foreach ($this->searchOneWorkspace($user, $workspace, $term, [], CollaborationAudience::Internal) as $result) {
                 $results[] = $result;
             }
         }
@@ -94,12 +101,12 @@ final class WorkspaceSearch
 
     /** @param list<SearchResultKind> $kinds
      * @return list<SearchResult> */
-    public function forWorkspace(User $user, Workspace $workspace, string $term, array $kinds): array
+    public function forWorkspace(User $user, Workspace $workspace, string $term, array $kinds, CollaborationAudience $audience): array
     {
         if (trim($term) === '' || $kinds === []) {
             return [];
         }
-        $results = $this->searchOneWorkspace($user, $workspace, trim($term), $kinds);
+        $results = $this->searchOneWorkspace($user, $workspace, trim($term), $kinds, $audience);
         usort($results, fn (SearchResult $a, SearchResult $b): int => [$a->kind->rank(), $a->title] <=> [$b->kind->rank(), $b->title]);
 
         return $results;
@@ -119,15 +126,20 @@ final class WorkspaceSearch
 
     /** @param list<SearchResultKind> $kinds Empty means all kinds for the web palette.
      * @return list<SearchResult> */
-    private function searchOneWorkspace(User $user, Workspace $workspace, string $term, array $kinds = []): array
+    private function searchOneWorkspace(User $user, Workspace $workspace, string $term, array $kinds, CollaborationAudience $audience): array
     {
         // Null means a manager, who reaches everything here including a client
         // with no projects at all. An empty list means a member added to
         // nothing, who reaches none of it.
-        $viewableProjectIds = $this->access->viewableProjectIds($user, $workspace);
-        $reachableCompanyIds = $this->access->reachableCompanyIds($user, $workspace);
+        $isPortal = $audience === CollaborationAudience::Portal;
+        $viewableProjectIds = $isPortal
+            ? $this->portal->constrainProjectQuery(ClientProject::query()->where('workspace_id', $workspace->id)->where('is_visible_to_client', true), $user)->pluck('id')->all()
+            : $this->access->viewableProjectIds($user, $workspace);
+        $reachableCompanyIds = $isPortal
+            ? ClientCompanyMembership::query()->where('workspace_id', $workspace->id)->where('user_id', $user->id)->pluck('client_company_id')->all()
+            : $this->access->reachableCompanyIds($user, $workspace);
 
-        if ($viewableProjectIds === []) {
+        if ($viewableProjectIds === [] && (! $isPortal || $reachableCompanyIds === [])) {
             return [];
         }
 
@@ -139,6 +151,7 @@ final class WorkspaceSearch
             ->orderBy('name')->limit(self::PER_KIND)->get();
 
         $projects = ClientProject::query()
+            ->whereHas('clientCompany', fn (Builder $company) => $company->where('workspace_id', $workspace->id))
             ->when($kinds !== [] && ! in_array(SearchResultKind::Project, $kinds, true), fn (Builder $q) => $q->whereRaw('1 = 0'))
             ->where('workspace_id', $workspace->id)
             ->when($viewableProjectIds !== null, fn (Builder $q) => $q->whereIn('id', $viewableProjectIds ?? []))
@@ -149,30 +162,31 @@ final class WorkspaceSearch
         // client through one project does not entitle someone to that client's
         // company-wide or other-project invoices, and `constrainInvoices` is
         // where that distinction is already drawn.
-        $invoices = $this->records->constrainInvoices(
-            ClientInvoice::query()->where('workspace_id', $workspace->id)
-                ->when($kinds !== [] && ! in_array(SearchResultKind::Invoice, $kinds, true), fn (Builder $q) => $q->whereRaw('1 = 0')),
-            $user,
-            $workspace,
-        )
+        $invoiceQuery = $isPortal
+            ? $this->portalInvoices->visibleInWorkspace($workspace, $user)
+            : $this->records->constrainInvoices(ClientInvoice::query()->where('workspace_id', $workspace->id), $user, $workspace);
+        $invoices = $invoiceQuery
+            ->when($kinds !== [] && ! in_array(SearchResultKind::Invoice, $kinds, true), fn (Builder $q) => $q->whereRaw('1 = 0'))
             ->tap(fn (Builder $q) => $this->whereContains($q, SearchColumn::InvoiceNumber, $term))
             ->orderByDesc('issue_date')->limit(self::PER_KIND)->get();
 
         $tasks = ClientTask::query()
+            ->when($isPortal, fn (Builder $query) => $query->where('is_visible_to_client', true))
             ->when($kinds !== [] && ! in_array(SearchResultKind::Task, $kinds, true), fn (Builder $q) => $q->whereRaw('1 = 0'))
             ->where('workspace_id', $workspace->id)
             ->when($viewableProjectIds !== null, fn (Builder $q) => $q->whereIn('client_project_id', $viewableProjectIds ?? []))
-            ->whereHas('project', fn (Builder $q) => $q->where('workspace_id', $workspace->id))
+            ->whereHas('project', fn (Builder $q) => $q->where('workspace_id', $workspace->id)
+                ->whereHas('clientCompany', fn (Builder $company) => $company->where('workspace_id', $workspace->id)))
             ->with(['project' => fn ($q) => $q->where('workspace_id', $workspace->id)])
             ->tap(fn (Builder $q) => $this->whereContains($q, SearchColumn::Title, $term))
             ->orderByDesc('updated_at')->limit(self::PER_KIND)->get();
 
         $parents = $this->parentCompanies($workspace, $companies, $projects, $invoices, $tasks);
-        $base = function (mixed $companyId) use ($workspace, $parents): ?string {
+        $base = function (mixed $companyId) use ($workspace, $parents, $isPortal): ?string {
             $id = (int) $companyId;
 
             return isset($parents[$id])
-                ? '/workspaces/'.$workspace->public_id.'/clients/'.$parents[$id]->public_id
+                ? ($isPortal ? '/portal/'.$parents[$id]->public_id : '/workspaces/'.$workspace->public_id.'/clients/'.$parents[$id]->public_id)
                 : null;
         };
 
@@ -191,7 +205,7 @@ final class WorkspaceSearch
 
             if ($href !== null) {
                 $results[] = new SearchResult(SearchResultKind::Project, $project->public_id, $project->name,
-                    $parents[(int) $project->client_company_id]->name, $href.'/projects/'.$project->public_id, $workspace->name);
+                    $parents[(int) $project->client_company_id]->name, $isPortal ? $href.'/tasks?project='.$project->public_id : $href.'/projects/'.$project->public_id, $workspace->name);
             }
         }
 
@@ -218,6 +232,8 @@ final class WorkspaceSearch
                     $href.'/tasks?project='.$project->public_id, $workspace->name);
             }
         }
+
+        $results = [...$results, ...$this->collaboration->forWorkspace($user, $workspace, $term, $kinds, $audience)];
 
         // Source grants are preserved as history, never activated as current
         // project/portal access. Only workspace managers can search this library.

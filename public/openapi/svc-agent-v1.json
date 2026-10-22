@@ -3721,6 +3721,1245 @@
                 "x-mcp-tool": "clients.restore"
             }
         },
+        "/workspaces/{workspace}/clients/{client}/collaboration/comments/{parentType}/{parentPublicId}": {
+            "post": {
+                "operationId": "collaboration.comments.create",
+                "description": "Native collaboration uses current tenant and parent authorization. Portal and dual identities are read-only and receive only disclosed ancestors. Staff authors edit their own text; managers publish and moderate. Writes require the global and collaboration cutovers; versioned writes also require collaboration:read. All writes use idempotency receipts and current locked authority, including on replay. Deletion creates a tombstone and requires confirm true. No imported history, grants, billing amounts or email are changed.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "collaboration:write",
+                            "collaboration:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CollaborationCommentCreateRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "client",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "parentType",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "task",
+                                "topic"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "parentPublicId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Authorized native collaboration result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CollaborationCommentResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Authentication is required.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Scope or current role does not permit this operation.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "A parent or tenant is not visible, or the agent write cutover is off.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Expected version is stale or the idempotency key was reused with different input.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "An input field or idempotency key is invalid.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "local_write",
+                "x-agent-idempotent": true,
+                "x-agent-write-safety": {
+                    "idempotency_key": "header_and_argument",
+                    "expected_version": true
+                },
+                "x-agent-mcp-tool": "collaboration.comments.create",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_COLLABORATION_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "collaboration.comments.create"
+            },
+            "get": {
+                "operationId": "collaboration.comments.list",
+                "description": "Comment lists use ascending opaque cursor pagination; limit is a maximum row count and serialized byte bounds may shorten a page. Follow meta.next_cursor or next_href until null; previous_href is always null. REST, MCP and CLI share this contract; native thread pages retain focused comment links. Native collaboration uses current tenant and parent authorization. Portal and dual identities are read-only and receive only disclosed ancestors. Staff authors edit their own text; managers publish and moderate. Writes require the global and collaboration cutovers; versioned writes also require collaboration:read. All writes use idempotency receipts and current locked authority, including on replay. Deletion creates a tombstone and requires confirm true. No imported history, grants, billing amounts or email are changed.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "collaboration:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "client",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "parentType",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "task",
+                                "topic"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "parentPublicId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 30,
+                            "default": 1
+                        }
+                    },
+                    {
+                        "name": "cursor",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 4096
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Authorized native collaboration result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CollaborationCommentListResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Authentication is required.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Scope or current role does not permit this operation.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "A parent or tenant is not visible, or the agent write cutover is off.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Expected version is stale or the idempotency key was reused with different input.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "An input field or idempotency key is invalid.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "read",
+                "x-agent-idempotent": true,
+                "x-agent-mcp-tool": "collaboration.comments.list",
+                "x-svc-flags": [],
+                "x-mcp-tool": "collaboration.comments.list"
+            }
+        },
+        "/workspaces/{workspace}/clients/{client}/collaboration/comments/{comment}": {
+            "delete": {
+                "operationId": "collaboration.comments.delete",
+                "description": "Native collaboration uses current tenant and parent authorization. Portal and dual identities are read-only and receive only disclosed ancestors. Staff authors edit their own text; managers publish and moderate. Writes require the global and collaboration cutovers; versioned writes also require collaboration:read. All writes use idempotency receipts and current locked authority, including on replay. Deletion creates a tombstone and requires confirm true. No imported history, grants, billing amounts or email are changed.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "collaboration:write",
+                            "collaboration:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CollaborationDeleteRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "client",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "comment",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Authorized native collaboration result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CollaborationCommentResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Authentication is required.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Scope or current role does not permit this operation.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "A parent or tenant is not visible, or the agent write cutover is off.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Expected version is stale or the idempotency key was reused with different input.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "An input field or idempotency key is invalid.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "destructive",
+                "x-agent-idempotent": true,
+                "x-agent-write-safety": {
+                    "idempotency_key": "header_and_argument",
+                    "expected_version": true,
+                    "confirm": true
+                },
+                "x-agent-mcp-tool": "collaboration.comments.delete",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_COLLABORATION_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "collaboration.comments.delete"
+            },
+            "patch": {
+                "operationId": "collaboration.comments.update",
+                "description": "Native collaboration uses current tenant and parent authorization. Portal and dual identities are read-only and receive only disclosed ancestors. Staff authors edit their own text; managers publish and moderate. Writes require the global and collaboration cutovers; versioned writes also require collaboration:read. All writes use idempotency receipts and current locked authority, including on replay. Deletion creates a tombstone and requires confirm true. No imported history, grants, billing amounts or email are changed.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "collaboration:write",
+                            "collaboration:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CollaborationCommentUpdateRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "client",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "comment",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Authorized native collaboration result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CollaborationCommentResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Authentication is required.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Scope or current role does not permit this operation.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "A parent or tenant is not visible, or the agent write cutover is off.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Expected version is stale or the idempotency key was reused with different input.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "An input field or idempotency key is invalid.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "local_write",
+                "x-agent-idempotent": true,
+                "x-agent-write-safety": {
+                    "idempotency_key": "header_and_argument",
+                    "expected_version": true
+                },
+                "x-agent-mcp-tool": "collaboration.comments.update",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_COLLABORATION_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "collaboration.comments.update"
+            }
+        },
+        "/workspaces/{workspace}/clients/{client}/collaboration/topics": {
+            "post": {
+                "operationId": "collaboration.topics.create",
+                "description": "Native collaboration uses current tenant and parent authorization. Portal and dual identities are read-only and receive only disclosed ancestors. Staff authors edit their own text; managers publish and moderate. Writes require the global and collaboration cutovers; versioned writes also require collaboration:read. All writes use idempotency receipts and current locked authority, including on replay. Deletion creates a tombstone and requires confirm true. No imported history, grants, billing amounts or email are changed.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "collaboration:write"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CollaborationTopicCreateRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "client",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Authorized native collaboration result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CollaborationTopicResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Authentication is required.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Scope or current role does not permit this operation.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "A parent or tenant is not visible, or the agent write cutover is off.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Expected version is stale or the idempotency key was reused with different input.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "An input field or idempotency key is invalid.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "local_write",
+                "x-agent-idempotent": true,
+                "x-agent-write-safety": {
+                    "idempotency_key": "header_and_argument"
+                },
+                "x-agent-mcp-tool": "collaboration.topics.create",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_COLLABORATION_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "collaboration.topics.create"
+            },
+            "get": {
+                "operationId": "collaboration.topics.list",
+                "description": "Native collaboration uses current tenant and parent authorization. Portal and dual identities are read-only and receive only disclosed ancestors. Staff authors edit their own text; managers publish and moderate. Writes require the global and collaboration cutovers; versioned writes also require collaboration:read. All writes use idempotency receipts and current locked authority, including on replay. Deletion creates a tombstone and requires confirm true. No imported history, grants, billing amounts or email are changed.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "collaboration:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "client",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "kind",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "note",
+                                "discussion"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "project_id",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "page",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100000
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Authorized native collaboration result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CollaborationTopicListResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Authentication is required.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Scope or current role does not permit this operation.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "A parent or tenant is not visible, or the agent write cutover is off.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Expected version is stale or the idempotency key was reused with different input.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "An input field or idempotency key is invalid.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "read",
+                "x-agent-idempotent": true,
+                "x-agent-mcp-tool": "collaboration.topics.list",
+                "x-svc-flags": [],
+                "x-mcp-tool": "collaboration.topics.list"
+            }
+        },
+        "/workspaces/{workspace}/clients/{client}/collaboration/topics/{topic}": {
+            "delete": {
+                "operationId": "collaboration.topics.delete",
+                "description": "Native collaboration uses current tenant and parent authorization. Portal and dual identities are read-only and receive only disclosed ancestors. Staff authors edit their own text; managers publish and moderate. Writes require the global and collaboration cutovers; versioned writes also require collaboration:read. All writes use idempotency receipts and current locked authority, including on replay. Deletion creates a tombstone and requires confirm true. No imported history, grants, billing amounts or email are changed.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "collaboration:write",
+                            "collaboration:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CollaborationDeleteRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "client",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "topic",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Authorized native collaboration result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CollaborationTopicResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Authentication is required.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Scope or current role does not permit this operation.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "A parent or tenant is not visible, or the agent write cutover is off.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Expected version is stale or the idempotency key was reused with different input.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "An input field or idempotency key is invalid.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "destructive",
+                "x-agent-idempotent": true,
+                "x-agent-write-safety": {
+                    "idempotency_key": "header_and_argument",
+                    "expected_version": true,
+                    "confirm": true
+                },
+                "x-agent-mcp-tool": "collaboration.topics.delete",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_COLLABORATION_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "collaboration.topics.delete"
+            },
+            "get": {
+                "operationId": "collaboration.topics.get",
+                "description": "Native collaboration uses current tenant and parent authorization. Portal and dual identities are read-only and receive only disclosed ancestors. Staff authors edit their own text; managers publish and moderate. Writes require the global and collaboration cutovers; versioned writes also require collaboration:read. All writes use idempotency receipts and current locked authority, including on replay. Deletion creates a tombstone and requires confirm true. No imported history, grants, billing amounts or email are changed.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "collaboration:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "client",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "topic",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Authorized native collaboration result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CollaborationTopicResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Authentication is required.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Scope or current role does not permit this operation.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "A parent or tenant is not visible, or the agent write cutover is off.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Expected version is stale or the idempotency key was reused with different input.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "An input field or idempotency key is invalid.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "read",
+                "x-agent-idempotent": true,
+                "x-agent-mcp-tool": "collaboration.topics.get",
+                "x-svc-flags": [],
+                "x-mcp-tool": "collaboration.topics.get"
+            },
+            "patch": {
+                "operationId": "collaboration.topics.update",
+                "description": "Native collaboration uses current tenant and parent authorization. Portal and dual identities are read-only and receive only disclosed ancestors. Staff authors edit their own text; managers publish and moderate. Writes require the global and collaboration cutovers; versioned writes also require collaboration:read. All writes use idempotency receipts and current locked authority, including on replay. Deletion creates a tombstone and requires confirm true. No imported history, grants, billing amounts or email are changed.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "collaboration:write",
+                            "collaboration:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CollaborationTopicUpdateRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "client",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "topic",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Authorized native collaboration result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CollaborationTopicResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Authentication is required.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Scope or current role does not permit this operation.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "A parent or tenant is not visible, or the agent write cutover is off.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Expected version is stale or the idempotency key was reused with different input.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "An input field or idempotency key is invalid.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "local_write",
+                "x-agent-idempotent": true,
+                "x-agent-write-safety": {
+                    "idempotency_key": "header_and_argument",
+                    "expected_version": true
+                },
+                "x-agent-mcp-tool": "collaboration.topics.update",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_COLLABORATION_WRITES_ENABLED"
+                ],
+                "x-mcp-tool": "collaboration.topics.update"
+            }
+        },
         "/workspaces/{workspace}/clients/{client}/payment-reminders": {
             "get": {
                 "operationId": "companies.payment_reminders.get",
@@ -9327,7 +10566,7 @@
         "/workspaces/{workspace}/search": {
             "get": {
                 "operationId": "search",
-                "description": "Search authorized clients, projects, invoices and tasks; each kind additionally requires its read scope. Bounded to five results per kind.",
+                "description": "Search authorized clients, projects, invoices, tasks, native notes, discussions and comments; each kind additionally requires its read scope. Collaboration kinds require collaboration:read and exact audience authorization. Bounded to five results per kind.",
                 "security": [
                     {
                         "oauth2": [
@@ -9355,7 +10594,7 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "Search authorized clients, projects, invoices and tasks; each kind additionally requires its read scope. Bounded to five results per kind.",
+                        "description": "Search authorized clients, projects, invoices, tasks, native notes, discussions and comments; each kind additionally requires its read scope. Collaboration kinds require collaboration:read and exact audience authorization. Bounded to five results per kind.",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -11463,6 +12702,8 @@
                             "identity:read": "Read your SVC identity and available workspaces",
                             "projects:read": "Read authorized projects",
                             "projects:write": "Create, edit and archive projects and manage project member access as a workspace owner or admin",
+                            "collaboration:read": "Read authorized native notes, discussions and comments; portal identities receive only client-visible content",
+                            "collaboration:write": "Create, edit, publish or remove native collaboration within current staff roles; never grants access or sends mail",
                             "tasks:read": "Read authorized tasks",
                             "tasks:write": "Create and update authorized tasks",
                             "time:read": "Read authorized time entries",
@@ -12898,6 +14139,442 @@
                         "$ref": "#/components/schemas/ClientCompany"
                     }
                 }
+            },
+            "CollaborationComment": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "body": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "author_name": {
+                        "type": "string"
+                    },
+                    "created_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "edited_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "deleted": {
+                        "type": "boolean"
+                    },
+                    "version": {
+                        "type": "string",
+                        "minLength": 64,
+                        "maxLength": 64
+                    },
+                    "web_url": {
+                        "type": "string"
+                    },
+                    "is_visible_to_client": {
+                        "type": [
+                            "boolean",
+                            "null"
+                        ]
+                    },
+                    "effective_visible_to_client": {
+                        "type": [
+                            "boolean",
+                            "null"
+                        ]
+                    }
+                },
+                "required": [
+                    "id",
+                    "body",
+                    "author_name",
+                    "created_at",
+                    "edited_at",
+                    "deleted",
+                    "version",
+                    "web_url",
+                    "is_visible_to_client",
+                    "effective_visible_to_client"
+                ],
+                "additionalProperties": false
+            },
+            "CollaborationCommentCreateRequest": {
+                "type": "object",
+                "properties": {
+                    "expected_version": {
+                        "type": "string",
+                        "minLength": 64,
+                        "maxLength": 64
+                    },
+                    "body": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 50000
+                    },
+                    "is_visible_to_client": {
+                        "type": "boolean"
+                    }
+                },
+                "required": [
+                    "expected_version",
+                    "body"
+                ],
+                "additionalProperties": false
+            },
+            "CollaborationCommentListResponse": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/CollaborationComment"
+                        }
+                    },
+                    "parent_version": {
+                        "type": "string",
+                        "minLength": 64,
+                        "maxLength": 64
+                    },
+                    "next_href": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "previous_href": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "meta": {
+                        "type": "object",
+                        "properties": {
+                            "next_cursor": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "next_cursor"
+                        ],
+                        "additionalProperties": false
+                    }
+                },
+                "required": [
+                    "data",
+                    "parent_version",
+                    "next_href",
+                    "previous_href",
+                    "meta"
+                ],
+                "additionalProperties": false
+            },
+            "CollaborationCommentResponse": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/CollaborationComment"
+                    },
+                    "parent_version": {
+                        "type": "string",
+                        "minLength": 64,
+                        "maxLength": 64
+                    }
+                },
+                "required": [
+                    "data",
+                    "parent_version"
+                ],
+                "additionalProperties": false
+            },
+            "CollaborationCommentUpdateRequest": {
+                "type": "object",
+                "properties": {
+                    "expected_version": {
+                        "type": "string",
+                        "minLength": 64,
+                        "maxLength": 64
+                    },
+                    "body": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 50000
+                    },
+                    "is_visible_to_client": {
+                        "type": "boolean"
+                    }
+                },
+                "required": [
+                    "expected_version"
+                ],
+                "additionalProperties": false
+            },
+            "CollaborationDeleteRequest": {
+                "type": "object",
+                "properties": {
+                    "expected_version": {
+                        "type": "string",
+                        "minLength": 64,
+                        "maxLength": 64
+                    },
+                    "confirm": {
+                        "type": "boolean",
+                        "const": true
+                    }
+                },
+                "required": [
+                    "expected_version",
+                    "confirm"
+                ],
+                "additionalProperties": false
+            },
+            "CollaborationTopic": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "body": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "author_name": {
+                        "type": "string"
+                    },
+                    "created_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "edited_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "deleted": {
+                        "type": "boolean"
+                    },
+                    "version": {
+                        "type": "string",
+                        "minLength": 64,
+                        "maxLength": 64
+                    },
+                    "web_url": {
+                        "type": "string"
+                    },
+                    "is_visible_to_client": {
+                        "type": [
+                            "boolean",
+                            "null"
+                        ]
+                    },
+                    "effective_visible_to_client": {
+                        "type": [
+                            "boolean",
+                            "null"
+                        ]
+                    },
+                    "title": {
+                        "type": "string"
+                    },
+                    "kind": {
+                        "type": "string",
+                        "enum": [
+                            "note",
+                            "discussion"
+                        ]
+                    },
+                    "kind_label": {
+                        "type": "string"
+                    },
+                    "project_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "uuid"
+                    },
+                    "scope_label": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "id",
+                    "body",
+                    "author_name",
+                    "created_at",
+                    "edited_at",
+                    "deleted",
+                    "version",
+                    "web_url",
+                    "is_visible_to_client",
+                    "effective_visible_to_client",
+                    "title",
+                    "kind",
+                    "kind_label",
+                    "project_id",
+                    "scope_label"
+                ],
+                "additionalProperties": false
+            },
+            "CollaborationTopicCreateRequest": {
+                "type": "object",
+                "properties": {
+                    "kind": {
+                        "type": "string",
+                        "enum": [
+                            "note",
+                            "discussion"
+                        ]
+                    },
+                    "title": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 255
+                    },
+                    "body": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 50000
+                    },
+                    "project_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "uuid"
+                    },
+                    "is_visible_to_client": {
+                        "type": "boolean"
+                    }
+                },
+                "required": [
+                    "kind",
+                    "title",
+                    "body"
+                ],
+                "additionalProperties": false
+            },
+            "CollaborationTopicListResponse": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/CollaborationTopicSummary"
+                        }
+                    },
+                    "next_href": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "previous_href": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    }
+                },
+                "required": [
+                    "data",
+                    "next_href",
+                    "previous_href"
+                ],
+                "additionalProperties": false
+            },
+            "CollaborationTopicResponse": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/CollaborationTopic"
+                    }
+                },
+                "required": [
+                    "data"
+                ],
+                "additionalProperties": false
+            },
+            "CollaborationTopicSummary": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "title": {
+                        "type": "string"
+                    },
+                    "kind_label": {
+                        "type": "string"
+                    },
+                    "author_name": {
+                        "type": "string"
+                    },
+                    "scope_label": {
+                        "type": "string"
+                    },
+                    "href": {
+                        "type": "string"
+                    },
+                    "web_url": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "id",
+                    "title",
+                    "kind_label",
+                    "author_name",
+                    "scope_label",
+                    "href",
+                    "web_url"
+                ],
+                "additionalProperties": false
+            },
+            "CollaborationTopicUpdateRequest": {
+                "type": "object",
+                "properties": {
+                    "expected_version": {
+                        "type": "string",
+                        "minLength": 64,
+                        "maxLength": 64
+                    },
+                    "title": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 255
+                    },
+                    "body": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 50000
+                    },
+                    "is_visible_to_client": {
+                        "type": "boolean"
+                    }
+                },
+                "required": [
+                    "expected_version"
+                ],
+                "additionalProperties": false
             },
             "CompanyPaymentReminders": {
                 "type": "object",
@@ -18936,7 +20613,10 @@
                             "client",
                             "project",
                             "invoice",
-                            "task"
+                            "task",
+                            "note",
+                            "discussion",
+                            "comment"
                         ]
                     },
                     "id": {

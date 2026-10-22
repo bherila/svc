@@ -521,6 +521,112 @@
             "mcp.switch:clients.update"
         ]
     },
+    "collaboration.comments.create": {
+        "scopes": [
+            "collaboration:write",
+            "collaboration:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.collaboration",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:collaboration.comments.create"
+        ]
+    },
+    "collaboration.comments.delete": {
+        "scopes": [
+            "collaboration:write",
+            "collaboration:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.collaboration",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:collaboration.comments.delete"
+        ]
+    },
+    "collaboration.comments.list": {
+        "scopes": [
+            "collaboration:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:collaboration.comments.list"
+        ]
+    },
+    "collaboration.comments.update": {
+        "scopes": [
+            "collaboration:write",
+            "collaboration:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.collaboration",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:collaboration.comments.update"
+        ]
+    },
+    "collaboration.topics.create": {
+        "scopes": [
+            "collaboration:write"
+        ],
+        "flags": [
+            "agent.writes.collaboration",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:collaboration.topics.create"
+        ]
+    },
+    "collaboration.topics.delete": {
+        "scopes": [
+            "collaboration:write",
+            "collaboration:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.collaboration",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:collaboration.topics.delete"
+        ]
+    },
+    "collaboration.topics.get": {
+        "scopes": [
+            "collaboration:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:collaboration.topics.get"
+        ]
+    },
+    "collaboration.topics.list": {
+        "scopes": [
+            "collaboration:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:collaboration.topics.list"
+        ]
+    },
+    "collaboration.topics.update": {
+        "scopes": [
+            "collaboration:write",
+            "collaboration:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.collaboration",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:collaboration.topics.update"
+        ]
+    },
     "companies.payment_reminders.get": {
         "scopes": [
             "billing:read"

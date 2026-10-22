@@ -3,6 +3,8 @@
 namespace Tests\Feature\Models;
 
 use App\Models\ClientAgreement;
+use App\Models\ClientCollaborationTopic;
+use App\Models\ClientComment;
 use App\Models\ClientCompany;
 use App\Models\ClientCompanyMembership;
 use App\Models\ClientInvoice;
@@ -54,6 +56,12 @@ final class FillableCoverageTest extends TestCase
      * @var array<class-string, array<string, string>>
      */
     private const MODEL_EXEMPT = [
+        ClientCollaborationTopic::class => [
+            'edited_at' => 'Set only by CollaborationAction through the scoped repository after an authorized text edit, using the workspace clock; callers cannot supply an edit timestamp.',
+        ],
+        ClientComment::class => [
+            'edited_at' => 'Set only by CollaborationAction through the scoped repository after an authorized text edit, using the workspace clock; callers cannot supply an edit timestamp.',
+        ],
         ClientCompany::class => [
             'credit_revision' => 'The credit pool\'s revision. Advanced only by OverpaymentCreditService::recordPoolChange(), under the company lock, in the transaction that changed the pool; a value assigned through the model would let a stale snapshot pass issue()\'s credit check.',
         ],

@@ -37,6 +37,7 @@ type CompanyTask = {
     starts_on?: string | null;
     due_on?: string | null;
     detail_url?: string | null;
+    comment_thread_url?: string | null;
 };
 
 const ALL_PROJECTS = 'all';
@@ -199,6 +200,16 @@ export default function ClientTasks({
                                                         </Link>
                                                     ) : (
                                                         task.title
+                                                    )}
+                                                    {task.comment_thread_url && (
+                                                        <Link
+                                                            href={
+                                                                task.comment_thread_url
+                                                            }
+                                                            className="mt-1 block text-sm font-normal underline underline-offset-4"
+                                                        >
+                                                            Comments
+                                                        </Link>
                                                     )}
                                                     {task.starts_on && (
                                                         <p className="mt-1 text-xs text-muted-foreground">

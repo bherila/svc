@@ -718,6 +718,7 @@ class ClientDirectoryController extends Controller
                 'starts_on' => $task->starts_on?->toDateString(),
                 'due_on' => $task->due_on?->toDateString(),
                 'detail_url' => $canManageTasks ? route('tasks.show', [$workspace, $task]) : null,
+                'comment_thread_url' => route('collaboration.comments.index', [$workspace, $clientCompany, 'task', $task->public_id], absolute: false),
             ])->values()->all(),
             'tasks_next_href' => $moreTasks ? route('clients.tasks', [$workspace, $clientCompany, 'project' => $clientProject->public_id]) : null,
             'time' => $minutesByStatus->map(fn (ClientTimeEntry $row): array => [
@@ -1053,6 +1054,7 @@ class ClientDirectoryController extends Controller
                 'starts_on' => $task->starts_on?->toDateString(),
                 'due_on' => $task->due_on?->toDateString(),
                 'detail_url' => isset($taskProjectIds[$task->client_project_id]) ? route('tasks.show', [$workspace, $task]) : null,
+                'comment_thread_url' => route('collaboration.comments.index', [$workspace, $clientCompany, 'task', $task->public_id], absolute: false),
             ])->values()->all(),
             'pagination' => ['previous_href' => $tasks->previousPageUrl(), 'next_href' => $tasks->nextPageUrl()],
         ]);
