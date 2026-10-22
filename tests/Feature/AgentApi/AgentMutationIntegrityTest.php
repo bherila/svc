@@ -256,6 +256,7 @@ final class AgentMutationIntegrityTest extends TestCase
         $staleVersion = AgentApiVersion::for($task);
 
         $this->actingAs($user)->patch("/workspaces/{$workspace->public_id}/tasks/{$task->public_id}", [
+            'expected_version' => $staleVersion,
             'status' => 'completed',
         ])->assertRedirect();
         $this->assertNotSame($staleVersion, AgentApiVersion::for($task->fresh()));

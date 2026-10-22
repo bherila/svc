@@ -61,7 +61,7 @@ final class BillingWriterLockSites
     private static function resource(Expr $query, ClassMethod $method, Class_ $class): ?LockResource
     {
         while ($query instanceof MethodCall) {
-            if ($class->name?->toString() === 'WorkspaceTaskMutationAction' && $query->name->toString() === 'query') {
+            if ($class->name?->toString() === 'WorkspaceTaskRepository' && $query->name->toString() === 'query') {
                 return LockResource::ClientTask;
             }
             // The polymorphic attachment parent can be a task. Its revision

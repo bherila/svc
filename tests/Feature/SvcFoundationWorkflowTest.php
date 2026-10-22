@@ -7,6 +7,7 @@ use App\Models\ClientProject;
 use App\Models\ClientTask;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Support\AgentApi\AgentApiVersion;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
@@ -78,6 +79,7 @@ class SvcFoundationWorkflowTest extends TestCase
 
         $this->actingAs($owner)
             ->patch("/workspaces/{$workspace->public_id}/tasks/{$task->public_id}", [
+                'expected_version' => AgentApiVersion::for($task),
                 'status' => 'completed',
                 'is_visible_to_client' => true,
             ])->assertRedirect('/');

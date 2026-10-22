@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Services\Tasks\TaskInputRules;
 use Illuminate\Foundation\Http\FormRequest;
 
 class StoreClientTaskRequest extends FormRequest
@@ -14,10 +15,6 @@ class StoreClientTaskRequest extends FormRequest
     /** @return array<string, list<string>> */
     public function rules(): array
     {
-        return [
-            'title' => ['required', 'string', 'max:255'],
-            'description' => ['nullable', 'string', 'max:10000'],
-            'is_visible_to_client' => ['required', 'boolean'],
-        ];
+        return ['is_visible_to_client' => ['required', 'boolean']] + TaskInputRules::create();
     }
 }

@@ -22016,6 +22016,42 @@
                     "web_url": {
                         "type": "string",
                         "format": "uri"
+                    },
+                    "starts_on": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date"
+                    },
+                    "due_on": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date"
+                    },
+                    "assignees": {
+                        "type": "array",
+                        "maxItems": 10,
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                                "id",
+                                "name"
+                            ],
+                            "properties": {
+                                "id": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                },
+                                "name": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "description": "Internal planning metadata, withheld from portal and dual-identity API responses."
                     }
                 }
             },
@@ -22041,6 +22077,30 @@
                     "is_visible_to_client": {
                         "type": "boolean",
                         "description": "Hidden from clients when omitted. Callers choose visibility explicitly when publishing a task."
+                    },
+                    "starts_on": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date"
+                    },
+                    "due_on": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date"
+                    },
+                    "assignee_ids": {
+                        "type": "array",
+                        "maxItems": 10,
+                        "uniqueItems": true,
+                        "items": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "description": "Current eligible internal account public UUIDs. Omit to preserve assignments; an empty array clears them."
                     }
                 }
             },
@@ -22107,6 +22167,30 @@
                     },
                     "is_visible_to_client": {
                         "type": "boolean"
+                    },
+                    "starts_on": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date"
+                    },
+                    "due_on": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date"
+                    },
+                    "assignee_ids": {
+                        "type": "array",
+                        "maxItems": 10,
+                        "uniqueItems": true,
+                        "items": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "description": "Current eligible internal account public UUIDs. Omit to preserve assignments; an empty array clears them."
                     }
                 }
             },
@@ -22479,7 +22563,7 @@
                     "worked_on": {
                         "type": "string",
                         "format": "date",
-                        "description": "Workspace calendar date within the time sheet’s twelve-month window, through the end of the current month."
+                        "description": "Workspace calendar date within the time sheet\u2019s twelve-month window, through the end of the current month."
                     },
                     "minutes": {
                         "type": "integer",
@@ -22513,7 +22597,7 @@
                             "null"
                         ],
                         "format": "uuid",
-                        "description": "Omit to preserve the task; null clears it. A task must belong to this entry’s project."
+                        "description": "Omit to preserve the task; null clears it. A task must belong to this entry\u2019s project."
                     }
                 },
                 "allOf": [
