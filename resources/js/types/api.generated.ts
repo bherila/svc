@@ -1921,6 +1921,143 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    '/workspaces/{workspace}/projects/{project}/task-organization': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Read current lists, task containment and opaque graph/container versions. Internal project managers only; Portal and dual Agent identities are refused. Up to 1,000 retained tasks, 100 retained lists and 100 siblings; unsupported sizes fail explicitly. Request container=true with nullable parent_id/list_id for one complete sibling group. */
+        get: operations['task_organization.get'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/projects/{project}/task-organization/lists/{list}': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** @description After explicit confirmation, archive a list using current list and graph versions. Tasks remain in place and are hidden from clients while archived. */
+        delete: operations['task_organization.lists.archive'];
+        options?: never;
+        head?: never;
+        /** @description Update a list name or client visibility using current list and graph versions. Tasks retain their own sharing choices; publishing a containing list can reveal already-shared tasks. */
+        patch: operations['task_organization.lists.update'];
+        trace?: never;
+    };
+    '/workspaces/{workspace}/projects/{project}/task-organization/lists': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Create an internal task list using the current graph version. Client visibility is false when omitted. */
+        post: operations['task_organization.lists.create'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/projects/{project}/task-organization/lists/order': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** @description Supply every active list ID exactly once with the rendered lists_version as expected_container_version. Archived lists are excluded. */
+        put: operations['task_organization.lists.reorder'];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/projects/{project}/task-organization/lists/{list}/restore': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Restore a list using current list and graph versions. Saved list and task sharing choices are preserved. */
+        post: operations['task_organization.lists.restore'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/projects/{project}/task-organization/tasks': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Create a task in the supplied nullable parent/list container using the current graph version. New tasks are internal by default. Assignment grants no access. */
+        post: operations['task_organization.tasks.create'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/projects/{project}/task-organization/tasks/{task}/container': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** @description Move one task and its descendants within this project using current task and graph versions. Cycles, excessive depth and incompatible containers are refused. Sharing flags and billing facts remain unchanged. */
+        patch: operations['task_organization.tasks.move'];
+        trace?: never;
+    };
+    '/workspaces/{workspace}/projects/{project}/task-organization/tasks/order': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** @description Supply every current sibling task ID exactly once with the rendered container version. Omitted, duplicate, foreign and stale IDs are refused. */
+        put: operations['task_organization.tasks.reorder'];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     '/workspaces/{workspace}/projects/{project}/tasks': {
         parameters: {
             query?: never;
@@ -4836,6 +4973,89 @@ export interface components {
         TaskListResponse: {
             data: components['schemas']['Task'][];
             meta: components['schemas']['PaginationMeta'];
+        };
+        TaskOrganizationListArchiveRequest: {
+            expected_graph_version: components['schemas']['Version'];
+            expected_version: components['schemas']['Version'];
+            /** @constant */
+            confirm: true;
+        };
+        TaskOrganizationListCreateRequest: {
+            expected_graph_version: components['schemas']['Version'];
+            name: string;
+            /** @default false */
+            is_visible_to_client: boolean;
+        };
+        TaskOrganizationListOrderRequest: {
+            expected_container_version: components['schemas']['Version'];
+            ordered_ids: components['schemas']['Uuid'][];
+        };
+        TaskOrganizationListRestoreRequest: {
+            expected_graph_version: components['schemas']['Version'];
+            expected_version: components['schemas']['Version'];
+        };
+        TaskOrganizationListUpdateRequest: {
+            expected_graph_version: components['schemas']['Version'];
+            expected_version: components['schemas']['Version'];
+            name?: string;
+            is_visible_to_client?: boolean;
+        };
+        TaskOrganizationMutationResponse: {
+            data: {
+                affected_ids: components['schemas']['Uuid'][];
+            };
+        };
+        TaskOrganizationResponse: {
+            data: {
+                project_id: components['schemas']['Uuid'];
+                graph_version: components['schemas']['Version'];
+                lists_version: components['schemas']['Version'];
+                lists: {
+                    id: components['schemas']['Uuid'];
+                    name: string;
+                    is_visible_to_client: boolean;
+                    archived: boolean;
+                    version: components['schemas']['Version'];
+                }[];
+                tree: {
+                    id: components['schemas']['Uuid'];
+                    parent_id: components['schemas']['Uuid'] | null;
+                    list_id: components['schemas']['Uuid'] | null;
+                    position: number;
+                    version: components['schemas']['Version'];
+                }[];
+                container: {
+                    parent_id: components['schemas']['Uuid'] | null;
+                    list_id: components['schemas']['Uuid'] | null;
+                    version: components['schemas']['Version'];
+                    tasks: {
+                        id: components['schemas']['Uuid'];
+                        title: string;
+                        /** @enum {string} */
+                        status: 'open' | 'in_progress' | 'completed';
+                        is_visible_to_client: boolean;
+                        version: components['schemas']['Version'];
+                    }[];
+                } | null;
+            };
+        };
+        TaskOrganizationTaskCreateRequest: {
+            expected_graph_version: components['schemas']['Version'];
+            parent_id: components['schemas']['Uuid'] | null;
+            list_id: components['schemas']['Uuid'] | null;
+            task: components['schemas']['TaskCreateRequest'];
+        };
+        TaskOrganizationTaskMoveRequest: {
+            expected_graph_version: components['schemas']['Version'];
+            expected_version: components['schemas']['Version'];
+            parent_id: components['schemas']['Uuid'] | null;
+            list_id: components['schemas']['Uuid'] | null;
+        };
+        TaskOrganizationTaskOrderRequest: {
+            expected_container_version: components['schemas']['Version'];
+            parent_id: components['schemas']['Uuid'] | null;
+            list_id: components['schemas']['Uuid'] | null;
+            ordered_ids: components['schemas']['Uuid'][];
         };
         TaskResponse: {
             data: components['schemas']['Task'];
@@ -10498,6 +10718,764 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['SquareSyncRunResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'task_organization.get': {
+        parameters: {
+            query?: {
+                container?: boolean;
+                parent_id?: string;
+                list_id?: string;
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                project: components['parameters']['ProjectId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['TaskOrganizationResponse'];
+                };
+            };
+            /** @description Authentication is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The caller lacks scope or current internal project-management authority; Portal and dual Agent identities are refused. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace, project or record is unavailable, or task organization is disabled. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A supplied opaque version is stale or the idempotency key was used for another request. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A field, container, complete order, confirmation or supported size is invalid. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests; retry after Retry-After. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'task_organization.lists.archive': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                project: components['parameters']['ProjectId'];
+                list: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['TaskOrganizationListArchiveRequest'];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['TaskOrganizationMutationResponse'];
+                };
+            };
+            /** @description Authentication is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The caller lacks scope or current internal project-management authority; Portal and dual Agent identities are refused. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace, project or record is unavailable, or task organization is disabled. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A supplied opaque version is stale or the idempotency key was used for another request. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A field, container, complete order, confirmation or supported size is invalid. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests; retry after Retry-After. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'task_organization.lists.update': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                project: components['parameters']['ProjectId'];
+                list: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['TaskOrganizationListUpdateRequest'];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['TaskOrganizationMutationResponse'];
+                };
+            };
+            /** @description Authentication is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The caller lacks scope or current internal project-management authority; Portal and dual Agent identities are refused. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace, project or record is unavailable, or task organization is disabled. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A supplied opaque version is stale or the idempotency key was used for another request. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A field, container, complete order, confirmation or supported size is invalid. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests; retry after Retry-After. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'task_organization.lists.create': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                project: components['parameters']['ProjectId'];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['TaskOrganizationListCreateRequest'];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['TaskOrganizationMutationResponse'];
+                };
+            };
+            /** @description Authentication is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The caller lacks scope or current internal project-management authority; Portal and dual Agent identities are refused. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace, project or record is unavailable, or task organization is disabled. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A supplied opaque version is stale or the idempotency key was used for another request. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A field, container, complete order, confirmation or supported size is invalid. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests; retry after Retry-After. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'task_organization.lists.reorder': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                project: components['parameters']['ProjectId'];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['TaskOrganizationListOrderRequest'];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['TaskOrganizationMutationResponse'];
+                };
+            };
+            /** @description Authentication is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The caller lacks scope or current internal project-management authority; Portal and dual Agent identities are refused. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace, project or record is unavailable, or task organization is disabled. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A supplied opaque version is stale or the idempotency key was used for another request. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A field, container, complete order, confirmation or supported size is invalid. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests; retry after Retry-After. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'task_organization.lists.restore': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                project: components['parameters']['ProjectId'];
+                list: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['TaskOrganizationListRestoreRequest'];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['TaskOrganizationMutationResponse'];
+                };
+            };
+            /** @description Authentication is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The caller lacks scope or current internal project-management authority; Portal and dual Agent identities are refused. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace, project or record is unavailable, or task organization is disabled. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A supplied opaque version is stale or the idempotency key was used for another request. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A field, container, complete order, confirmation or supported size is invalid. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests; retry after Retry-After. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'task_organization.tasks.create': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                project: components['parameters']['ProjectId'];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['TaskOrganizationTaskCreateRequest'];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['TaskOrganizationMutationResponse'];
+                };
+            };
+            /** @description Authentication is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The caller lacks scope or current internal project-management authority; Portal and dual Agent identities are refused. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace, project or record is unavailable, or task organization is disabled. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A supplied opaque version is stale or the idempotency key was used for another request. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A field, container, complete order, confirmation or supported size is invalid. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests; retry after Retry-After. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'task_organization.tasks.move': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                project: components['parameters']['ProjectId'];
+                task: components['parameters']['TaskId'];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['TaskOrganizationTaskMoveRequest'];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['TaskOrganizationMutationResponse'];
+                };
+            };
+            /** @description Authentication is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The caller lacks scope or current internal project-management authority; Portal and dual Agent identities are refused. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace, project or record is unavailable, or task organization is disabled. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A supplied opaque version is stale or the idempotency key was used for another request. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A field, container, complete order, confirmation or supported size is invalid. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests; retry after Retry-After. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'task_organization.tasks.reorder': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                project: components['parameters']['ProjectId'];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['TaskOrganizationTaskOrderRequest'];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['TaskOrganizationMutationResponse'];
+                };
+            };
+            /** @description Authentication is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The caller lacks scope or current internal project-management authority; Portal and dual Agent identities are refused. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace, project or record is unavailable, or task organization is disabled. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A supplied opaque version is stale or the idempotency key was used for another request. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A field, container, complete order, confirmation or supported size is invalid. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests; retry after Retry-After. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
                 };
             };
             default: components['responses']['Error'];

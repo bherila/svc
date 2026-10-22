@@ -49,6 +49,9 @@ final class AgentDeploymentFlags implements DeploymentFlags
     /** The read-only Square pass-through: on only while Square is configured. */
     public const string SQUARE = 'square.connected';
 
+    /** Product availability; first-party sessions never bypass it. */
+    public const string TASK_ORGANIZATION = 'tasks.organization';
+
     /**
      * Portal invitations (#430), a product switch rather than an agent
      * cutover: `svc.portal_invitations.enabled` also governs the settings
@@ -135,6 +138,11 @@ final class AgentDeploymentFlags implements DeploymentFlags
     {
         $switches = [];
         foreach ($flags as $flag) {
+            if ($flag === self::TASK_ORGANIZATION) {
+                $switches[] = 'TASK_ORGANIZATION_WRITES_ENABLED';
+
+                continue;
+            }
             foreach (self::lineage($flag) as $cutover) {
                 $switches[] = self::ENVIRONMENT[$cutover];
             }
@@ -167,11 +175,15 @@ final class AgentDeploymentFlags implements DeploymentFlags
 
     public static function isAvailabilityPrecondition(string $flag): bool
     {
-        return $flag === self::SQUARE;
+        return in_array($flag, [self::SQUARE, self::TASK_ORGANIZATION], true);
     }
 
     public function enabled(string $flag): bool
     {
+        if ($flag === self::TASK_ORGANIZATION) {
+            return config('task_organization.enabled') === true;
+        }
+
         if ($flag === self::SQUARE) {
             return SquareConfiguration::fromConfig()->isConfigured();
         }

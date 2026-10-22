@@ -695,6 +695,8 @@ class ClientDirectoryController extends Controller
 
         return Inertia::render('clients/project', [
             'workspace' => ['id' => $workspace->public_id],
+            'organization_href' => $canManageTasks && config('task_organization.enabled') === true
+                ? route('tasks.organization.show', [$workspace, $clientCompany, $clientProject->public_id]) : null,
             'task_management' => $canManageTasks
                 ? ['projects' => [app(TaskEditorPresenter::class)->project($workspace, $clientProject)]]
                 : null,

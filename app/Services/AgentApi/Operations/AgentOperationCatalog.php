@@ -21,6 +21,7 @@ use App\Services\Mcp\AgentMcpReadTools;
 use App\Services\Mcp\AgentMcpSquareLinkTools;
 use App\Services\Mcp\AgentMcpSquareMirrorTools;
 use App\Services\Mcp\AgentMcpSquareTools;
+use App\Services\Mcp\AgentMcpTaskOrganizationTools;
 use App\Services\Mcp\AgentMcpWriteTools;
 use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
 use Bherila\McpLaravelBridge\Capabilities\Effect;
@@ -62,6 +63,7 @@ final class AgentOperationCatalog
      * @var array<string, array{0: string, 1: string, 2: list<int>}>
      */
     private const array ROUTES = [
+        ...TaskOrganizationOperations::ROUTES,
         'agreements.activate' => ['agreements.activate', '/workspaces/{workspace}/agreements/{agreement}/activate', [200]],
         'agreements.create' => ['agreements.store', '/workspaces/{workspace}/clients/{client}/agreements', [201]],
         'agreements.get' => ['agreements.show', '/workspaces/{workspace}/agreements/{agreement}', [200]],
@@ -248,7 +250,7 @@ final class AgentOperationCatalog
     private function build(): OperationRegistry
     {
         $registry = new OperationRegistry;
-        $registry->register(...$this->tools(), ...$this->restOnly(), ...$this->resourcesAndPrompts(), ...$this->square(), ...$this->squareMirror(), ...$this->finance());
+        $registry->register(...$this->tools(), ...$this->taskOrganizationTools(), ...$this->restOnly(), ...$this->resourcesAndPrompts(), ...$this->square(), ...$this->squareMirror(), ...$this->finance());
         $documented = array_keys(AgentRestDocumentation::operations());
         $bound = array_keys(self::ROUTES);
         sort($documented);
@@ -1913,6 +1915,27 @@ final class AgentOperationCatalog
         );
     }
 
+    /** @return list<Operation> */
+    private function taskOrganizationTools(): array
+    {
+        $handlers = ['get' => 'get', 'lists.create' => 'listsCreate', 'lists.update' => 'listsUpdate',
+            'lists.archive' => 'listsArchive', 'lists.restore' => 'listsRestore', 'lists.reorder' => 'listsReorder',
+            'tasks.create' => 'tasksCreate', 'tasks.move' => 'tasksMove', 'tasks.reorder' => 'tasksReorder'];
+        $definitions = TaskOrganizationOperations::documentation();
+        $operations = [];
+        foreach ($handlers as $suffix => $handler) {
+            $id = 'task_organization.'.$suffix;
+            $read = $suffix === 'get';
+            $operations[] = $this->tool($id, $definitions[$id]['summary'], $definitions[$id]['description'],
+                [AgentMcpTaskOrganizationTools::class, $handler],
+                $read ? Effect::Read : ($suffix === 'lists.archive' ? Effect::Destructive : Effect::LocalWrite), true,
+                $read ? 'mcp.read' : 'mcp.write', cutovers: $read ? [] : [AgentDeploymentFlags::WRITES],
+                availability: [AgentDeploymentFlags::TASK_ORGANIZATION]);
+        }
+
+        return $operations;
+    }
+
     private function takesConfirmation(string $id): bool
     {
         if (! isset(self::ROUTES[$id])) {
@@ -1930,6 +1953,7 @@ final class AgentOperationCatalog
         }
         $body = AgentApiResponseSchemaCatalog::requestForOperation($id);
 
-        return isset($body['properties']['expected_version']) || isset($body['properties']['expected_backlog_version']);
+        return isset($body['properties']['expected_version']) || isset($body['properties']['expected_backlog_version'])
+            || isset($body['properties']['expected_graph_version']) || isset($body['properties']['expected_container_version']);
     }
 }

@@ -210,6 +210,7 @@ final class AgentRestDocumentation
     public static function operations(): array
     {
         return [
+            ...TaskOrganizationOperations::documentation(),
             'agreements.activate' => [
                 'method' => 'POST',
                 'scopes' => ['clients:write', 'billing:read'],
