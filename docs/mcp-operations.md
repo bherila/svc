@@ -122,7 +122,9 @@ are not touched; revoke those by name with `svc:auth:revoke-token` (see
 
 Production deploys use a dedicated cPanel account and an account-specific SSH key.
 The stable application directory is `~/svc-laravel`; `~/public_html` points to its
-`public` directory. Account-specific configuration is stored under `~/.config/svc`.
+`public` directory. That primary webroot is provisioned once outside the release
+action; stable-directory activation preserves its target without replacing it.
+Account-specific configuration is stored under `~/.config/svc`.
 Absolute runtime paths and database ownership must be verified when moving accounts;
 preserve application and OAuth keys rather than regenerating them.
 

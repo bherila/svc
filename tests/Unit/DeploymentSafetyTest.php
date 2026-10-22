@@ -45,7 +45,7 @@ class DeploymentSafetyTest extends TestCase
         $this->assertStringContainsString('deployment-mode: atomic', $workflow);
         $this->assertStringContainsString('persistent-paths: storage', $workflow);
         $this->assertStringContainsString("retain-releases: '0'", $workflow);
-        $this->assertStringContainsString('webroot-symlink: public_html', $workflow);
+        $this->assertStringNotContainsString('webroot-symlink:', $workflow);
         $this->assertStringContainsString('failure-policy: rollback', $workflow);
         $this->assertStringContainsString("operational-audit: 'true'", $workflow);
         $this->assertStringContainsString("runtime-audit: 'true'", $workflow);

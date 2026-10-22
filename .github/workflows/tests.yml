@@ -582,7 +582,8 @@ jobs:
           ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
           ssh-known-hosts: ${{ secrets.SSH_KNOWN_HOSTS }}
           deploy-dir: svc-laravel
-          webroot-symlink: public_html
+          # The dedicated account's primary public_html link is provisioned separately.
+          # Stable-directory activation preserves its target; never ask the action to replace it.
           site-url: https://svc.bherila.net
           deployment-mode: atomic
           atomic-layout: stable-directory
