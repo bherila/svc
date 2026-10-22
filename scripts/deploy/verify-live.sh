@@ -47,35 +47,16 @@ printf '%s' "$redirect_url" | node scripts/deploy/verify-oauth-redirect.mjs
 ssh "$DEPLOY_SSH_TARGET" "bash -s -- $(printf '%q ' "$DEPLOY_STABLE_DIR" "$DEPLOY_PHP_BINARY")" \
     <scripts/deploy/cron-audit.sh
 
-# A coordinated revocation rollout pauses issuance across migration/cutover.
-# The release is now selected and serving; allow the coordinator to re-enable
-# issuance before minting the smoke credentials. Every existing smoke still
-# runs. A timeout or any response other than the expected pause fails closed.
-oauth_wait=${SVC_DEPLOY_OAUTH_WAIT_SECONDS:-300}
-[[ $oauth_wait =~ ^[0-9]+$ ]] && [ "${#oauth_wait}" -le 3 ] && [ "$oauth_wait" -le 600 ] \
-    || { echo 'Invalid OAuth readiness wait (0-600 seconds required).' >&2; exit 2; }
-oauth_deadline=$((SECONDS + 10#$oauth_wait))
-oauth_announced=false
-while :; do
-    oauth_response=$(curl --silent --show-error --connect-timeout 5 --max-time 10 \
-        --output /dev/null --write-out '%{http_code} %{content_type}' \
-        "$DEPLOY_SITE_URL/.well-known/oauth-authorization-server")
-    read -r oauth_status oauth_content_type <<<"$oauth_response"
-    if [ "$oauth_status" = 200 ]; then
-        case "${oauth_content_type,,}" in
-            application/json | application/json\;*) break ;;
-        esac
-    fi
-    if [ "$oauth_status" != 404 ] || [ "$SECONDS" -ge "$oauth_deadline" ]; then
-        echo 'OAuth issuance readiness failed; no smoke credentials were issued.' >&2
-        exit 1
-    fi
-    if [ "$oauth_announced" = false ]; then
-        echo 'Selected release is serving; waiting for coordination to re-enable OAuth issuance (up to 300 seconds by default).'
-        oauth_announced=true
-    fi
-    sleep 2
-done
+# Maintenance and the Artisan drain pause issuance during migration. Once the
+# action serves the new release, issuance must already work; no human handoff.
+oauth_response=$(curl --silent --show-error --connect-timeout 5 --max-time 10 \
+    --output /dev/null --write-out '%{http_code} %{content_type}' \
+    "$DEPLOY_SITE_URL/.well-known/oauth-authorization-server")
+read -r oauth_status oauth_content_type <<<"$oauth_response"
+case "$oauth_status ${oauth_content_type,,}" in
+    '200 application/json' | '200 application/json;'*) ;;
+    *) echo 'OAuth issuance readiness failed; no smoke credentials were issued.' >&2; exit 1 ;;
+esac
 
 remote_artisan="cd ~/$DEPLOY_STABLE_DIR && $DEPLOY_PHP_BINARY artisan svc:mcp:deploy-smoke-credentials --apply"
 cleanup() {

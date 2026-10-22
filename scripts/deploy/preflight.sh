@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Read-only host prerequisites, before maintenance, shared-path preparation or DB risk.
-# Configuration/key contents must never be opened or printed here.
+# Keys and database configuration are checked by metadata only. The incoming
+# OAuth flag is parsed without booting the app or printing configuration.
 set -euo pipefail
 
 test "$#" -eq 3
@@ -70,6 +71,25 @@ done
 require_private_file "$key_root/oauth-private.key" oauth-private.key
 require_private_file "$key_root/oauth-public.key" oauth-public.key
 
+# Never enter maintenance expecting a person to re-enable issuance mid-deploy.
+# Both the incoming configuration and the currently served endpoint must be ready.
+# The action then owns the whole pause/resume via maintenance and Artisan drain.
+# Do not source deployment.env: it contains private values and is not shell code.
+"$php_binary" -d display_errors=0 -d log_errors=0 \
+    "$account_root/$candidate_dir/scripts/deploy/check-oauth-config.php" \
+    "$account_root/$candidate_dir/vendor/autoload.php" "$account_root/.config/svc/deployment.env" \
+    >/dev/null 2>&1 || fail 'incoming OAuth issuance is disabled or its configuration could not be verified; live service was not changed'
+if ! oauth_response=$(curl --silent --connect-timeout 5 --max-time 10 \
+    --output /dev/null --write-out '%{http_code} %{content_type}' \
+    https://svc.bherila.net/.well-known/oauth-authorization-server); then
+    fail 'live OAuth issuance could not be verified; live service was not changed'
+fi
+read -r oauth_status oauth_content_type <<<"$oauth_response"
+case "$oauth_status ${oauth_content_type,,}" in
+    '200 application/json' | '200 application/json;'*) ;;
+    *) fail 'live OAuth issuance is not ready; restore the intended configuration before deployment; live service was not changed' ;;
+esac
+
 # The shared action pauses SVC's cron lines before maintenance and replaces them after serving,
 # but it recognises a line only by `cd "$HOME/svc-laravel" ` (or the bare or expanded-home
 # spelling). An SVC line spelled any other way (~/svc-laravel, a release path, a job id alone)
@@ -118,4 +138,4 @@ unmanaged_cron=$(LC_ALL=C awk -v app="$stable_dir" \
 ' "$cron_work/current")
 test "$unmanaged_cron" = 0 || fail 'an SVC cron line is spelled so the deploy cannot pause or replace it'
 
-echo 'SVC static deployment prerequisites passed (metadata only).'
+echo 'SVC deployment prerequisites passed; incoming and live OAuth issuance are ready.'
