@@ -124,6 +124,18 @@
         ],
         "pre-package-uninstall": [
             "Illuminate\\Foundation\\ComposerScripts::prePackageUninstall"
+        ],
+        "ci:checks": [
+            "Composer\\Config::disableProcessTimeout",
+            "pnpm run lint:check",
+            "pnpm run format:check",
+            "pnpm run types:check",
+            "pnpm run api:types:check",
+            "pnpm run test",
+            "pnpm run scan-sensitive:test",
+            "pnpm run scan-sensitive",
+            "@lint:check",
+            "@types:check"
         ]
     },
     "extra": {
