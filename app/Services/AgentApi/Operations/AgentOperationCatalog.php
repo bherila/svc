@@ -167,6 +167,7 @@ final class AgentOperationCatalog
         'invoices.update_draft' => ['invoices.update', '/workspaces/{workspace}/invoices/{invoice}', [200]],
         'invoices.void' => ['invoices.void', '/workspaces/{workspace}/invoices/{invoice}/void', [200]],
         'operations.summary' => ['workspaces.summary', '/workspaces/{workspace}/summary', [200]],
+        'oauth.token.revoke' => ['oauth.token.destroy', '/oauth/token', [204]],
         'payments.correct' => ['payments.update', '/workspaces/{workspace}/payments/{payment}', [200]],
         'payments.list' => ['payments.index', '/workspaces/{workspace}/payments', [200]],
         'payments.record' => ['payments.store', '/workspaces/{workspace}/payments', [201]],
@@ -1699,6 +1700,8 @@ final class AgentOperationCatalog
             $this->restOperation('expenses.receipts.content', 'Download expense receipt content', Effect::Download),
             $this->restOperation('expenses.receipts.upload', 'Upload expense receipt', Effect::Upload, [AgentDeploymentFlags::EXPENSES], new WriteSafety(IdempotencyKey::Header, expectedVersion: true)),
             $this->restOperation('invoices.download_pdf', 'Download invoice PDF', Effect::Download),
+            // Client credential cleanup is deliberately not exposed as an MCP tool.
+            $this->restOperation('oauth.token.revoke', 'Revoke the calling OAuth token', Effect::Destructive, safety: new WriteSafety(note: 'Revokes only the calling token family; repeating it is harmless.'), idempotent: true),
             $this->restOperation('connections.revoke', 'Revoke this connection', Effect::Destructive, safety: new WriteSafety(note: 'Revokes only the calling connection; repeating it is harmless.'), idempotent: true),
             $this->restOperation('connections.disconnect', 'Disconnect this application', Effect::Destructive, safety: new WriteSafety(note: 'Revokes only the calling application\'s credentials for the calling person; repeating it is harmless.'), idempotent: true),
         ];

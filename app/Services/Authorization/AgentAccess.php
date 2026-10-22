@@ -18,6 +18,7 @@ final class AgentAccess
     public function __construct(
         private readonly ProjectAccess $projects,
         private readonly PortalInvoiceQuery $portalInvoices,
+        private readonly PortalAccess $portal,
     ) {}
 
     /**
@@ -68,7 +69,9 @@ final class AgentAccess
     public function canViewProject(User|AgentPrincipal $user, ClientProject $project): bool
     {
         return $this->projects->canView($user, $project)
-            || ($project->is_visible_to_client && $this->isCompanyMember($user, $project->clientCompany));
+            || ($project->is_visible_to_client
+                && $this->portal->constrainProjectQuery(ClientProject::query()
+                    ->where('workspace_id', $project->workspace_id), $user)->whereKey($project->id)->exists());
     }
 
     public function canViewTask(User|AgentPrincipal $user, ClientTask $task): bool

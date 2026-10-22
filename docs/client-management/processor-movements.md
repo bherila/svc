@@ -23,7 +23,7 @@ php -d memory_limit=1G artisan svc:finance:sync-processor-movements --provider=s
 ```
 
 The dates above are synthetic examples. Preview is the default; `--apply` opts
-into database writes and advances the Stripe attempt cursor. Provider reads
+into database writes and advances the provider scan positions. Provider reads
 still happen in preview. Reports contain only counts and fixed reason codes,
 never record identifiers, amounts, credentials or provider exception text.
 
@@ -38,7 +38,7 @@ shared provider-client calls across the entire command, default 200 and maximum
 1000. Provider reads have a ten-minute monotonic deadline. Existing client retries
 are bounded separately; the final in-flight read can finish after the deadline.
 A 15-minute cache mutex normally separates scheduled and manual commands. Persistence can outlast the provider deadline; entry identity and existing database row/revision locks remain the correctness guard if a run outlasts that cache lease.
-Preview does not advance or reset the persisted Stripe cursor.
+Preview does not advance, create or reset either persisted provider scan position.
 
 ## Resume and historical coverage
 
@@ -55,28 +55,69 @@ simply using the last permitted call does not. Preview reads the next applied
 batch without changing either cursor fact. Previously recorded entries replay
 safely. An explicit payment never changes the cycle cursor.
 
-Square discovers every configured location's payouts using explicit, fixed
-creation-time bounds. `--since` defaults to UTC now minus 30 days and `--until`
-to UTC now. An explicit day means midnight UTC on that day, so `--until` at the
-next month's first day bounds the preceding month. Movement dates come from
-each entry's `effective_at`, not payout creation, arrival or sync time.
-Historical payouts outside that window require an explicit earlier `--since`.
+Square discovers every configured location's payouts in ascending creation-time
+order. `--since` defaults to UTC now minus 30 days and `--until` to UTC now. An
+explicit day means midnight UTC on that day, so `--until` at the next month's
+first day bounds the preceding month. Movement dates come from each entry's
+`effective_at`, not payout creation, arrival or sync time. Historical payouts
+outside the default window require an explicit earlier `--since`.
 
-A Square payout's complete bounded pages and referenced sources are read before
-its first write. Earlier completed payouts may already be recorded if a later
-payout fails; rerunning is idempotent. Reaching a record/call/page/time limit is
-**incomplete**, exits nonzero and never claims full coverage. At exactly the
-Square record cap the result is conservatively incomplete even if that was the
-last payout. Narrow `--since` / `--until` and retry until each chosen window
-completes. Stripe record-limit failures resume after the last attempted payment. Square record-specific refusals count as deferred and later payouts still run; credential, rate-limit and infrastructure failures stop the pass.
+Applied runs automatically continue a bounded cycle across invocations. Its
+actual start/end instants stay frozen even when the default recent window moves
+between daily runs. A small cached position is isolated by workspace, processor
+account/environment and the explicit/default bound selection. The cycle retains
+its sorted configured locations; a changed location set refuses continuation
+with `sync_incomplete` while preserving the old position. Restore that set and
+finish the cycle before changing it. If a location is permanently removed, an
+operator must explicitly retire the cached cycle and document its incomplete
+coverage before starting a replacement scan.
 
-Accepted one-operator procedure: the scheduled recent Square window can be
-re-read on every run, while historical windows are narrowed manually when the
-budget cannot finish them. There is no persistent per-payout reservation or
-coordination subsystem. The mutex is sufficient for this one operator and the
-scheduled command; ordinary concurrent webhooks retain database row/revision
-checks. Multiple independent unattended readers would require revisiting this
-procedure rather than assuming a truncated scan covered history.
+The position retains the current location, a validated pending page of payout
+identities and creation instants, the precise last attempted creation instant,
+identities tied at that instant and whether earlier facts were incomplete. It
+stores no raw provider payload. Changing limits does not start a different cycle;
+changing a date selection or connected account does. Keep the cache persistent
+between command invocations; losing it safely replays the selected window, but
+also loses remembered progress and incomplete-cycle history.
+
+A payout's complete bounded pages and referenced sources are read before its
+first write. Its position advances only after that read and processing finish,
+including explicit deferred/conflicting facts or record-specific refusals.
+Infrastructure failures and real call/time budget denials leave that payout
+pending. A later clean batch cannot erase earlier incomplete facts from the same
+cycle: the final batch still exits nonzero with `needs_review`. At the end the
+position resets for the next cycle, revisiting late source facts and previously
+held records. Replays are idempotent. Explicit date selections revisit the same
+window; default selections open a new recent 30-day window after completion, so
+facts arriving outside that horizon require an explicit historical scan.
+
+[Square cursors expire after five minutes](https://developer.squareup.com/docs/build-basics/common-api-patterns/pagination).
+They are used only within the current invocation, with identical query bounds
+throughout each cursor chain. After draining saved rows, continuation starts a
+fresh ascending query at the saved precise creation instant, using the documented
+[inclusive `begin_time`](https://developer.squareup.com/reference/square/payouts-api/list-payouts),
+and skips already attempted identities at that exact instant. It never sends a
+previous invocation's cursor or narrows only to a calendar day. This lets dense
+single-day histories cross API pages under small per-run record and call caps.
+
+Reaching a record/call/page/time limit is **incomplete**, exits nonzero and never
+claims full coverage. At exactly the record cap the report is conservatively
+incomplete, even if the next invocation only needs to finish the cycle. Each
+invocation still admits at most 100 discovery pages per location and 10,000
+listed rows; at most 10,000 identities at one exact timestamp are retained. An
+unusually large group sharing the *same exact creation instant* can consume the
+listing budget before any unseen row is found. Such a cycle remains visibly
+incomplete: increase the call budget enough to traverse that tie group, and
+investigate groups exceeding the hard bounds. Day-sized windows do not solve an
+exact-instant tie. No tie identities are silently dropped and no exhausted scan
+is reported complete.
+
+Accepted one-operator coordination: scheduled and manual commands share the
+existing cache mutex, while movement persistence retains its database row and
+revision checks. There is no reservation subsystem. Independent unattended
+writers, or overlapping commands exceeding that lease, require revisiting this
+procedure. Run a preview for the next batch before applying; previews never
+create, move or reset the saved position, including at the end of a cycle.
 
 The daily scheduler runs Stripe and Square separately, 15 minutes apart, each
 with its own limits and provider budget and `withoutOverlapping(30)`. This avoids

@@ -31,6 +31,7 @@ use App\Http\Controllers\SquareWebhookController;
 use App\Http\Middleware\AuthenticateFirstPartySession;
 use App\Http\Middleware\EnsureAgentWorkspaceVisible;
 use App\Http\Middleware\EnsureOperationDeployed;
+use App\Http\Middleware\ExpectSelfRevokingOAuthResource;
 use App\Http\Middleware\NoStoreAgentResponse;
 use App\Http\Middleware\ThrottleOuterAgentRequests;
 use App\Models\Workspace;
@@ -343,6 +344,15 @@ Route::prefix('v1')
                 ->where('external_system', ReconciliationTarget::SYSTEM_PATTERN)
                 ->whereUuid('transaction');
         }
+    });
+
+// Credential disposal works for either OAuth resource and every scope set.
+// No website-session or Sanctum fallback: the bearer itself is the target.
+Route::prefix('v1')
+    ->name('agent-api.v1.')
+    ->middleware([ExpectSelfRevokingOAuthResource::class, 'auth:api', 'throttle:60,1', NoStoreAgentResponse::class])
+    ->group(function () use ($operation): void {
+        $operation('oauth.token.revoke', [AgentConnectionController::class, 'revokeToken']);
     });
 
 // Disconnecting takes `mcp:use`, which only the MCP resource admits, so the
