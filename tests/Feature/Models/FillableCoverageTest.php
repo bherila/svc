@@ -8,6 +8,7 @@ use App\Models\ClientCompanyMembership;
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceEmailDelivery;
 use App\Models\ClientInvoicePayment;
+use App\Models\ClientTask;
 use App\Models\PaymentReconciliation;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
@@ -54,6 +55,10 @@ final class FillableCoverageTest extends TestCase
      * @var array<class-string, array<string, string>>
      */
     private const MODEL_EXEMPT = [
+        ClientTask::class => [
+            'parent_task_id' => 'Reader-only organization prerequisite; no public structural writer is enabled. Future graph persistence must validate and lock the complete scoped topology.',
+            'client_task_list_id' => 'Reader-only organization prerequisite; no public list writer is enabled. Future persistence must validate the same-project root-list invariant under lock.',
+        ],
         ClientCompany::class => [
             'credit_revision' => 'The credit pool\'s revision. Advanced only by OverpaymentCreditService::recordPoolChange(), under the company lock, in the transaction that changed the pool; a value assigned through the model would let a stale snapshot pass issue()\'s credit check.',
         ],

@@ -21,6 +21,7 @@ use App\Services\Mcp\AgentWithheldTools;
 use App\Services\Tasks\TaskAccess;
 use App\Services\Tasks\TaskMutationOrigin;
 use App\Services\Tasks\TaskPlanningPresenter;
+use App\Services\Tasks\TaskVisibility;
 use App\Support\AgentApi\AgentApiContract;
 use App\Support\AgentApi\AgentApiCursor;
 use App\Support\AgentApi\AgentApiScopes;
@@ -468,9 +469,7 @@ final class AgentReadService
             return $query->whereRaw('1 = 0');
         }
         if ($origin === TaskMutationOrigin::Agent && $this->access->isWorkspaceClient($user, $workspace)) {
-            return $query->where('is_visible_to_client', true)
-                ->whereHas('project', fn (Builder $projects) => $this->portalAccess
-                    ->constrainProjectQuery($projects->where('is_visible_to_client', true), $user));
+            return app(TaskVisibility::class)->constrainPortal($query, $workspace, $user);
         }
         if ($this->access->isWorkspaceManager($user, $workspace)) {
             return $query;

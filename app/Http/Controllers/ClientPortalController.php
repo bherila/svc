@@ -17,6 +17,7 @@ use App\Services\Authorization\PortalAccess;
 use App\Services\Authorization\PortalInvoiceQuery;
 use App\Services\Billing\DeferredBacklogReadService;
 use App\Services\Square\Mirror\SquareInvoicePage;
+use App\Services\Tasks\TaskVisibility;
 use App\Support\Billing\InvoiceLineDetail;
 use App\Support\Billing\InvoiceStatus;
 use App\Support\Engagement\AgreementTermsPayload;
@@ -423,10 +424,11 @@ class ClientPortalController extends Controller
         $scope = $selected === null ? $projects : collect([$selected]);
         $projectNames = $projects->pluck('name', 'id');
 
-        $tasks = ClientTask::query()
-            ->where('workspace_id', $clientCompany->workspace_id)
-            ->whereIn('client_project_id', $scope->pluck('id')->all())
-            ->where('is_visible_to_client', true)
+        // Project authorization above deliberately permits native staff preview.
+        $tasks = app(TaskVisibility::class)->constrainVisibleStructure(
+            ClientTask::query()->whereIn('client_project_id', $scope->pluck('id')->all()),
+            $clientCompany->workspace, $clientCompany,
+        )
             ->orderBy('status')
             ->orderBy('title')
             ->get();
