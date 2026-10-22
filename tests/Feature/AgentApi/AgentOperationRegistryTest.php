@@ -43,7 +43,7 @@ final class AgentOperationRegistryTest extends TestCase
     {
         $expected = [
             'agreements.activate', 'agreements.square_series.clear', 'agreements.square_series.set', 'agreements.terminate',
-            'attachments.delete', 'billing_schedules.generate', 'clients.archive',
+            'attachments.delete', 'billing_schedules.generate', 'clients.archive', 'clients.contacts.archive',
             'clients.portal_access.grant', 'clients.portal_access.revoke', 'clients.portal_access.update',
             'clients.portal_invitations.create', 'clients.portal_invitations.resend', 'clients.portal_invitations.revoke',
             'companies.square_customer.clear', 'companies.square_customer.set', 'expense_schedules.generate',

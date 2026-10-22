@@ -26,6 +26,7 @@ class ClientCompanyController extends Controller
             $workspace,
             $request->string('name')->toString(),
             is_string($billingEmail) ? $billingEmail : null,
+            $request->validated(),
         );
 
         // Straight into the client that was just made. It is created from the

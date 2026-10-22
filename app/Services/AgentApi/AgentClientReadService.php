@@ -7,6 +7,7 @@ use App\Models\ClientCompany;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\AgentAccess;
+use App\Services\Clients\CompanyProfile;
 use App\Services\Square\SquareLinkRepository;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\AgentApi\ChangeFeedPage;
@@ -92,6 +93,7 @@ final class AgentClientReadService
             'is_active' => $company->is_active,
             'automatic_invoice_email_enabled' => $company->automatic_invoice_email_enabled,
             'automatic_invoice_email_delay_days' => $company->automatic_invoice_email_delay_days,
+            ...app(CompanyProfile::class)->read($company),
             'square_customer' => $this->square->customer($company->relationLoaded(self::SQUARE_CUSTOMER)
                 ? $company->getRelation(self::SQUARE_CUSTOMER)
                 : $this->squareLinks->activeCustomer($company)),

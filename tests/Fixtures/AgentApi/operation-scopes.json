@@ -303,6 +303,76 @@
             "mcp.switch:clients.archive"
         ]
     },
+    "clients.contacts.archive": {
+        "scopes": [
+            "clients:write",
+            "clients:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.clients",
+            "mcp",
+            "mcp.switch:mcp.write.clients",
+            "mcp.switch:clients.contacts.archive"
+        ]
+    },
+    "clients.contacts.create": {
+        "scopes": [
+            "clients:write"
+        ],
+        "flags": [
+            "agent.writes.clients",
+            "mcp",
+            "mcp.switch:mcp.write.clients",
+            "mcp.switch:clients.contacts.create"
+        ]
+    },
+    "clients.contacts.get": {
+        "scopes": [
+            "clients:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read.clients",
+            "mcp.switch:clients.contacts.get"
+        ]
+    },
+    "clients.contacts.list": {
+        "scopes": [
+            "clients:read"
+        ],
+        "flags": [
+            "mcp",
+            "mcp.switch:mcp.read.clients",
+            "mcp.switch:clients.contacts.list"
+        ]
+    },
+    "clients.contacts.restore": {
+        "scopes": [
+            "clients:write",
+            "clients:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.clients",
+            "mcp",
+            "mcp.switch:mcp.write.clients",
+            "mcp.switch:clients.contacts.restore"
+        ]
+    },
+    "clients.contacts.update": {
+        "scopes": [
+            "clients:write",
+            "clients:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.clients",
+            "mcp",
+            "mcp.switch:mcp.write.clients",
+            "mcp.switch:clients.contacts.update"
+        ]
+    },
     "clients.create": {
         "scopes": [
             "clients:write"

@@ -47,6 +47,12 @@ final class AgentMcpInventoryTest extends TestCase
         'billing_schedules.list',
         'capacity_ledger.get',
         'clients.archive',
+        'clients.contacts.archive',
+        'clients.contacts.create',
+        'clients.contacts.get',
+        'clients.contacts.list',
+        'clients.contacts.restore',
+        'clients.contacts.update',
         'clients.create',
         'clients.get',
         'clients.list',
@@ -169,7 +175,7 @@ final class AgentMcpInventoryTest extends TestCase
             'invoice_writes_enabled' => ['invoices.create_deferred_buydown', 'billing_schedules.create', 'billing_schedules.generate', 'invoices.hold_delivery', 'invoices.release_delivery', 'invoices.add_time', 'invoices.generate_period', 'invoices.create_draft', 'invoices.update_draft', 'invoices.update_details', 'invoices.correct', 'invoices.discard_draft', 'invoices.issue', 'invoices.send', 'invoices.void', 'invoices.square_link', 'invoices.square_unlink', 'invoices.square_cover', 'invoices.square_uncover', 'invoices.send_reminder'],
             'expense_writes_enabled' => ['expenses.log', 'expenses.update', 'expenses.delete', 'expenses.approve', 'expenses.unapprove', 'expense_schedules.create', 'expense_schedules.update', 'expense_schedules.generate', 'expenses.receipts.upload_url'],
             'payment_writes_enabled' => ['payments.record', 'payments.correct', 'payments.set_status', 'payments.refund', 'payments.reverse_refund'],
-            'client_writes_enabled' => ['clients.portal_access.grant', 'clients.portal_access.update', 'clients.portal_access.revoke',
+            'client_writes_enabled' => ['clients.contacts.create', 'clients.contacts.update', 'clients.contacts.archive', 'clients.contacts.restore', 'clients.portal_access.grant', 'clients.portal_access.update', 'clients.portal_access.revoke',
                 'clients.portal_invitations.create', 'clients.portal_invitations.resend', 'clients.portal_invitations.revoke', 'clients.create', 'clients.update', 'clients.archive', 'clients.restore', 'agreements.create', 'agreements.update', 'agreements.activate', 'agreements.terminate', 'companies.square_customer.set', 'companies.square_customer.clear', 'agreements.square_series.set', 'agreements.square_series.clear', 'square.import_customer', 'companies.payment_reminders.set'],
             'project_writes_enabled' => ['projects.create', 'projects.update', 'projects.archive', 'projects.members.update'],
             'proposal_writes_enabled' => ['proposals.create', 'proposals.send', 'proposals.accept'],
@@ -209,7 +215,7 @@ final class AgentMcpInventoryTest extends TestCase
             app(AgentWithheldTools::class)->for(fn (string $scope): bool => true, true));
     }
 
-    public function test_inventory_retains_all_138_tools_when_every_cutover_is_disabled(): void
+    public function test_inventory_retains_all_144_tools_when_every_cutover_is_disabled(): void
     {
         $this->enableAll();
         $disabled = ['time_entries.approve', 'tasks.create', 'tasks.update', 'square.sync', 'invoices.square_reconcile'];
@@ -220,14 +226,14 @@ final class AgentMcpInventoryTest extends TestCase
         config(['agent_api.writes_enabled' => false]);
         $disabled = array_values(array_unique($disabled));
         sort($disabled);
-        $this->assertCount(138, self::TOOLS);
+        $this->assertCount(144, self::TOOLS);
         $this->assertSame(self::TOOLS, $this->inventory());
         $this->assertSame(array_values(array_diff(self::TOOLS, $disabled)), $this->deployed());
         $this->assertSame(array_map(fn (string $name): array => ['name' => $name, 'reason' => 'deployment_disabled'], $disabled),
             app(AgentWithheldTools::class)->for(fn (string $scope): bool => true, true));
     }
 
-    public function test_actual_mcp_discovery_and_context_partition_all_138_tools_after_every_cutover_is_disabled(): void
+    public function test_actual_mcp_discovery_and_context_partition_all_144_tools_after_every_cutover_is_disabled(): void
     {
         $this->enableAll();
         $owner = User::factory()->create();

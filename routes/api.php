@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\V1\AgentBillingAuditController;
 use App\Http\Controllers\Api\V1\AgentBillingScheduleController;
 use App\Http\Controllers\Api\V1\AgentCapacityLedgerController;
+use App\Http\Controllers\Api\V1\AgentClientContactController;
 use App\Http\Controllers\Api\V1\AgentClientController;
 use App\Http\Controllers\Api\V1\AgentConnectionController;
 use App\Http\Controllers\Api\V1\AgentExpenseController;
@@ -102,6 +103,12 @@ Route::prefix('v1')
             ->whereUuid('client');
         $workspaceOperation('clients.archive', [AgentClientController::class, 'archive'])
             ->whereUuid('client');
+        $workspaceOperation('clients.contacts.list', [AgentClientContactController::class, 'index'])->whereUuid('client');
+        $workspaceOperation('clients.contacts.get', [AgentClientContactController::class, 'show'])->whereUuid('client')->whereUuid('contact');
+        $workspaceOperation('clients.contacts.create', [AgentClientContactController::class, 'store'])->whereUuid('client');
+        $workspaceOperation('clients.contacts.update', [AgentClientContactController::class, 'update'])->whereUuid('client')->whereUuid('contact');
+        $workspaceOperation('clients.contacts.archive', [AgentClientContactController::class, 'archive'])->whereUuid('client')->whereUuid('contact');
+        $workspaceOperation('clients.contacts.restore', [AgentClientContactController::class, 'restore'])->whereUuid('client')->whereUuid('contact');
         $workspaceOperation('clients.portal_access.list', [AgentPortalAccessController::class, 'index'])->whereUuid('client')->whereUuid('user');
         $workspaceOperation('clients.portal_access.grant', [AgentPortalAccessController::class, 'store'])->whereUuid('client')->whereUuid('user');
         $workspaceOperation('clients.portal_access.update', [AgentPortalAccessController::class, 'update'])->whereUuid('client')->whereUuid('user');
