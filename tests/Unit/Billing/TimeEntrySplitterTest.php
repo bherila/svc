@@ -13,8 +13,18 @@ use App\Support\Concurrency\LockOrderRecorder;
 use App\Support\Concurrency\LockResource;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Collection;
+use PHPUnit\Framework\Attributes\CoversClass;
 use Tests\TestCase;
 
+#[CoversClass(ClientCompany::class)]
+#[CoversClass(ClientProject::class)]
+#[CoversClass(ClientTimeEntry::class)]
+#[CoversClass(User::class)]
+#[CoversClass(Workspace::class)]
+#[CoversClass(TimeEntrySplitter::class)]
+#[CoversClass(LockMode::class)]
+#[CoversClass(LockOrderRecorder::class)]
+#[CoversClass(LockResource::class)]
 class TimeEntrySplitterTest extends TestCase
 {
     use RefreshDatabase;

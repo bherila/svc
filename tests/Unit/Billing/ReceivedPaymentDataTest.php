@@ -7,10 +7,14 @@ use App\Support\Billing\InvoicePaymentStatus;
 use App\Support\Billing\ReceivedPaymentData;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
+use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 /** Pure request facts: neither models nor a database are needed to parse money received. */
+#[CoversClass(RecordReceivedPayment::class)]
+#[CoversClass(InvoicePaymentStatus::class)]
+#[CoversClass(ReceivedPaymentData::class)]
 final class ReceivedPaymentDataTest extends TestCase
 {
     public function test_agent_facts_are_succeeded_and_optional_web_facts_remain_available_only_to_web_callers(): void

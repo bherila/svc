@@ -4,9 +4,12 @@ namespace Tests\Unit\Billing;
 
 use App\Support\Billing\DeferredWorkDisposition;
 use App\Support\Billing\InvoiceLineType;
+use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
+#[CoversClass(DeferredWorkDisposition::class)]
+#[CoversClass(InvoiceLineType::class)]
 final class DeferredWorkDispositionTest extends TestCase
 {
     /** @return iterable<string, array{?string, DeferredWorkDisposition, bool, bool}> */

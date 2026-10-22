@@ -11,6 +11,7 @@ use App\Support\Billing\DeferredBacklogIssue;
 use App\Support\Billing\DeferredBacklogMonth;
 use Carbon\CarbonImmutable;
 use LogicException;
+use PHPUnit\Framework\Attributes\CoversClass;
 use Tests\TestCase;
 
 /**
@@ -20,6 +21,13 @@ use Tests\TestCase;
  * the calculation is pinned here; `DeferredBacklogParityTest` pins that the
  * loaded set is the termination collection.
  */
+#[CoversClass(ClientAgreement::class)]
+#[CoversClass(ClientInvoice::class)]
+#[CoversClass(ClientInvoiceLine::class)]
+#[CoversClass(ClientTimeEntry::class)]
+#[CoversClass(DeferredBacklog::class)]
+#[CoversClass(DeferredBacklogIssue::class)]
+#[CoversClass(DeferredBacklogMonth::class)]
 final class DeferredBacklogTest extends TestCase
 {
     public function test_it_states_the_shelf_and_prices_it_as_termination_would(): void
