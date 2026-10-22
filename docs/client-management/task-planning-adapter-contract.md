@@ -367,3 +367,24 @@ summary query bounds; and full large-Unicode REST/MCP/SDK traversal. Refresh
 browser fixtures for twenty long labels, twenty-five prerequisites, paginated
 incoming refs and ten long/archived contacts at 390/820/1440/1920, including empty,
 forbidden, unsupported-size and stale states.
+
+## Isolated reader checkpoint
+
+The first implementation checkpoint adds only `TaskPlanningReadRepository`,
+`TaskPlanningDetailsReadService`, `TaskPlanningDetailsSnapshot` and
+`TaskPlanningDetailsPresenter`, plus focused tests. It merges the exact reviewed
+organization prerequisite `88d1ce36` and the coordinator's shared-scope extraction
+`ec0af1cc`; the shared GraphRevision helper is unchanged. No public adapter,
+registration, native control or advisory-loader integration is added yet.
+
+Focused SQLite checks passed 124 tests / 1,738 assertions (118 passed, six expected
+MariaDB-only skips), including the planning persistence/schema/revision suite,
+existing task-read integration and tenant inventories. The final serial MariaDB
+reader selection passed 16 tests / 542 assertions; an earlier intersecting
+reader/schema/revision selection passed 22 / 450. Unicode fixtures respect the
+existing contact name limits of 100 characters each. Coverage includes fresh
+status/catalog facts with unchanged source tokens, exact scopes/omissions,
+archived choices, strict cursor traversal, combined outgoing/incoming byte
+budgets and real SDK envelopes, legacy malformed references, depth eight/nine,
+large-project label/contact availability and constant one-versus-100 query count.
+These are focused results, not full-suite, mutation, browser or release evidence.
