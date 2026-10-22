@@ -63,7 +63,7 @@ final class PhpunitWorkflowTest extends TestCase
         $this->assertSame([], $jobs['checks']['needs'] ?? []);
         $commands = implode("\n", array_column($jobs['checks']['steps'], 'run'));
         $this->assertStringContainsString('composer ci:checks', $commands);
-        $this->assertStringNotContainsString('composer ci:check'. "\n", $commands);
+        $this->assertStringNotContainsString('composer ci:check'."\n", $commands);
         $composer = json_decode(file_get_contents(dirname(__DIR__, 3).'/composer.json'), true, flags: JSON_THROW_ON_ERROR);
         $checks = $composer['scripts']['ci:checks'];
         foreach (['pnpm run lint:check', 'pnpm run format:check', 'pnpm run types:check', 'pnpm run api:types:check', 'pnpm run test', 'pnpm run scan-sensitive:test', 'pnpm run scan-sensitive', '@lint:check', '@types:check'] as $command) {
