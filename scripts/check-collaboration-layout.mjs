@@ -39,6 +39,7 @@ try {
         'framework/sessions',
         'framework/cache/data',
         'logs',
+        'app/private',
     ]) {
         mkdirSync(path.join(runtime, 'storage', folder), { recursive: true });
     }
