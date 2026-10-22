@@ -26,6 +26,8 @@ export function clientOption(
             time: `/workspaces/workspace-1/clients/${id}/time`,
             expenses: null,
             tasks: `/workspaces/workspace-1/clients/${id}/tasks`,
+            notes: `/workspaces/workspace-1/clients/${id}/collaboration?kind=note`,
+            discussions: `/workspaces/workspace-1/clients/${id}/collaboration?kind=discussion`,
             ...overrides,
         },
     };

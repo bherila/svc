@@ -88,7 +88,9 @@ export default function CollaborationShow({
     const [editing, setEditing] = useState(false);
 
     return (
-        <WorkspaceShell>
+        <WorkspaceShell
+            activeModule={topic.kind === 'discussion' ? 'discussions' : 'notes'}
+        >
             <Head title={topic.title} />
             <main
                 className={cn(SHELL_CONTAINER, 'grid grid-cols-1 gap-6 py-8')}

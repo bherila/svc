@@ -2,6 +2,7 @@
 
 use App\Models\ClientCompany;
 use App\Models\ClientProject;
+use App\Models\ClientTask;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Collaboration\CollaborationAction;
@@ -43,8 +44,12 @@ foreach (['note', 'discussion'] as $kind) {
         }
     }
 }
+$task = ClientTask::query()->create(['workspace_id' => $workspace->id, 'client_project_id' => $project->id, 'title' => str_repeat('SyntheticTask', 12), 'status' => 'pending']);
+$action->createComment($manager, $workspace, $company, 'task', $task->public_id, CommentDraft::fromInput(['body' => 'Synthetic task comment', 'expected_version' => AgentApiVersion::for($task)]), CollaborationAudience::Internal);
 file_put_contents($runtime.'/fixture.json', json_encode(['user_id' => $manager->id, 'portal_user_id' => $portal->id,
-    'index' => route('collaboration.index', [$workspace, $company], absolute: false),
+    'company_name' => $company->name,
+    'taskthread' => route('collaboration.comments.index', [$workspace, $company, 'task', $task->public_id], absolute: false),
+    'index' => route('collaboration.index', [$workspace, $company, 'kind' => 'note'], absolute: false),
     'note' => route('collaboration.show', [$workspace, $company, $topics['note']], absolute: false),
     'discussion' => route('collaboration.show', [$workspace, $company, $topics['discussion']], absolute: false),
     'portal' => route('portal.collaboration.show', [$company, $topics['discussion']], absolute: false)], JSON_THROW_ON_ERROR));

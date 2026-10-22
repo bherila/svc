@@ -141,9 +141,54 @@ $app->handleRequest(Illuminate\\Http\\Request::capture());
         });
         const page = await context.newPage();
 
-        for (const screen of ['index', 'note', 'discussion', 'portal']) {
+        for (const screen of [
+            'index',
+            'note',
+            'discussion',
+            'portal',
+            'taskthread',
+        ]) {
             await page.goto(origin + fixture[screen]);
             await expect(page.locator('main')).toBeVisible();
+            await expect(
+                page.getByRole('button', { name: 'Current client' }),
+            ).toContainText(fixture.company_name);
+            const activeSection =
+                screen === 'taskthread'
+                    ? 'Tasks'
+                    : ['discussion', 'portal'].includes(screen)
+                      ? 'Discussions'
+                      : 'Notes';
+
+            if (width < 640) {
+                const sectionMenu = page.getByRole('button', {
+                    name: 'Client sections',
+                });
+                await expect(sectionMenu).toContainText(activeSection);
+                await sectionMenu.click();
+                await expect(
+                    page.getByRole('menuitem', { name: 'Notes', exact: true }),
+                ).toBeVisible();
+                await expect(
+                    page.getByRole('menuitem', {
+                        name: 'Discussions',
+                        exact: true,
+                    }),
+                ).toBeVisible();
+                await expect(
+                    page.locator('[role="menuitem"][aria-current="page"]'),
+                ).toContainText(activeSection);
+                await page.screenshot({
+                    path: path.join(artifacts, `${screen}-menu-${width}.png`),
+                });
+                await page.keyboard.press('Escape');
+            } else {
+                await expect(
+                    page
+                        .getByRole('navigation', { name: 'Client sections' })
+                        .locator('[aria-current="page"]'),
+                ).toHaveText(activeSection);
+            }
 
             if (screen === 'portal') {
                 await expect(
@@ -159,6 +204,29 @@ $app->handleRequest(Illuminate\\Http\\Request::capture());
                         )
                         .first(),
                 ).toBeVisible();
+            }
+
+            if (width >= 640) {
+                const strip = page.getByRole('navigation', {
+                    name: 'Client sections',
+                });
+                const selected = strip.locator('[aria-current="page"]');
+                await expect
+                    .poll(async () => {
+                        const [navBounds, itemBounds] = await Promise.all([
+                            strip.boundingBox(),
+                            selected.boundingBox(),
+                        ]);
+
+                        return (
+                            navBounds !== null &&
+                            itemBounds !== null &&
+                            itemBounds.x >= navBounds.x - 1 &&
+                            itemBounds.x + itemBounds.width <=
+                                navBounds.x + navBounds.width + 1
+                        );
+                    })
+                    .toBe(true);
             }
 
             const layout = await page.evaluate(() => ({

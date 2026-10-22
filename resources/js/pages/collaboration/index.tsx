@@ -117,7 +117,11 @@ function NewTopic({
 
 export default function CollaborationIndex(props: CollaborationIndexProps) {
     return (
-        <WorkspaceShell>
+        <WorkspaceShell
+            activeModule={
+                props.filters.kind === 'discussion' ? 'discussions' : 'notes'
+            }
+        >
             <Head title={`${props.company.name} collaboration`} />
             <main
                 className={cn(SHELL_CONTAINER, 'grid grid-cols-1 gap-6 py-8')}

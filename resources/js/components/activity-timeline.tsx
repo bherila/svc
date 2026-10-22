@@ -22,6 +22,12 @@ type FormattedActivity = CompanyActivity & {
 };
 
 const actionTitles: Record<string, string> = {
+    'collaboration.topic_created': 'Note or discussion added',
+    'collaboration.topic_updated': 'Note or discussion updated',
+    'collaboration.topic_deleted': 'Note or discussion removed',
+    'collaboration.comment_created': 'Comment added',
+    'collaboration.comment_updated': 'Comment updated',
+    'collaboration.comment_deleted': 'Comment removed',
     'company.updated': 'Company updated',
     'agreement.created': 'Agreement created',
     'agreement.activated': 'Agreement activated',
@@ -52,6 +58,12 @@ const actionTitles: Record<string, string> = {
 };
 
 const meaningfulActions = new Set([
+    'collaboration.topic_created',
+    'collaboration.topic_updated',
+    'collaboration.topic_deleted',
+    'collaboration.comment_created',
+    'collaboration.comment_updated',
+    'collaboration.comment_deleted',
     'company.updated',
     'agreement.created',
     'agreement.activated',

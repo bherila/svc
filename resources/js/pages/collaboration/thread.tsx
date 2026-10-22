@@ -11,7 +11,15 @@ export default function CollaborationThreadPage({
     thread: CollaborationThread;
 }) {
     return (
-        <WorkspaceShell>
+        <WorkspaceShell
+            activeModule={
+                thread.parent_kind === 'task'
+                    ? 'tasks'
+                    : thread.parent_kind === 'discussion'
+                      ? 'discussions'
+                      : 'notes'
+            }
+        >
             <Head title={`${thread.parent_title} comments`} />
             <main
                 className={cn(SHELL_CONTAINER, 'grid grid-cols-1 gap-6 py-8')}

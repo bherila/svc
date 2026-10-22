@@ -97,6 +97,13 @@ final class TenantReferenceInventory
 
             // Projects.
             TenantReference::enforcedBy('client_tasks', 'client_project_id', 'client_projects', 'ct_ws_project_fk'),
+            TenantReference::enforcedBy('client_task_assignments', 'client_task_id', 'client_tasks', 'task_assignments_ws_task_fk'),
+            TenantReference::enforcedBy('client_collaboration_topics', 'client_company_id', 'client_companies', 'cct_ws_company_fk'),
+            TenantReference::enforcedBy('client_collaboration_topics', 'client_project_id', 'client_projects', 'cct_ws_project_fk'),
+            TenantReference::enforcedBy('client_comments', 'client_company_id', 'client_companies', 'cc_ws_company_fk'),
+            TenantReference::enforcedBy('client_comments', 'client_project_id', 'client_projects', 'cc_ws_project_fk'),
+            TenantReference::enforcedBy('client_comments', 'client_task_id', 'client_tasks', 'cc_ws_task_fk'),
+            TenantReference::enforcedBy('client_comments', 'client_collaboration_topic_id', 'client_collaboration_topics', 'cc_ws_topic_fk'),
             TenantReference::enforcedBy('client_time_entries', 'client_project_id', 'client_projects', 'cte_ws_project_fk'),
             TenantReference::enforcedBy('client_project_memberships', 'client_project_id', 'client_projects', 'cpm_ws_project_fk'),
             TenantReference::enforcedBy('client_portal_project_access', 'client_project_id', 'client_projects', 'cppa_ws_project_fk'),

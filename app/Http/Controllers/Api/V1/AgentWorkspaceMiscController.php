@@ -11,6 +11,7 @@ use App\Services\AgentApi\AgentMutationContextFactory;
 use App\Services\AgentApi\AgentWorkspaceCreationAction;
 use App\Services\Authorization\AgentAccess;
 use App\Services\Authorization\AgentTokenScopes;
+use App\Services\Collaboration\CollaborationAudience;
 use App\Services\Search\WorkspaceSearch;
 use App\Support\Search\SearchResult;
 use App\Support\Search\SearchResultKind;
@@ -41,9 +42,10 @@ final class AgentWorkspaceMiscController extends Controller
             SearchResultKind::Project => $scopes->allows($request, 'projects:read'),
             SearchResultKind::Invoice => $scopes->allows($request, 'billing:read'),
             SearchResultKind::Task => $scopes->allows($request, 'tasks:read'),
+            SearchResultKind::Note, SearchResultKind::Discussion, SearchResultKind::Comment => $scopes->allows($request, 'collaboration:read'),
             SearchResultKind::History => false,
         }));
-        $results = $search->forWorkspace(User::query()->findOrFail($principal->id), $workspace, $data['q'], $kinds);
+        $results = $search->forWorkspace(User::query()->findOrFail($principal->id), $workspace, $data['q'], $kinds, $access->isWorkspaceClient($principal, $workspace) ? CollaborationAudience::Portal : CollaborationAudience::Internal);
 
         return response()->json(['data' => array_map(fn (SearchResult $result): array => $result->toArray(), $results)]);
     }

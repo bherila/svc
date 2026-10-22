@@ -16,12 +16,14 @@ export type CollaborationContent = {
 
 export type CollaborationTopic = CollaborationContent & {
     title: string;
+    kind: 'note' | 'discussion';
     kind_label: string;
     project_id: string | null;
     scope_label: string;
 };
 
 export type CollaborationThread = {
+    parent_kind: 'task' | 'note' | 'discussion';
     parent_title: string;
     parent_version: string;
     href: string;
