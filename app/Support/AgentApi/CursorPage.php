@@ -24,22 +24,50 @@ final class CursorPage
      *
      * @param  Closure(int, ?int): Collection<int, TRecord>  $fetch  at most `$take` rows with an id above `$after` (null: from the start), ordered by id
      * @param  Closure(TRecord): array<string, mixed>  $present
+     * @param  int|null  $maxDataBytes  optional serialized data-array ceiling; a page may contain fewer than $limit rows
      * @return array{data:list<array<string, mixed>>,meta:array{next_cursor:?string}}
      *
      * @throws InvalidAgentApiCursor
      */
-    public static function run(Workspace $workspace, string $queryKey, int $limit, ?string $cursor, Closure $fetch, Closure $present): array
+    public static function run(Workspace $workspace, string $queryKey, int $limit, ?string $cursor, Closure $fetch, Closure $present, ?int $maxDataBytes = null): array
     {
         $rows = $fetch($limit + 1, AgentApiCursor::decode($cursor, $workspace->public_id, $queryKey));
-        $next = $rows->count() > $limit ? $rows->pop() : null;
+        $hasMore = $rows->count() > $limit;
+        if ($hasMore) {
+            $rows->pop();
+        }
         $data = [];
+        $bytes = 2;
+        $last = null;
         foreach ($rows as $row) {
-            $data[] = $present($row);
+            $item = $present($row);
+            if ($maxDataBytes !== null) {
+                $size = strlen(json_encode($item, JSON_THROW_ON_ERROR));
+                if ($data !== []) {
+                    $size++;
+                    // Always make progress for a single row; a configured
+                    // ceiling too small for it is refused by the transport.
+                    if ($bytes + $size > $maxDataBytes) {
+                        $hasMore = true;
+                        break;
+                    }
+                }
+                $bytes += $size;
+            }
+            $data[] = $item;
+            $last = $row;
+        }
+
+        $nextCursor = null;
+        if ($hasMore && $last !== null) {
+            /** @infection-ignore-all The weak int parameter coerces numeric model keys identically; this cast states the type required by static analysis. */
+            $lastId = (int) $last->getKey();
+            $nextCursor = AgentApiCursor::encode($lastId, $workspace->public_id, $queryKey);
         }
 
         return [
             'data' => $data,
-            'meta' => ['next_cursor' => $next === null ? null : AgentApiCursor::encode((int) $rows->last()->getKey(), $workspace->public_id, $queryKey)],
+            'meta' => ['next_cursor' => $nextCursor],
         ];
     }
 }
