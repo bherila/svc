@@ -39,6 +39,7 @@ try {
         'framework/sessions',
         'framework/cache/data',
         'logs',
+        'app/private',
     ]) {
         mkdirSync(path.join(runtime, 'storage', folder), { recursive: true });
     }
@@ -264,6 +265,121 @@ $app->handleRequest(Illuminate\\Http\\Request::capture());
                 }
             }
 
+            if (screen === 'operationsfiles') {
+                const header = page.getByRole('banner');
+                await expect(header).toBeVisible();
+                await expect(
+                    header.getByRole('link', { name: '← Workspaces' }),
+                ).toBeVisible();
+                const navigation = header.getByRole('navigation', {
+                    name: 'Workspace operations',
+                });
+                await expect(
+                    navigation.getByRole('link', {
+                        name: 'Clients',
+                        exact: true,
+                    }),
+                ).toBeVisible();
+                await expect(
+                    navigation.getByRole('link', {
+                        name: 'Time sheet',
+                        exact: true,
+                    }),
+                ).toBeVisible();
+                await expect(
+                    navigation.getByRole('combobox', { name: 'Appearance' }),
+                ).toBeVisible();
+                const bounds = await header.evaluate((element) => {
+                    const bar = element.getBoundingClientRect();
+
+                    return Array.from(
+                        element.querySelectorAll('a, button, select'),
+                    )
+                        .filter(
+                            (control) =>
+                                control.getBoundingClientRect().width > 0,
+                        )
+                        .map((control) => {
+                            const box = control.getBoundingClientRect();
+                            const text = document.createRange();
+                            text.selectNodeContents(control);
+
+                            return {
+                                name:
+                                    control.getAttribute('aria-label') ??
+                                    control.textContent?.trim(),
+                                contained:
+                                    box.left >= bar.left &&
+                                    box.right <= bar.right &&
+                                    box.top >= bar.top &&
+                                    box.bottom <= bar.bottom,
+                                textHeight:
+                                    control.tagName === 'A'
+                                        ? text.getBoundingClientRect().height
+                                        : null,
+                                lineHeight: Number.parseFloat(
+                                    getComputedStyle(control).lineHeight,
+                                ),
+                            };
+                        });
+                });
+
+                for (const control of bounds) {
+                    expect(
+                        control.contained,
+                        `Operations ${control.name} bounds at ${width}`,
+                    ).toBe(true);
+
+                    if (control.textHeight !== null) {
+                        expect(
+                            control.textHeight,
+                            `Operations ${control.name} one line at ${width}`,
+                        ).toBeLessThanOrEqual(control.lineHeight + 1);
+                    }
+                }
+            }
+
+            if (screen.includes('agreementfiles')) {
+                const projectValue = page
+                    .locator('dt')
+                    .filter({ hasText: /^Project$/ })
+                    .locator('..')
+                    .locator('dd');
+                const termBounds = await projectValue.evaluate((element) => {
+                    const value = element.getBoundingClientRect();
+                    const row = element.parentElement.getBoundingClientRect();
+                    const terms = element.closest('dl').getBoundingClientRect();
+                    const text = document.createRange();
+                    text.selectNodeContents(element);
+                    const painted = text.getBoundingClientRect();
+
+                    return {
+                        contained:
+                            value.left >= row.left &&
+                            value.right <= row.right + 1 &&
+                            row.left >= terms.left &&
+                            row.right <= terms.right + 1,
+                        textContained:
+                            painted.left >= value.left - 1 &&
+                            painted.right <= value.right + 1,
+                        scrollWidth: element.scrollWidth,
+                        width: element.clientWidth,
+                    };
+                });
+                expect(
+                    termBounds.contained,
+                    `${screen} Project term bounds at ${width}`,
+                ).toBe(true);
+                expect(
+                    termBounds.textContained,
+                    `${screen} complete Project term at ${width}`,
+                ).toBe(true);
+                expect(
+                    termBounds.scrollWidth,
+                    `${screen} Project term overflow at ${width}`,
+                ).toBeLessThanOrEqual(termBounds.width + 1);
+            }
+
             if (screen.endsWith('files')) {
                 const pagination = page.getByRole('navigation', {
                     name: 'File pages',
@@ -306,9 +422,7 @@ $app->handleRequest(Illuminate\\Http\\Request::capture());
                 `${screen} at ${width}`,
             ).toBeLessThanOrEqual(width);
 
-            if (screen !== 'operationsfiles') {
-                expect(layout.nav, `${screen} navbar at ${width}`).toBe(49);
-            }
+            expect(layout.nav, `${screen} navbar at ${width}`).toBe(49);
 
             await page.screenshot({
                 animations: 'disabled',
