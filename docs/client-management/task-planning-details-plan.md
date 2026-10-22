@@ -62,8 +62,11 @@ is outside this slice.
 
 ## Additive schema proposal
 
-Reserve migration times only after coordinator confirmation; proposed `180300`,
-`180310`, `180320` avoid organization `180160` and files `180200`/`180210`.
+The isolated persistence checkpoint uses `180300`, `180310`, `180320`, avoiding
+organization `180160` and files `180200`/`180210`. It is not a published feature.
+`TASK_PLANNING_DETAILS_ENABLED=false` independently gates every new action and
+the unadvertised receipt adapter; enabling organization alone does not enable
+labels, dependencies or contact responsibility. Existing readers remain active.
 
 | Table | Fields and enforced scope |
 | --- | --- |
@@ -89,6 +92,9 @@ These tables carry no new disclosure states. Application rollback retains schema
 and data; explicit schema rollback refuses while catalog/association/edge data
 remains. The combined graph/file reader floor is still mandatory before any
 organization writers are enabled. This slice does not relax that floor.
+The self-edge guard uses a CHECK on MariaDB and equivalent insert/update triggers
+on SQLite. Empty contact-schema rollback restores an owner-FK supporting index
+when InnoDB reused the longer new unique index; it never disables existing FKs.
 
 ## Immutable domain and locking contract
 

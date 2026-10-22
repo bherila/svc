@@ -16,8 +16,8 @@ final readonly class TaskLabelName
         if (! is_string($input) || ! mb_check_encoding($input, 'UTF-8')) {
             throw new DomainException('Enter a label name with 1 to 80 characters.');
         }
-        $name = trim($input);
-        if ($name === '' || mb_strlen($name, 'UTF-8') > 80 || preg_match('/[\x00-\x1F\x7F]/', $name) === 1) {
+        $name = mb_trim($input, encoding: 'UTF-8');
+        if ($name === '' || mb_strlen($name, 'UTF-8') > 80 || preg_match('/[\p{Cc}\x{2028}\x{2029}]/u', $name) === 1) {
             throw new DomainException('Enter a single-line label name with 1 to 80 characters.');
         }
 

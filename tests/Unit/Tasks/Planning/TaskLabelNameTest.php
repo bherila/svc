@@ -28,10 +28,18 @@ final class TaskLabelNameTest extends TestCase
         $this->assertSame(str_repeat('a', 80), TaskLabelName::fromInput(str_repeat('a', 80))->name);
     }
 
+    public function test_surrounding_unicode_whitespace_normalizes_without_changing_valid_unicode_text(): void
+    {
+        $label = TaskLabelName::fromInput("\u{00a0}\u{2003}Équipe 😀\u{3000}\u{2028}");
+        $this->assertSame('Équipe 😀', $label->name);
+        $this->assertSame(TaskLabelName::fromInput('équipe 😀')->key, $label->key);
+    }
+
     public static function invalidNames(): iterable
     {
         yield 'empty' => [''];
         yield 'blank' => ['   '];
+        yield 'Unicode blank' => ["\u{00a0}\u{2003}\u{3000}"];
         yield 'null' => [null];
         yield 'array' => [[]];
         yield 'number' => [1];
@@ -40,6 +48,9 @@ final class TaskLabelNameTest extends TestCase
         yield 'long Unicode' => [str_repeat('😀', 81)];
         yield 'invalid UTF8' => ["\xff"];
         yield 'multiline' => ["first\nsecond"];
+        yield 'Unicode next line' => ["first\u{0085}second"];
+        yield 'Unicode line separator' => ["first\u{2028}second"];
+        yield 'Unicode paragraph separator' => ["first\u{2029}second"];
         yield 'control character' => ["first\x00second"];
     }
 

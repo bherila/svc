@@ -78,6 +78,11 @@ enum LockResource: string
     case ClientTaskList = 'client_task_lists';
     // Responsibility reads are current after the task lock, before access facts.
     case ClientTaskAssignment = 'client_task_assignments';
+    // Planning catalog and associations follow task locks; contacts/access follow them.
+    case ClientTaskLabel = 'client_task_labels';
+    case ClientTaskLabelAssignment = 'client_task_label_assignments';
+    case ClientTaskDependency = 'client_task_dependencies';
+    case ClientTaskContactResponsibility = 'client_task_contact_responsibilities';
 
     // Recurrence locks its schedule before inserting draft expense rows.
     // Invoice allocation locks expenses after invoice/time/task composition;
