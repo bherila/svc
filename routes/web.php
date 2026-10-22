@@ -91,6 +91,8 @@ Route::middleware('auth')->group(function (): void {
         ->name('workspaces.operations');
 
     Route::middleware(ResolveWorkspaceNavigation::class)->group(function (): void {
+        Route::get('/workspaces/{workspace}/tasks/{clientTask}', [ClientTaskController::class, 'show'])->name('tasks.show');
+        Route::get('/workspaces/{workspace}/projects/{clientProject}/task-assignees', [ClientTaskController::class, 'assignees'])->name('tasks.assignees');
         Route::get('/workspaces/{workspace}/history', [HistoricalLibraryController::class, 'index'])->name('history.index');
         Route::get('/workspaces/{workspace}/history/{historicalEntry}', [HistoricalLibraryController::class, 'show'])->name('history.show');
         Route::get('/workspaces/{workspace}/mcp', McpSetupController::class)->name('mcp.setup');

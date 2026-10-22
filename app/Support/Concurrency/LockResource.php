@@ -73,6 +73,8 @@ enum LockResource: string
     // after locking the entry; invoice state was already locked before it.
     case ClientInvoiceLineTimeEntry = 'client_invoice_line_time_entries';
     case ClientTask = 'client_tasks';
+    // Responsibility reads are current after the task lock, before access facts.
+    case ClientTaskAssignment = 'client_task_assignments';
 
     // Collaboration locks its tenant access boundary, then the topic or task
     // parent, then a comment. Private file publication follows its parent.

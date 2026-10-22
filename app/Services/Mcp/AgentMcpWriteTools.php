@@ -393,13 +393,15 @@ final class AgentMcpWriteTools
         return $this->rest->call('time_entries.approve', ['workspace' => $workspace_id], compact('entries'), $idempotency_key);
     }
 
-    /** @return array<string, mixed> */
-    public function tasksCreate(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $project_id, #[Schema(minLength: 1, maxLength: 255)] string $title, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key, ?string $description = null, ?bool $is_visible_to_client = null): array
+    /** @param list<string>|null $assignee_ids
+     * @return array<string, mixed> */
+    public function tasksCreate(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $project_id, #[Schema(minLength: 1, maxLength: 255)] string $title, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key, ?string $description = null, ?bool $is_visible_to_client = null, #[Schema(format: 'date')] ?string $starts_on = null, #[Schema(format: 'date')] ?string $due_on = null, #[Schema(maxItems: 10, items: ['type' => 'string', 'format' => 'uuid'])] ?array $assignee_ids = null): array
     {
-        return $this->rest->call('tasks.create', ['workspace' => $workspace_id, 'project' => $project_id], array_filter(compact('title', 'description', 'is_visible_to_client'), static fn (mixed $value): bool => $value !== null), $idempotency_key);
+        return $this->rest->call('tasks.create', ['workspace' => $workspace_id, 'project' => $project_id], array_filter(compact('title', 'description', 'is_visible_to_client', 'starts_on', 'due_on', 'assignee_ids'), static fn (mixed $value): bool => $value !== null), $idempotency_key);
     }
 
-    /** @return array<string, mixed> */
+    /** @param list<string>|null $assignee_ids
+     * @return array<string, mixed> */
     public function tasksUpdate(
         #[Schema(format: 'uuid')] string $workspace_id,
         #[Schema(format: 'uuid')] string $task_id,
@@ -410,8 +412,11 @@ final class AgentMcpWriteTools
         #[Schema(maxLength: 10000)] ?string $description = null,
         #[Schema(enum: ['open', 'in_progress', 'completed'])] ?string $status = null,
         ?bool $is_visible_to_client = null,
+        #[Schema(format: 'date')] ?string $starts_on = null,
+        #[Schema(format: 'date')] ?string $due_on = null,
+        #[Schema(maxItems: 10, items: ['type' => 'string', 'format' => 'uuid'])] ?array $assignee_ids = null,
     ): array {
-        return $this->rest->call('tasks.update', ['workspace' => $workspace_id, 'task' => $task_id], compact('expected_version') + $this->provided($context, compact('title', 'description', 'status', 'is_visible_to_client')), $idempotency_key);
+        return $this->rest->call('tasks.update', ['workspace' => $workspace_id, 'task' => $task_id], compact('expected_version') + $this->provided($context, compact('title', 'description', 'status', 'is_visible_to_client', 'starts_on', 'due_on', 'assignee_ids')), $idempotency_key);
     }
 
     /** @return array<string, mixed> */

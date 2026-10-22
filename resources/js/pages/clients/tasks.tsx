@@ -1,4 +1,6 @@
-import { Head, router } from '@inertiajs/react';
+import { Head, Link, router } from '@inertiajs/react';
+import { TaskCreateDialog } from '@/components/tasks/task-create-dialog';
+import type { TaskEditorProject } from '@/components/tasks/task-editor';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -31,6 +33,9 @@ type CompanyTask = {
     project: string | null;
     is_visible_to_client: boolean;
     completed_at: string | null;
+    starts_on?: string | null;
+    due_on?: string | null;
+    detail_url?: string | null;
 };
 
 const ALL_PROJECTS = 'all';
@@ -50,6 +55,7 @@ export default function ClientTasks({
     filters,
     projects,
     tasks,
+    task_management = null,
 }: {
     company: { id: string; name: string };
     /**
@@ -60,6 +66,7 @@ export default function ClientTasks({
     filters: { project_id: string | null };
     projects: TaskProject[];
     tasks: CompanyTask[];
+    task_management?: { projects: TaskEditorProject[] } | null;
 }) {
     const selected = filters.project_id ?? ALL_PROJECTS;
     const showsVisibility = audience === 'operator';
@@ -74,6 +81,11 @@ export default function ClientTasks({
                     <CardHeader className="gap-3">
                         <div className="flex flex-wrap items-center justify-between gap-3">
                             <CardTitle>Tasks</CardTitle>
+                            {task_management !== null && (
+                                <TaskCreateDialog
+                                    projects={task_management.projects}
+                                />
+                            )}
                             {projects.length > 1 && (
                                 <Select
                                     // The trigger renders the raw value unless
@@ -170,7 +182,34 @@ export default function ClientTasks({
                                                  * its right off the screen.
                                                  */}
                                                 <TableCell className="max-w-0 font-medium wrap-anywhere whitespace-normal">
-                                                    {task.title}
+                                                    {task.detail_url ? (
+                                                        <Link
+                                                            href={
+                                                                task.detail_url
+                                                            }
+                                                            className="underline-offset-4 hover:underline"
+                                                        >
+                                                            {task.title}
+                                                        </Link>
+                                                    ) : (
+                                                        task.title
+                                                    )}
+                                                    {task.starts_on && (
+                                                        <p className="mt-1 text-xs text-muted-foreground">
+                                                            Starts{' '}
+                                                            {formatDay(
+                                                                task.starts_on,
+                                                            )}
+                                                        </p>
+                                                    )}
+                                                    {task.due_on && (
+                                                        <p className="mt-1 text-xs text-muted-foreground">
+                                                            Due{' '}
+                                                            {formatDay(
+                                                                task.due_on,
+                                                            )}
+                                                        </p>
+                                                    )}
                                                 </TableCell>
                                                 <TableCell>
                                                     {task.project ?? '—'}
