@@ -15,6 +15,7 @@ enum SearchResultKind: string
     case Project = 'project';
     case Invoice = 'invoice';
     case Task = 'task';
+    case History = 'history';
 
     /**
      * Sort weight, so results from different workspaces still group by kind.
@@ -30,6 +31,7 @@ enum SearchResultKind: string
             self::Project => 1,
             self::Invoice => 2,
             self::Task => 3,
+            self::History => 4,
         };
     }
 
@@ -41,6 +43,7 @@ enum SearchResultKind: string
             self::Project => 'Projects',
             self::Invoice => 'Invoices',
             self::Task => 'Tasks',
+            self::History => 'History',
         };
     }
 }

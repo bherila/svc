@@ -6,14 +6,17 @@ use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use App\Models\ClientProject;
 use App\Models\ClientTask;
+use App\Models\HistoricalEntry;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\BillingRecordAccess;
 use App\Services\Authorization\ProjectAccess;
+use App\Services\History\HistorySearch;
 use App\Support\Search\SearchResult;
 use App\Support\Search\SearchResultKind;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Facades\Gate;
 
 /**
  * What the command palette can find, for one person, across their workspaces.
@@ -54,6 +57,7 @@ final class WorkspaceSearch
     public function __construct(
         private readonly ProjectAccess $access,
         private readonly BillingRecordAccess $records,
+        private readonly HistorySearch $history,
     ) {}
 
     /**
@@ -212,6 +216,17 @@ final class WorkspaceSearch
                 $results[] = new SearchResult(SearchResultKind::Task, $task->public_id, $task->title,
                     $project->name.' - '.$parents[(int) $project->client_company_id]->name,
                     $href.'/tasks?project='.$project->public_id, $workspace->name);
+            }
+        }
+
+        // Source grants are preserved as history, never activated as current
+        // project/portal access. Only workspace managers can search this library.
+        if (($kinds === [] || in_array(SearchResultKind::History, $kinds, true)) && Gate::forUser($user)->allows('manage', $workspace)) {
+            $history = HistoricalEntry::query()->where('workspace_id', $workspace->id);
+            $this->history->matching($history, $term);
+            foreach ($history->orderByDesc('id')->limit(self::PER_KIND)->get() as $entry) {
+                $results[] = new SearchResult(SearchResultKind::History, $entry->public_id, $entry->title,
+                    $entry->kind->label(), route('history.show', [$workspace, $entry], absolute: false), $workspace->name);
             }
         }
 

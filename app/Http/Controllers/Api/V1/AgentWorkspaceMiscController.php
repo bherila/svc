@@ -36,10 +36,13 @@ final class AgentWorkspaceMiscController extends Controller
         abort_unless($principal instanceof User || $principal instanceof AgentPrincipal, 401);
         abort_unless($access->canViewWorkspace($principal, $workspace), 404);
         $data = $request->validate(['q' => ['required', 'string', 'max:200']]);
-        $kinds = array_values(array_filter(SearchResultKind::cases(), fn (SearchResultKind $kind): bool => $scopes->allows($request, match ($kind) {
-            SearchResultKind::Client => 'clients:read', SearchResultKind::Project => 'projects:read',
-            SearchResultKind::Invoice => 'billing:read', SearchResultKind::Task => 'tasks:read',
-        })));
+        $kinds = array_values(array_filter(SearchResultKind::cases(), fn (SearchResultKind $kind): bool => match ($kind) {
+            SearchResultKind::Client => $scopes->allows($request, 'clients:read'),
+            SearchResultKind::Project => $scopes->allows($request, 'projects:read'),
+            SearchResultKind::Invoice => $scopes->allows($request, 'billing:read'),
+            SearchResultKind::Task => $scopes->allows($request, 'tasks:read'),
+            SearchResultKind::History => false,
+        }));
         $results = $search->forWorkspace(User::query()->findOrFail($principal->id), $workspace, $data['q'], $kinds);
 
         return response()->json(['data' => array_map(fn (SearchResult $result): array => $result->toArray(), $results)]);

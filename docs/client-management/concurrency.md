@@ -652,3 +652,9 @@ append a source lock after holding a billing/company lock.
 `client_contacts` follows company/project locks. Contact creation locks the company;
 editing locks the contact alone after a workspace/company-scoped lookup. No contact
 operation creates or locks authentication, invitation, or billing records.
+
+Historical library publication and blob metadata creation use that same source
+lock after re-reading the source record in its workspace. Entries and file
+metadata are immutable, so replay compares fingerprints/digests and never takes
+an entry lock followed by a source lock. Private content-addressed file copies
+can be repaired without changing the original source record.
