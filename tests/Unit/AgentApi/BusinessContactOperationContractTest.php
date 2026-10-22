@@ -4,6 +4,7 @@ namespace Tests\Unit\AgentApi;
 
 use App\Services\AgentApi\Operations\AgentDeploymentFlags;
 use App\Services\AgentApi\Operations\AgentOperationCatalog;
+use App\Services\AgentApi\Operations\AgentRestDocumentation;
 use App\Services\Mcp\AgentMcpClientContactTools;
 use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
 use Bherila\McpLaravelBridge\Capabilities\Effect;
@@ -15,6 +16,7 @@ use PHPUnit\Framework\TestCase;
 
 /** These private business records must never inherit portal-contact authority. */
 #[CoversClass(AgentOperationCatalog::class)]
+#[CoversClass(AgentRestDocumentation::class)]
 final class BusinessContactOperationContractTest extends TestCase
 {
     public function test_contacts_declare_current_manager_scope_read_versions_and_archive_confirmation(): void
@@ -72,6 +74,7 @@ final class BusinessContactOperationContractTest extends TestCase
                 if ($write) {
                     $this->assertContains('idempotency_key', $operation->input['required'], $id);
                     $this->assertSame(['type' => 'string', 'minLength' => 1, 'maxLength' => 255], $operation->input['properties']['idempotency_key'], $id);
+                    $this->assertWriteBody($name, $operation->input);
                 }
                 if ($name === 'list') {
                     $this->assertSame(['type' => 'integer', 'minimum' => 1, 'maximum' => 100, 'default' => 25], $operation->input['properties']['limit']);
@@ -84,5 +87,79 @@ final class BusinessContactOperationContractTest extends TestCase
             AgentApiResponseSchemaCatalog::flush();
             Container::setInstance($previous);
         }
+    }
+
+    public function test_rest_documentation_keeps_tenant_identity_permissions_and_request_response_bindings(): void
+    {
+        $client = ['name' => 'client', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'string', 'format' => 'uuid']];
+        $contact = ['name' => 'contact', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'string', 'format' => 'uuid']];
+        $documents = AgentRestDocumentation::operations();
+        foreach ([
+            'list' => ['GET', ['clients:read'], ['WorkspaceId', $client, 'Limit', 'Cursor', ['name' => 'status', 'in' => 'query', 'schema' => ['type' => 'string', 'enum' => ['active', 'archived']]]], null, 'ClientBusinessContactListResponse'],
+            'get' => ['GET', ['clients:read'], ['WorkspaceId', $client, $contact], null, 'ClientBusinessContactResponse'],
+            'create' => ['POST', ['clients:write'], ['WorkspaceId', $client, 'IdempotencyKey'], 'clients_contacts_createRequest', 'ClientBusinessContactResponse'],
+            'update' => ['PATCH', ['clients:write', 'clients:read'], ['WorkspaceId', $client, $contact, 'IdempotencyKey'], 'clients_contacts_updateRequest', 'ClientBusinessContactResponse'],
+            'archive' => ['POST', ['clients:write', 'clients:read'], ['WorkspaceId', $client, $contact, 'IdempotencyKey'], 'clients_contacts_archiveRequest', 'ClientBusinessContactResponse'],
+            'restore' => ['POST', ['clients:write', 'clients:read'], ['WorkspaceId', $client, $contact, 'IdempotencyKey'], 'clients_contacts_restoreRequest', 'ClientBusinessContactResponse'],
+        ] as $name => [$method, $scopes, $parameters, $request, $response]) {
+            $id = 'clients.contacts.'.$name;
+            $document = $documents[$id];
+            $this->assertSame($method, $document['method'], $id);
+            $this->assertSame($scopes, $document['scopes'], $id);
+            $this->assertSame($parameters, $document['parameters'], $id);
+            $this->assertSame($response, $document['response'], $id);
+            if ($request === null) {
+                $this->assertArrayNotHasKey('request', $document, $id);
+            } else {
+                $this->assertSame($request, $document['request'], $id);
+            }
+        }
+    }
+
+    /** @param array<string, mixed> $input */
+    private function assertWriteBody(string $name, array $input): void
+    {
+        $properties = [
+            'workspace_id' => ['type' => 'string', 'format' => 'uuid'],
+            'client_id' => ['type' => 'string', 'format' => 'uuid'],
+            'idempotency_key' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 255],
+        ];
+        $required = ['workspace_id', 'client_id', 'idempotency_key'];
+        if (in_array($name, ['create', 'update'], true)) {
+            $properties += [
+                'first_name' => ['type' => ['string', 'null'], 'maxLength' => 100],
+                'last_name' => ['type' => ['string', 'null'], 'maxLength' => 100],
+                'title' => ['type' => ['string', 'null'], 'maxLength' => 191],
+                'email' => ['type' => ['string', 'null'], 'maxLength' => 255, 'format' => 'email'],
+                'phone' => ['type' => ['string', 'null'], 'maxLength' => 191],
+                'notes' => ['type' => ['string', 'null'], 'maxLength' => 20000],
+            ];
+        }
+        if ($name === 'create') {
+            $properties['is_archived'] = ['type' => 'boolean', 'default' => false];
+            $this->assertSame([['anyOf' => [
+                ['required' => ['first_name'], 'properties' => ['first_name' => ['type' => 'string', 'minLength' => 1]]],
+                ['required' => ['last_name'], 'properties' => ['last_name' => ['type' => 'string', 'minLength' => 1]]],
+            ]]], $input['allOf']);
+        } else {
+            $properties['contact_id'] = ['type' => 'string', 'format' => 'uuid'];
+            $properties['expected_version'] = ['type' => 'string', 'minLength' => 64, 'maxLength' => 64];
+            $required = [...$required, 'contact_id', 'expected_version'];
+            $this->assertArrayNotHasKey('allOf', $input);
+        }
+        if ($name === 'archive') {
+            $properties['confirm'] = ['type' => 'boolean', 'const' => true];
+            $required[] = 'confirm';
+        }
+        // Property order is presentation; presence, types and required safety
+        // fields are the contract that makes a valid call possible.
+        $actualProperties = $input['properties'];
+        ksort($properties);
+        ksort($actualProperties);
+        $actualRequired = $input['required'];
+        sort($required);
+        sort($actualRequired);
+        $this->assertSame($properties, $actualProperties, $name);
+        $this->assertSame($required, $actualRequired, $name);
     }
 }

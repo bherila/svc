@@ -78,6 +78,21 @@ final class CursorPageBudgetTest extends TestCase
         $last = $this->page($rows, limit: 2, cursor: $first['meta']['next_cursor']);
         $this->assertSame([3], array_column($last['data'], 'id'));
         $this->assertNull($last['meta']['next_cursor']);
+
+        $exact = $this->page($this->rows(['First synthetic row', 'Second synthetic row']), limit: 2);
+        $this->assertSame([1, 2], array_column($exact['data'], 'id'));
+        $this->assertNull($exact['meta']['next_cursor'], 'Exactly the row limit must not discard its last row or invent another page.');
+    }
+
+    public function test_comma_bytes_are_counted_at_a_three_row_boundary(): void
+    {
+        $rows = $this->rows(array_fill(0, 4, 'Synthetic row'));
+        $three = [$this->present($rows[0]), $this->present($rows[1]), $this->present($rows[2])];
+        $budget = strlen(json_encode($three, JSON_THROW_ON_ERROR)) - 1;
+        $page = $this->page($rows, limit: 100, budget: $budget);
+        $this->assertSame([1, 2], array_column($page['data'], 'id'));
+        $this->assertLessThanOrEqual($budget, strlen(json_encode($page['data'], JSON_THROW_ON_ERROR)));
+        $this->assertSame(2, AgentApiCursor::decode($page['meta']['next_cursor'], $this->workspace()->public_id, self::QUERY));
     }
 
     public function test_an_oversized_first_row_still_advances_and_does_not_hide_later_rows(): void
@@ -98,17 +113,25 @@ final class CursorPageBudgetTest extends TestCase
         yield 'the HTTP response ceiling is smaller' => [131072, 32768];
     }
 
-    public function test_default_budget_handles_notes_whose_text_copy_needs_maximum_json_escaping(): void
+    /** @return iterable<string, array{int}> */
+    public static function escapedNotesLengths(): iterable
+    {
+        yield 'maximum field length' => [20000];
+        yield 'near the envelope reserve boundary' => [19500];
+    }
+
+    #[DataProvider('escapedNotesLengths')]
+    public function test_default_budget_handles_notes_whose_text_copy_needs_maximum_json_escaping(int $length): void
     {
         config(['agent_api.mcp_max_result_bytes' => 2_097_152, 'agent_api.mcp_max_response_body_bytes' => 4_194_304]);
-        $rows = $this->rows(array_fill(0, 40, str_repeat('\\', 20000)));
+        $rows = $this->rows(array_fill(0, 40, str_repeat('\\', $length)));
         $page = $this->page($rows, limit: 100, budget: AgentPageBudget::dataBytes());
         $result = new CallToolResult((new ToolResultFormatter)->format($page), structuredContent: $page);
         $this->assertLessThanOrEqual(2_097_152, strlen(json_encode($result, JSON_THROW_ON_ERROR)));
         $this->assertLessThanOrEqual(4_194_304, strlen(json_encode(new Response('synthetic-escaped-notes', $result), JSON_THROW_ON_ERROR)));
         $this->assertGreaterThan(1, count($page['data']));
         $this->assertLessThan(40, count($page['data']));
-        $this->assertSame(str_repeat('\\', 20000), $page['data'][0]['text']);
+        $this->assertSame(str_repeat('\\', $length), $page['data'][0]['text']);
         $this->assertSame(count($page['data']), AgentApiCursor::decode($page['meta']['next_cursor'], $this->workspace()->public_id, self::QUERY));
     }
 
