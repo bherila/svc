@@ -39,6 +39,7 @@ final class ChangeFeedPage
      * @param  Builder<TRecord>  $query  tenant-scoped and filtered, not yet ordered or limited
      * @param  Closure(Collection<int, TRecord>): void  $load  eager loads for the returned rows
      * @param  Closure(TRecord): array<string, mixed>  $present
+     * @param  int|null  $maxDataBytes  optional serialized data-array ceiling; cursor and watermark follow the last returned row
      * @return array{data: list<array<string, mixed>>, meta: array{next_cursor: ?string, watermark: string}}
      *
      * @throws InvalidAgentApiCursor
@@ -53,6 +54,7 @@ final class ChangeFeedPage
         Closure $load,
         Closure $present,
         bool $microseconds = false,
+        ?int $maxDataBytes = null,
     ): array {
         $queryKey .= '|updated_since='.($window->since() ?? '');
         $position = ChangeFeedCursor::decode($cursor, $workspace->public_id, $queryKey, $microseconds);
@@ -82,10 +84,19 @@ final class ChangeFeedPage
         }
         $load($rows);
         $data = [];
+        $bytes = 2;
+        $last = null;
         foreach ($rows as $row) {
-            $data[] = $present($row);
+            $item = $present($row);
+            $size = $maxDataBytes === null ? 0 : strlen(json_encode($item, JSON_THROW_ON_ERROR)) + ($data === [] ? 0 : 1);
+            if ($maxDataBytes !== null && $data !== [] && $bytes + $size > $maxDataBytes) {
+                $hasMore = true;
+                break;
+            }
+            $data[] = $item;
+            $bytes += $size;
+            $last = $row;
         }
-        $last = $rows->last();
 
         return [
             'data' => $data,

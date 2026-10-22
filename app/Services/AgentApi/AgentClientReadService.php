@@ -7,8 +7,10 @@ use App\Models\ClientCompany;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\AgentAccess;
+use App\Services\Clients\CompanyProfile;
 use App\Services\Square\SquareLinkRepository;
 use App\Support\AgentApi\AgentApiVersion;
+use App\Support\AgentApi\AgentPageBudget;
 use App\Support\AgentApi\ChangeFeedPage;
 use App\Support\AgentApi\ChangeWindow;
 use App\Support\AgentApi\CursorPage;
@@ -56,7 +58,7 @@ final class AgentClientReadService
                 function (Collection $companies) use ($workspace): void {
                     $this->withSquareCustomers($workspace, $companies);
                 },
-                $this->present(...));
+                $this->present(...), maxDataBytes: AgentPageBudget::dataBytes());
         }
         $query->orderBy('id');
 
@@ -67,6 +69,7 @@ final class AgentClientReadService
             $cursor,
             fn (int $take, ?int $after): Collection => $this->withSquareCustomers($workspace, $query->when($after !== null, fn ($rows) => $rows->where('id', '>', $after))->limit($take)->get()),
             $this->present(...),
+            AgentPageBudget::dataBytes(),
         );
     }
 
@@ -92,6 +95,7 @@ final class AgentClientReadService
             'is_active' => $company->is_active,
             'automatic_invoice_email_enabled' => $company->automatic_invoice_email_enabled,
             'automatic_invoice_email_delay_days' => $company->automatic_invoice_email_delay_days,
+            ...app(CompanyProfile::class)->read($company),
             'square_customer' => $this->square->customer($company->relationLoaded(self::SQUARE_CUSTOMER)
                 ? $company->getRelation(self::SQUARE_CUSTOMER)
                 : $this->squareLinks->activeCustomer($company)),
