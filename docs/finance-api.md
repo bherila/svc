@@ -187,6 +187,14 @@ The finance system's other reads take the same window: `invoices.list`
 (`billing:read`) and `clients.list` (`clients:read`) page by id as before, and
 switch to this change order - with `meta.watermark` - when a request names
 `updated_since` or `watermark`. A cursor from one order is refused in the other.
+
+Invoice change-feed mode is supported only for workspace owners and admins.
+Other authorized viewers receive `422` naming `change_feed`: a portal snapshot
+can lose an invoice when it becomes hidden or void, and this feed does not
+emit removal records. They can still request ordinary invoice snapshots
+without `updated_since` or `watermark`. These window parameters belong to the
+REST listing; the MCP `invoices.list` tool currently lists snapshots only.
+
 A change feed takes only filters on what a record never changes: on
 `invoices.list`, `company_id` and `invoice_kind`; on `clients.list`, none. Any
 other - `status`, `collectible`, `overdue`, the issue, due and service-period
