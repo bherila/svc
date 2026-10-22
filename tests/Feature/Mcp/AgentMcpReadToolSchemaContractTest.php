@@ -27,6 +27,7 @@ final class AgentMcpReadToolSchemaContractTest extends TestCase
      */
     private const array RENAMED = [
         'attachments.list' => ['recordType' => 'record_type', 'recordPublicId' => 'record_id'],
+        'collaboration.comments.list' => ['parentType' => 'parent_type', 'parentPublicId' => 'parent_id'],
         'square.series.get' => ['series' => 'series_key'],
         'finance.invoice_payments.list' => ['invoice' => 'invoice_id'],
     ];

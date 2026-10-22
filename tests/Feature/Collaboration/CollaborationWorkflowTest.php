@@ -21,6 +21,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Inertia\Testing\AssertableInertia as Assert;
 use LogicException;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Tests\TestCase;
 
 class CollaborationWorkflowTest extends TestCase
@@ -47,6 +48,20 @@ class CollaborationWorkflowTest extends TestCase
         }
         $this->assertDatabaseCount('historical_entries', 0);
         $this->assertDatabaseCount('client_invoices', 0);
+    }
+
+    public function test_company_wide_topic_creation_rejects_a_company_from_another_workspace_at_the_action_boundary(): void
+    {
+        [$manager, $workspace] = $this->tenant('company-boundary');
+        [, , $foreignCompany] = $this->tenant('foreign-company-boundary');
+        try {
+            app(CollaborationAction::class)->createTopic($manager, $workspace, $foreignCompany, TopicDraft::fromInput(['kind' => 'note', 'title' => 'Synthetic rejected note', 'body' => 'Synthetic rejected content']), CollaborationAudience::Internal);
+            $this->fail('The action accepted a foreign company.');
+        } catch (HttpExceptionInterface $exception) {
+            $this->assertSame(404, $exception->getStatusCode());
+        }
+        $this->assertDatabaseCount('client_collaboration_topics', 0);
+        $this->assertDatabaseCount('client_company_activity', 0);
     }
 
     public function test_task_comment_threads_are_discoverable_for_staff_and_read_only_portal_viewers(): void

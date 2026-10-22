@@ -60,6 +60,15 @@ final class AgentMcpInventoryTest extends TestCase
         'clients.portal_invitations.revoke',
         'clients.restore',
         'clients.update',
+        'collaboration.comments.create',
+        'collaboration.comments.delete',
+        'collaboration.comments.list',
+        'collaboration.comments.update',
+        'collaboration.topics.create',
+        'collaboration.topics.delete',
+        'collaboration.topics.get',
+        'collaboration.topics.list',
+        'collaboration.topics.update',
         'companies.payment_reminders.get',
         'companies.payment_reminders.set',
         'companies.square_customer.clear',
@@ -171,6 +180,7 @@ final class AgentMcpInventoryTest extends TestCase
             'payment_writes_enabled' => ['payments.record', 'payments.correct', 'payments.set_status', 'payments.refund', 'payments.reverse_refund'],
             'client_writes_enabled' => ['clients.portal_access.grant', 'clients.portal_access.update', 'clients.portal_access.revoke',
                 'clients.portal_invitations.create', 'clients.portal_invitations.resend', 'clients.portal_invitations.revoke', 'clients.create', 'clients.update', 'clients.archive', 'clients.restore', 'agreements.create', 'agreements.update', 'agreements.activate', 'agreements.terminate', 'companies.square_customer.set', 'companies.square_customer.clear', 'agreements.square_series.set', 'agreements.square_series.clear', 'square.import_customer', 'companies.payment_reminders.set'],
+            'collaboration_writes_enabled' => ['collaboration.topics.create', 'collaboration.topics.update', 'collaboration.topics.delete', 'collaboration.comments.create', 'collaboration.comments.update', 'collaboration.comments.delete'],
             'project_writes_enabled' => ['projects.create', 'projects.update', 'projects.archive', 'projects.members.update'],
             'proposal_writes_enabled' => ['proposals.create', 'proposals.send', 'proposals.accept'],
             'workspace_writes_enabled' => ['workspaces.create'],
@@ -209,7 +219,7 @@ final class AgentMcpInventoryTest extends TestCase
             app(AgentWithheldTools::class)->for(fn (string $scope): bool => true, true));
     }
 
-    public function test_inventory_retains_all_138_tools_when_every_cutover_is_disabled(): void
+    public function test_inventory_retains_all_147_tools_when_every_cutover_is_disabled(): void
     {
         $this->enableAll();
         $disabled = ['time_entries.approve', 'tasks.create', 'tasks.update', 'square.sync', 'invoices.square_reconcile'];
@@ -220,14 +230,14 @@ final class AgentMcpInventoryTest extends TestCase
         config(['agent_api.writes_enabled' => false]);
         $disabled = array_values(array_unique($disabled));
         sort($disabled);
-        $this->assertCount(138, self::TOOLS);
+        $this->assertCount(147, self::TOOLS);
         $this->assertSame(self::TOOLS, $this->inventory());
         $this->assertSame(array_values(array_diff(self::TOOLS, $disabled)), $this->deployed());
         $this->assertSame(array_map(fn (string $name): array => ['name' => $name, 'reason' => 'deployment_disabled'], $disabled),
             app(AgentWithheldTools::class)->for(fn (string $scope): bool => true, true));
     }
 
-    public function test_actual_mcp_discovery_and_context_partition_all_138_tools_after_every_cutover_is_disabled(): void
+    public function test_actual_mcp_discovery_and_context_partition_all_147_tools_after_every_cutover_is_disabled(): void
     {
         $this->enableAll();
         $owner = User::factory()->create();

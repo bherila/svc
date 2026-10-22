@@ -21,6 +21,8 @@ final class CollaborationAction
 
     public function createTopic(User $actor, Workspace $workspace, ClientCompany $company, TopicDraft $draft, CollaborationAudience $audience, CollaborationOrigin $origin = CollaborationOrigin::Native): ClientCollaborationTopic
     {
+        abort_unless($company->workspace_id === $workspace->id, 404);
+
         return DB::transaction(function () use ($actor, $workspace, $company, $draft, $audience, $origin): ClientCollaborationTopic {
             $this->records->lockAccess($workspace);
             $project = $draft->projectId === null ? null : $this->records->project($workspace, $company, $draft->projectId, true);
