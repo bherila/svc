@@ -106,6 +106,7 @@ final class AgentOperationRegistryTest extends TestCase
         }
         $this->assertGreaterThan(100, $resolved);
         $this->assertNull(app(OperationRegistry::class)->find('connections.revoke')?->output, 'A 204 answers with no body');
+        $this->assertNull(app(OperationRegistry::class)->find('oauth.token.revoke')?->output, 'Self-revocation returns 204 with no body');
     }
 
     /** A scope or switch change to any operation is a reviewed diff. */

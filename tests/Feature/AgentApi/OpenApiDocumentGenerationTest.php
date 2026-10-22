@@ -24,6 +24,16 @@ final class OpenApiDocumentGenerationTest extends TestCase
         self::assertOpenApiDocumentMatches(AgentOpenApi::checked()->full(), public_path(AgentOpenApi::CHECKED_DOCUMENT));
     }
 
+    public function test_self_revocation_is_published_without_scopes_or_an_mcp_tool(): void
+    {
+        $operation = AgentOpenApi::checked()->full()['paths']['/oauth/token']['delete'];
+
+        $this->assertSame('oauth.token.revoke', $operation['operationId']);
+        $this->assertSame([['oauth2' => []], ['apiToken' => []]], $operation['security']);
+        $this->assertArrayHasKey(204, $operation['responses']);
+        $this->assertArrayNotHasKey('x-mcp-tool', $operation);
+    }
+
     public function test_the_served_document_differs_from_the_checked_one_only_in_its_addresses(): void
     {
         config([

@@ -4,6 +4,7 @@ use App\Exceptions\InvalidAgentApiCursor;
 use App\Http\Middleware\AuthenticateFirstPartySession;
 use App\Http\Middleware\EnsureAgentWorkspaceVisible;
 use App\Http\Middleware\EnsureOperationDeployed;
+use App\Http\Middleware\ExpectSelfRevokingOAuthResource;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\LogRejectedBearer;
 use App\Support\Billing\RetryableConflict;
@@ -40,6 +41,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->api(prepend: [LogRejectedBearer::class]);
         $middleware->prependToPriorityList(AuthenticatesRequests::class, McpHttpSecurityMiddleware::class);
         $middleware->prependToPriorityList(AuthenticatesRequests::class, ExpectOAuthResource::class);
+        $middleware->prependToPriorityList(AuthenticatesRequests::class, ExpectSelfRevokingOAuthResource::class);
         $middleware->prependToPriorityList(AuthenticatesRequests::class, AuthenticateFirstPartySession::class);
         // An agent operation's route checks run in this order: a workspace
         // the caller cannot see answers 404 exactly as a missing one does,

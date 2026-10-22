@@ -37,6 +37,19 @@ final class AgentConnectionController extends Controller
         return response()->json(status: 204);
     }
 
+    /** Discard only the bearer and its tracked refresh-token family. */
+    public function revokeToken(Request $request, CredentialRevoker $revoker): JsonResponse
+    {
+        $user = $request->user();
+        abort_unless($user instanceof AgentPrincipal, 401);
+        $current = $user->currentAccessToken();
+        abort_unless($current instanceof AccessToken && $current->oauth_access_token_id !== '', 401);
+
+        $revoker->revoke(AgentCredentialSelection::token($user, $current->oauth_access_token_id), 'agent');
+
+        return response()->json(status: 204);
+    }
+
     /**
      * `connections.disconnect`: the calling REST credential's application is
      * disconnected from the calling person - every credential the person holds
