@@ -43,6 +43,7 @@ const KIND_ORDER: readonly SearchResultKind[] = [
     'project',
     'invoice',
     'task',
+    'history',
 ];
 
 const KIND_HEADING: Record<SearchResultKind, string> = {
@@ -50,6 +51,7 @@ const KIND_HEADING: Record<SearchResultKind, string> = {
     project: 'Projects',
     invoice: 'Invoices',
     task: 'Tasks',
+    history: 'History',
 };
 
 const KIND_ICON: Record<SearchResultKind, typeof BuildingIcon> = {
@@ -57,6 +59,7 @@ const KIND_ICON: Record<SearchResultKind, typeof BuildingIcon> = {
     project: FolderIcon,
     invoice: ReceiptIcon,
     task: CheckSquareIcon,
+    history: FolderIcon,
 };
 
 /**

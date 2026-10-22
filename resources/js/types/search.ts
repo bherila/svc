@@ -9,7 +9,8 @@
  * Mirrors `App\Support\Search\SearchResult::toArray()`.
  */
 
-export type SearchResultKind = 'client' | 'project' | 'invoice' | 'task';
+export type SearchResultKind =
+    'client' | 'project' | 'invoice' | 'task' | 'history';
 
 export type SearchResult = {
     kind: SearchResultKind;
