@@ -252,6 +252,15 @@ and required transport contracts work together.
       than publishing them. Prepared uploads reauthorize their current parent and
       actor at publication, and receipt replay rechecks current authority.
 
+    - **R2 rollback floor:** R1 is only a retained-state reader floor: its
+      explicit-true uploader resumes
+      inherited new uploads if that application binary is restored. Before R2
+      private defaults are enabled, verify and retain a writer-compatible rollback
+      artifact that explicitly keeps ordinary uploads private, or independently
+      disable every upload/preparation/publication path before R1 fallback. Prove
+      all adapter defaults and rejection-before-staging behavior in a rollback
+      drill; a false database default cannot override an explicit-true uploader.
+
     Reader compatibility tests must exercise an older uploader that omits the
     column, all upgraded upload adapters throughout R1, and zero staged
     rows or objects after rejected private/new-parent uploads. Test current grants,

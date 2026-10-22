@@ -24,6 +24,22 @@ migration refuses retained private files or topic/comment parents; it never
 publishes or reassigns them. Disabling R2 sharing controls must not turn future
 ordinary uploads public: every R2 adapter keeps its private default.
 
+The retained-state reader floor and the future-upload writer floor are distinct.
+Rolling the application back to R1 preserves reads of existing private files but
+resumes its explicit-true ordinary uploader, even if the R2 database default is
+still false. Before enabling R2 privacy defaults, verify a rollback artifact whose
+ordinary upload adapters also explicitly persist false; that becomes the minimum
+operational writer version. If fallback to R1 is unavoidable, all upload paths
+must be independently disabled before traffic reaches that binary. Changing the
+column default alone cannot make an R1 uploader private.
+
+The R2 rollout drill must exercise native uploads, Agent prepared URLs and
+multipart publication, both generic files and expense receipts, and any future
+CLI uploader. With sharing/new-parent controls disabled, ordinary uploads must
+remain private on both the release and its writer-compatible fallback. A fallback
+that cannot meet that contract must reject preparation and publication before
+staging bytes or recovery rows. These are R2 prerequisites, not new R1 writers.
+
 ## Shared readers and adapters
 
 `AttachmentReader` scopes to one workspace and applies current parent authority
@@ -111,12 +127,14 @@ and repair behavior keep their existing independent tests.
 
 ## Local checkpoint evidence
 
-This reader candidate was checked on the collaboration foundation plus task graph
-reader checkpoints `52e12be0` and `7dad3fed`. Its temporary byte-budget prerequisite
-is an exact copy of the shared `CursorPage` and `AgentPageBudget` source from
-contacts `8bdcca66`; the real integrated foundation must replace that dependency
-before publication. The only additional shared cursor behavior is the optional
-strict legacy-rejection parameter, with old callers retaining their default.
+This reader candidate integrates checked collaboration foundation `6a53d058`,
+including actual contacts release `33a7ddb1` and task pagination checkpoint
+`27229317`, plus task graph reader checkpoints `52e12be0` and `7dad3fed`.
+The shared byte-budget helpers now come from the actual contacts dependency;
+there is no remaining copied helper prerequisite. Strict cursor behavior uses the
+same optional shared parameter as the foundation, with old callers retaining
+their default. The final task and collaboration squash commits must still be
+merged before final exact-head gates.
 
 Focused SQLite file workflows passed 76 tests / 936 assertions before the final
 preview additions; the final reader/strict-cursor follow-up passed 26 tests / 171
@@ -126,10 +144,26 @@ races passed 39 tests / 696 assertions, followed by the two native-preview cases
 Contract and registry checks passed 41 tests / 4,348 assertions. These are
 intersecting focused selections, not a full-suite result.
 
-One production build and the synthetic browser harness passed 44 page states at
+After integrating foundation `6a53d058`, the combined SQLite workflow selection
+passed 182 tests / 3,610 assertions across file lifecycle/privacy, graph readers,
+comment/search readers, native pagination and Agent byte-budget continuation.
+Contract, route, schema, tenant-FK and fillable inventories passed 85 tests /
+6,887 assertions. A fresh MariaDB selection passed 17 tests / 671 assertions,
+including the six genuine old-snapshot write/replay revocation cases, migration
+defaults, shared task-ancestor readers and file pagination. Scoped PHPStan checked
+all 38 changed application PHP files
+without errors; Pint, TypeScript and 25 focused frontend tests passed. OpenAPI,
+MCP snapshots and generated TypeScript regenerated without drift. These remain
+focused integration results, not a full-suite or mutation result.
+
+Before foundation integration, one local production-asset build and the synthetic
+browser harness passed 44 page states at
 390, 820, 1440 and 1920 pixels. Each native file family navigated older and newer
 pages, including native owner and dual-owner Portal previews; oversized filenames
 wrapped without horizontal document overflow. Workspace shell navbars remained
 49 pixels high. The pre-existing Operations overview keeps its separate legacy
-header; its file pagination works at all four widths. Full-suite, mutation and
-final integrated-foundation checks remain required before release.
+header; its file pagination worked at all four widths. This is pre-integration
+browser evidence; it does not claim a fresh combined build or final-head browser
+run after importing task pagination. Repeat the relevant combined checks when a
+build slot is scheduled. Full-suite, mutation and final integrated-foundation
+checks remain required before release.
