@@ -10,7 +10,7 @@ use App\Support\AgentApi\AgentApiVersion;
 final class AgentTaskPresenter
 {
     /** @return array<string, mixed> */
-    public function present(Workspace $workspace, ClientTask $task, bool $includePlanning = false): array
+    public function present(Workspace $workspace, ClientTask $task, bool $includePlanning = false, bool $canManage = false): array
     {
         return [
             'id' => $task->public_id,
@@ -21,7 +21,9 @@ final class AgentTaskPresenter
             'is_visible_to_client' => $task->is_visible_to_client,
             'completed_at' => $task->completed_at?->toAtomString(),
             'version' => AgentApiVersion::for($task),
-            'web_url' => route('workspaces.operations', $workspace).'?task='.$task->public_id,
+            'web_url' => $includePlanning
+                ? ($canManage ? route('tasks.show', [$workspace, $task]) : route('clients.tasks', [$workspace, $task->project->clientCompany, 'project' => $task->project->public_id]))
+                : route('portal.tasks', [$task->project->clientCompany, 'project' => $task->project->public_id]),
         ] + ($includePlanning ? app(TaskPlanningPresenter::class)->fields($task) : []);
     }
 }

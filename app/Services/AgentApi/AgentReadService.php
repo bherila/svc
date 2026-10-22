@@ -18,6 +18,7 @@ use App\Services\Authorization\ProjectAccess;
 use App\Services\Billing\DeferredBacklogReadService;
 use App\Services\Billing\InvoiceCorrectionReadService;
 use App\Services\Mcp\AgentWithheldTools;
+use App\Services\Tasks\TaskPlanningPresenter;
 use App\Support\AgentApi\AgentApiContract;
 use App\Support\AgentApi\AgentApiCursor;
 use App\Support\AgentApi\AgentApiScopes;
@@ -204,15 +205,18 @@ final class AgentReadService
     public function project(User|AgentPrincipal $user, Workspace $workspace, string $projectId, bool $includeTasks): array
     {
         $this->requireWorkspace($user, $workspace);
+        $includePlanning = ! $this->access->isWorkspaceClient($user, $workspace);
+        $canManage = $includePlanning && $this->access->isWorkspaceManager($user, $workspace);
         $query = $this->projectQuery($user, $workspace)->where('public_id', $projectId)->with('clientCompany');
         if ($includeTasks) {
-            $query->with('tasks');
+            $query->with(['tasks' => fn ($tasks) => $tasks->where('workspace_id', $workspace->id)
+                ->whereIn('id', $this->taskQuery($user, $workspace)->select('id'))
+                ->when($includePlanning, fn ($planning) => $planning->with(TaskPlanningPresenter::relations($workspace)))]);
         }
         $record = $query->firstOrFail();
         $data = $this->projectPresenter->present($workspace, $record, ! $this->access->isWorkspaceClient($user, $workspace));
         if ($record->relationLoaded('tasks')) {
-            $data['tasks'] = $record->tasks->filter(fn (ClientTask $task): bool => $this->access->canViewTask($user, $task))
-                ->map(fn (ClientTask $task): array => $this->taskPresenter->present($workspace, $task))->values()->all();
+            $data['tasks'] = $record->tasks->map(fn (ClientTask $task): array => $this->taskPresenter->present($workspace, $task->setRelation('project', $record), includePlanning: $includePlanning, canManage: $canManage))->values()->all();
         }
 
         return $data;
@@ -222,7 +226,9 @@ final class AgentReadService
     public function tasks(User|AgentPrincipal $user, Workspace $workspace, ?string $projectId, int $limit, ?string $cursor): array
     {
         $this->requireWorkspace($user, $workspace);
-        $query = $this->taskQuery($user, $workspace)->with('project.clientCompany')->orderBy('id');
+        $includePlanning = ! $this->access->isWorkspaceClient($user, $workspace);
+        $canManage = $includePlanning && $this->access->isWorkspaceManager($user, $workspace);
+        $query = $this->taskQuery($user, $workspace)->with('project.clientCompany')->when($includePlanning, fn (Builder $planning): Builder => $planning->with(TaskPlanningPresenter::relations($workspace)))->orderBy('id');
         if ($projectId !== null && $projectId !== '') {
             $query->whereHas('project', fn (Builder $projects) => $projects->where('public_id', $projectId));
         }
@@ -233,7 +239,7 @@ final class AgentReadService
             if (! $task instanceof ClientTask) {
                 continue;
             }
-            $data[] = $this->taskPresenter->present($workspace, $task);
+            $data[] = $this->taskPresenter->present($workspace, $task, includePlanning: $includePlanning, canManage: $canManage);
         }
 
         return ['data' => $data, 'meta' => ['next_cursor' => $page['next_cursor']]];
@@ -243,9 +249,11 @@ final class AgentReadService
     public function task(User|AgentPrincipal $user, Workspace $workspace, string $taskId): array
     {
         $this->requireWorkspace($user, $workspace);
-        $record = $this->taskQuery($user, $workspace)->where('public_id', $taskId)->with('project.clientCompany')->firstOrFail();
+        $includePlanning = ! $this->access->isWorkspaceClient($user, $workspace);
+        $canManage = $includePlanning && $this->access->isWorkspaceManager($user, $workspace);
+        $record = $this->taskQuery($user, $workspace)->where('public_id', $taskId)->with('project.clientCompany')->when($includePlanning, fn (Builder $planning): Builder => $planning->with(TaskPlanningPresenter::relations($workspace)))->firstOrFail();
 
-        return $this->taskPresenter->present($workspace, $record);
+        return $this->taskPresenter->present($workspace, $record, includePlanning: $includePlanning, canManage: $canManage);
     }
 
     /** @return array{data:list<array<string, mixed>>,meta:array{next_cursor:?string}} */
@@ -435,40 +443,37 @@ final class AgentReadService
     /** @return Builder<ClientProject> */
     private function projectQuery(User|AgentPrincipal $user, Workspace $workspace): Builder
     {
-        $query = ClientProject::query()->where('workspace_id', $workspace->id);
+        $query = ClientProject::query()->where('workspace_id', $workspace->id)
+            ->whereHas('clientCompany', fn (Builder $companies) => $companies->where('workspace_id', $workspace->id));
+        if ($this->access->isWorkspaceClient($user, $workspace)) {
+            return $this->portalAccess->constrainProjectQuery($query->where('is_visible_to_client', true), $user);
+        }
         if ($this->access->isWorkspaceManager($user, $workspace)) {
             return $query;
         }
 
-        return $query->where(function (Builder $projects) use ($user): void {
-            $projects->whereHas('members', fn (Builder $members) => $members->whereKey($user->id))
-                ->orWhere(fn (Builder $clients) => $this->portalAccess
-                    ->constrainProjectQuery($clients->where('is_visible_to_client', true), $user));
-        });
+        return $query->whereHas('members', fn (Builder $members) => $members->whereKey($user->id)
+            ->where('client_project_memberships.workspace_id', $workspace->id));
     }
 
     /** @return Builder<ClientTask> */
     private function taskQuery(User|AgentPrincipal $user, Workspace $workspace): Builder
     {
-        $query = ClientTask::query()->where('workspace_id', $workspace->id);
+        $query = ClientTask::query()->where('workspace_id', $workspace->id)
+            ->whereHas('project', fn (Builder $projects): Builder => $projects->where('workspace_id', $workspace->id)
+                ->whereHas('clientCompany', fn (Builder $companies): Builder => $companies->where('workspace_id', $workspace->id)));
+        if ($this->access->isWorkspaceClient($user, $workspace)) {
+            return $query->where('is_visible_to_client', true)
+                ->whereHas('project', fn (Builder $projects) => $this->portalAccess
+                    ->constrainProjectQuery($projects->where('is_visible_to_client', true), $user));
+        }
         if ($this->access->isWorkspaceManager($user, $workspace)) {
             return $query;
         }
 
-        return $query->where(function (Builder $tasks) use ($user): void {
-            $tasks->where(function (Builder $assigned) use ($user): void {
-                $assigned->whereHas('project', fn (Builder $projects) => $projects
-                    ->whereHas('members', fn (Builder $members) => $members->whereKey($user->id)))
-                    ->where(function (Builder $visibility) use ($user): void {
-                        $visibility->whereDoesntHave('project.clientCompany.portalUsers', fn (Builder $users) => $users->whereKey($user->id))
-                            ->orWhere('is_visible_to_client', true);
-                    });
-            })->orWhere(function (Builder $clientVisible) use ($user): void {
-                $clientVisible->where('is_visible_to_client', true)
-                    ->whereHas('project', fn (Builder $projects) => $this->portalAccess
-                        ->constrainProjectQuery($projects->where('is_visible_to_client', true), $user));
-            });
-        });
+        return $query->whereHas('project', fn (Builder $projects) => $projects
+            ->whereHas('members', fn (Builder $members) => $members->whereKey($user->id)
+                ->where('client_project_memberships.workspace_id', $workspace->id)));
     }
 
     /** @return Builder<ClientInvoice> */

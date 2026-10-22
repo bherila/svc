@@ -4685,12 +4685,28 @@ export interface components {
             version: components['schemas']['Version'];
             /** Format: uri */
             web_url: string;
+            /** Format: date */
+            starts_on?: string | null;
+            /** Format: date */
+            due_on?: string | null;
+            /** @description Internal planning metadata, withheld from portal and dual-identity API responses. */
+            assignees?: {
+                /** Format: uuid */
+                id: string;
+                name: string;
+            }[];
         };
         TaskCreateRequest: {
             title: string;
             description?: string | null;
             /** @description Hidden from clients when omitted. Callers choose visibility explicitly when publishing a task. */
             is_visible_to_client?: boolean;
+            /** Format: date */
+            starts_on?: string | null;
+            /** Format: date */
+            due_on?: string | null;
+            /** @description Current eligible internal account public UUIDs. Omit to preserve assignments; an empty array clears them. */
+            assignee_ids?: string[];
         };
         TaskListResponse: {
             data: components['schemas']['Task'][];
@@ -4706,6 +4722,12 @@ export interface components {
             /** @enum {string} */
             status?: 'open' | 'in_progress' | 'completed';
             is_visible_to_client?: boolean;
+            /** Format: date */
+            starts_on?: string | null;
+            /** Format: date */
+            due_on?: string | null;
+            /** @description Current eligible internal account public UUIDs. Omit to preserve assignments; an empty array clears them. */
+            assignee_ids?: string[];
         };
         TimeApprovalItem: {
             id: components['schemas']['Uuid'];
