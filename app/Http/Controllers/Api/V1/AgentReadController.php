@@ -47,11 +47,14 @@ final class AgentReadController extends Controller
 
     public function project(Request $request, Workspace $workspace, string $project): JsonResponse
     {
+        $validated = $request->validate(['tasks_cursor' => ['sometimes', 'nullable', 'string', 'max:2048']]);
+
         return response()->json(['data' => $this->reads->project(
             $this->user($request),
             $workspace,
             $project,
             $this->scopes->allows($request, 'tasks:read'),
+            $validated['tasks_cursor'] ?? null,
         )]);
     }
 

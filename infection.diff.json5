@@ -76,6 +76,10 @@
         IncrementInteger: {
             ignore: [
                 "App\\Services\\Billing\\UnplaceableInvoiceAuditor::magnitude",
+                // A larger serialization allowance yields smaller complete
+                // pages; it cannot violate the actual protocol ceiling. The
+                // decrement remains live and is killed by escaped-text cases.
+                "App\\Support\\AgentApi\\AgentPageBudget::dataBytes",
             ],
         },
         // `select(DB::raw(1))` inside a `WHERE EXISTS` subquery. The value is

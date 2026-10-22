@@ -19,11 +19,12 @@ final readonly class TaskCreateData
     /** @param array<string, mixed> $attributes */
     public static function fromValidated(array $attributes): self
     {
+        TaskInputRules::assertAssigneeArray($attributes);
         /** @var array{title: string, description?: ?string, is_visible_to_client?: bool, starts_on?: ?string, due_on?: ?string, assignee_ids?: list<string>} $data */
         $data = Validator::make($attributes, TaskInputRules::create())->validate();
         TaskPatchData::assertDateOrder($data['starts_on'] ?? null, $data['due_on'] ?? null);
 
-        return new self($data['title'], $data['description'] ?? null, (bool) ($data['is_visible_to_client'] ?? false),
+        return new self($data['title'], $data['description'] ?? null, $data['is_visible_to_client'] ?? false,
             $data['starts_on'] ?? null, $data['due_on'] ?? null, $data['assignee_ids'] ?? []);
     }
 

@@ -105,6 +105,7 @@ final class AgentMcpServerFactory
             AgentMcpSquareTools::class => new AgentMcpSquareTools($this->squareReadService, $this->accounts, $context),
             AgentMcpSquareMirrorTools::class => new AgentMcpSquareMirrorTools(app(InternalAgentApiTransport::class)),
             AgentMcpClientWriteTools::class => $clientWrites,
+            AgentMcpClientContactTools::class => new AgentMcpClientContactTools($rest, $this->requestArguments),
             AgentMcpPortalAccessTools::class => new AgentMcpPortalAccessTools($rest, $this->requestArguments),
             AgentMcpSquareLinkTools::class => new AgentMcpSquareLinkTools(app(InternalAgentApiTransport::class), $this->requestArguments),
             AgentMcpPaymentReminderTools::class => new AgentMcpPaymentReminderTools($rest),

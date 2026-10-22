@@ -431,7 +431,8 @@ class ClientPortalController extends Controller
         )
             ->orderBy('status')
             ->orderBy('title')
-            ->get();
+            ->orderBy('id')
+            ->simplePaginate(50)->appends($selected === null ? [] : ['project' => $selected->public_id]);
 
         return Inertia::render('clients/tasks', [
             'company' => [
@@ -454,6 +455,7 @@ class ClientPortalController extends Controller
                 'is_visible_to_client' => true,
                 'completed_at' => $task->completed_at?->toDateString(),
             ])->values()->all(),
+            'pagination' => ['previous_href' => $tasks->previousPageUrl(), 'next_href' => $tasks->nextPageUrl()],
         ]);
     }
 
