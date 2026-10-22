@@ -9,6 +9,7 @@ use App\Models\ClientTask;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Tasks\TaskAccess;
+use App\Services\Tasks\TaskCompletionAdvisory;
 use App\Services\Tasks\TaskCreateData;
 use App\Services\Tasks\TaskEditorPresenter;
 use App\Services\Tasks\TaskPatchData;
@@ -28,6 +29,7 @@ class ClientTaskController extends Controller
         $authorization->assertOwnedBy($workspace, $clientTask);
         $task = $tasks->find($workspace, $clientTask->public_id);
         $this->authorizeProject($request, $workspace, $task->project);
+        app(TaskCompletionAdvisory::class)->load($workspace, [$task]);
         $company = $task->project->clientCompany;
 
         return Inertia::render('clients/task', [

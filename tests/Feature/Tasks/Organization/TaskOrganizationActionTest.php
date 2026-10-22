@@ -35,6 +35,27 @@ final class TaskOrganizationActionTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_nested_raw_cli_assignees_use_the_foundation_array_guard_and_preview_never_creates_rows(): void
+    {
+        [$workspace, $project, $owner] = $this->fixture();
+        $version = app(TaskOrganizationAction::class)->inspect($owner, $workspace, $project->public_id)->graphVersion();
+        $input = tempnam(sys_get_temp_dir(), 'svc-organization-assignees-');
+        try {
+            foreach (['', ' ', null, 17] as $index => $assignees) {
+                file_put_contents($input, json_encode(['parent_id' => null, 'list_id' => null, 'expected_graph_version' => $version,
+                    'task' => ['title' => 'Synthetic nested raw task', 'assignee_ids' => $assignees]], JSON_THROW_ON_ERROR));
+                $this->assertSame(2, Artisan::call('svc:task-organization', ['operation' => 'tasks.create', 'workspace' => $workspace->public_id,
+                    'project' => $project->public_id, '--actor' => $owner->public_id, '--input' => $input, '--key' => 'synthetic-invalid-nested-assignees-'.$index, '--format' => 'json']));
+                $this->assertStringContainsString('assignee_ids', Artisan::output());
+                foreach (['client_tasks', 'client_task_assignments', 'client_task_graph_states', 'agent_mutation_receipts', 'agent_mutation_audits'] as $table) {
+                    $this->assertDatabaseCount($table, 0);
+                }
+            }
+        } finally {
+            unlink($input);
+        }
+    }
+
     public function test_raw_cli_empty_visibility_is_rejected_before_preview_or_apply_and_preserves_existing_publication(): void
     {
         [$workspace, $project, $owner] = $this->fixture();

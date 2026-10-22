@@ -8,6 +8,7 @@ use App\Services\AgentApi\AgentMutationContextFactory;
 use App\Services\AgentApi\AgentTaskMutationAction;
 use App\Services\Authorization\AgentAccess;
 use App\Services\Tasks\TaskAccess;
+use App\Services\Tasks\TaskCompletionAdvisory;
 use App\Services\Tasks\TaskInputRules;
 use App\Support\AgentApi\Presenters\AgentTaskPresenter;
 use Illuminate\Http\JsonResponse;
@@ -35,7 +36,12 @@ final class AgentTaskMutationController extends Controller
             $data,
         );
 
-        return response()->json(['data' => $presenter->present($workspace, $task, includePlanning: ! $access->isWorkspaceClient($context->user, $workspace), canManage: app(TaskAccess::class)->canManage($context->user, $workspace, $task->project))], 201);
+        $includePlanning = ! $access->isWorkspaceClient($context->user, $workspace);
+        if ($includePlanning) {
+            app(TaskCompletionAdvisory::class)->load($workspace, [$task]);
+        }
+
+        return response()->json(['data' => $presenter->present($workspace, $task, includePlanning: $includePlanning, canManage: app(TaskAccess::class)->canManage($context->user, $workspace, $task->project))], 201);
     }
 
     public function update(
@@ -58,6 +64,11 @@ final class AgentTaskMutationController extends Controller
             $data,
         );
 
-        return response()->json(['data' => $presenter->present($workspace, $record, includePlanning: ! $access->isWorkspaceClient($context->user, $workspace), canManage: app(TaskAccess::class)->canManage($context->user, $workspace, $record->project))]);
+        $includePlanning = ! $access->isWorkspaceClient($context->user, $workspace);
+        if ($includePlanning) {
+            app(TaskCompletionAdvisory::class)->load($workspace, [$record]);
+        }
+
+        return response()->json(['data' => $presenter->present($workspace, $record, includePlanning: $includePlanning, canManage: app(TaskAccess::class)->canManage($context->user, $workspace, $record->project))]);
     }
 }
