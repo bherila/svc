@@ -2,10 +2,12 @@
 
 namespace Tests\Feature\Files;
 
+use App\Services\Files\AttachmentPrivacyLatch;
 use App\Services\Files\AttachmentStorageService;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -48,6 +50,26 @@ final class AttachmentReaderMigrationTest extends TestCase
             $this->assertSame(1, (int) DB::table('client_attachments')->where('workspace_id', $workspace->id)->where('public_id', $legacyId)->value('is_visible_to_client'));
             $indexes = Schema::getIndexes('client_attachments');
             $keys = Schema::getForeignKeys('client_attachments');
+            $directory = sys_get_temp_dir().'/svc-reader-ddl-latch-'.bin2hex(random_bytes(8));
+            File::makeDirectory($directory, 0700);
+            $originalLatch = app(AttachmentPrivacyLatch::class);
+            app()->instance(AttachmentPrivacyLatch::class, new AttachmentPrivacyLatch($directory));
+            try {
+                File::put($directory.'/'.AttachmentPrivacyLatch::MARKER, "enabled\n");
+                $this->assertSame(0, DB::table('client_attachments')->where('is_visible_to_client', false)->count());
+                try {
+                    $migration->down();
+                    $this->fail('An activated private default needs the reader even before its first private row.');
+                } catch (\RuntimeException $exception) {
+                    $this->assertStringContainsString('privacy latch', $exception->getMessage());
+                }
+                $this->assertTrue(Schema::hasColumn('client_attachments', 'is_visible_to_client'));
+                $this->assertSame($indexes, Schema::getIndexes('client_attachments'));
+                $this->assertSame($keys, Schema::getForeignKeys('client_attachments'));
+            } finally {
+                app()->instance(AttachmentPrivacyLatch::class, $originalLatch);
+                File::deleteDirectory($directory);
+            }
             foreach (['private', 'topic', 'comment'] as $incompatible) {
                 DB::table('client_attachments')->where('workspace_id', $workspace->id)->where('public_id', $legacyId)
                     ->update(['is_visible_to_client' => $incompatible !== 'private', 'record_type' => $incompatible === 'private' ? 'company' : $incompatible]);

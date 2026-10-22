@@ -17,7 +17,9 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\AgentApi\AgentAttachmentService;
 use App\Services\AgentApi\AgentExpenseReceiptService;
+use App\Services\Files\AttachmentAction;
 use App\Services\Files\AttachmentAudience;
+use App\Services\Files\AttachmentPrivacyLatch;
 use App\Services\Files\AttachmentReader;
 use App\Services\Files\AttachmentStorageService;
 use App\Support\AgentApi\AgentApiVersion;
@@ -26,10 +28,12 @@ use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Inertia\Testing\AssertableInertia as Assert;
+use Mockery;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\Concerns\BuildsSyntheticExpenses;
@@ -39,6 +43,8 @@ use Tests\TestCase;
 final class AttachmentReaderTest extends TestCase
 {
     use BuildsSyntheticExpenses, CallsMcp, RefreshDatabase;
+
+    private string $privacyDirectory;
 
     private Workspace $workspace;
 
@@ -53,6 +59,9 @@ final class AttachmentReaderTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $this->privacyDirectory = sys_get_temp_dir().'/svc-reader-privacy-'.bin2hex(random_bytes(8));
+        File::makeDirectory($this->privacyDirectory, 0700);
+        $this->app->instance(AttachmentPrivacyLatch::class, new AttachmentPrivacyLatch($this->privacyDirectory));
         Storage::fake('svc_files');
         config(['svc.filesystem_disk' => 'svc_files', 'agent_api.writes_enabled' => true,
             'agent_api.file_writes_enabled' => true, 'agent_api.expense_writes_enabled' => true]);
@@ -65,10 +74,26 @@ final class AttachmentReaderTest extends TestCase
         $this->grant($this->client, $this->project);
     }
 
+    protected function tearDown(): void
+    {
+        File::deleteDirectory($this->privacyDirectory);
+        parent::tearDown();
+    }
+
+    private function enablePrivateDefault(): void
+    {
+        File::put($this->privacyDirectory.'/'.AttachmentPrivacyLatch::MARKER, "enabled\n");
+        config(['svc.attachments.private_uploads_enabled' => true]);
+    }
+
     /** @param 'company'|'project'|'task'|'proposal'|'agreement'|'invoice'|'expense' $type */
     #[DataProvider('legacyUploadTypes')]
-    public function test_every_native_parent_upload_explicitly_retains_legacy_true(string $type): void
+    public function test_every_native_parent_upload_honors_the_durable_default(string $type, bool $privateDefault, bool $cachedPrivateCheck): void
     {
+        if ($privateDefault) {
+            $this->enablePrivateDefault();
+        }
+        config(['svc.attachments.private_uploads_enabled' => $cachedPrivateCheck]);
         $fields = ['workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id, 'client_project_id' => $this->project->id];
         $record = match ($type) {
             'company' => $this->company,
@@ -82,15 +107,22 @@ final class AttachmentReaderTest extends TestCase
         $this->actingAs($this->owner)->postJson(route('svc.files.store', [$this->workspace, $type, $record->public_id]),
             ['file' => UploadedFile::fake()->createWithContent('synthetic-legacy.txt', 'Synthetic legacy bytes')])->assertRedirect();
         $file = ClientAttachment::query()->where('workspace_id', $this->workspace->id)->sole();
-        $this->assertTrue($file->is_visible_to_client);
+        $this->assertSame(! $privateDefault, $file->is_visible_to_client);
         $this->assertSame($type, $file->record_type);
         $this->assertSame(ClientAttachment::STATE_AVAILABLE, $file->lifecycle_state);
     }
 
-    /** @return list<array{string}> */
+    /** @return list<array{string, bool, bool}> */
     public static function legacyUploadTypes(): array
     {
-        return array_map(fn (string $type): array => [$type], ['company', 'project', 'task', 'proposal', 'agreement', 'invoice', 'expense']);
+        $cases = [];
+        foreach (['company', 'project', 'task', 'proposal', 'agreement', 'invoice', 'expense'] as $type) {
+            foreach (self::privateDefaults() as [$private, $cachedCheck]) {
+                $cases[] = [$type, $private, $cachedCheck];
+            }
+        }
+
+        return $cases;
     }
 
     public function test_stored_private_flag_filters_metadata_and_held_downloads_without_affecting_internal_reads(): void
@@ -394,8 +426,19 @@ final class AttachmentReaderTest extends TestCase
         $this->assertSame([], Storage::disk('svc_files')->allFiles());
     }
 
-    public function test_agent_generic_and_expense_uploads_reject_private_before_preparation_and_keep_ordinary_uploads_true(): void
+    /** @return list<array{bool, bool}> */
+    public static function privateDefaults(): array
     {
+        return [[false, false], [true, true], [true, false]];
+    }
+
+    #[DataProvider('privateDefaults')]
+    public function test_agent_generic_and_expense_uploads_reject_sharing_input_and_honor_the_durable_default(bool $privateDefault, bool $cachedPrivateCheck): void
+    {
+        if ($privateDefault) {
+            $this->enablePrivateDefault();
+        }
+        config(['svc.attachments.private_uploads_enabled' => $cachedPrivateCheck]);
         $file = UploadedFile::fake()->createWithContent('synthetic-agent.txt', 'Synthetic agent bytes');
         $expense = $this->recordSyntheticExpense($this->workspace, $this->company);
         foreach (['generic', 'expense'] as $kind) {
@@ -417,7 +460,7 @@ final class AttachmentReaderTest extends TestCase
             ['expected_version' => AgentApiVersion::for($this->project), 'file' => $file]);
         app(AgentExpenseReceiptService::class)->upload($this->owner, $this->workspace, 'synthetic-reader', 'synthetic-expense-valid', $expense->public_id,
             ['expected_version' => AgentApiVersion::for($expense)], $file);
-        $this->assertSame(0, ClientAttachment::query()->where('workspace_id', $this->workspace->id)->where('is_visible_to_client', false)->count());
+        $this->assertSame($privateDefault ? 2 : 0, ClientAttachment::query()->where('workspace_id', $this->workspace->id)->where('is_visible_to_client', false)->count());
         $this->assertDatabaseCount('client_attachments', 2);
     }
 
@@ -444,6 +487,90 @@ final class AttachmentReaderTest extends TestCase
         $this->assertSame([], Storage::disk('svc_files')->allFiles());
         $this->actingAs($this->owner)->postJson(route('svc.files.store', [$this->workspace, 'project', $this->project->public_id]), ['file' => $file])->assertRedirect();
         $this->assertTrue(ClientAttachment::query()->where('workspace_id', $this->workspace->id)->sole()->is_visible_to_client);
+    }
+
+    public function test_prepared_publication_and_repair_preserve_the_stored_choice_across_default_changes(): void
+    {
+        $storage = app(AttachmentStorageService::class);
+        $file = UploadedFile::fake()->createWithContent('synthetic-fallback.txt', 'Synthetic fallback bytes');
+        $legacy = $storage->store($this->workspace, $this->project, $file, $this->owner);
+        $this->enablePrivateDefault();
+        $prepared = $storage->prepareForPublication($this->workspace, $this->project, $file, $this->owner);
+        $this->assertTrue($legacy->is_visible_to_client);
+        $this->assertFalse($prepared->is_visible_to_client);
+        $this->assertSame(ClientAttachment::STATE_STAGED, $prepared->lifecycle_state);
+        // A later binary's sharing controls are absent in the fallback reader.
+        // Its durable private-default setting still governs new ordinary files.
+        $fallback = $storage->store($this->workspace, $this->project, $file, $this->owner);
+        $this->assertFalse($fallback->is_visible_to_client);
+        config(['svc.attachments.private_uploads_enabled' => false]);
+        $published = app(AttachmentAction::class)->publishPrepared($this->workspace, 'project', $this->project->public_id,
+            $prepared, AgentApiVersion::for($this->project));
+        $this->assertFalse($published->is_visible_to_client);
+        $this->assertSame(ClientAttachment::STATE_AVAILABLE, $published->lifecycle_state);
+        $this->assertTrue($legacy->fresh()->is_visible_to_client);
+        $this->actingAs($this->client)->get(route('svc.files.download', [$this->workspace, $published->public_id]))->assertForbidden();
+        Storage::disk('svc_files')->delete($fallback->object_key);
+        $storage->repair(true);
+        $this->assertSame(ClientAttachment::STATE_CORRUPT, $fallback->fresh()->lifecycle_state);
+        $this->assertFalse($fallback->fresh()->is_visible_to_client);
+    }
+
+    public function test_latch_activation_during_staging_cannot_create_a_public_recovery_row(): void
+    {
+        $disk = Storage::disk('svc_files');
+        $observed = Mockery::mock($disk);
+        $observed->shouldReceive('writeStream')->once()->andReturnUsing(function (...$arguments) use ($disk) {
+            $result = $disk->writeStream(...$arguments);
+            $this->enablePrivateDefault();
+            config(['svc.attachments.private_uploads_enabled' => false]);
+
+            return $result;
+        });
+        Storage::shouldReceive('disk')->with('svc_files')->andReturn($observed);
+        $file = app(AttachmentStorageService::class)->store($this->workspace, $this->project,
+            UploadedFile::fake()->createWithContent('synthetic-late-latch.txt', 'Synthetic late latch bytes'), $this->owner);
+        $this->assertFalse($file->is_visible_to_client);
+        $this->assertSame(ClientAttachment::STATE_AVAILABLE, $file->lifecycle_state);
+    }
+
+    public function test_unlatched_private_configuration_refuses_upload_before_staging_without_disabling_reads(): void
+    {
+        $legacy = $this->attach();
+        config(['svc.attachments.private_uploads_enabled' => true]);
+        $before = Storage::disk('svc_files')->allFiles();
+        $this->actingAs($this->owner)->postJson(route('svc.files.store', [$this->workspace, 'project', $this->project->public_id]),
+            ['file' => UploadedFile::fake()->createWithContent('synthetic-unlatched.txt', 'Synthetic unlatched bytes')])->assertServiceUnavailable();
+        foreach (['generic', 'expense'] as $kind) {
+            try {
+                if ($kind === 'generic') {
+                    app(AgentAttachmentService::class)->uploadUrl($this->owner, $this->workspace, 'project', $this->project->public_id);
+                } else {
+                    app(AgentExpenseReceiptService::class)->uploadUrl($this->owner, $this->workspace, $this->recordSyntheticExpense($this->workspace, $this->company)->public_id);
+                }
+                $this->fail('An unverified durable policy must refuse preparation.');
+            } catch (HttpException $exception) {
+                $this->assertSame(503, $exception->getStatusCode());
+            }
+        }
+        $this->assertDatabaseCount('client_attachments', 1);
+        $this->assertSame($before, Storage::disk('svc_files')->allFiles());
+        $this->get(route('svc.files.download', [$this->workspace, $legacy->public_id]))->assertOk();
+    }
+
+    public function test_private_default_does_not_enable_sharing_inputs_or_new_upload_parents(): void
+    {
+        $this->enablePrivateDefault();
+        foreach ([true, false, null] as $visible) {
+            $this->actingAs($this->owner)->postJson(route('svc.files.store', [$this->workspace, 'project', $this->project->public_id]),
+                ['file' => UploadedFile::fake()->createWithContent('synthetic-refused.txt', 'Synthetic refused bytes'), 'is_visible_to_client' => $visible])->assertUnprocessable();
+        }
+        foreach (['topic', 'comment'] as $type) {
+            $this->actingAs($this->owner)->postJson(route('svc.files.store', [$this->workspace, $type, (string) Str::uuid()]),
+                ['file' => UploadedFile::fake()->createWithContent('synthetic-refused.txt', 'Synthetic refused bytes')])->assertUnprocessable();
+        }
+        $this->assertDatabaseCount('client_attachments', 0);
+        $this->assertSame([], Storage::disk('svc_files')->allFiles());
     }
 
     private function attach(): ClientAttachment

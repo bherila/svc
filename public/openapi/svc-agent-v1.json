@@ -872,7 +872,7 @@
         "/workspaces/{workspace}/records/{recordType}/{recordPublicId}/attachments/upload": {
             "post": {
                 "operationId": "attachments.upload",
-                "description": "Staff-manager-only multipart upload, at most 50 MiB. Dual Portal identities are denied. Reader release keeps legacy inheritance and rejects visibility fields and topic/comment parents before staging. Locked parent version checked; actor/client/key receipt binds parent/version/filename/media/length/SHA256, with replay and audit. Uploading adds an immutable file and leaves parent business facts unchanged.",
+                "description": "Staff-manager-only multipart upload, at most 50 MiB. Dual Portal identities are denied. The verified persistent privacy latch chooses ordinary upload defaults; the initial reader deployment retains inheritance. Visibility fields and topic/comment parents remain rejected before staging. Locked parent version checked; actor/client/key receipt binds parent/version/filename/media/length/SHA256, with replay and audit. Uploading adds an immutable file and leaves parent business facts unchanged.",
                 "security": [
                     {
                         "oauth2": [
@@ -944,11 +944,21 @@
                 ],
                 "responses": {
                     "201": {
-                        "description": "Staff-manager-only multipart upload, at most 50 MiB. Dual Portal identities are denied. Reader release keeps legacy inheritance and rejects visibility fields and topic/comment parents before staging. Locked parent version checked; actor/client/key receipt binds parent/version/filename/media/length/SHA256, with replay and audit. Uploading adds an immutable file and leaves parent business facts unchanged.",
+                        "description": "Staff-manager-only multipart upload, at most 50 MiB. Dual Portal identities are denied. The verified persistent privacy latch chooses ordinary upload defaults; the initial reader deployment retains inheritance. Visibility fields and topic/comment parents remain rejected before staging. Locked parent version checked; actor/client/key receipt binds parent/version/filename/media/length/SHA256, with replay and audit. Uploading adds an immutable file and leaves parent business facts unchanged.",
                         "content": {
                             "application/json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/AttachmentResponse"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "The durable upload policy cannot be verified. No bytes or recovery rows are staged; ordinary reads remain available.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
                                 }
                             }
                         }
@@ -1020,6 +1030,16 @@
                             "application/json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/AttachmentUploadUrlResponse"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "The durable upload policy cannot be verified. No bytes or recovery rows are staged; ordinary reads remain available.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
                                 }
                             }
                         }
@@ -6447,7 +6467,7 @@
             },
             "post": {
                 "operationId": "expenses.receipts.upload",
-                "description": "Staff-manager-only multipart upload, at most 50 MiB. Dual Portal identities are denied. Reader release keeps legacy inheritance and rejects visibility fields and topic/comment parents before staging. File digest, filename and expense version bind idempotent retries. Version is checked on locked expense and advances on upload. Prepared URLs expire after ten minutes; direct authenticated REST uploads need no preparation. Both expense write flags required.",
+                "description": "Staff-manager-only multipart upload, at most 50 MiB. Dual Portal identities are denied. The verified persistent privacy latch chooses ordinary upload defaults; the initial reader deployment retains inheritance. Visibility fields and topic/comment parents remain rejected before staging. File digest, filename and expense version bind idempotent retries. Version is checked on locked expense and advances on upload. Prepared URLs expire after ten minutes; direct authenticated REST uploads need no preparation. Both expense write flags required.",
                 "security": [
                     {
                         "oauth2": [
@@ -6487,6 +6507,16 @@
                             "application/json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/ExpenseReceiptUploadResponse"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "The durable upload policy cannot be verified. No bytes or recovery rows are staged; ordinary reads remain available.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
                                 }
                             }
                         }
@@ -6537,6 +6567,16 @@
                             "application/json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/ExpenseReceiptUploadUrlResponse"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "The durable upload policy cannot be verified. No bytes or recovery rows are staged; ordinary reads remain available.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
                                 }
                             }
                         }
