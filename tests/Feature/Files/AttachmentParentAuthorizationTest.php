@@ -153,6 +153,26 @@ final class AttachmentParentAuthorizationTest extends TestCase
         return [['assigned', true], ['other', false], ['mixed', false], ['none', false], ['assigned-agreement', true], ['other-agreement', false], ['assigned-line-other-agreement', false]];
     }
 
+    #[DataProvider('companyEngagementTypes')]
+    public function test_a_portal_membership_owned_by_another_workspace_cannot_read_company_level_files(string $type, string $status): void
+    {
+        $portal = User::factory()->create();
+        $membership = ClientCompanyMembership::query()->create(['workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id, 'user_id' => $portal->id, 'role' => 'client', 'access_scope' => ClientCompanyMembership::SCOPE_COMPANY]);
+        $record = $this->record($type, null);
+        $record->update(['is_visible_to_client' => true, 'status' => $status]);
+        $attachment = $this->attach($record);
+        $this->actingAs($portal)->get($this->url($attachment))->assertOk();
+
+        $foreign = Workspace::query()->create(['name' => 'Synthetic foreign membership workspace', 'slug' => 'synthetic-foreign-membership-workspace']);
+        $this->writingLegacyCrossTenantRows(fn () => DB::table('client_company_memberships')->where('id', $membership->id)->update(['workspace_id' => $foreign->id]));
+        $this->actingAs($portal)->get($this->url($attachment))->assertForbidden();
+    }
+
+    public static function companyEngagementTypes(): array
+    {
+        return [['proposal', 'sent'], ['agreement', 'active']];
+    }
+
     public function test_held_portal_invoice_url_stops_working_after_grant_or_publication_is_withdrawn(): void
     {
         $project = $this->project('Assigned');

@@ -129,7 +129,7 @@ final class AttachmentRecordResolver
             default => null,
         };
 
-        if ($company === null || ! $company->portalUsers()->whereKey($user->id)->exists()) {
+        if ($company === null || ! $company->portalUsers()->wherePivot('workspace_id', $workspace->id)->whereKey($user->id)->exists()) {
             return false;
         }
 
