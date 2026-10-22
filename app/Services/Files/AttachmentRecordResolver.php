@@ -52,7 +52,10 @@ final class AttachmentRecordResolver
     /** @return list<string> */
     public static function uploadableTypes(): array
     {
-        return array_values(array_diff(self::readableTypes(), ['topic', 'comment']));
+        $types = array_diff(self::readableTypes(), ['topic', 'comment']);
+
+        // @infection-ignore-all Equivalent reindex: the closed readable list removes only its final two entries, so array_diff already has consecutive keys; array_values states the list type for static analysis.
+        return array_values($types);
     }
 
     public function resolve(Workspace $workspace, string $recordType, string $recordPublicId): Model&WorkspaceOwned
