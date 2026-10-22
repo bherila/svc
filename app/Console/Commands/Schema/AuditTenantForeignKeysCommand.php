@@ -149,6 +149,11 @@ final class AuditTenantForeignKeysCommand extends SvcCommand
         if (! Schema::hasColumn($parent, 'workspace_id')) {
             return null;
         }
+        foreach ($reference->additionalScopeColumns as $scopeColumn) {
+            if (! Schema::hasColumn($child, $scopeColumn) || ! Schema::hasColumn($parent, $scopeColumn)) {
+                return null;
+            }
+        }
 
         $column = $child.'.'.$reference->childColumn;
 
@@ -178,11 +183,14 @@ final class AuditTenantForeignKeysCommand extends SvcCommand
                         }
 
                         // Shapes 1 and 2: no parent agrees with this row.
-                        $mismatched->whereNotExists(function (Builder $query) use ($child, $column, $parent): void {
+                        $mismatched->whereNotExists(function (Builder $query) use ($child, $column, $parent, $reference): void {
                             $query->selectRaw('1')
                                 ->from($parent.' as tenant_parent')
                                 ->whereColumn('tenant_parent.id', $column)
                                 ->whereColumn('tenant_parent.workspace_id', $child.'.workspace_id');
+                            foreach ($reference->additionalScopeColumns as $scopeColumn) {
+                                $query->whereColumn('tenant_parent.'.$scopeColumn, $child.'.'.$scopeColumn);
+                            }
                         });
                     });
             })
