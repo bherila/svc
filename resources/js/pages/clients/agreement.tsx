@@ -74,9 +74,14 @@ function Term({
     unset?: string;
 }) {
     return (
-        <div className="flex gap-2">
-            <dt className="text-muted-foreground">{label}</dt>
-            <dd className={value === null ? 'text-muted-foreground' : ''}>
+        <div className="flex min-w-0 gap-2">
+            <dt className="shrink-0 text-muted-foreground">{label}</dt>
+            <dd
+                className={cn(
+                    'min-w-0 wrap-anywhere',
+                    value === null && 'text-muted-foreground',
+                )}
+            >
                 {value ?? unset}
             </dd>
         </div>
@@ -219,7 +224,7 @@ export default function ClientAgreementDetail({
                                 onDone={() => setEditingTerms(false)}
                             />
                         ) : (
-                            <dl className="grid gap-2 text-sm sm:grid-cols-2">
+                            <dl className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
                                 <Term
                                     label="Term"
                                     value={`${formatDay(agreement.starts_on)} → ${agreement.ends_on === null ? 'open' : formatDay(agreement.ends_on)}`}
