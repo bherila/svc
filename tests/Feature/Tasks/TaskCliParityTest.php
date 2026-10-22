@@ -44,16 +44,17 @@ final class TaskCliParityTest extends TestCase
             $this->assertSame(0, Artisan::call('svc:tasks', $create + ['--apply' => true]));
             $this->assertSame($created['data']['id'], json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['data']['id']);
             $this->assertDatabaseCount('client_tasks', 1);
-            foreach (['title', 'status'] as $field) {
-                foreach (['', '   '] as $blank) {
-                    file_put_contents($input, json_encode(['expected_version' => $created['data']['version'], $field => $blank], JSON_THROW_ON_ERROR));
-                    $this->assertSame(2, Artisan::call('svc:tasks', $base + ['operation' => 'update', '--task' => $created['data']['id'], '--input' => $input, '--key' => 'synthetic-cli-blank-'.$field]));
-                    $this->assertStringContainsString($field.':', Artisan::output());
-                    $this->assertDatabaseHas('client_tasks', ['workspace_id' => $workspace->id, 'public_id' => $created['data']['id'], 'title' => 'Synthetic planned task', 'status' => 'open']);
-                    // The prior create owns one authenticated receipt and its
-                    // compatibility reservation; invalid previews add neither.
-                    $this->assertDatabaseCount('agent_mutation_receipts', 2);
-                }
+            foreach ([['title', ''], ['title', '   '], ['status', ''], ['status', '   '],
+                ['is_visible_to_client', ''], ['is_visible_to_client', null], ['is_visible_to_client', 'yes'],
+                ['assignee_ids', ''], ['assignee_ids', null], ['assignee_ids', 17]] as [$field, $invalid]) {
+                file_put_contents($input, json_encode(['expected_version' => $created['data']['version'], $field => $invalid], JSON_THROW_ON_ERROR));
+                $this->assertSame(2, Artisan::call('svc:tasks', $base + ['operation' => 'update', '--task' => $created['data']['id'], '--input' => $input, '--key' => 'synthetic-cli-invalid-'.$field]));
+                $this->assertStringContainsString($field.':', Artisan::output());
+                $this->assertDatabaseHas('client_tasks', ['workspace_id' => $workspace->id, 'public_id' => $created['data']['id'], 'title' => 'Synthetic planned task', 'status' => 'open']);
+                $this->assertDatabaseCount('client_task_assignments', 1);
+                // The prior create owns one authenticated receipt and its
+                // compatibility reservation; invalid previews add neither.
+                $this->assertDatabaseCount('agent_mutation_receipts', 2);
             }
             file_put_contents($input, json_encode(['expected_version' => $created['data']['version'], 'due_on' => null, 'assignee_ids' => []], JSON_THROW_ON_ERROR));
             $update = $base + ['operation' => 'update', '--task' => $created['data']['id'], '--input' => $input, '--key' => 'synthetic-cli-update', '--apply' => true];
@@ -61,6 +62,7 @@ final class TaskCliParityTest extends TestCase
             $updated = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['data'];
             $this->assertNull($updated['due_on']);
             $this->assertSame([], $updated['assignees']);
+            $this->assertDatabaseCount('client_task_assignments', 0);
             $this->assertSame('2026-10-22', $updated['starts_on']);
             $this->assertSame('Synthetic planned task', $updated['title']);
             $this->assertSame('open', $updated['status']);

@@ -54,6 +54,23 @@ final class TaskPlanningDataTest extends TestCase
         }
     }
 
+    public function test_visibility_accepts_boolean_inputs_and_refuses_other_values(): void
+    {
+        foreach ([[true, true], [false, false], [1, true], [0, false], ['1', true], ['0', false]] as [$input, $expected]) {
+            $this->assertSame($expected, TaskCreateData::fromValidated(['title' => 'Synthetic visibility', 'is_visible_to_client' => $input])->visibleToClient);
+        }
+        foreach (['', '   ', null, 2, 'false', 'yes', []] as $input) {
+            foreach ([TaskCreateData::class, TaskPatchData::class] as $factory) {
+                try {
+                    $factory::fromValidated(['title' => 'Synthetic visibility', 'is_visible_to_client' => $input]);
+                    $this->fail('Only supported boolean inputs may change client visibility.');
+                } catch (ValidationException $exception) {
+                    $this->assertArrayHasKey('is_visible_to_client', $exception->errors());
+                }
+            }
+        }
+    }
+
     public function test_each_calendar_endpoint_can_be_absent_or_cleared_independently(): void
     {
         $this->assertSame('2026-10-20', TaskCreateData::fromValidated(['title' => 'Synthetic start only', 'starts_on' => '2026-10-20'])->startsOn);
@@ -112,5 +129,21 @@ final class TaskPlanningDataTest extends TestCase
                 $this->assertNotSame([], $exception->errors());
             }
         }
+    }
+
+    public function test_assignee_shape_errors_are_validation_failures_and_an_empty_list_remains_a_valid_clear(): void
+    {
+        foreach (['', '   ', null, 17, true, '00000000-0000-4000-8000-000000000001'] as $input) {
+            foreach ([TaskCreateData::class, TaskPatchData::class] as $factory) {
+                try {
+                    $factory::fromValidated(['title' => 'Synthetic assignee shape', 'assignee_ids' => $input]);
+                    $this->fail('Non-array assignees must be refused as a validation error.');
+                } catch (ValidationException $exception) {
+                    $this->assertArrayHasKey('assignee_ids', $exception->errors());
+                }
+            }
+        }
+        $this->assertSame([], TaskCreateData::fromValidated(['title' => 'Synthetic empty assignment', 'assignee_ids' => []])->assigneeIds);
+        $this->assertSame([], TaskPatchData::fromValidated(['assignee_ids' => []])->assigneeIds);
     }
 }
