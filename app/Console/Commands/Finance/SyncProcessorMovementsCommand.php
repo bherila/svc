@@ -186,7 +186,9 @@ final class SyncProcessorMovementsCommand extends MutationCommand
             return $counts;
         }
         try {
-            foreach ($sync->payouts($workspace, $since, $apply, $budget, $until) as $result) {
+            $selection = json_encode([$this->option('since'), $this->option('until')], JSON_THROW_ON_ERROR);
+            $scan = $sync->continuePayouts($workspace, $since, $until, $selection, $apply, $budget);
+            foreach ($scan as $result) {
                 $counts['records_read']++;
                 $this->tally($counts, $result);
                 if ($result['deferred'] > 0 || $result['conflict'] > 0) {
@@ -200,6 +202,9 @@ final class SyncProcessorMovementsCommand extends MutationCommand
 
                     return $counts;
                 }
+            }
+            if ($scan->getReturn()) {
+                $counts['note'] = 'needs_review';
             }
         } catch (Throwable) {
             $counts['note'] = 'sync_incomplete';
@@ -278,9 +283,9 @@ final class SyncProcessorMovementsCommand extends MutationCommand
                     }
                 }
             }
-            $this->components->info($apply ? 'Applied completed records.' : 'Preview: no movement or rotation cursor writes.');
+            $this->components->info($apply ? 'Applied completed records.' : 'Preview: no movement or scan position writes.');
             if (! $completed) {
-                $this->components->warn($reason ?? 'Incomplete: retry Stripe batches; narrow Square payout date bounds before retrying.');
+                $this->components->warn($reason ?? 'Incomplete: retry bounded batches; review deferred or conflicting facts.');
             }
         }
 

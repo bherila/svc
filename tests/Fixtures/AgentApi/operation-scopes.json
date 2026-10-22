@@ -1072,6 +1072,9 @@
             "mcp.switch:invoices.void"
         ]
     },
+    "oauth.token.revoke": {
+        "authenticated": true
+    },
     "operations.summary": {
         "scopes": [
             "identity:read"

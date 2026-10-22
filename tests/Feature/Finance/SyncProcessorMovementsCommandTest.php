@@ -484,7 +484,7 @@ final class SyncProcessorMovementsCommandTest extends TestCase
                 return Http::response(['locations' => [self::squareLocation()]]);
             }
             if ($path === '/v2/payouts') {
-                return Http::response(['payouts' => array_map(static fn (string $id): array => ['id' => $id, 'location_id' => 'LOCFIXTURE01'], $this->payoutIds)]);
+                return Http::response(['payouts' => array_map(static fn (string $id): array => ['id' => $id, 'location_id' => 'LOCFIXTURE01', 'created_at' => '2030-01-02T12:00:00Z'], $this->payoutIds)]);
             }
             $id = explode('/', $path)[3] ?? '';
             if (in_array($id, $this->payoutIds, true)) {

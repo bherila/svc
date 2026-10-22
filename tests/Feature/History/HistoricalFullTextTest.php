@@ -10,6 +10,7 @@ use App\Services\History\HistorySearch;
 use App\Support\History\HistoryDocument;
 use App\Support\History\HistoryKind;
 use Illuminate\Foundation\Testing\DatabaseTruncation;
+use Illuminate\Foundation\Testing\RefreshDatabaseState;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
@@ -24,7 +25,12 @@ class HistoricalFullTextTest extends TestCase
         }
         // InnoDB FULLTEXT only sees committed rows, so transaction-wrapped
         // RefreshDatabase fixtures cannot establish that the live index works.
-        $this->beforeApplicationDestroyed(fn () => $this->truncateTablesForAllConnections());
+        $this->beforeApplicationDestroyed(function (): void {
+            $this->truncateTablesForAllConnections();
+            // Truncation removes migration-seeded rows too. The next transactional
+            // fixture must rebuild them instead of trusting the old migrated flag.
+            RefreshDatabaseState::$migrated = false;
+        });
     }
 
     public function test_mariadb_fulltext_matches_non_adjacent_words_after_commit(): void

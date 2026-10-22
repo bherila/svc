@@ -164,18 +164,18 @@ final class SquareClient
     }
 
     /**
-     * The seller's payouts for one location, newest first (S7).
+     * The seller's payouts for one location, newest first by default (S7).
      *
      * @param  string|null  $beginTime  RFC 3339
      * @return array<string, mixed>
      */
-    public function listPayouts(?string $locationId, ?string $beginTime, ?string $cursor, int $limit, ?string $endTime = null): array
+    public function listPayouts(?string $locationId, ?string $beginTime, ?string $cursor, int $limit, ?string $endTime = null, bool $newestFirst = true): array
     {
         return $this->send(SquareEndpoint::ListPayouts, query: [
             'location_id' => $locationId === null ? null : $this->id($locationId),
             'begin_time' => $beginTime,
             'end_time' => $endTime,
-            'sort_order' => 'DESC',
+            'sort_order' => $newestFirst ? 'DESC' : 'ASC',
             'cursor' => $this->cursor($cursor),
             'limit' => self::limit($limit, 100),
         ]);
