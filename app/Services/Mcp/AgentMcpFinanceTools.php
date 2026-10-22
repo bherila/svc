@@ -5,6 +5,7 @@ namespace App\Services\Mcp;
 use App\Services\Finance\FinanceReconciliationOperations;
 use App\Support\Finance\FinancePaymentQuery;
 use App\Support\Finance\FinancePayoutQuery;
+use App\Support\Finance\FinanceProcessorMovementQuery;
 use App\Support\Finance\ReconciliationTarget;
 use Mcp\Capability\Attribute\Schema;
 
@@ -64,6 +65,27 @@ final class AgentMcpFinanceTools
     }
 
     /** @return array<string, mixed> */
+    public function movements(
+        #[Schema(format: 'uuid')] string $workspace_id,
+        #[Schema(enum: FinanceProcessorMovementQuery::PROVIDERS)] ?string $provider = null,
+        #[Schema(enum: FinanceProcessorMovementQuery::KINDS)] ?string $kind = null,
+        #[Schema(format: 'uuid')] ?string $payment_id = null,
+        #[Schema(format: 'date')] ?string $occurred_from = null,
+        #[Schema(format: 'date')] ?string $occurred_to = null,
+        #[Schema(minimum: 1, maximum: FinanceProcessorMovementQuery::MAX_PER_PAGE)] int $per_page = FinanceProcessorMovementQuery::DEFAULT_PER_PAGE,
+        #[Schema(format: 'date-time')] ?string $updated_since = null,
+        #[Schema(format: 'date-time')] ?string $watermark = null,
+        #[Schema(maxLength: 2048)] ?string $cursor = null,
+    ): array {
+        $query = array_map(strval(...), array_filter(
+            compact('provider', 'kind', 'payment_id', 'occurred_from', 'occurred_to', 'per_page', 'updated_since', 'watermark', 'cursor'),
+            static fn (mixed $value): bool => $value !== null,
+        ));
+
+        return $this->rest->call('finance.processor_movements.list', ['workspace' => $workspace_id], query: $query);
+    }
+
+    /** @return array<string, mixed> */
     public function upsert(
         #[Schema(format: 'uuid')] string $workspace_id,
         #[Schema(format: 'uuid')] string $payment_id,
@@ -78,6 +100,24 @@ final class AgentMcpFinanceTools
             'finance.reconciliations.upsert',
             $this->allocation($workspace_id, $payment_id, $external_system, $transaction_id),
             compact('allocated_amount', 'currency', 'reconciled_on', 'is_active'),
+        );
+    }
+
+    /** @return array<string, mixed> */
+    public function acknowledge(
+        #[Schema(format: 'uuid')] string $workspace_id,
+        #[Schema(format: 'uuid')] string $payment_id,
+        #[Schema(maxLength: ReconciliationTarget::SYSTEM_MAX_LENGTH, pattern: self::SYSTEM)] string $external_system,
+        #[Schema(format: 'uuid')] string $transaction_id,
+        #[Schema(pattern: '^[a-f0-9]{64}$')] string $expected_payment_version,
+        #[Schema(enum: ['processor_refund', 'processor_dispute'])] string $expected_review_reason,
+        #[Schema(format: 'date-time')] string $expected_review_flagged_at,
+        bool $confirm,
+    ): array {
+        return $this->rest->call(
+            'finance.reconciliations.acknowledge',
+            $this->allocation($workspace_id, $payment_id, $external_system, $transaction_id),
+            compact('expected_payment_version', 'expected_review_reason', 'expected_review_flagged_at', 'confirm'),
         );
     }
 

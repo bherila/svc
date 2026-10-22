@@ -13,6 +13,16 @@ return [
         'enabled' => (bool) env('SVC_PORTAL_INVITATIONS_ENABLED', false),
     ],
 
+    // The daily scheduled `svc:finance:sync-processor-movements --apply` runs
+    // (#511). Off by default: dispute recovery can change dispute state and
+    // invoice receivables, so a deployment previews first and enables the
+    // schedule only once those figures are approved. Read when each run is
+    // due, so turning it on or off needs a config re-cache, not a deploy.
+    // Manual runs of the command are unaffected.
+    'processor_movements' => [
+        'scheduled_apply' => (bool) env('SVC_PROCESSOR_MOVEMENTS_SCHEDULED_APPLY', false),
+    ],
+
     // The external finance system that reconciles payments, as SVC shows it.
     // A payment with an active allocation from `external_system` is badged
     // "Reconciled in finance" on its invoice screen, linked to each

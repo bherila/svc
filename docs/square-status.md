@@ -68,7 +68,10 @@ Square up to 102 times, so a workspace gets 20 per ten minutes before 429. Asked
 for one invoice while Square is not configured, the command fails rather than
 reporting success.
 It visits active links in bounded database batches, including paid invoices so
-refunds missed by webhooks are recovered. Both transports finish their work in
+refunds missed by webhooks are recovered. After recording payments, it lists
+disputes in every state through read-only `GET /v2/disputes` (`DISPUTES_READ`),
+so missed dispute notifications and disputes received before their payment are
+recovered on the next sweep. Wins are included so earlier holds can be restored. Both transports finish their work in
 the request or command; neither dispatches jobs. The sweep works without the
 webhook signature key, using the existing Square connection configuration.
 Recorded Square payments are also swept independently of current links, so a
@@ -88,8 +91,11 @@ flagged for review (see [the finance reconciliation API](finance-api.md)).
 Failed events release their durable claim and answer 503 for retry;
 successfully completed event IDs do no more work.
 
-A dispute notification names the dispute, which is re-fetched. On a payment svc
-recorded:
+A dispute notification names a dispute, but both the webhook and the sweep
+read the complete bounded all-state dispute list before applying the payment's
+whole group. Distinct open, lost and accepted disputes are summed; resolved
+disputes contribute zero. A win for one dispute never releases another's hold.
+On a payment svc recorded:
 
 - An open inquiry or chargeback, and a lost or accepted dispute, make the
   payment `disputed` and hold back only the amount Square contests
@@ -103,15 +109,27 @@ recorded:
   meanwhile, the payment is restored, the invoice stays void, and the activity
   carries `review: restored_on_void_invoice`.
 - A refunded payment stays refunded.
-- Square's own update time of the dispute last applied is kept on the payment,
-  so a read of the dispute older than one already applied changes nothing; two
-  notifications fetched around a state change cannot undo it in the wrong
-  order.
+- The known payment revisions are captured before reading Square and checked
+  under the payment lock before applying a group. A payment changed during the
+  read refuses the stale snapshot for retry. The maximum dispute update time
+  is retained as an additional stale-read check, never used on its own to
+  decide whether a group is current.
 
 A dispute on a payment svc never recorded changes nothing. An unknown state,
 another currency, an amount above the payment or an unreadable update time is
-refused and released for retry. The sweep does not read disputes, so a missed
-dispute notification is not recovered.
+refused and released for retry. The sweep starts dispute pagination from the
+beginning each time because [ListDisputes](https://developer.squareup.com/reference/square/disputes-api/list-disputes)
+has no changed-since filter. It admits at most 100 pages of 100 records per page;
+these are local safety bounds, not a claim about Square's page size. Invalid or
+repeated cursors, unreadable records, refused reads and a remaining cursor at the
+page bound fail the command instead of claiming completion. No dispute writes
+happen until every page is readable and complete; repeated dispute ids also
+refuse the snapshot. At most 10,000 known local payment revisions are captured
+before the read. A group's sum above the payment amount, an integer overflow or
+a currency disagreement is refused rather than capped or guessed; these facts
+exceed the current payment model and need operator review. The next sweep retries. An operator whose account exceeds
+these bounds must arrange a separately reviewed recovery before relying on a
+complete sweep. No webhook body or new queue is retained.
 The received date comes from the card capture timeline in the workspace's time
 zone. Payments without a trustworthy completion timestamp fail closed; creation
 and last-update times are not substituted for the day money was received.

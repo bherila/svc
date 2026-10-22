@@ -12,7 +12,9 @@ namespace App\Support\Finance;
  * matched to a deposit is still that receipt after part of it is refunded, and
  * with several allocations there is no principled one to shrink - and each
  * active one is marked with the reason instead. A finance write that fits the
- * payment's net amount clears it.
+ * payment's net amount clears it. Explicit acknowledgement of the exact
+ * current payment revision, review reason and instant also clears it without
+ * changing the allocation's money or activity.
  */
 enum ReconciliationReviewReason: string
 {

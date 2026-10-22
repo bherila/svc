@@ -27,6 +27,8 @@ final class SquareReadOnlyAllowListTest extends TestCase
         'orders.get' => ['GET', '/v2/orders/{id}'],
         'payments.list' => ['GET', '/v2/payments'],
         'payments.get' => ['GET', '/v2/payments/{id}'],
+        'refunds.get' => ['GET', '/v2/refunds/{id}'],
+        'disputes.list' => ['GET', '/v2/disputes'],
         'disputes.get' => ['GET', '/v2/disputes/{id}'],
         // Settlement (S7): the seller's payouts and what each settled.
         'payouts.list' => ['GET', '/v2/payouts'],
@@ -78,7 +80,7 @@ final class SquareReadOnlyAllowListTest extends TestCase
         sort($public);
 
         $this->assertSame([
-            'getDispute', 'getInvoice', 'getPayment', 'getPayout', 'listCustomers', 'listInvoices', 'listLocations', 'listPayments',
+            'getDispute', 'getInvoice', 'getPayment', 'getPaymentRefund', 'getPayout', 'listCustomers', 'listDisputes', 'listInvoices', 'listLocations', 'listPayments',
             'listPayoutEntries', 'listPayouts', 'retrieveCustomer', 'retrieveOrder', 'searchCustomers', 'searchInvoices',
         ], $public);
         $this->assertCount(count(SquareEndpoint::cases()), $public);

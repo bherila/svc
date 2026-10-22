@@ -7,7 +7,7 @@ use App\Services\Square\SquareRequestFailed;
 use Carbon\CarbonImmutable;
 use Throwable;
 
-/** Only facts returned by RetrieveDispute, never facts from a webhook payload. */
+/** Only facts returned by RetrieveDispute or ListDisputes, never webhook payloads. */
 final readonly class SquareDisputeFacts
 {
     /**

@@ -52,19 +52,24 @@ final class ChangeFeedPage
         ChangeWindow $window,
         Closure $load,
         Closure $present,
+        bool $microseconds = false,
     ): array {
         $queryKey .= '|updated_since='.($window->since() ?? '');
-        $position = ChangeFeedCursor::decode($cursor, $workspace->public_id, $queryKey);
+        $position = ChangeFeedCursor::decode($cursor, $workspace->public_id, $queryKey, $microseconds);
         $watermark = self::watermark($window, $position);
 
         $model = $query->getModel();
         $changedAt = $model->qualifyColumn('updated_at');
         $id = $model->qualifyColumn($model->getKeyName());
         $since = $window->since();
+        // DATETIME(6) compares the exact second inclusively on both engines,
+        // including SQLite, whose test timestamps are stored as text.
+        $upper = $microseconds ? $watermark.'.000000' : $watermark;
+        $lower = $since !== null && $microseconds ? $since.'.000000' : $since;
         $query
             ->where(fn (Builder $bounded) => $since === null
-                ? $bounded->where($changedAt, '<=', $watermark)->orWhereNull($changedAt)
-                : $bounded->where($changedAt, '<=', $watermark)->where($changedAt, '>=', $since))
+                ? $bounded->where($changedAt, '<=', $upper)->orWhereNull($changedAt)
+                : $bounded->where($changedAt, '<=', $upper)->where($changedAt, '>=', $lower))
             ->when($position !== null, fn (Builder $rows) => $rows->where(fn (Builder $after) => self::after($after, $changedAt, $id, $position)))
             ->orderByDesc($changedAt)
             ->orderByDesc($id)
@@ -86,7 +91,7 @@ final class ChangeFeedPage
             'data' => $data,
             'meta' => [
                 'next_cursor' => $hasMore && $last !== null
-                    ? (new ChangeFeedCursor(self::changedAt($last), (int) $last->getKey(), $watermark))->encode($workspace->public_id, $queryKey)
+                    ? (new ChangeFeedCursor(self::changedAt($last, $microseconds), (int) $last->getKey(), $watermark, $microseconds))->encode($workspace->public_id, $queryKey)
                     : null,
                 'watermark' => CarbonImmutable::parse($watermark, 'UTC')->toIso8601String(),
             ],
@@ -128,10 +133,10 @@ final class ChangeFeedPage
         return $position->watermark;
     }
 
-    private static function changedAt(Model $row): ?string
+    private static function changedAt(Model $row, bool $microseconds): ?string
     {
         $value = $row->getAttribute('updated_at');
 
-        return $value instanceof \DateTimeInterface ? Carbon::instance($value)->utc()->format(ChangeWindow::FORMAT) : null;
+        return $value instanceof \DateTimeInterface ? Carbon::instance($value)->utc()->format($microseconds ? 'Y-m-d H:i:s.u' : ChangeWindow::FORMAT) : null;
     }
 }

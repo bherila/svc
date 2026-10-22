@@ -288,8 +288,8 @@ With all read scopes, discovery exposes these read-only tools, in this order:
 `billing.audit_unlinked_proposal_agreements`. While Square is configured, managers also
 see the read-only `square.*` pass-through tools described under
 [Square read-only pass-through](#square-read-only-pass-through-438). Managers holding
-`finance:read` also see `finance.invoice_payments.list` and
-`finance.payouts.list`, described under
+`finance:read` also see `finance.invoice_payments.list`,
+`finance.payouts.list` and `finance.processor_movements.list`, described under
 [Finance reconciliation](#finance-reconciliation-457).
 
 Agreement tools require `billing:read` and an SVC workspace-manager role. Each
@@ -830,6 +830,7 @@ Operators use the same rules without the agent gates through
 ### Finance reconciliation (#457)
 
 `finance.invoice_payments.list`, `finance.payouts.list`,
+`finance.processor_movements.list`, `finance.reconciliations.acknowledge`,
 `finance.reconciliations.upsert` and `finance.reconciliations.deactivate` are
 the finance reconciliation routes (`/api/v1/workspaces/{workspace}/invoice-payments…`
 and `…/payouts`, see
@@ -839,7 +840,7 @@ through `AgentMcpFinanceTools`, which dispatches each tool to its own REST
 binding with `AgentMcpRestCall` like every other routed tool, so a tool and its
 route run one
 `FinanceReconciliationOperations`. The `svc:finance:payments`,
-`svc:finance:payouts`, `svc:finance:reconcile` and `svc:finance:unreconcile`
+`svc:finance:payouts`, `svc:finance:processor-movements`, `svc:finance:reconcile` and `svc:finance:unreconcile`
 commands call the same operation.
 
 - Over OAuth and MCP every finance operation needs a workspace owner/admin; the
@@ -1611,3 +1612,20 @@ while unpaid issued work remains billed. The dedicated invoice kind is
 `show_deferred_backlog_to_client`, and agreement reads report it. It defaults to
 false. Opting in shows the backlog on the existing visible agreement portal page,
 without allowing a client to create a settlement or exposing internal issue detail.
+
+The additive `finance.processor_movements.list` read tool shares the REST/CLI
+change-feed implementation and existing `finance:read` scope. Its workspace
+capability is `finance:processor_movements:read`. It always uses cursor pagination
+and accepts only immutable provider, kind, payment and occurrence-date filters.
+Its closed signed-money records contain no account keys or raw source objects;
+see [signed processor movements](finance-api.md#signed-processor-movements) for
+the field list, signs and inclusive watermark protocol.
+
+`finance.reconciliations.acknowledge` is the explicit manager-only write for an
+allocation that is still correct after a processor review. It requires the
+existing `finance:reconcile` scope, `confirm: true`, `expected_payment_version`,
+`expected_review_reason` and `expected_review_flagged_at`, alongside the natural
+allocation path arguments. It only clears the exact current review; stale or
+already-cleared proof returns a conflict requiring a fresh read. There is no
+idempotency key or replay receipt. See [allocation review acknowledgement](finance-api.md#acknowledge-an-allocation-review)
+for the effect-idempotent retry contract and unchanged money/activity rules.

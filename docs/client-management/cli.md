@@ -364,3 +364,35 @@ draft, repeat with `--apply --expected-backlog-version=<backlog_version>
 --idempotency-key=<key>`. Reusing the exact request and key returns the same draft.
 Refused input/versions or missing write arguments exit 2; a successful preview or
 creation exits 0. Issue and send remain separate operations.
+
+## Read signed processor movements
+
+`svc:finance:processor-movements` is the read-only console twin of
+`finance.processor_movements.list`, using the same workspace-scoped service as
+REST and MCP. The acting `--user` must be a workspace owner or admin. It needs no
+`--apply`: it performs no provider HTTP or database writes.
+
+```bash
+php artisan svc:finance:processor-movements --workspace=WORKSPACE_PUBLIC_UUID \
+  --user=USER_PUBLIC_UUID --provider=stripe --kind=refund --per-page=50 --format=json
+```
+
+The JSON envelope is `{data, meta: {next_cursor, watermark}}`. Pass `--cursor` to
+continue, retaining the original immutable filters; once complete, pass the
+watermark as `--updated-since` for the next inclusive pass. Optional filters are
+`--provider`, `--kind`, `--payment-id`, `--occurred-from` and `--occurred-to`.
+`--watermark` can fix an earlier snapshot. There is no numbered page or mutable
+review-status filter. See the [signed movement contract](../finance-api.md#signed-processor-movements)
+for money signs, public fields and deduplication.
+
+## Acknowledge a finance allocation review
+
+`svc:finance:acknowledge-reconciliation PAYMENT SYSTEM TRANSACTION` is the
+console twin of `finance.reconciliations.acknowledge`. Supply `--workspace`,
+`--user` (owner/admin), `--expected-payment-version`, `--expected-review-reason`,
+`--expected-review-flagged-at` and `--confirm`. It previews by default; `--apply`
+persists the acknowledgement and audit. Only the current review is cleared;
+allocated money and active state stay unchanged, including an allocation above
+payment net. A stale revision or cleared review fails and requires refetching,
+so the same confirmation never clears a later review. There is no browser action.
+See the [finance acknowledgement contract](../finance-api.md#acknowledge-an-allocation-review).

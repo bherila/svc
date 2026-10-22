@@ -327,10 +327,10 @@ Route::prefix('v1')
         // A workspace the caller cannot see answers 404 before anything else,
         // as on every other workspace route: nothing - not even a failed
         // write's audit - reaches a tenant the caller is not in.
-        foreach (['finance.invoice_payments.list' => 'index', 'finance.payouts.list' => 'payouts'] as $operationId => $action) {
+        foreach (['finance.invoice_payments.list' => 'index', 'finance.payouts.list' => 'payouts', 'finance.processor_movements.list' => 'movements'] as $operationId => $action) {
             $workspaceOperation($operationId, [FinanceReconciliationController::class, $action]);
         }
-        foreach (['finance.reconciliations.upsert' => 'upsert', 'finance.reconciliations.deactivate' => 'destroy'] as $operationId => $action) {
+        foreach (['finance.reconciliations.upsert' => 'upsert', 'finance.reconciliations.deactivate' => 'destroy', 'finance.reconciliations.acknowledge' => 'acknowledge'] as $operationId => $action) {
             $workspaceOperation($operationId, [FinanceReconciliationController::class, $action])
                 ->whereUuid('payment')
                 ->where('external_system', ReconciliationTarget::SYSTEM_PATTERN)

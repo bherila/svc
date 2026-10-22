@@ -9,7 +9,7 @@ role.
 ## Contract baseline
 
 Authenticated `context.get` (`GET /api/v1/context`, `identity:read`) publishes
-required integer `data.contract_version: 2`. This is the current published baseline
+required integer `data.contract_version: 3`. This is the current published baseline
 of the published agent API contract. A finance consumer should check it when
 connecting and before syncing, accepting only the exact integer baseline it
 supports. Missing values, wrong types and unsupported integers are not version
@@ -33,8 +33,10 @@ and each is an MCP tool and a console command of the same name, all running one
 | Operation                            | REST                                                      | Scope               | Console                    |
 | ------------------------------------ | --------------------------------------------------------- | ------------------- | -------------------------- |
 | `finance.invoice_payments.list`      | `GET /api/v1/workspaces/{workspace}/invoice-payments`     | `finance:read`      | `svc:finance:payments`     |
+| `finance.processor_movements.list` | `GET /api/v1/workspaces/{workspace}/processor-movements` | `finance:read` | `svc:finance:processor-movements` |
 | `finance.payouts.list`               | `GET /api/v1/workspaces/{workspace}/payouts`              | `finance:read`      | `svc:finance:payouts`      |
 | `finance.reconciliations.upsert`     | `PUT …/invoice-payments/{payment}/reconciliations/{external-system}/{transaction-uuid}` | `finance:reconcile` | `svc:finance:reconcile`    |
+| `finance.reconciliations.acknowledge` | `PUT …/invoice-payments/{payment}/reconciliations/{external-system}/{transaction-uuid}/acknowledgement` | `finance:reconcile` | `svc:finance:acknowledge-reconciliation` |
 | `finance.reconciliations.deactivate` | `DELETE` the same path                                    | `finance:reconcile` | `svc:finance:unreconcile`  |
 
 ## Billable expense provenance
@@ -79,7 +81,7 @@ php artisan svc:auth:issue-token --apply \
 Send it as `Authorization: Bearer TOKEN`. Read-only integrations should receive
 only `finance.read`. On these routes the `finance.read` ability stands for the
 `finance:read` scope and `finance.reconcile` for `finance:reconcile`; the token
-holds no other scope, so it opens these three operations and nothing else in
+holds no other scope, so it opens only the finance operations and nothing else in
 `/api/v1` (a token issued with Sanctum's `*` ability is no exception). A token
 never broadens the user's workspace role: listing requires workspace membership,
 and reconciliation writes require owner or admin access. This is the contract the
@@ -192,6 +194,46 @@ dates, a client's `status` - is refused (`422`, naming it): a record that
 changes out of the filter would never be delivered again, and `overdue` changes
 as the date passes without the invoice changing at all. Sync without them and
 filter the synced records.
+
+## Signed processor movements
+
+`finance.processor_movements.list` (`GET /api/v1/workspaces/{workspace}/processor-movements`)
+reads recorded refunds, refund reversals, dispute debits, dispute credits, fees
+and fee reversals. It never calls a processor or changes a payment, invoice or
+allocation. It uses the same `finance:read` scope and owner/admin OAuth policy
+as the payment listing; a Sanctum `finance.read` token may read its workspace
+as a member. No new OAuth scope or contract baseline is required. Authorized
+workspace managers discover this additive surface through the
+`finance:processor_movements:read` workspace capability.
+
+Each closed record has `id` (movement public UUID), `version`, `payment_id`
+(original payment public UUID), `provider`, `kind`, `principal_minor`,
+`fee_minor`, `net_minor`, `currency`, `provider_occurred_at`, `occurred_on`,
+`occurred_timezone`, `date_basis`, nullable `available_on`, nullable
+`provider_payout_identifier`, `needs_review` and nullable `review_reason`.
+Amounts are signed safe integers in currency minor units: a refund/debit has
+negative principal; a reversal/credit has positive principal. Fees are positive
+when charged and negative when reversed; `net_minor = principal_minor - fee_minor`.
+The original facts are immutable. Conflicting provider facts keep the original
+amount and date and set `needs_review` with `immutable_facts_changed`.
+
+Processor timestamps are UTC with microsecond precision. `occurred_on` is the
+local calendar date captured with `occurred_timezone` at recording time;
+changing the workspace's timezone does not move historical dates. `date_basis`
+is `stripe_balance_created` or `square_effective_at`. Account keys, raw balance
+entry/source identifiers, notes and payloads never cross this boundary.
+
+This endpoint always returns `{data, meta: {next_cursor, watermark}}`. Follow
+`next_cursor` until null; begin the next pass with its watermark as inclusive
+`updated_since`, deduplicating by `(id, version)`. The watermark lags reads by
+two minutes, as on the other change feeds. Microsecond positions and equal-time
+id ties are preserved. A held or enriched record is redelivered when its version
+changes. Optional immutable filters are `provider`, `kind`, `payment_id`,
+`occurred_from` and `occurred_to` (inclusive captured local dates); `per_page`
+defaults to 50 and is at most 100. `updated_since`, `watermark` and `cursor` select
+the change window. Every unsupported filter, including `page`, `needs_review`
+and `review_reason`, returns 422. A cursor belongs to one workspace, immutable
+filter selection and lower bound; changing those requires a fresh pass.
 
 ## Processor settlement and payouts
 
@@ -428,6 +470,11 @@ php artisan svc:finance:reconcile PAYMENT SYSTEM TRANSACTION --workspace=WORKSPA
     [--inactive] [--format=json]
 php artisan svc:finance:unreconcile PAYMENT SYSTEM TRANSACTION --workspace=WORKSPACE \
     --user=USER [--format=json]
+php artisan svc:finance:processor-movements --workspace=WORKSPACE --user=USER \
+    [--provider=stripe] [--kind=refund] [--payment-id=PAYMENT_UUID] \
+    [--occurred-from=YYYY-MM-DD] [--occurred-to=YYYY-MM-DD] \
+    [--per-page=50] [--updated-since=UTC_TIME] [--watermark=UTC_TIME] \
+    [--cursor=OPAQUE_CURSOR] [--format=json]
 php artisan svc:finance:payouts --workspace=WORKSPACE --user=USER \
     [--provider=stripe] [--status=paid] [--arrival-from=YYYY-MM-DD] \
     [--arrival-to=YYYY-MM-DD] [--per-page=50] [--page=1] [--format=json]
@@ -451,3 +498,49 @@ failure reports what it did and exits non-zero; running it again resumes, since
 stored payouts are unchanged and the charge pass revisits only payments still
 missing facts. `--workspace` keeps every write to one workspace. Output is
 counts only.
+
+## Acknowledge an allocation review
+
+`finance.reconciliations.acknowledge` is an explicit finance API action for a
+reviewed allocation that remains correct after a processor refund or dispute.
+There is no browser acknowledgement screen. REST, MCP and the console use the
+same service and owner/admin policy. OAuth requires `finance:reconcile`;
+Sanctum requires `finance.reconcile`.
+
+Send `PUT` to the allocation's natural path with `/acknowledgement` appended.
+The closed body requires:
+
+- `expected_payment_version`: the payment's current opaque `version` from
+  `finance.invoice_payments.list` (include non-succeeded payments when reading);
+- `expected_review_reason`: its allocation's current `processor_refund` or
+  `processor_dispute` reason;
+- `expected_review_flagged_at`: that allocation's exact review instant, including
+  timezone (equivalent offsets identify the same instant);
+- `confirm`: the JSON boolean `true`, after explicitly reviewing the allocation.
+
+Under the existing billing, payment and allocation locks, the action checks the
+payment revision before checking the review proof, then clears only
+`review_reason` and `review_flagged_at`. Allocated amount, currency, activity,
+reconciliation date and payment amount/status are retained, even if the allocation
+now exceeds payment net or the payment is disputed or refunded. The payment's
+version advances, and the operation is audited through the existing finance
+mutation path. The response is `FinanceReconciliationResponse`.
+
+This is conditional and idempotent by effect, without an idempotency key or
+receipt. Repeating the original request returns 409, including after a successful
+clear. A stale revision, changed proof or already-cleared review also returns
+409: refetch the payment and allocation instead of replaying a stale decision.
+A newer review is never cleared by an earlier acknowledgement. Missing or
+invalid proof, non-boolean confirmation and unknown fields return 422.
+Acknowledgement does not change any credit policy, resolve a processor dispute,
+restore a payment or move money.
+
+```bash
+php artisan svc:finance:acknowledge-reconciliation PAYMENT_UUID synthetic-ledger TRANSACTION_UUID \
+  --workspace=WORKSPACE_UUID --user=USER_UUID --expected-payment-version=OPAQUE_VERSION \
+  --expected-review-reason=processor_dispute --expected-review-flagged-at=UTC_INSTANT \
+  --confirm --format=json
+```
+
+The console previews by default and rolls back the acknowledgement and its audit.
+Add `--apply` to persist it; stale proof is refused in either mode.

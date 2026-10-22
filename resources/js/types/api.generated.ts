@@ -887,6 +887,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    '/workspaces/{workspace}/processor-movements': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Read signed refunds, refund reversals, dispute debits, dispute credits, fees and fee reversals bound to their original payment. Money is signed integer minor units; net_minor equals principal_minor minus fee_minor. Occurrence facts retain the UTC processor timestamp and captured workspace local date/timezone. No processor account keys or raw source objects are exposed. Always a bounded change feed ordered by newest change and id, inside a snapshot watermark; follow meta.next_cursor until null, then use the watermark as inclusive updated_since and deduplicate by (id, version). Only immutable provider, kind, payment_id and occurrence-date filters are accepted; unknown filters, page and mutable review filters are refused. Workspace owners/admins; with the finance token, any workspace member. The Sanctum finance token issued by svc:auth:issue-token is accepted too, its finance.read and finance.reconcile abilities standing for these scopes. */
+        get: operations['finance.processor_movements.list'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/invoice-payments/{payment}/reconciliations/{external_system}/{transaction}/acknowledgement': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** @description Explicitly affirm that the allocation remains correct after its processor refund or dispute review. Requires confirm: true, the current payment version from finance.invoice_payments.list, and the exact review reason and timestamp shown on the allocation. Clears only that current review; allocated money and active state are retained even above payment net or on a disputed/refunded payment. Does not resolve a dispute, restore a payment, issue credit or move money. The payment version advances so synchronizers see the cleared flag. Conditional and idempotent by effect: no Idempotency-Key or replay receipt; repeating the original request, any stale payment version, a changed review, or an already-cleared flag returns 409 and requires a fresh read. Owner/admin only. The Sanctum finance token issued by svc:auth:issue-token is accepted too, its finance.read and finance.reconcile abilities standing for these scopes. */
+        put: operations['finance.reconciliations.acknowledge'];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     '/workspaces/{workspace}/invoice-payments/{payment}/reconciliations/{external_system}/{transaction}': {
         parameters: {
             query?: never;
@@ -2686,6 +2720,42 @@ export interface components {
                 | components['schemas']['FinancePageMeta']
                 | components['schemas']['ChangeFeedMeta'];
         };
+        FinanceProcessorMovement: {
+            id: components['schemas']['Uuid'];
+            version: components['schemas']['Version'];
+            payment_id: components['schemas']['Uuid'];
+            /** @enum {string} */
+            provider: 'stripe' | 'square';
+            /** @enum {string} */
+            kind:
+                | 'refund'
+                | 'refund_reversal'
+                | 'dispute_debit'
+                | 'dispute_credit'
+                | 'fee'
+                | 'fee_reversal';
+            principal_minor: number;
+            fee_minor: number;
+            net_minor: number;
+            currency: components['schemas']['Currency'];
+            /** Format: date-time */
+            provider_occurred_at: string;
+            /** Format: date */
+            occurred_on: string;
+            occurred_timezone: string;
+            /** @enum {string} */
+            date_basis: 'stripe_balance_created' | 'square_effective_at';
+            /** Format: date-time */
+            available_on: string | null;
+            provider_payout_identifier: string | null;
+            needs_review: boolean;
+            /** @enum {string|null} */
+            review_reason: 'immutable_facts_changed' | null;
+        };
+        FinanceProcessorMovementListResponse: {
+            data: components['schemas']['FinanceProcessorMovement'][];
+            meta: components['schemas']['ChangeFeedMeta'];
+        };
         FinanceReconciliation: {
             /** Format: uuid */
             id: string;
@@ -2716,6 +2786,15 @@ export interface components {
             created_at: string | null;
             /** Format: date-time */
             updated_at: string | null;
+        };
+        FinanceReconciliationAcknowledgementRequest: {
+            expected_payment_version: string;
+            /** @enum {string} */
+            expected_review_reason: 'processor_refund' | 'processor_dispute';
+            /** Format: date-time */
+            expected_review_flagged_at: string;
+            /** @constant */
+            confirm: true;
         };
         FinanceReconciliationRequest: {
             /** @description Minor units of the payment the transaction covers. */
@@ -7756,6 +7835,178 @@ export interface operations {
                 };
             };
             /** @description A filter is invalid (`errors` names it): an unknown provider or status, a malformed date, arrival_to before arrival_from, per_page out of range, a watermark in the future, page or a filter other than provider on a change-feed request. Also a cursor from another workspace, query or watermark. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'finance.processor_movements.list': {
+        parameters: {
+            query?: {
+                provider?: 'stripe' | 'square';
+                kind?:
+                    | 'refund'
+                    | 'refund_reversal'
+                    | 'dispute_debit'
+                    | 'dispute_credit'
+                    | 'fee'
+                    | 'fee_reversal';
+                payment_id?: string;
+                occurred_from?: string;
+                occurred_to?: string;
+                per_page?: number;
+                /** @description Only records changed at or after this time (inclusive): the previous pass's watermark. Naming updated_since or watermark switches a listing that otherwise pages to change order - newest change first inside a snapshot watermark returned in meta - and a cursor from one order is refused in the other. Consecutive passes overlap by design (see watermark), so deduplicate by (id, version). A change feed takes only filters on what a record never changes - invoices.list: company_id and invoice_kind; clients.list: none; finance.invoice_payments.list: invoice, with status=any; finance.payouts.list: provider - and refuses any other with a 422 naming it, since a record that changes out of a filter would never be delivered again. */
+                updated_since?: components['parameters']['UpdatedSince'];
+                /** @description The pass's snapshot upper bound. Fixed by its first page - 120 seconds before the request when omitted, and never later than that - and returned by every page; with a cursor, omit it or send the same one. The lag outlasts any write's transaction, so a record stamped before a pass started but committed after it read is in the next pass; records in that overlap arrive twice. */
+                watermark?: components['parameters']['Watermark'];
+                cursor?: components['parameters']['Cursor'];
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A cursor page of signed processor movements */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['FinanceProcessorMovementListResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The caller may not read this workspace or lacks finance:read (the finance token, finance.read). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace does not exist or the caller is not in it. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description A filter is unsupported or invalid, or the cursor does not match the workspace, immutable filters or watermark. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'finance.reconciliations.acknowledge': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                payment: components['parameters']['PaymentId'];
+                /** @description The external finance system, as a lowercase slug. */
+                external_system: string;
+                /** @description The external finance system's transaction UUID. */
+                transaction: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['FinanceReconciliationAcknowledgementRequest'];
+            };
+        };
+        responses: {
+            /** @description The unchanged allocation with its current review cleared */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['FinanceReconciliationResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The caller is not a workspace owner or admin, or the token lacks finance:reconcile (the finance token, finance.reconcile). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace, payment or allocation is not visible in this workspace. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The payment revision or review proof changed, or the review is already clear; refresh before acknowledging. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Confirmation is not boolean true, review proof is missing or invalid, or an unknown body field is supplied. */
             422: {
                 headers: {
                     [name: string]: unknown;

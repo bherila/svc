@@ -16,7 +16,7 @@ final class AgentCapabilities
     private const array ORDER = [
         'projects:read', 'projects:write', 'tasks:read', 'tasks:write', 'time:read', 'time:write',
         'time:approve', 'billing:read', 'billing:write', 'billing:deliver', 'expenses:read', 'expenses:write', 'payments:read', 'payments:record',
-        'finance:read', 'finance:reconcile', 'clients:read', 'clients:write', 'proposals:read', 'proposals:write', 'proposals:accept', 'files:read', 'files:write',
+        'finance:read', 'finance:processor_movements:read', 'finance:reconcile', 'clients:read', 'clients:write', 'proposals:read', 'proposals:write', 'proposals:accept', 'files:read', 'files:write',
     ];
 
     public function __construct(
@@ -178,6 +178,10 @@ final class AgentCapabilities
             if ($allowsScope($scope)) {
                 $capabilities[] = $capability;
             }
+        }
+
+        if ($allowsScope(AgentApiScopes::FINANCE_READ)) {
+            $capabilities[] = 'finance:processor_movements:read';
         }
 
         return $this->ordered($capabilities);

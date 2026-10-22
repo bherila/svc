@@ -180,8 +180,9 @@ final class PaymentReconciliationService
                 ->firstOrFail();
 
             // Deactivating is how the finance system resolves a flagged
-            // allocation it no longer stands behind - and the only way left on
-            // a payment that is no longer succeeded, where a PUT is refused.
+            // allocation it no longer stands behind, including on a payment
+            // that is no longer succeeded, where an upsert is refused. An
+            // explicit current-proof acknowledgement instead keeps it active.
             $reconciliation->forceFill(['is_active' => false, 'review_reason' => null, 'review_flagged_at' => null])->save();
             // Withdrawing an allocation is a change to the payment, as recording one is.
             if ($reconciliation->wasChanged()) {

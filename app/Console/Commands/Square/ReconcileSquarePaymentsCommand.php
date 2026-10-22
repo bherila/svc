@@ -22,7 +22,7 @@ final class ReconcileSquarePaymentsCommand extends MutationCommand
     protected $signature = 'svc:square:reconcile-payments
         {--invoice= : Reconcile only this linked svc invoice (its public id), now}';
 
-    protected $description = 'Reconcile linked invoices and refunds through read-only Square calls';
+    protected $description = 'Reconcile linked invoices, refunds and disputes through read-only Square calls';
 
     public function handle(SquarePaymentReconciler $reconciler, SquareInvoiceReconciliation $single): int
     {
@@ -90,13 +90,20 @@ final class ReconcileSquarePaymentsCommand extends MutationCommand
                 $failed++;
             }
         }
+        // New payments must exist before recovering disputes whose notification
+        // arrived first. A failed listing is not a successful, complete sweep.
+        try {
+            $reconciler->disputes($workspace);
+        } catch (SquareRequestFailed|DomainException) {
+            $failed++;
+        }
         if ($this->option('format') === 'json') {
             $this->json(['failed' => $failed]);
 
             return $failed === 0 ? self::SUCCESS : self::FAILURE;
         }
         if ($failed > 0) {
-            $this->components->warn('Some linked invoices could not be reconciled; the next sweep will retry.');
+            $this->components->warn('Some invoices, payments or disputes could not be reconciled; the next sweep will retry.');
         }
 
         return $failed === 0 ? self::SUCCESS : self::FAILURE;

@@ -3,23 +3,29 @@
 namespace App\Services\Finance;
 
 use App\Http\Resources\Api\V1\FinancePayoutResource;
+use App\Http\Resources\Api\V1\FinanceProcessorMovementResource;
 use App\Http\Resources\Api\V1\InvoicePaymentResource;
 use App\Models\ClientInvoicePayment;
 use App\Models\PaymentReconciliation;
+use App\Models\ProcessorMovement;
 use App\Models\ProcessorPayout;
 use App\Models\Workspace;
 use App\Services\AgentApi\AgentMutationExecutor;
 use App\Support\AgentApi\ChangeFeedPage;
+use App\Support\AgentApi\ExplicitConfirmation;
 use App\Support\Billing\InvoicePaymentStatus;
 use App\Support\Finance\FinanceCaller;
 use App\Support\Finance\FinancePaymentQuery;
 use App\Support\Finance\FinancePayoutQuery;
+use App\Support\Finance\FinanceProcessorMovementQuery;
 use App\Support\Finance\ReconciliationAllocation;
+use App\Support\Finance\ReconciliationReviewAcknowledgement;
 use App\Support\Finance\ReconciliationTarget;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Validator;
 
 /**
  * The finance reconciliation operations (#457), one implementation behind
@@ -47,11 +53,16 @@ final class FinanceReconciliationOperations
 
     public const string DEACTIVATE = 'finance.reconciliations.deactivate';
 
+    public const string ACKNOWLEDGE = 'finance.reconciliations.acknowledge';
+
     public const string PAYOUTS = 'finance.payouts.list';
+
+    public const string MOVEMENTS = 'finance.processor_movements.list';
 
     public function __construct(
         private readonly PaymentReconciliationService $reconciliations,
         private readonly AgentMutationExecutor $mutations,
+        private readonly ReconciliationReviewAcknowledgementService $acknowledgements,
     ) {}
 
     /**
@@ -191,6 +202,34 @@ final class FinanceReconciliationOperations
             ->when($query->arrivalTo !== null, static fn (Builder $payouts) => $payouts->where('arrival_date', '<=', (string) $query->arrivalTo));
     }
 
+    /** @return array{data: list<array<string, mixed>>, meta: array{next_cursor: ?string, watermark: string}} */
+    public function movementChanges(FinanceCaller $caller, Workspace $workspace, FinanceProcessorMovementQuery $query): array
+    {
+        Gate::forUser($caller->user)->authorize($caller->door->membersMayRead() ? 'view' : 'manage', $workspace);
+        $workspaceId = $workspace->id;
+        $rows = ProcessorMovement::query()
+            ->where('workspace_id', $workspaceId)
+            ->whereHas('payment', static fn (Builder $payments) => $payments->where('workspace_id', $workspaceId)
+                ->when($query->paymentId !== null, static fn (Builder $payments) => $payments->where('public_id', $query->paymentId)))
+            ->when($query->provider !== null, static fn (Builder $rows) => $rows->where('provider', $query->provider))
+            ->when($query->kind !== null, static fn (Builder $rows) => $rows->where('kind', $query->kind))
+            ->when($query->occurredFrom !== null, static fn (Builder $rows) => $rows->where('occurred_on', '>=', $query->occurredFrom))
+            ->when($query->occurredTo !== null, static fn (Builder $rows) => $rows->where('occurred_on', '<=', $query->occurredTo))
+            ->with(['payment' => static fn ($payments) => $payments->where('workspace_id', $workspaceId)->select(['id', 'workspace_id', 'public_id'])]);
+
+        return ChangeFeedPage::run(
+            $workspace,
+            self::MOVEMENTS.'|'.$query->key(),
+            $rows,
+            $query->perPage,
+            $query->cursor,
+            $query->window,
+            static function (): void {},
+            static fn (ProcessorMovement $movement): array => (new FinanceProcessorMovementResource($movement))->resolve(),
+            microseconds: true,
+        );
+    }
+
     /** The payouts route's address on this installation, as {@see listUrl()}. */
     public static function payoutsUrl(Workspace $workspace): string
     {
@@ -219,6 +258,22 @@ final class FinanceReconciliationOperations
             function () use ($caller, $workspace, $target, $allocation, &$written): array {
                 $payment = $this->payment($caller, $workspace, $target);
                 $written = $this->reconciliations->upsert($workspace, $payment, $caller->user, $allocation->attributesFor($target));
+
+                return [(string) $written->public_id];
+            });
+
+        /** @var PaymentReconciliation $written */
+        return $written;
+    }
+
+    /** Affirm only the exact current review; a stale or cleared review requires a fresh read. */
+    public function acknowledge(FinanceCaller $caller, Workspace $workspace, ReconciliationTarget $target, ReconciliationReviewAcknowledgement $proof, mixed $confirm): PaymentReconciliation
+    {
+        $written = null;
+        $this->mutations->runIdempotentByPath($caller->user, $workspace, $caller->credential, self::ACKNOWLEDGE,
+            function () use ($caller, $workspace, $target, $proof, $confirm, &$written): array {
+                Validator::make(['confirm' => $confirm], ['confirm' => ['required', new ExplicitConfirmation]])->validate();
+                $written = $this->acknowledgements->acknowledge($caller, $workspace, $target, $proof);
 
                 return [(string) $written->public_id];
             });

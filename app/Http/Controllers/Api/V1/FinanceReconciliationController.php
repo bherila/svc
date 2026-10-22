@@ -14,7 +14,9 @@ use App\Support\Finance\FinanceCaller;
 use App\Support\Finance\FinanceDoor;
 use App\Support\Finance\FinancePaymentQuery;
 use App\Support\Finance\FinancePayoutQuery;
+use App\Support\Finance\FinanceProcessorMovementQuery;
 use App\Support\Finance\ReconciliationAllocation;
+use App\Support\Finance\ReconciliationReviewAcknowledgement;
 use App\Support\Finance\ReconciliationTarget;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -56,6 +58,11 @@ final class FinanceReconciliationController extends Controller
         return FinancePayoutResource::collection($operations->payouts($caller, $workspace, $query));
     }
 
+    public function movements(Request $request, Workspace $workspace, FinanceReconciliationOperations $operations): JsonResponse
+    {
+        return response()->json($operations->movementChanges($this->caller($request), $workspace, FinanceProcessorMovementQuery::fromInput($request->query())));
+    }
+
     public function upsert(Request $request, Workspace $workspace, string $payment, string $external_system, string $transaction, FinanceReconciliationOperations $operations): PaymentReconciliationResource
     {
         $caller = $this->caller($request);
@@ -67,6 +74,17 @@ final class FinanceReconciliationController extends Controller
             ReconciliationTarget::of($payment, $external_system, $transaction),
             // Required through OAuth (and so MCP): the state wanted now, never left to a default.
             ReconciliationAllocation::fromInput($request->all(), statesActivity: $caller->door === FinanceDoor::OAuth),
+        ));
+    }
+
+    public function acknowledge(Request $request, Workspace $workspace, string $payment, string $external_system, string $transaction, FinanceReconciliationOperations $operations): PaymentReconciliationResource
+    {
+        return new PaymentReconciliationResource($operations->acknowledge(
+            $this->caller($request),
+            $workspace,
+            ReconciliationTarget::of($payment, $external_system, $transaction),
+            ReconciliationReviewAcknowledgement::fromInput($request->except('confirm')),
+            $request->input('confirm'),
         ));
     }
 

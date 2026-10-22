@@ -136,10 +136,31 @@ final class SquareClient
         return $this->send(SquareEndpoint::GetPayment, $paymentId);
     }
 
+    /**
+     * All states and locations: wins must be recovered as well as new disputes.
+     *
+     * @return array<string, mixed>
+     */
+    public function listDisputes(?string $cursor): array
+    {
+        return $this->send(SquareEndpoint::ListDisputes, query: ['cursor' => $this->cursor($cursor)]);
+    }
+
     /** @return array<string, mixed> */
     public function getDispute(string $disputeId): array
     {
         return $this->send(SquareEndpoint::RetrieveDispute, $disputeId);
+    }
+
+    /**
+     * The actual refund named by a balance entry, without issuing a refund.
+     * https://developer.squareup.com/reference/square/refunds-api/get-payment-refund
+     *
+     * @return array<string, mixed>
+     */
+    public function getPaymentRefund(string $refundId): array
+    {
+        return $this->send(SquareEndpoint::GetPaymentRefund, $refundId);
     }
 
     /**
@@ -148,11 +169,12 @@ final class SquareClient
      * @param  string|null  $beginTime  RFC 3339
      * @return array<string, mixed>
      */
-    public function listPayouts(?string $locationId, ?string $beginTime, ?string $cursor, int $limit): array
+    public function listPayouts(?string $locationId, ?string $beginTime, ?string $cursor, int $limit, ?string $endTime = null): array
     {
         return $this->send(SquareEndpoint::ListPayouts, query: [
             'location_id' => $locationId === null ? null : $this->id($locationId),
             'begin_time' => $beginTime,
+            'end_time' => $endTime,
             'sort_order' => 'DESC',
             'cursor' => $this->cursor($cursor),
             'limit' => self::limit($limit, 100),
