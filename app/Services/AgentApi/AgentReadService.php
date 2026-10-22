@@ -22,7 +22,7 @@ use App\Services\Tasks\TaskAccess;
 use App\Services\Tasks\TaskCompletionAdvisory;
 use App\Services\Tasks\TaskMutationOrigin;
 use App\Services\Tasks\TaskPlanningPresenter;
-use App\Services\Tasks\TaskVisibility;
+use App\Services\Tasks\TaskReadScope;
 use App\Support\AgentApi\AgentApiContract;
 use App\Support\AgentApi\AgentApiCursor;
 use App\Support\AgentApi\AgentApiScopes;
@@ -81,6 +81,7 @@ final class AgentReadService
         private readonly AgentTimeEntryPresenter $timeEntryPresenter,
         private readonly AgentInvoicePresenter $invoicePresenter,
         private readonly DeferredBacklogReadService $deferredBacklogs,
+        private readonly TaskReadScope $taskReads,
         private readonly WorkspaceClock $clock = new WorkspaceClock,
     ) {}
 
@@ -485,22 +486,7 @@ final class AgentReadService
     /** @return Builder<ClientTask> */
     private function taskQuery(User|AgentPrincipal $user, Workspace $workspace, TaskMutationOrigin $origin = TaskMutationOrigin::Agent): Builder
     {
-        $query = ClientTask::query()->where('workspace_id', $workspace->id)
-            ->whereHas('project', fn (Builder $projects): Builder => $projects->where('workspace_id', $workspace->id)
-                ->whereHas('clientCompany', fn (Builder $companies): Builder => $companies->where('workspace_id', $workspace->id)));
-        if ($origin === TaskMutationOrigin::Internal && $this->projects->workspaceRole($user, $workspace) === null) {
-            return $query->whereRaw('1 = 0');
-        }
-        if ($origin === TaskMutationOrigin::Agent && $this->access->isWorkspaceClient($user, $workspace)) {
-            return app(TaskVisibility::class)->constrainPortal($query, $workspace, $user);
-        }
-        if ($this->access->isWorkspaceManager($user, $workspace)) {
-            return $query;
-        }
-
-        return $query->whereHas('project', fn (Builder $projects) => $projects
-            ->whereHas('members', fn (Builder $members) => $members->whereKey($user->id)
-                ->where('client_project_memberships.workspace_id', $workspace->id)));
+        return $this->taskReads->query($user, $workspace, $origin);
     }
 
     /** Time visibility stands alone. Only its optional task reference is narrowed.
