@@ -35,6 +35,36 @@ final class TaskOrganizationActionTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_raw_cli_empty_visibility_is_rejected_before_preview_or_apply_and_preserves_existing_publication(): void
+    {
+        [$workspace, $project, $owner] = $this->fixture();
+        $action = app(TaskOrganizationAction::class);
+        $listId = $action->perform($owner, $workspace, $project->public_id, TaskOrganizationCommand::fromInput('lists.create',
+            ['name' => 'Synthetic published list', 'is_visible_to_client' => true, 'expected_graph_version' => $action->inspect($owner, $workspace, $project->public_id)->graphVersion()]))[0];
+        $graph = $action->inspect($owner, $workspace, $project->public_id);
+        $list = ClientTaskList::query()->where('workspace_id', $workspace->id)->where('public_id', $listId)->sole();
+        $version = AgentApiVersion::for($list);
+        $input = tempnam(sys_get_temp_dir(), 'svc-organization-visibility-');
+        try {
+            foreach (['', ' ', null] as $index => $value) {
+                file_put_contents($input, json_encode(['list_id' => $listId, 'is_visible_to_client' => $value,
+                    'expected_version' => $version, 'expected_graph_version' => $graph->graphVersion()], JSON_THROW_ON_ERROR));
+                $args = ['operation' => 'lists.update', 'workspace' => $workspace->public_id, 'project' => $project->public_id,
+                    '--actor' => $owner->public_id, '--input' => $input, '--key' => 'synthetic-invalid-visibility-'.$index, '--format' => 'json'];
+                foreach ([false, true] as $apply) {
+                    $this->assertSame(2, Artisan::call('svc:task-organization', $args + ($apply ? ['--apply' => true] : [])));
+                    $this->assertTrue($list->fresh()->is_visible_to_client);
+                    $this->assertSame($version, AgentApiVersion::for($list->fresh()));
+                    $this->assertSame($graph->graphVersion(), $action->inspect($owner, $workspace, $project->public_id)->graphVersion());
+                    $this->assertDatabaseCount('agent_mutation_receipts', 0);
+                    $this->assertDatabaseCount('agent_mutation_audits', 0);
+                }
+            }
+        } finally {
+            unlink($input);
+        }
+    }
+
     public function test_creation_appends_after_manual_order_and_same_container_moves_preserve_that_order(): void
     {
         [$workspace, $project, $owner] = $this->fixture();

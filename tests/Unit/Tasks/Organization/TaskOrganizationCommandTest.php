@@ -14,6 +14,27 @@ use Tests\TestCase;
 #[CoversClass(ExplicitConfirmation::class)]
 final class TaskOrganizationCommandTest extends TestCase
 {
+    public function test_list_visibility_preserves_omission_and_false_or_zero_but_rejects_raw_empty_values(): void
+    {
+        foreach (['lists.create', 'lists.update'] as $operation) {
+            $input = ['expected_graph_version' => str_repeat('a', 64)] + ($operation === 'lists.create'
+                ? ['name' => 'Synthetic visibility list']
+                : ['list_id' => '00000000-0000-4000-8000-000000000001', 'expected_version' => str_repeat('b', 64)]);
+            $this->assertArrayNotHasKey('is_visible_to_client', TaskOrganizationCommand::fromInput($operation, $input)->data);
+            foreach ([false, 0, '0'] as $value) {
+                $this->assertSame($value, TaskOrganizationCommand::fromInput($operation, $input + ['is_visible_to_client' => $value])->data['is_visible_to_client']);
+            }
+            foreach ([null, '', '  '] as $value) {
+                try {
+                    TaskOrganizationCommand::fromInput($operation, $input + ['is_visible_to_client' => $value]);
+                    $this->fail('A raw empty list visibility value was accepted.');
+                } catch (ValidationException $exception) {
+                    $this->assertArrayHasKey('is_visible_to_client', $exception->errors());
+                }
+            }
+        }
+    }
+
     public function test_optional_list_name_preserves_omission_but_rejects_raw_cli_empty_whitespace_and_null(): void
     {
         $input = ['list_id' => '00000000-0000-4000-8000-000000000001', 'expected_version' => str_repeat('a', 64), 'expected_graph_version' => str_repeat('b', 64)];
