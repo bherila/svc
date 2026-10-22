@@ -35,11 +35,14 @@ final class AgentCapabilities
         $projectEntries = [];
         $workspaceCapabilities = [];
         $canDiscloseProjects = $allowsScope(AgentApiScopes::PROJECTS_READ);
-        $viewable = $this->projects->workspaceRole($user, $workspace) === null
+        $portalCompanyIds = $this->access->portalCompanyIdsIn($user, $workspace);
+        $portalViewer = $portalCompanyIds !== [];
+        // Agent context uses the portal audience when this person has portal
+        // access, even when the same identity also holds an internal role.
+        $viewable = $portalViewer || $this->projects->workspaceRole($user, $workspace) === null
             ? [] : $this->projects->viewableProjectIds($user, $workspace);
         $manager = $viewable === null;
-        $portalCompanyIds = $this->access->portalCompanyIdsIn($user, $workspace);
-        $roles = $manager ? collect() : ClientProjectMembership::query()
+        $roles = $manager || $portalViewer ? collect() : ClientProjectMembership::query()
             ->where('workspace_id', $workspace->id)
             ->where('user_id', $user->id)
             ->whereIn('client_project_id', $viewable)
