@@ -138,8 +138,9 @@ The organization owner agreed the future seam: a scoped
 unsaved zero state on absence; `lockForMutation(workspace, project)` initializes
 only after Workspace-exclusive and keeps the current-read/createOrFirst fallback;
 `advance(workspace, project, state)` validates lineage/existence and increments.
-This lane owns that helper/tests later; the organization owner owns its narrow
-delegation after the current freeze. Do not call its private `advance()` or
+This lane implemented the helper in `5dcacf52`; the organization owner separately
+landed its narrow delegation in `4490409e`. The actual integrated prerequisite
+must be merged before adapter implementation. Do not call its private `advance()` or
 duplicate initialization logic. Reads/preview never retain new state. Dependency writes
 require both expected task version and expected graph version; label/contact
 replacement requires expected task version. Native forms require the same stale
@@ -149,25 +150,21 @@ inside an old caller snapshot. CLI/native Internal remains deliberate.
 
 ## Transport and native contract
 
-Proposed registry operation names and paths, coordinated centrally after readers
-and organization registration settle:
-
-| Operation | Proposed REST | Access |
-| --- | --- | --- |
-| `tasks.labels.list/create/update/archive/restore` | GET/POST `/workspaces/{workspace}/task-labels`, PATCH label, POST label archive/restore | workspace owner/admin; existing tasks read/write scopes |
-| `tasks.label_options` | GET `/workspaces/{workspace}/projects/{project}/task-label-options` | current internal project task manager; tasks:read |
-| `tasks.labels.replace` | PUT `/workspaces/{workspace}/tasks/{task}/labels` | task manager; tasks:write |
-| `tasks.dependencies.list/replace` | GET/PUT `/workspaces/{workspace}/tasks/{task}/dependencies` | authorized internal task reader / task manager; tasks read/write |
-| `tasks.contact_responsibilities.get/replace` | GET/PUT `/workspaces/{workspace}/tasks/{task}/contact-responsibilities` | workspace manager, task scope plus existing clients:read |
+The exact fifteen operation IDs, routes, public schemas, presenters, native and
+`svc:tasks:planning` contract are now specified in the
+[adapter contract](task-planning-adapter-contract.md). That document supersedes
+the earlier proposed `tasks.labels.*` operation names; mutation receipt suffixes
+remain `task_planning.labels.*`, `task_planning.dependencies.replace` and
+`task_planning.contacts.replace`. Shared registration remains coordinator-owned.
 
 Writes use the common idempotency receipt executor, public UUIDs, version tokens
 and a complete `label_ids`, `prerequisite_ids` or `contact_ids` list. Label archival
-requires explicit `confirm: true`, matching retained-contact/list archival. MCP mirrors
-the same operations and schemas; no caller controls origin or audience. No new
-OAuth scopes are needed. Contact metadata is omitted from ordinary task responses
-without both current manager authority and clients:read, rather than widening
-tasks:read. CLI uses these actions with preview-by-rollback and explicit --apply;
-it accepts the same JSON shapes and has no independent persistence or policy.
+requires explicit `confirm: true`, matching retained-contact/list archival. MCP
+mirrors the same operations and schemas; no caller controls origin or audience.
+No new OAuth scopes are needed. Contacts use separate owner/admin endpoints with
+both task scope and `clients:read`; ordinary task responses never embed contacts.
+CLI uses these actions with preview-by-rollback and explicit --apply; it accepts
+the same JSON shapes and has no independent persistence or policy.
 
 Task pages receive at most 20 attached labels and a small dependency summary;
 dependency detail/candidate pickers are separate bounded pages with finished
