@@ -76,7 +76,7 @@ require_private_file "$key_root/oauth-public.key" oauth-public.key
 # The action then owns the whole pause/resume via maintenance and Artisan drain.
 # Do not source deployment.env: it contains private values and is not shell code.
 "$php_binary" -d display_errors=0 -d log_errors=0 \
-    "$account_root/$candidate_dir/scripts/deploy/check-oauth-config.php" \
+    "$account_root/$candidate_dir/bootstrap/check-oauth-config.php" \
     "$account_root/$candidate_dir/vendor/autoload.php" "$account_root/.config/svc/deployment.env" \
     >/dev/null 2>&1 || fail 'incoming OAuth issuance is disabled or its configuration could not be verified; live service was not changed'
 if ! oauth_response=$(curl --silent --connect-timeout 5 --max-time 10 \

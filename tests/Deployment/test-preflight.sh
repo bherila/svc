@@ -15,10 +15,53 @@ touch "${files[@]}"
 printf 'AGENT_API_OAUTH_SERVER_ENABLED=true\n' >"${files[0]}"
 chmod 600 "${files[@]}"
 candidate="$fixture_home/.deployments/svc-laravel/releases/fixture"
-mkdir -p "$candidate/scripts/deploy" "$candidate/vendor"
-cp "$repository/scripts/deploy/check-oauth-config.php" "$candidate/scripts/deploy/"
-ln -s "$repository/vendor/autoload.php" "$candidate/vendor/autoload.php"
 php_binary=$(command -v php)
+mkdir -p "$candidate/vendor"
+action=${SHARED_DEPLOY_ACTION_PATH:-}
+if [ -n "$action" ]; then
+    # Stage the actual upload inventory, rather than injecting a helper that
+    # deployment never sends. Installed vendor dependencies are supplied
+    # separately for the real parser, without copying the dependency tree.
+    "$php_binary" -d memory_limit=1G /dev/stdin "$repository/vendor/autoload.php" "$action/action.yml" "$repository/.github/workflows/tests.yml" >"$fixture/upload-paths" <<'PHP'
+<?php
+require $argv[1];
+$action = Symfony\Component\Yaml\Yaml::parseFile($argv[2]);
+$workflow = Symfony\Component\Yaml\Yaml::parseFile($argv[3]);
+$deploySteps = [];
+foreach ($workflow['jobs'] as $job) {
+    foreach ($job['steps'] ?? [] as $step) {
+        if (str_starts_with($step['uses'] ?? '', 'bherila/shared-cpanel-deployment@')) {
+            $deploySteps[] = $step;
+        }
+    }
+}
+if (count($deploySteps) !== 1) {
+    fwrite(STDERR, "FAIL: workflow must select one shared deployment action.\n");
+    exit(1);
+}
+$paths = $deploySteps[0]['with']['paths'] ?? $action['inputs']['paths']['default'] ?? null;
+if (! is_string($paths) || trim($paths) === '') {
+    fwrite(STDERR, "FAIL: deployment has no upload inventory.\n");
+    exit(1);
+}
+foreach (explode("\n", trim($paths)) as $path) {
+    $path = trim($path);
+    if ($path !== '') {
+        echo $path, "\n";
+    }
+}
+PHP
+    while IFS= read -r path; do
+        [ "$path" = vendor ] && continue
+        cp -a --reflink=auto -- "$repository/$path" "$candidate/"
+    done <"$fixture/upload-paths"
+else
+    [ -z "${CI:-}" ] || { echo 'FAIL: CI must set SHARED_DEPLOY_ACTION_PATH to the pinned shared action checkout.' >&2; exit 1; }
+    echo 'SKIP: SHARED_DEPLOY_ACTION_PATH is unset; candidate upload inventory was not checked.'
+    mkdir -p "$candidate/bootstrap"
+    cp "$repository/bootstrap/check-oauth-config.php" "$candidate/bootstrap/"
+fi
+ln -s "$repository/vendor/autoload.php" "$candidate/vendor/autoload.php"
 
 # A fake, read-only crontab: the fixture's lines, no crontab, or a failed read. A write fails.
 mkdir -p "$fixture/bin"
@@ -51,7 +94,11 @@ reject() {
     fi
 }
 
-run_preflight >/dev/null
+if ! run_preflight >"$fixture/output" 2>&1; then
+    cat "$fixture/output" >&2
+    echo 'FAIL: valid enabled OAuth preflight rejected the uploaded candidate.' >&2
+    exit 1
+fi
 
 # Parse exactly the incoming flag with the real Dotenv parser, without executing
 # shell syntax, leaking errors/values, or changing any private file or cron.
