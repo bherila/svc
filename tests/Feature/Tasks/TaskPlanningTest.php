@@ -43,7 +43,7 @@ final class TaskPlanningTest extends TestCase
 
     public function test_dates_assignments_and_description_round_trip_with_explicit_web_version(): void
     {
-        [$workspace, , $project, $owner] = $this->fixture();
+        [$workspace, $company, $project, $owner] = $this->fixture();
         $assignee = $this->staff($workspace, $project);
         $this->actingAs($owner)->post($this->createPath($workspace, $project), [
             'title' => 'Synthetic planned task', 'description' => 'Synthetic description', 'is_visible_to_client' => false,
@@ -56,7 +56,9 @@ final class TaskPlanningTest extends TestCase
         $version = AgentApiVersion::for($task);
         $this->actingAs($owner)->get(route('tasks.show', [$workspace, $task]))->assertOk()->assertInertia(fn (Assert $page) => $page
             ->component('clients/task')->where('task.version', $version)->where('task.starts_on', '2026-10-31')
-            ->where('task.assignees.0.id', $assignee->public_id)->where('task.update_action', route('tasks.update', [$workspace, $task])));
+            ->where('task.assignees.0.id', $assignee->public_id)->where('task.update_action', route('tasks.update', [$workspace, $task]))
+            ->where('workspaceNavigation.current_client_id', $company->public_id)
+            ->where('workspaceNavigation.clients.0.destinations.tasks', route('clients.tasks', [$workspace, $company], absolute: false)));
         $this->patch($this->updatePath($workspace, $task), ['expected_version' => $version, 'title' => 'Synthetic revised task'])->assertRedirect();
         $task->refresh();
         $this->assertSame('Synthetic description', $task->description);

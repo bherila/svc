@@ -34,7 +34,7 @@ final class AgentTaskMutationController extends Controller
             $data,
         );
 
-        return response()->json(['data' => $presenter->present($workspace, $task, includePlanning: ! $access->isWorkspaceClient($context->user, $workspace))], 201);
+        return response()->json(['data' => $presenter->present($workspace, $task, includePlanning: ! $access->isWorkspaceClient($context->user, $workspace), canManage: $access->isWorkspaceManager($context->user, $workspace))], 201);
     }
 
     public function update(
@@ -57,6 +57,6 @@ final class AgentTaskMutationController extends Controller
             $data,
         );
 
-        return response()->json(['data' => $presenter->present($workspace, $record, includePlanning: ! $access->isWorkspaceClient($context->user, $workspace))]);
+        return response()->json(['data' => $presenter->present($workspace, $record, includePlanning: ! $access->isWorkspaceClient($context->user, $workspace), canManage: $access->isWorkspaceManager($context->user, $workspace))]);
     }
 }

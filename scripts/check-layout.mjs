@@ -42,6 +42,7 @@ const timeOnly = process.argv.includes('--time');
 const backlogOnly = process.argv.includes('--deferred-backlog');
 const historyOnly = process.argv.includes('--history');
 const tasksOnly = process.argv.includes('--tasks');
+const skipBuild = process.argv.includes('--skip-build');
 const results = [];
 const failures = [];
 const serverLog = [];
@@ -141,7 +142,17 @@ try {
     const fixture = JSON.parse(
         readFileSync(path.join(runtime, 'fixture.json'), 'utf8'),
     );
-    run('pnpm', ['run', 'build'], env);
+
+    if (skipBuild) {
+        if (!existsSync(path.join(root, 'public', 'build', 'manifest.json'))) {
+            throw new Error(
+                '--skip-build requires assets from a successful build of this checkout.',
+            );
+        }
+    } else {
+        run('pnpm', ['run', 'build'], env);
+    }
+
     server = spawn(
         'php',
         ['-S', host, '-t', 'public', 'scripts/layout/router.php'],
@@ -339,6 +350,7 @@ try {
                     .getByRole('button', { name: 'New task', exact: true })
                     .click();
                 await expect(page.getByRole('dialog')).toBeVisible();
+                await capture(screen, 'create-empty', width);
                 await page
                     .getByLabel('Title', { exact: true })
                     .fill('SyntheticTaskCreatedInBrowser');
@@ -377,6 +389,14 @@ try {
 
             if (screen === 'task_editor') {
                 await expect(
+                    page.locator(
+                        'header [aria-label="Client sections"]:visible',
+                    ),
+                ).toContainText('Tasks');
+                await expect(page.locator('header')).not.toContainText(
+                    'Select a client',
+                );
+                await expect(
                     page.getByRole('button', {
                         name: /^Remove SyntheticAssignee/,
                     }),
@@ -386,16 +406,29 @@ try {
                         'More staff match. Refine the search to find them.',
                     ),
                 ).toBeVisible();
-                const state = await context.request.get(
-                    origin + fixture.task_editor,
-                    { headers: { 'X-Inertia': 'true' } },
-                );
-                const version = (await state.json()).props.task.version;
+                await capture(screen, 'editor', width);
+                const version = await page.evaluate(() => {
+                    const initial = document.querySelector('script[data-page]');
+
+                    if (!initial?.textContent) {
+                        throw new Error(
+                            'The task page has no initial Inertia data.',
+                        );
+                    }
+
+                    return JSON.parse(initial.textContent).props.task.version;
+                });
                 const revised = await context.request.patch(
                     origin + fixture.task_update,
-                    { data: { expected_version: version } },
+                    {
+                        data: { expected_version: version },
+                        headers: { 'Sec-Fetch-Site': 'same-origin' },
+                        maxRedirects: 0,
+                    },
                 );
-                expect(revised.ok()).toBe(true);
+
+                expect([302, 303]).toContain(revised.status());
+
                 await page
                     .getByRole('button', { name: 'Save task', exact: true })
                     .click();
@@ -536,7 +569,14 @@ try {
                     .fill('SyntheticLayoutTitle'.repeat(8));
             }
 
-            await capture(screen, 'initial', width, screen === 'operations');
+            if (screen !== 'task_editor') {
+                await capture(
+                    screen,
+                    'initial',
+                    width,
+                    screen === 'operations',
+                );
+            }
 
             if (screen === 'agreement' && backlogOnly) {
                 await page

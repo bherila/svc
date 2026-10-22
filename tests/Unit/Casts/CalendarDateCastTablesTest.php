@@ -12,6 +12,7 @@ use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceLine;
 use App\Models\ClientInvoicePayment;
 use App\Models\ClientProposal;
+use App\Models\ClientTask;
 use App\Models\PaymentReconciliation;
 use App\Support\Finance\ReconciliationReviewReason;
 use Illuminate\Database\Eloquent\Model;
@@ -68,6 +69,10 @@ final class CalendarDateCastTablesTest extends TestCase
     public static function tables(): iterable
     {
         $tables = [
+            ClientTask::class => [
+                'id' => 'int', 'is_visible_to_client' => 'boolean', 'completed_at' => 'immutable_datetime',
+                'milestone_price_amount' => 'integer', 'starts_on' => DateOnly::class, 'due_on' => DateOnly::class,
+            ],
             ClientAgreement::class => [
                 'id' => 'int',
                 'starts_on' => DateOnly::class,

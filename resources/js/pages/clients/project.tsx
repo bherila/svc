@@ -85,7 +85,9 @@ export default function ClientProjectDetail({
                         <h1 className="min-w-0 text-2xl font-semibold wrap-anywhere">
                             {project.name}
                         </h1>
-                        <Badge variant="outline">{project.status}</Badge>
+                        <Badge variant="outline">
+                            {statusLabel(project.status)}
+                        </Badge>
                         {!project.is_visible_to_client && (
                             <Badge variant="secondary">
                                 Hidden from client
@@ -116,7 +118,7 @@ export default function ClientProjectDetail({
                                         className="flex gap-2"
                                     >
                                         <dt className="text-muted-foreground">
-                                            {row.status}
+                                            {statusLabel(row.status)}
                                         </dt>
                                         <dd className="tabular-nums">
                                             {formatHours(row.minutes)}
