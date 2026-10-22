@@ -20,8 +20,14 @@ namespace Tests\Unit\Finance;
 use App\Support\Finance\ProcessorReadBudget;
 use DomainException;
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\PreserveGlobalState;
+use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use PHPUnit\Framework\TestCase;
 
+// PHP caches a namespace's native function fallback after its first call. Start
+// each clock test before another test can bind ProcessorReadBudget to native hrtime.
+#[RunTestsInSeparateProcesses]
+#[PreserveGlobalState(false)]
 final class ProcessorReadBudgetTest extends TestCase
 {
     public static ?int $nanoseconds = null;
