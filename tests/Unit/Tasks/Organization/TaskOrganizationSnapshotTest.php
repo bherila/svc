@@ -27,6 +27,14 @@ use Tests\TestCase;
 #[CoversClass(TaskContainer::class)]
 final class TaskOrganizationSnapshotTest extends TestCase
 {
+    public function test_database_revision_strings_are_exposed_as_integer_versions(): void
+    {
+        $state = new ClientTaskGraphState;
+        $state->setRawAttributes(['id' => 9, 'workspace_id' => 5, 'client_project_id' => 7, 'lock_version' => '12']);
+        $this->assertSame(12, $state->lock_version);
+        $this->assertSame(['lock_version' => 12], $state->toArray());
+    }
+
     public function test_snapshot_preserves_the_public_topology_and_editor_contract_with_stable_list_ties(): void
     {
         $project = new ClientProject;
