@@ -113,9 +113,12 @@ different answers.
 
 REST and MCP context project capabilities follow the same grants as project
 reads. Selected-project contacts receive no capability IDs for ungranted projects;
-an empty grant returns none. Internal project roles and workspace manager access
-remain independent of portal grants. Capability queries resolve project roles and
-portal company membership in batches rather than once per project.
+an empty grant returns none. Agent context selects the portal audience whenever
+the person has valid portal membership in the workspace, including an identity
+that is also an internal owner or admin: project entries carry the client role
+and client capabilities. Native internal project permissions remain independent
+of portal grants. Capability queries resolve project roles and portal company
+membership in batches rather than once per project.
 
 The rule is that the narrowing is one decision applied wherever a portal surface
 reads, not a filter applied while rendering a project list — scoping only the
