@@ -279,6 +279,9 @@ jobs:
           for hook in scripts/deploy/*.sh tests/Deployment/*.sh; do bash -n "$hook"; done
           tests/Deployment/test-deploy-hooks.sh
           bash tests/Deployment/test-preflight.sh
+          bash tests/Deployment/test-oauth-lifecycle.sh
+          bash tests/Deployment/test-failure-report.sh
+          bash tests/Deployment/test-mutation-scope.sh
           bash tests/Deployment/test-cron-audit.sh
           rm -rf .shared-cpanel-deployment
           node --test tests/Deployment/verify-oauth-redirect.test.mjs tests/Deployment/verify-hashed-assets.test.mjs
@@ -689,6 +692,7 @@ jobs:
       # pair. The action refuses an incomplete key pair rather than rotating it. SVC has a scheduler but
       # deliberately no queue worker; quiesce.sh drains only this app's in-flight Artisan processes.
       - name: Deploy to the cPanel account
+        id: deploy
         uses: bherila/shared-cpanel-deployment@46a47522ad977c008a1251b0f67e73807a8bfb10 # reviewed rollback recovery
         with:
           ssh-host: ${{ secrets.SSH_HOST }}
@@ -727,3 +731,11 @@ jobs:
           post-deploy-script: scripts/deploy/post-deploy.sh
           verification-script: scripts/deploy/verify-live.sh
           post-finalize-script: scripts/deploy/post-finalize.sh
+
+      - name: Report failed deployment and public service state
+        if: ${{ failure() && steps.deploy.outcome == 'failure' }}
+        env:
+          DEPLOY_LIVE_RELEASE: ${{ steps.deploy.outputs.live-release }}
+          DEPLOY_LIVE_COMMIT: ${{ steps.deploy.outputs.live-commit }}
+          DEPLOY_LIVE_STATE: ${{ steps.deploy.outputs.live-state }}
+        run: bash scripts/deploy/report-failure.sh

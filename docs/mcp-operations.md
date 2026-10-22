@@ -6,16 +6,20 @@ customer data. Preserve those constraints in incident tickets and logs.
 
 ## Immediate containment
 
-1. Set `AGENT_API_MCP_ENABLED=false` in the protected deployment environment.
-   Deploy the configuration change and clear Laravel's configuration cache using
-   the normal deployment workflow. Authenticated POST and DELETE requests then
+1. Set `AGENT_API_MCP_ENABLED=false` in both the protected deployment environment
+   (`~/.config/svc/deployment.env`) and the selected release's `.env`. Rebuild
+   that release's configuration cache with the production PHP binary. Apply
+   containment directly; normal deployment requires its authenticated smoke
+   checks to pass. Authenticated POST and DELETE requests then
    receive a no-store `503` with `Retry-After: 60`; no server or session is
    constructed. `OPTIONS` remains available for browser preflight. Existing
    sessions cannot recover a capability on a subsequent request.
 2. To stop new OAuth metadata discovery, client registration, authorization,
    token exchange, and refresh without invalidating an already-issued bound
-   credential, set `AGENT_API_OAUTH_SERVER_ENABLED=false`, deploy, and clear the
-   configuration cache. Those issuance routes return non-cacheable 404 responses.
+   credential, set `AGENT_API_OAUTH_SERVER_ENABLED=false` in both environment
+   files and rebuild the selected release's configuration cache. Those issuance
+   routes return non-cacheable 404 responses. Normal deployment refuses paused
+   OAuth before maintenance; it never turns this containment flag back on.
    This is not credential revocation and does not replace the MCP kill switch.
 3. For a single capability, set its named entry in
    `agent_api.mcp_feature_flags` to `false`. The stable feature-flag name in
@@ -212,9 +216,10 @@ secrets. Their migration deliberately preserves them on rollback. Keep
 
 ### Durable revocation rollout (#474)
 
-Upgrade to the released `bherila/auth-laravel` v0.27.0 (`^0.27.0`, exact
-reference committed in `composer.lock`). Pause OAuth issuance before deployment
-and use the standard maintenance and Artisan drain. A coordinated web-grant
+SVC uses the released `bherila/auth-laravel` v0.27.0 (`^0.27.0`, exact
+reference committed in `composer.lock`). Normal deployments pause new HTTP
+issuance through the action's maintenance step and drain Artisan before
+migration, then resume HTTP when the selected release is served. A coordinated web-grant
 drain is not required: late old-process credentials stay unregistered and
 require fresh authorization. The migration registers existing identifiable
 code/access/refresh rows in bounded batches, including attributable refreshes
@@ -223,26 +228,62 @@ once and never enrolls later rows on replay. New package repositories register
 all subsequent credentials atomically with persistence. SVC enables the guard
 in `bherila-auth.oauth_server.revocation.enabled`.
 
-For the coordinated rollout, leave issuance paused until the new release has
-migrated and is selected. The live verifier announces this boundary and polls
-OAuth server metadata for up to 300 seconds before issuing any smoke token.
-The coordinator re-enables issuance in the server-held deployment environment
-and the selected release, and rebuilds its configuration cache. Verification
-then runs the normal authenticated MCP smoke and revokes its credentials.
-A timeout fails the deployment and restores the retained prior release and scheduler
-entries through `failure-policy: rollback`; no smoke check is skipped. Shared data and
-applied migrations remain intact, so migrations must preserve prior-code compatibility. Late unregistered old-process grants require fresh
-authorization. Check the website integration and any affected clients after
-issuance is re-enabled.
+Do not set the OAuth flag to false as a normal deployment step. Read-only
+preflight requires the incoming `deployment.env` to contain exactly one explicit,
+literal enabled OAuth setting (`true`, `(true)` or `1`, case-insensitive) and
+requires live OAuth metadata to return 200 JSON before maintenance or cron pause.
+Missing, duplicate, interpolated, disabled or ambiguous settings are refused;
+configuration contents and parser errors are never printed. An operator's
+deliberate shutdown stays unchanged. Resolve the incident and restore the
+intended configuration before retrying a normal deploy.
 
+Once the new release is serving, live verification checks OAuth immediately,
+then issues the smoke credentials, runs all authenticated MCP checks and revokes
+them. There is no wait for a person to edit configuration during deployment.
+Late unregistered old-process grants require fresh authorization. Check the
+website integration and any affected clients after a guard upgrade.
 
 An older process's late, unregistered writes are refused by the new guard,
 rather than adopted as a new connection. Unknown legacy owners/clients also
 require fresh authorization. Rotations completed before registration cannot be
 reconstructed; each existing access/refresh family is registered independently.
-Serve the new repositories/revoker in every process before re-enabling issuance.
+Serve the new repositories/revoker through the selected release before resuming HTTP.
 Containment continues to start by turning issuance off; no cache fence or
 application refresh-token decoder remains.
+
+### Deployment failures and recovery
+
+A failed deploy reports the selected release, commit and state, and probes `/`
+in its Actions summary. `/up` is exempt from Laravel maintenance and can return
+200 while the site returns 503; it does not prove restored service. Monitoring
+must also probe a normal route (the external monitor uses `/__status-probe`,
+which returns 404 when serving and 503 in maintenance).
+
+Before database risk, the action restores the prior serving and cron state.
+After database risk, the workflow's `failure-policy: rollback` restores the
+retained prior code and scheduler entries and verifies that prior release is
+serving. Database changes are not rolled back: migrations must preserve prior-code
+compatibility. If rollback cannot prove safe restoration, maintenance and recovery
+evidence remain for the operator. A retry refuses an app already in maintenance;
+it does not silently run `artisan up`.
+
+1. Read the failed run and identify its exact selected release/commit and the
+   migration outcome. Resolve a failed or partially applied migration before
+   serving any code; do not assume the prior release is schema-compatible.
+2. Confirm the finalizer's exact selected release and serving state. If rollback
+   succeeded, leave the restored prior release serving, correct the failure and
+   redeploy the reviewed candidate. If restoring OAuth after containment, update
+   both environment files and rebuild the selected release's configuration cache
+   with the production PHP binary. Deployment never changes an operator's
+   containment flag automatically.
+3. If automatic restoration failed and maintenance remains, verify schema
+   compatibility and the exact selected code before any explicit restoration.
+   `recovery-release-id` resumes an interrupted transaction/lock through the
+   reviewed recovery path; it is not permission to bypass maintenance or serve
+   an unverified release. Require an operator decision before manual `artisan up`.
+4. Require `Committed healthy release` for the exact retry, authenticated MCP
+   smoke success, exactly one canonical scheduler cron line, `/` 200, `/login`
+   302 and OAuth discovery 200 JSON. Check affected clients for reauthorization.
 
 ## Per-endpoint resources and provider identity cutover
 

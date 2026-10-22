@@ -10,9 +10,15 @@ key_root="$fixture_home/svc-laravel/storage/app/private/oauth"
 mkdir -p "$config_root" "$key_root"
 files=("$config_root/deployment.env" "$config_root/database.env" \
     "$key_root/oauth-private.key" "$key_root/oauth-public.key")
-# Empty files deliberately pass: preflight checks metadata, not secret contents.
+# Incoming OAuth must be explicitly enabled; keys/database are metadata-only.
 touch "${files[@]}"
+printf 'AGENT_API_OAUTH_SERVER_ENABLED=true\n' >"${files[0]}"
 chmod 600 "${files[@]}"
+candidate="$fixture_home/.deployments/svc-laravel/releases/fixture"
+mkdir -p "$candidate/scripts/deploy" "$candidate/vendor"
+cp "$repository/scripts/deploy/check-oauth-config.php" "$candidate/scripts/deploy/"
+ln -s "$repository/vendor/autoload.php" "$candidate/vendor/autoload.php"
+php_binary=$(command -v php)
 
 # A fake, read-only crontab: the fixture's lines, no crontab, or a failed read. A write fails.
 mkdir -p "$fixture/bin"
@@ -25,11 +31,18 @@ cat >"$fixture/bin/crontab" <<'MOCK'
 cat "$FIXTURE_CRONTAB"
 MOCK
 chmod +x "$fixture/bin/crontab"
+cat >"$fixture/bin/curl" <<'MOCK'
+#!/usr/bin/env bash
+[ "${!#}" = https://svc.bherila.net/.well-known/oauth-authorization-server ] || exit 98
+[ "${FIXTURE_OAUTH_RESPONSE:-}" != transport-failure ] || exit 7
+printf '%s\n' "${FIXTURE_OAUTH_RESPONSE:-200 application/json}"
+MOCK
+chmod +x "$fixture/bin/curl"
 
 run_preflight() {
     HOME="$fixture_home" PATH="$fixture/bin:$PATH" FIXTURE_CRONTAB="$crontab_file" \
         bash "$repository/scripts/deploy/preflight.sh" \
-        .deployments/svc-laravel/releases/fixture /fixture/php svc-laravel
+        .deployments/svc-laravel/releases/fixture "$php_binary" svc-laravel
 }
 reject() {
     if run_preflight >"$fixture/output" 2>&1; then
@@ -39,6 +52,45 @@ reject() {
 }
 
 run_preflight >/dev/null
+
+# Parse exactly the incoming flag with the real Dotenv parser, without executing
+# shell syntax, leaking errors/values, or changing any private file or cron.
+for flag in true TRUE 1 '(true)' '"true"'; do
+    printf 'AGENT_API_OAUTH_SERVER_ENABLED=%s\n' "$flag" >"${files[0]}"
+    run_preflight >/dev/null || { echo 'FAIL: enabled incoming OAuth was rejected.' >&2; exit 1; }
+done
+printf 'OAUTH_READY=true\nAGENT_API_OAUTH_SERVER_ENABLED=${OAUTH_READY}\n' >"${files[0]}"
+reject 'interpolated incoming OAuth setting'
+for flags in $'true\nAGENT_API_OAUTH_SERVER_ENABLED=false' $'false\nAGENT_API_OAUTH_SERVER_ENABLED=true'; do
+    printf 'AGENT_API_OAUTH_SERVER_ENABLED=%s\n' "$flags" >"${files[0]}"
+    reject 'duplicate incoming OAuth setting'
+done
+for flag in false FALSE 0 '(false)' null empty '""' '' ambiguous; do
+    printf 'AGENT_API_OAUTH_SERVER_ENABLED=%s\nPRIVATE_FIXTURE=SYNTHETIC_OAUTH_SECRET_DO_NOT_PRINT\n' "$flag" >"${files[0]}"
+    before=$(sha256sum "${files[@]}")
+    reject 'disabled or ambiguous incoming OAuth configuration'
+    test "$before" = "$(sha256sum "${files[@]}")" || { echo 'FAIL: OAuth refusal changed private files.' >&2; exit 1; }
+    grep -Fq 'incoming OAuth issuance' "$fixture/output" || { echo 'FAIL: incoming OAuth refusal missing.' >&2; exit 1; }
+    if grep -Fq SYNTHETIC_OAUTH_SECRET_DO_NOT_PRINT "$fixture/output"; then
+        echo 'FAIL: private OAuth configuration was printed.' >&2; exit 1
+    fi
+done
+printf 'AGENT_API_OAUTH_SERVER_ENABLED="SYNTHETIC_PARSE_SECRET_DO_NOT_PRINT\n' >"${files[0]}"
+reject 'malformed private configuration'
+grep -Fq SYNTHETIC_PARSE_SECRET_DO_NOT_PRINT "$fixture/output" && { echo 'FAIL: parser error exposed configuration.' >&2; exit 1; }
+printf 'AGENT_API_OAUTH_SERVER_ENABLED=true\n#' >"${files[0]}"
+head -c 1048576 /dev/zero | tr '\0' x >>"${files[0]}"
+reject 'oversized incoming configuration'
+printf 'AGENT_API_OAUTH_SERVER_ENABLED=true\n' >"${files[0]}"
+for response in '404 application/json' '503 text/html' '302 text/html' '200 text/html' transport-failure; do
+    before=$(sha256sum "${files[@]}")
+    FIXTURE_OAUTH_RESPONSE="$response" reject 'unavailable live OAuth with enabled incoming configuration'
+    test "$before" = "$(sha256sum "${files[@]}")" || { echo 'FAIL: live OAuth refusal changed private files.' >&2; exit 1; }
+done
+FIXTURE_OAUTH_RESPONSE='200 application/json; charset=utf-8' run_preflight >/dev/null
+: >"${files[0]}"
+reject 'missing incoming OAuth setting'
+printf 'AGENT_API_OAUTH_SERVER_ENABLED=true\n' >"${files[0]}"
 chmod 400 "${files[@]}"
 run_preflight >/dev/null
 chmod 600 "${files[@]}"
@@ -60,7 +112,7 @@ for path in "${files[@]}"; do
 done
 
 # Verify secret-safe diagnostics and that preflight does not fix permissions.
-printf '%s\n' 'SYNTHETIC_PREREQUISITE_CONTENT_DO_NOT_PRINT' >"${files[0]}"
+printf '%s\n' 'AGENT_API_OAUTH_SERVER_ENABLED=true' 'PRIVATE_FIXTURE=SYNTHETIC_PREREQUISITE_CONTENT_DO_NOT_PRINT' >"${files[0]}"
 chmod 644 "${files[0]}"
 reject 'world-readable configuration'
 test "$(stat -c %a "${files[0]}")" = 644
