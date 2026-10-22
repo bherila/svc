@@ -72,7 +72,10 @@ enum LockResource: string
     // Time mutation verifies snapshot membership against these current pivots
     // after locking the entry; invoice state was already locked before it.
     case ClientInvoiceLineTimeEntry = 'client_invoice_line_time_entries';
+    // Organization serializes current topology before sorted task rows.
+    case ClientTaskGraphState = 'client_task_graph_states';
     case ClientTask = 'client_tasks';
+    case ClientTaskList = 'client_task_lists';
     // Responsibility reads are current after the task lock, before access facts.
     case ClientTaskAssignment = 'client_task_assignments';
 

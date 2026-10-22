@@ -11,7 +11,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-/** Reader prerequisite only: no public list writer is enabled.
+/** Retained project list; organization writers remain behind their deployment flag.
  * @property int $id
  * @property int $workspace_id
  * @property int $client_project_id
@@ -21,7 +21,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property int $lock_version
  */
 #[Fillable(['workspace_id', 'client_project_id', 'name', 'is_visible_to_client'])]
-#[Hidden(['id', 'workspace_id', 'client_project_id'])]
+#[Hidden(['organization_position', 'id', 'workspace_id', 'client_project_id'])]
 class ClientTaskList extends Model implements WorkspaceOwned
 {
     use BelongsToWorkspace, HasPublicId, SoftDeletes;
