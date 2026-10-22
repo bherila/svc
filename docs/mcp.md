@@ -1285,6 +1285,12 @@ a positive balance; overdue additionally means due before today in the
 workspace timezone. List and detail include `company_name` and nullable service
 period dates. Cursors are bound to the chosen filters.
 
+The MCP tool returns snapshots and does not accept `updated_since` or
+`watermark`. The REST invoice listing also offers a change feed using those
+parameters, restricted to workspace owners and admins; other authorized viewers
+receive `422` naming `change_feed`. Portal callers can continue reading snapshots,
+which omit invoices that have become hidden or void.
+
 The manager-only stale/missing audit counts drafts whose due date or scheduled
 issue date is before today in the workspace timezone, and sums minor-unit
 balances separately by currency. A null date is no plan and never makes a draft

@@ -41,6 +41,7 @@ use Closure;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Tenant-scoped, allowlisted read workflows shared by Agent REST and MCP.
@@ -340,7 +341,8 @@ final class AgentReadService
     /**
      * Visible invoices by id, or - when the window names `updated_since` or a
      * watermark - newest change first inside a snapshot watermark
-     * ({@see ChangeFeedPage}), with the same filters and visibility.
+     * ({@see ChangeFeedPage}). Change feeds require a workspace owner/admin;
+     * portal visibility can change without a removal record in the feed.
      *
      * @return array{data:list<array<string, mixed>>,meta:array{next_cursor:?string, watermark?: string}}
      */
@@ -348,6 +350,11 @@ final class AgentReadService
     {
         $this->requireWorkspace($user, $workspace);
         if ($window !== null && $window->requested()) {
+            if (! $this->access->isWorkspaceManager($user, $workspace)) {
+                throw ValidationException::withMessages([
+                    'change_feed' => 'Invoice change-feed mode (updated_since or watermark) is only supported for workspace owners and admins; request invoice snapshots without these parameters.',
+                ]);
+            }
             ChangeWindow::refuseMutableFilters([
                 'status' => $status !== null && $status !== '',
                 ...array_fill_keys(array_keys($filters === null ? [] : $filters->values), true),
