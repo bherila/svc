@@ -151,6 +151,33 @@ class HistoricalLibraryTest extends TestCase
         $this->get(route('history.index', ['workspace' => $workspace, 'parent' => $discussion->public_id, 'page' => 2]))->assertInertia(fn (Assert $page) => $page->has('entries', 3)->where('next_href', null));
     }
 
+    public function test_company_filter_preserves_parent_filter_pagination_and_workspace_isolation(): void
+    {
+        [$user, $workspace] = $this->manager();
+        $company = ClientCompany::query()->create(['workspace_id' => $workspace->id, 'name' => 'Synthetic client', 'slug' => 'synthetic-client']);
+        $otherCompany = ClientCompany::query()->create(['workspace_id' => $workspace->id, 'name' => 'Other client', 'slug' => 'other-client']);
+        $discussion = $this->entry($workspace, 'discussions', '1', HistoryKind::Discussion, 'Thread', '');
+        for ($n = 1; $n <= 31; $n++) {
+            $this->entry($workspace, 'comments', (string) $n, HistoryKind::Comment, 'Comment '.$n, '', $this->record($workspace, $discussion), $company);
+        }
+        $this->entry($workspace, 'notes', '1', HistoryKind::Note, 'Other parent', '', null, $company);
+        $this->entry($workspace, 'comments', '32', HistoryKind::Comment, 'Other company', '', $this->record($workspace, $discussion), $otherCompany);
+        $parameters = ['workspace' => $workspace, 'q' => '', 'company' => $company->public_id, 'parent' => $discussion->public_id];
+
+        $this->actingAs($user)->get(route('history.index', ['workspace' => $workspace, 'company' => $company->public_id]))
+            ->assertOk()->assertInertia(fn (Assert $page) => $page->has('entries', 30));
+        $this->get(route('history.index', $parameters))->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->has('entries', 30)->where('next_href', route('history.index', $parameters + ['page' => 2], absolute: false)));
+        $this->get(route('history.index', $parameters + ['page' => 2]))->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->has('entries', 1)->where('next_href', null)->where('previous_href', route('history.index', $parameters + ['page' => 1], absolute: false)));
+
+        $foreign = Workspace::query()->create(['name' => 'Foreign', 'slug' => 'foreign']);
+        $foreignCompany = ClientCompany::query()->create(['workspace_id' => $foreign->id, 'name' => 'Foreign client', 'slug' => 'foreign-client']);
+        $foreignParent = $this->entry($foreign, 'discussions', '1', HistoryKind::Discussion, 'Foreign thread', '');
+        $this->get(route('history.index', ['workspace' => $workspace, 'company' => $foreignCompany->public_id]))->assertNotFound();
+        $this->get(route('history.index', ['workspace' => $workspace, 'company' => $company->public_id, 'parent' => $foreignParent->public_id]))->assertNotFound();
+    }
+
     /** @return array{User, Workspace} */
     private function manager(): array
     {
@@ -161,7 +188,7 @@ class HistoricalLibraryTest extends TestCase
         return [$user, $workspace];
     }
 
-    private function entry(Workspace $workspace, string $table, string $key, HistoryKind $kind, string $title, string $body, ?HistoricalRecord $parent = null): HistoricalEntry
+    private function entry(Workspace $workspace, string $table, string $key, HistoryKind $kind, string $title, string $body, ?HistoricalRecord $parent = null, ?ClientCompany $company = null): HistoricalEntry
     {
         $repo = app(HistoricalRecordRepository::class);
         $source = $repo->source($workspace, 'synthetic', hash('sha256', 'source'), 'Synthetic history');
@@ -169,7 +196,7 @@ class HistoricalLibraryTest extends TestCase
 
         return app(HistoricalLibraryRepository::class)->publish($workspace, $record,
             new HistoryDocument($kind, $title, $body, 'Casey Example', '2020-03-04 12:34:56', [['label' => 'Purchase order', 'value' => 'PO-SYN-1']],
-                [['label' => 'Items', 'columns' => ['Description', 'Quantity'], 'rows' => [['Synthetic line detail', '0.35']]]]), null, $parent);
+                [['label' => 'Items', 'columns' => ['Description', 'Quantity'], 'rows' => [['Synthetic line detail', '0.35']]]]), $company, $parent);
     }
 
     private function record(Workspace $workspace, HistoricalEntry $entry): HistoricalRecord

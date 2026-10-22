@@ -21,8 +21,8 @@ final class HistoricalLibraryReadService
             $query->where('kind', $kind->value);
         }
         if ($company !== null) {
-            $parent = ClientCompany::query()->where('workspace_id', $workspace->id)->where('public_id', $company)->firstOrFail();
-            $query->where('client_company_id', $parent->id);
+            $client = ClientCompany::query()->where('workspace_id', $workspace->id)->where('public_id', $company)->firstOrFail();
+            $query->where('client_company_id', $client->id);
         }
         if ($parent !== null) {
             $parentEntry = HistoricalEntry::query()->where('workspace_id', $workspace->id)->where('public_id', $parent)->firstOrFail();
