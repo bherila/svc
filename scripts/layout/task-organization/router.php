@@ -24,6 +24,7 @@ if ($method === 'GET' && $file !== false && str_starts_with($file, $public.'/bui
 }
 $pagePaths = array_map(static fn (string $url): string => parse_url($url, PHP_URL_PATH), $fixture['pages']);
 $pagePaths[] = parse_url($fixture['advisory_task_page'], PHP_URL_PATH);
+$pagePaths[] = parse_url($fixture['advisory_assignees_page'], PHP_URL_PATH);
 if (($method === 'GET' && ! in_array($path, $pagePaths, true))
     || ($method !== 'GET' && ! in_array($path, $fixture['writes'][$method] ?? [], true))) {
     http_response_code(403);

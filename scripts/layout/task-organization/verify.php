@@ -56,7 +56,8 @@ app(TaskCompletionAdvisory::class)->load($workspace, [$advisoryTask]);
 $editor = app(TaskEditorPresenter::class)->task($workspace, $advisoryTask);
 if ($editor['completion_advisory'] !== 'This task has unfinished subtasks. Completing it leaves those subtasks unchanged.'
     || $editor['status'] !== 'open' || $editor['completed_at'] !== null
-    || route('tasks.show', [$workspace, $advisoryTask]) !== $fixture['advisory_task_page']) {
+    || route('tasks.show', [$workspace, $advisoryTask]) !== $fixture['advisory_task_page']
+    || $editor['assignees_action'] !== $fixture['advisory_assignees_page']) {
     throw new RuntimeException('The native editor fixture lost its pre-completion advisory.');
 }
 foreach (['child', 'grandchild'] as $key) {
