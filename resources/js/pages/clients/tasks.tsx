@@ -2,6 +2,7 @@ import { Head, Link, router } from '@inertiajs/react';
 import { TaskCreateDialog } from '@/components/tasks/task-create-dialog';
 import type { TaskEditorProject } from '@/components/tasks/task-editor';
 import { Badge } from '@/components/ui/badge';
+import { buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
     Select,
@@ -56,6 +57,7 @@ export default function ClientTasks({
     projects,
     tasks,
     task_management = null,
+    pagination = null,
 }: {
     company: { id: string; name: string };
     /**
@@ -67,6 +69,10 @@ export default function ClientTasks({
     projects: TaskProject[];
     tasks: CompanyTask[];
     task_management?: { projects: TaskEditorProject[] } | null;
+    pagination?: {
+        previous_href: string | null;
+        next_href: string | null;
+    } | null;
 }) {
     const selected = filters.project_id ?? ALL_PROJECTS;
     const showsVisibility = audience === 'operator';
@@ -239,6 +245,40 @@ export default function ClientTasks({
                                 </Table>
                             </div>
                         )}
+                        {pagination !== null &&
+                            (pagination.previous_href !== null ||
+                                pagination.next_href !== null) && (
+                                <nav
+                                    aria-label="Task pages"
+                                    className="mt-4 flex flex-wrap justify-between gap-3"
+                                >
+                                    {pagination.previous_href !== null && (
+                                        <Link
+                                            href={pagination.previous_href}
+                                            className={buttonVariants({
+                                                variant: 'outline',
+                                                size: 'sm',
+                                            })}
+                                        >
+                                            Previous tasks
+                                        </Link>
+                                    )}
+                                    {pagination.next_href !== null && (
+                                        <Link
+                                            href={pagination.next_href}
+                                            className={cn(
+                                                buttonVariants({
+                                                    variant: 'outline',
+                                                    size: 'sm',
+                                                }),
+                                                'ml-auto',
+                                            )}
+                                        >
+                                            Next tasks
+                                        </Link>
+                                    )}
+                                </nav>
+                            )}
                     </CardContent>
                 </Card>
             </main>

@@ -5022,7 +5022,13 @@
                                     "is_active",
                                     "automatic_invoice_email_enabled",
                                     "automatic_invoice_email_delay_days",
-                                    "square_customer"
+                                    "square_customer",
+                                    "billing_address",
+                                    "phone",
+                                    "website_url",
+                                    "tax_id",
+                                    "currency",
+                                    "notes"
                                 ],
                                 "properties": {
                                     "version": {
@@ -5069,6 +5075,50 @@
                                             }
                                         ],
                                         "description": "The confirmed Square customer, or null."
+                                    },
+                                    "billing_address": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 10000
+                                    },
+                                    "phone": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 191
+                                    },
+                                    "website_url": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "uri",
+                                        "pattern": "^https?://",
+                                        "maxLength": 191
+                                    },
+                                    "tax_id": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 191
+                                    },
+                                    "currency": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "pattern": "^[A-Z]{3}$"
+                                    },
+                                    "notes": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 20000
                                     }
                                 }
                             },
@@ -5097,6 +5147,954 @@
                                             "null"
                                         ],
                                         "description": "Who confirmed the mapping, by name."
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "clients.contacts.archive",
+                    "title": "Archive business contact",
+                    "inputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "workspace_id",
+                            "client_id",
+                            "contact_id",
+                            "idempotency_key",
+                            "expected_version",
+                            "confirm"
+                        ],
+                        "properties": {
+                            "workspace_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "client_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "contact_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "idempotency_key": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 255
+                            },
+                            "expected_version": {
+                                "type": "string",
+                                "minLength": 64,
+                                "maxLength": 64
+                            },
+                            "confirm": {
+                                "type": "boolean",
+                                "const": true
+                            }
+                        }
+                    },
+                    "description": "Workspace managers only. Business contacts never create accounts, invitations or access grants.",
+                    "annotations": {
+                        "readOnlyHint": false,
+                        "destructiveHint": true,
+                        "idempotentHint": true,
+                        "openWorldHint": false
+                    },
+                    "outputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "data"
+                        ],
+                        "properties": {
+                            "data": {
+                                "$ref": "#/$defs/ClientBusinessContact"
+                            }
+                        },
+                        "$defs": {
+                            "ClientBusinessContact": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "id",
+                                    "company_id",
+                                    "version",
+                                    "first_name",
+                                    "last_name",
+                                    "title",
+                                    "email",
+                                    "phone",
+                                    "notes",
+                                    "is_archived"
+                                ],
+                                "properties": {
+                                    "id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "company_id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "version": {
+                                        "type": "string",
+                                        "minLength": 64,
+                                        "maxLength": 64
+                                    },
+                                    "first_name": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 100
+                                    },
+                                    "last_name": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 100
+                                    },
+                                    "title": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 191
+                                    },
+                                    "email": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 255,
+                                        "format": "email"
+                                    },
+                                    "phone": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 191
+                                    },
+                                    "notes": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 20000
+                                    },
+                                    "is_archived": {
+                                        "type": "boolean"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "clients.contacts.create",
+                    "title": "Create business contact",
+                    "inputSchema": {
+                        "allOf": [
+                            {
+                                "anyOf": [
+                                    {
+                                        "required": [
+                                            "first_name"
+                                        ],
+                                        "properties": {
+                                            "first_name": {
+                                                "type": "string",
+                                                "minLength": 1
+                                            }
+                                        }
+                                    },
+                                    {
+                                        "required": [
+                                            "last_name"
+                                        ],
+                                        "properties": {
+                                            "last_name": {
+                                                "type": "string",
+                                                "minLength": 1
+                                            }
+                                        }
+                                    }
+                                ]
+                            }
+                        ],
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "workspace_id",
+                            "client_id",
+                            "idempotency_key"
+                        ],
+                        "properties": {
+                            "workspace_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "client_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "idempotency_key": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 255
+                            },
+                            "first_name": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "maxLength": 100
+                            },
+                            "last_name": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "maxLength": 100
+                            },
+                            "title": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "maxLength": 191
+                            },
+                            "email": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "maxLength": 255,
+                                "format": "email"
+                            },
+                            "phone": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "maxLength": 191
+                            },
+                            "notes": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "maxLength": 20000
+                            },
+                            "is_archived": {
+                                "type": "boolean",
+                                "default": false
+                            }
+                        }
+                    },
+                    "description": "Workspace managers only. Business contacts never create accounts, invitations or access grants.",
+                    "annotations": {
+                        "readOnlyHint": false,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": false
+                    },
+                    "outputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "data"
+                        ],
+                        "properties": {
+                            "data": {
+                                "$ref": "#/$defs/ClientBusinessContact"
+                            }
+                        },
+                        "$defs": {
+                            "ClientBusinessContact": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "id",
+                                    "company_id",
+                                    "version",
+                                    "first_name",
+                                    "last_name",
+                                    "title",
+                                    "email",
+                                    "phone",
+                                    "notes",
+                                    "is_archived"
+                                ],
+                                "properties": {
+                                    "id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "company_id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "version": {
+                                        "type": "string",
+                                        "minLength": 64,
+                                        "maxLength": 64
+                                    },
+                                    "first_name": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 100
+                                    },
+                                    "last_name": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 100
+                                    },
+                                    "title": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 191
+                                    },
+                                    "email": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 255,
+                                        "format": "email"
+                                    },
+                                    "phone": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 191
+                                    },
+                                    "notes": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 20000
+                                    },
+                                    "is_archived": {
+                                        "type": "boolean"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "clients.contacts.get",
+                    "title": "Get business contact",
+                    "inputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "workspace_id",
+                            "client_id",
+                            "contact_id"
+                        ],
+                        "properties": {
+                            "workspace_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "client_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "contact_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            }
+                        }
+                    },
+                    "description": "Workspace managers only. Business contacts never create accounts, invitations or access grants.",
+                    "annotations": {
+                        "readOnlyHint": true,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": false
+                    },
+                    "outputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "data"
+                        ],
+                        "properties": {
+                            "data": {
+                                "$ref": "#/$defs/ClientBusinessContact"
+                            }
+                        },
+                        "$defs": {
+                            "ClientBusinessContact": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "id",
+                                    "company_id",
+                                    "version",
+                                    "first_name",
+                                    "last_name",
+                                    "title",
+                                    "email",
+                                    "phone",
+                                    "notes",
+                                    "is_archived"
+                                ],
+                                "properties": {
+                                    "id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "company_id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "version": {
+                                        "type": "string",
+                                        "minLength": 64,
+                                        "maxLength": 64
+                                    },
+                                    "first_name": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 100
+                                    },
+                                    "last_name": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 100
+                                    },
+                                    "title": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 191
+                                    },
+                                    "email": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 255,
+                                        "format": "email"
+                                    },
+                                    "phone": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 191
+                                    },
+                                    "notes": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 20000
+                                    },
+                                    "is_archived": {
+                                        "type": "boolean"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "clients.contacts.list",
+                    "title": "List business contacts",
+                    "inputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "workspace_id",
+                            "client_id"
+                        ],
+                        "properties": {
+                            "workspace_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "client_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "status": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "enum": [
+                                    "active",
+                                    "archived",
+                                    null
+                                ]
+                            },
+                            "limit": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 100,
+                                "default": 25
+                            },
+                            "cursor": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "maxLength": 2048
+                            }
+                        }
+                    },
+                    "description": "Workspace managers only. Business contacts never create accounts, invitations or access grants.",
+                    "annotations": {
+                        "readOnlyHint": true,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": false
+                    },
+                    "outputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "data",
+                            "meta"
+                        ],
+                        "properties": {
+                            "data": {
+                                "type": "array",
+                                "items": {
+                                    "$ref": "#/$defs/ClientBusinessContact"
+                                }
+                            },
+                            "meta": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "next_cursor"
+                                ],
+                                "properties": {
+                                    "next_cursor": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ]
+                                    }
+                                }
+                            }
+                        },
+                        "$defs": {
+                            "ClientBusinessContact": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "id",
+                                    "company_id",
+                                    "version",
+                                    "first_name",
+                                    "last_name",
+                                    "title",
+                                    "email",
+                                    "phone",
+                                    "notes",
+                                    "is_archived"
+                                ],
+                                "properties": {
+                                    "id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "company_id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "version": {
+                                        "type": "string",
+                                        "minLength": 64,
+                                        "maxLength": 64
+                                    },
+                                    "first_name": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 100
+                                    },
+                                    "last_name": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 100
+                                    },
+                                    "title": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 191
+                                    },
+                                    "email": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 255,
+                                        "format": "email"
+                                    },
+                                    "phone": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 191
+                                    },
+                                    "notes": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 20000
+                                    },
+                                    "is_archived": {
+                                        "type": "boolean"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "clients.contacts.restore",
+                    "title": "Restore business contact",
+                    "inputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "workspace_id",
+                            "client_id",
+                            "contact_id",
+                            "idempotency_key",
+                            "expected_version"
+                        ],
+                        "properties": {
+                            "workspace_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "client_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "contact_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "idempotency_key": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 255
+                            },
+                            "expected_version": {
+                                "type": "string",
+                                "minLength": 64,
+                                "maxLength": 64
+                            }
+                        }
+                    },
+                    "description": "Workspace managers only. Business contacts never create accounts, invitations or access grants.",
+                    "annotations": {
+                        "readOnlyHint": false,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": false
+                    },
+                    "outputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "data"
+                        ],
+                        "properties": {
+                            "data": {
+                                "$ref": "#/$defs/ClientBusinessContact"
+                            }
+                        },
+                        "$defs": {
+                            "ClientBusinessContact": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "id",
+                                    "company_id",
+                                    "version",
+                                    "first_name",
+                                    "last_name",
+                                    "title",
+                                    "email",
+                                    "phone",
+                                    "notes",
+                                    "is_archived"
+                                ],
+                                "properties": {
+                                    "id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "company_id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "version": {
+                                        "type": "string",
+                                        "minLength": 64,
+                                        "maxLength": 64
+                                    },
+                                    "first_name": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 100
+                                    },
+                                    "last_name": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 100
+                                    },
+                                    "title": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 191
+                                    },
+                                    "email": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 255,
+                                        "format": "email"
+                                    },
+                                    "phone": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 191
+                                    },
+                                    "notes": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 20000
+                                    },
+                                    "is_archived": {
+                                        "type": "boolean"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "clients.contacts.update",
+                    "title": "Update business contact",
+                    "inputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "workspace_id",
+                            "client_id",
+                            "contact_id",
+                            "idempotency_key",
+                            "expected_version"
+                        ],
+                        "properties": {
+                            "workspace_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "client_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "contact_id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "idempotency_key": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 255
+                            },
+                            "first_name": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "maxLength": 100
+                            },
+                            "last_name": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "maxLength": 100
+                            },
+                            "title": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "maxLength": 191
+                            },
+                            "email": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "maxLength": 255,
+                                "format": "email"
+                            },
+                            "phone": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "maxLength": 191
+                            },
+                            "notes": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "maxLength": 20000
+                            },
+                            "expected_version": {
+                                "type": "string",
+                                "minLength": 64,
+                                "maxLength": 64
+                            }
+                        }
+                    },
+                    "description": "Workspace managers only. Business contacts never create accounts, invitations or access grants.",
+                    "annotations": {
+                        "readOnlyHint": false,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": false
+                    },
+                    "outputSchema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "data"
+                        ],
+                        "properties": {
+                            "data": {
+                                "$ref": "#/$defs/ClientBusinessContact"
+                            }
+                        },
+                        "$defs": {
+                            "ClientBusinessContact": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "id",
+                                    "company_id",
+                                    "version",
+                                    "first_name",
+                                    "last_name",
+                                    "title",
+                                    "email",
+                                    "phone",
+                                    "notes",
+                                    "is_archived"
+                                ],
+                                "properties": {
+                                    "id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "company_id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "version": {
+                                        "type": "string",
+                                        "minLength": 64,
+                                        "maxLength": 64
+                                    },
+                                    "first_name": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 100
+                                    },
+                                    "last_name": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 100
+                                    },
+                                    "title": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 191
+                                    },
+                                    "email": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 255,
+                                        "format": "email"
+                                    },
+                                    "phone": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 191
+                                    },
+                                    "notes": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 20000
+                                    },
+                                    "is_archived": {
+                                        "type": "boolean"
                                     }
                                 }
                             }
@@ -5136,6 +6134,50 @@
                                 ],
                                 "format": "email",
                                 "maxLength": 255
+                            },
+                            "billing_address": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "maxLength": 10000
+                            },
+                            "phone": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "maxLength": 191
+                            },
+                            "website_url": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "format": "uri",
+                                "pattern": "^https?://",
+                                "maxLength": 191
+                            },
+                            "tax_id": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "maxLength": 191
+                            },
+                            "currency": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "pattern": "^[A-Z]{3}$"
+                            },
+                            "notes": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "maxLength": 20000
                             }
                         }
                     },
@@ -5169,7 +6211,13 @@
                                     "is_active",
                                     "automatic_invoice_email_enabled",
                                     "automatic_invoice_email_delay_days",
-                                    "square_customer"
+                                    "square_customer",
+                                    "billing_address",
+                                    "phone",
+                                    "website_url",
+                                    "tax_id",
+                                    "currency",
+                                    "notes"
                                 ],
                                 "properties": {
                                     "version": {
@@ -5216,6 +6264,50 @@
                                             }
                                         ],
                                         "description": "The confirmed Square customer, or null."
+                                    },
+                                    "billing_address": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 10000
+                                    },
+                                    "phone": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 191
+                                    },
+                                    "website_url": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "uri",
+                                        "pattern": "^https?://",
+                                        "maxLength": 191
+                                    },
+                                    "tax_id": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 191
+                                    },
+                                    "currency": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "pattern": "^[A-Z]{3}$"
+                                    },
+                                    "notes": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 20000
                                     }
                                 }
                             },
@@ -5301,7 +6393,13 @@
                                     "is_active",
                                     "automatic_invoice_email_enabled",
                                     "automatic_invoice_email_delay_days",
-                                    "square_customer"
+                                    "square_customer",
+                                    "billing_address",
+                                    "phone",
+                                    "website_url",
+                                    "tax_id",
+                                    "currency",
+                                    "notes"
                                 ],
                                 "properties": {
                                     "version": {
@@ -5348,6 +6446,50 @@
                                             }
                                         ],
                                         "description": "The confirmed Square customer, or null."
+                                    },
+                                    "billing_address": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 10000
+                                    },
+                                    "phone": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 191
+                                    },
+                                    "website_url": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "uri",
+                                        "pattern": "^https?://",
+                                        "maxLength": 191
+                                    },
+                                    "tax_id": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 191
+                                    },
+                                    "currency": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "pattern": "^[A-Z]{3}$"
+                                    },
+                                    "notes": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 20000
                                     }
                                 }
                             },
@@ -5489,7 +6631,13 @@
                                     "is_active",
                                     "automatic_invoice_email_enabled",
                                     "automatic_invoice_email_delay_days",
-                                    "square_customer"
+                                    "square_customer",
+                                    "billing_address",
+                                    "phone",
+                                    "website_url",
+                                    "tax_id",
+                                    "currency",
+                                    "notes"
                                 ],
                                 "properties": {
                                     "version": {
@@ -5536,6 +6684,50 @@
                                             }
                                         ],
                                         "description": "The confirmed Square customer, or null."
+                                    },
+                                    "billing_address": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 10000
+                                    },
+                                    "phone": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 191
+                                    },
+                                    "website_url": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "uri",
+                                        "pattern": "^https?://",
+                                        "maxLength": 191
+                                    },
+                                    "tax_id": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 191
+                                    },
+                                    "currency": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "pattern": "^[A-Z]{3}$"
+                                    },
+                                    "notes": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 20000
                                     }
                                 }
                             },
@@ -6998,7 +8190,13 @@
                                     "is_active",
                                     "automatic_invoice_email_enabled",
                                     "automatic_invoice_email_delay_days",
-                                    "square_customer"
+                                    "square_customer",
+                                    "billing_address",
+                                    "phone",
+                                    "website_url",
+                                    "tax_id",
+                                    "currency",
+                                    "notes"
                                 ],
                                 "properties": {
                                     "version": {
@@ -7045,6 +8243,50 @@
                                             }
                                         ],
                                         "description": "The confirmed Square customer, or null."
+                                    },
+                                    "billing_address": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 10000
+                                    },
+                                    "phone": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 191
+                                    },
+                                    "website_url": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "uri",
+                                        "pattern": "^https?://",
+                                        "maxLength": 191
+                                    },
+                                    "tax_id": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 191
+                                    },
+                                    "currency": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "pattern": "^[A-Z]{3}$"
+                                    },
+                                    "notes": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 20000
                                     }
                                 }
                             },
@@ -7160,6 +8402,50 @@
                             },
                             "is_active": {
                                 "type": "boolean"
+                            },
+                            "billing_address": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "maxLength": 10000
+                            },
+                            "phone": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "maxLength": 191
+                            },
+                            "website_url": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "format": "uri",
+                                "pattern": "^https?://",
+                                "maxLength": 191
+                            },
+                            "tax_id": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "maxLength": 191
+                            },
+                            "currency": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "pattern": "^[A-Z]{3}$"
+                            },
+                            "notes": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "maxLength": 20000
                             }
                         }
                     },
@@ -7193,7 +8479,13 @@
                                     "is_active",
                                     "automatic_invoice_email_enabled",
                                     "automatic_invoice_email_delay_days",
-                                    "square_customer"
+                                    "square_customer",
+                                    "billing_address",
+                                    "phone",
+                                    "website_url",
+                                    "tax_id",
+                                    "currency",
+                                    "notes"
                                 ],
                                 "properties": {
                                     "version": {
@@ -7240,6 +8532,50 @@
                                             }
                                         ],
                                         "description": "The confirmed Square customer, or null."
+                                    },
+                                    "billing_address": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 10000
+                                    },
+                                    "phone": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 191
+                                    },
+                                    "website_url": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "uri",
+                                        "pattern": "^https?://",
+                                        "maxLength": 191
+                                    },
+                                    "tax_id": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 191
+                                    },
+                                    "currency": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "pattern": "^[A-Z]{3}$"
+                                    },
+                                    "notes": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 20000
                                     }
                                 }
                             },
@@ -20994,6 +22330,14 @@
                             "project_id": {
                                 "type": "string",
                                 "format": "uuid"
+                            },
+                            "tasks_cursor": {
+                                "type": [
+                                    "null",
+                                    "string"
+                                ],
+                                "default": null,
+                                "maxLength": 2048
                             }
                         },
                         "required": [
@@ -21002,7 +22346,7 @@
                         ],
                         "additionalProperties": false
                     },
-                    "description": "Get one authorized project and its visible tasks.",
+                    "description": "Get one authorized project. When tasks:read is held, includes a bounded first task page; follow tasks_next_href or pass its tasks_cursor to continue. Long descriptions can shorten pages.",
                     "annotations": {
                         "readOnlyHint": true,
                         "destructiveHint": false,
@@ -21078,7 +22422,16 @@
                                         "type": "array",
                                         "items": {
                                             "$ref": "#/$defs/Task"
-                                        }
+                                        },
+                                        "maxItems": 25
+                                    },
+                                    "tasks_next_href": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "uri",
+                                        "description": "Present with the bounded tasks array when tasks:read is held. Continue on this project URL with its opaque tasks_cursor; null when the task page is complete."
                                     }
                                 }
                             },
@@ -21236,7 +22589,7 @@
                         ],
                         "additionalProperties": false
                     },
-                    "description": "List authorized projects with bounded cursor pagination.",
+                    "description": "List authorized projects with cursor pagination bounded by row count and serialized bytes. Follow next_cursor even when a page contains fewer than limit records.",
                     "annotations": {
                         "readOnlyHint": true,
                         "destructiveHint": false,
@@ -28794,7 +30147,7 @@
                         ],
                         "additionalProperties": false
                     },
-                    "description": "List authorized tasks with bounded cursor pagination.",
+                    "description": "List authorized tasks with cursor pagination bounded by row count and serialized bytes. Follow next_cursor even when a page contains fewer than limit records.",
                     "annotations": {
                         "readOnlyHint": true,
                         "destructiveHint": false,
@@ -30589,10 +31942,16 @@
                 "billing_schedules.get": "5e063c9324f1fbd4",
                 "billing_schedules.list": "91723c13172dc456",
                 "capacity_ledger.get": "4c9eff080780be42",
-                "clients.archive": "f71e1730f3513e31",
-                "clients.create": "3aa0fb3b53ea38cc",
-                "clients.get": "22dd0d0a447730cc",
-                "clients.list": "5bc552fd02d811ad",
+                "clients.archive": "00f0d0b2cb209433",
+                "clients.contacts.archive": "044051d4f4898b1a",
+                "clients.contacts.create": "3403aaa72685e503",
+                "clients.contacts.get": "d4395dfd2b24417d",
+                "clients.contacts.list": "ae54b436bbe52c90",
+                "clients.contacts.restore": "8894c37ed11c72a6",
+                "clients.contacts.update": "90173c636bb5ce6c",
+                "clients.create": "2a3ca7ec089be248",
+                "clients.get": "3b676337de0f1a4c",
+                "clients.list": "05f22c139792a020",
                 "clients.portal_access.grant": "6e26256a12459fa4",
                 "clients.portal_access.list": "629c5ea9b62c442a",
                 "clients.portal_access.revoke": "4c69c78734f42a65",
@@ -30601,8 +31960,8 @@
                 "clients.portal_invitations.list": "5eb8398574eb6f46",
                 "clients.portal_invitations.resend": "65ff566edda3ab94",
                 "clients.portal_invitations.revoke": "dd8e305a10f6bf51",
-                "clients.restore": "3b811be9a4a1a7b0",
-                "clients.update": "c16b0b8a74680255",
+                "clients.restore": "de0ca9638b40973b",
+                "clients.update": "6c48bf0c756ad921",
                 "companies.payment_reminders.get": "99a82139f0137f28",
                 "companies.payment_reminders.set": "28000c3cf407054d",
                 "companies.square_customer.clear": "bb76e8e2174853af",
@@ -30664,8 +32023,8 @@
                 "payments.set_status": "dbf7e8a65c846db0",
                 "projects.archive": "9693f87cf68157c0",
                 "projects.create": "652afb7cd8be7462",
-                "projects.get": "3491a5fe8538d824",
-                "projects.list": "1f44e98350cd47a0",
+                "projects.get": "9829dbe314a3c9bb",
+                "projects.list": "d0bd45da44dae87d",
                 "projects.members.list": "4d479cecdb3a8834",
                 "projects.members.update": "e1fb994f214fca71",
                 "projects.update": "563d43e098ed01db",
@@ -30693,7 +32052,7 @@
                 "square.sync": "107c06a20bae1b8a",
                 "tasks.create": "c060079f00e1e34f",
                 "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "29bb89c0e70ff14c",
+                "tasks.list": "4e17a8df00a95db0",
                 "tasks.update": "f22f524c3f9673e1",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
@@ -30743,6 +32102,12 @@
                     "billing_schedules.list role",
                     "capacity_ledger.get role",
                     "clients.archive role",
+                    "clients.contacts.archive role",
+                    "clients.contacts.create role",
+                    "clients.contacts.get role",
+                    "clients.contacts.list role",
+                    "clients.contacts.restore role",
+                    "clients.contacts.update role",
                     "clients.create role",
                     "clients.get role",
                     "clients.list role",
@@ -30855,15 +32220,15 @@
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "3491a5fe8538d824",
-                "projects.list": "1f44e98350cd47a0",
+                "projects.get": "9829dbe314a3c9bb",
+                "projects.list": "d0bd45da44dae87d",
                 "proposals.accept": "6f660c7d4c51f10e",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "16364ecdaf8ef167",
                 "tasks.create": "c060079f00e1e34f",
                 "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "29bb89c0e70ff14c",
+                "tasks.list": "4e17a8df00a95db0",
                 "tasks.update": "f22f524c3f9673e1",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
@@ -30910,6 +32275,12 @@
                     "billing_schedules.list role",
                     "capacity_ledger.get role",
                     "clients.archive role",
+                    "clients.contacts.archive role",
+                    "clients.contacts.create role",
+                    "clients.contacts.get role",
+                    "clients.contacts.list role",
+                    "clients.contacts.restore role",
+                    "clients.contacts.update role",
                     "clients.create role",
                     "clients.get role",
                     "clients.list role",
@@ -31022,15 +32393,15 @@
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "3491a5fe8538d824",
-                "projects.list": "1f44e98350cd47a0",
+                "projects.get": "9829dbe314a3c9bb",
+                "projects.list": "d0bd45da44dae87d",
                 "proposals.accept": "6f660c7d4c51f10e",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "16364ecdaf8ef167",
                 "tasks.create": "c060079f00e1e34f",
                 "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "29bb89c0e70ff14c",
+                "tasks.list": "4e17a8df00a95db0",
                 "tasks.update": "f22f524c3f9673e1",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
@@ -31077,6 +32448,12 @@
                     "billing_schedules.list role",
                     "capacity_ledger.get role",
                     "clients.archive role",
+                    "clients.contacts.archive role",
+                    "clients.contacts.create role",
+                    "clients.contacts.get role",
+                    "clients.contacts.list role",
+                    "clients.contacts.restore role",
+                    "clients.contacts.update role",
                     "clients.create role",
                     "clients.get role",
                     "clients.list role",
@@ -31189,15 +32566,15 @@
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "3491a5fe8538d824",
-                "projects.list": "1f44e98350cd47a0",
+                "projects.get": "9829dbe314a3c9bb",
+                "projects.list": "d0bd45da44dae87d",
                 "proposals.accept": "6f660c7d4c51f10e",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "16364ecdaf8ef167",
                 "tasks.create": "c060079f00e1e34f",
                 "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "29bb89c0e70ff14c",
+                "tasks.list": "4e17a8df00a95db0",
                 "tasks.update": "f22f524c3f9673e1",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
@@ -31244,6 +32621,12 @@
                     "billing_schedules.list role",
                     "capacity_ledger.get role",
                     "clients.archive role",
+                    "clients.contacts.archive role",
+                    "clients.contacts.create role",
+                    "clients.contacts.get role",
+                    "clients.contacts.list role",
+                    "clients.contacts.restore role",
+                    "clients.contacts.update role",
                     "clients.create role",
                     "clients.get role",
                     "clients.list role",
@@ -31356,15 +32739,15 @@
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "3491a5fe8538d824",
-                "projects.list": "1f44e98350cd47a0",
+                "projects.get": "9829dbe314a3c9bb",
+                "projects.list": "d0bd45da44dae87d",
                 "proposals.accept": "6f660c7d4c51f10e",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "16364ecdaf8ef167",
                 "tasks.create": "c060079f00e1e34f",
                 "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "29bb89c0e70ff14c",
+                "tasks.list": "4e17a8df00a95db0",
                 "tasks.update": "f22f524c3f9673e1",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
@@ -31396,6 +32779,10 @@
                     "billing_schedules.create scope_not_granted billing:write",
                     "billing_schedules.generate scope_not_granted billing:deliver",
                     "clients.archive scope_not_granted clients:write",
+                    "clients.contacts.archive scope_not_granted clients:write",
+                    "clients.contacts.create scope_not_granted clients:write",
+                    "clients.contacts.restore scope_not_granted clients:write",
+                    "clients.contacts.update scope_not_granted clients:write",
                     "clients.create scope_not_granted clients:write",
                     "clients.portal_access.grant scope_not_granted clients:write",
                     "clients.portal_access.revoke scope_not_granted clients:write",
@@ -31492,8 +32879,10 @@
                 "billing_schedules.get": "5e063c9324f1fbd4",
                 "billing_schedules.list": "91723c13172dc456",
                 "capacity_ledger.get": "4c9eff080780be42",
-                "clients.get": "22dd0d0a447730cc",
-                "clients.list": "5bc552fd02d811ad",
+                "clients.contacts.get": "d4395dfd2b24417d",
+                "clients.contacts.list": "ae54b436bbe52c90",
+                "clients.get": "3b676337de0f1a4c",
+                "clients.list": "05f22c139792a020",
                 "clients.portal_access.list": "629c5ea9b62c442a",
                 "clients.portal_invitations.list": "5eb8398574eb6f46",
                 "companies.payment_reminders.get": "99a82139f0137f28",
@@ -31516,8 +32905,8 @@
                 "invoices.square_candidates": "09693c77227c6c63",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "3491a5fe8538d824",
-                "projects.list": "1f44e98350cd47a0",
+                "projects.get": "9829dbe314a3c9bb",
+                "projects.list": "d0bd45da44dae87d",
                 "projects.members.list": "4d479cecdb3a8834",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
@@ -31537,7 +32926,7 @@
                 "square.series.get": "a337eaf2f901deb6",
                 "square.series.list": "45d8133149067200",
                 "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "29bb89c0e70ff14c",
+                "tasks.list": "4e17a8df00a95db0",
                 "time_entries.list": "f02e3c1ff727c1fd"
             },
             "resources": {
@@ -31682,6 +33071,12 @@
                     "billing_schedules.list role",
                     "capacity_ledger.get role",
                     "clients.archive scope_not_granted clients:write",
+                    "clients.contacts.archive scope_not_granted clients:write",
+                    "clients.contacts.create scope_not_granted clients:write",
+                    "clients.contacts.get role",
+                    "clients.contacts.list role",
+                    "clients.contacts.restore scope_not_granted clients:write",
+                    "clients.contacts.update scope_not_granted clients:write",
                     "clients.create scope_not_granted clients:write",
                     "clients.get role",
                     "clients.list role",
@@ -31802,13 +33197,13 @@
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "3491a5fe8538d824",
-                "projects.list": "1f44e98350cd47a0",
+                "projects.get": "9829dbe314a3c9bb",
+                "projects.list": "d0bd45da44dae87d",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "16364ecdaf8ef167",
                 "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "29bb89c0e70ff14c",
+                "tasks.list": "4e17a8df00a95db0",
                 "time_entries.list": "f02e3c1ff727c1fd"
             },
             "resources": {
@@ -31898,6 +33293,12 @@
                     "billing_schedules.list role",
                     "capacity_ledger.get role",
                     "clients.archive scope_not_granted clients:write",
+                    "clients.contacts.archive scope_not_granted clients:write",
+                    "clients.contacts.create scope_not_granted clients:write",
+                    "clients.contacts.get role",
+                    "clients.contacts.list role",
+                    "clients.contacts.restore scope_not_granted clients:write",
+                    "clients.contacts.update scope_not_granted clients:write",
                     "clients.create scope_not_granted clients:write",
                     "clients.get role",
                     "clients.list role",
@@ -32018,13 +33419,13 @@
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "3491a5fe8538d824",
-                "projects.list": "1f44e98350cd47a0",
+                "projects.get": "9829dbe314a3c9bb",
+                "projects.list": "d0bd45da44dae87d",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "16364ecdaf8ef167",
                 "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "29bb89c0e70ff14c",
+                "tasks.list": "4e17a8df00a95db0",
                 "time_entries.list": "f02e3c1ff727c1fd"
             },
             "resources": {
@@ -32101,6 +33502,10 @@
                     "billing_schedules.create deployment_disabled",
                     "billing_schedules.generate deployment_disabled",
                     "clients.archive deployment_disabled",
+                    "clients.contacts.archive deployment_disabled",
+                    "clients.contacts.create deployment_disabled",
+                    "clients.contacts.restore deployment_disabled",
+                    "clients.contacts.update deployment_disabled",
                     "clients.create deployment_disabled",
                     "clients.portal_access.grant deployment_disabled",
                     "clients.portal_access.revoke deployment_disabled",
@@ -32207,8 +33612,10 @@
                 "billing_schedules.get": "5e063c9324f1fbd4",
                 "billing_schedules.list": "91723c13172dc456",
                 "capacity_ledger.get": "4c9eff080780be42",
-                "clients.get": "22dd0d0a447730cc",
-                "clients.list": "5bc552fd02d811ad",
+                "clients.contacts.get": "d4395dfd2b24417d",
+                "clients.contacts.list": "ae54b436bbe52c90",
+                "clients.get": "3b676337de0f1a4c",
+                "clients.list": "05f22c139792a020",
                 "clients.portal_access.list": "629c5ea9b62c442a",
                 "companies.payment_reminders.get": "99a82139f0137f28",
                 "companies.square_customer.get": "7368cf19c59ad6e7",
@@ -32232,14 +33639,14 @@
                 "invoices.reminders.list": "86e53f8c46db44c6",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "3491a5fe8538d824",
-                "projects.list": "1f44e98350cd47a0",
+                "projects.get": "9829dbe314a3c9bb",
+                "projects.list": "d0bd45da44dae87d",
                 "projects.members.list": "4d479cecdb3a8834",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "16364ecdaf8ef167",
                 "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "29bb89c0e70ff14c",
+                "tasks.list": "4e17a8df00a95db0",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "time_entries.log": "ec3999786e835450",
@@ -32269,6 +33676,10 @@
                     "billing_schedules.create deployment_disabled",
                     "billing_schedules.generate deployment_disabled",
                     "clients.archive deployment_disabled",
+                    "clients.contacts.archive deployment_disabled",
+                    "clients.contacts.create deployment_disabled",
+                    "clients.contacts.restore deployment_disabled",
+                    "clients.contacts.update deployment_disabled",
                     "clients.create deployment_disabled",
                     "clients.portal_access.grant deployment_disabled",
                     "clients.portal_access.revoke deployment_disabled",
@@ -32375,8 +33786,10 @@
                 "billing_schedules.get": "5e063c9324f1fbd4",
                 "billing_schedules.list": "91723c13172dc456",
                 "capacity_ledger.get": "4c9eff080780be42",
-                "clients.get": "22dd0d0a447730cc",
-                "clients.list": "5bc552fd02d811ad",
+                "clients.contacts.get": "d4395dfd2b24417d",
+                "clients.contacts.list": "ae54b436bbe52c90",
+                "clients.get": "3b676337de0f1a4c",
+                "clients.list": "05f22c139792a020",
                 "clients.portal_access.list": "629c5ea9b62c442a",
                 "companies.payment_reminders.get": "99a82139f0137f28",
                 "companies.square_customer.get": "7368cf19c59ad6e7",
@@ -32400,14 +33813,14 @@
                 "invoices.reminders.list": "86e53f8c46db44c6",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "3491a5fe8538d824",
-                "projects.list": "1f44e98350cd47a0",
+                "projects.get": "9829dbe314a3c9bb",
+                "projects.list": "d0bd45da44dae87d",
                 "projects.members.list": "4d479cecdb3a8834",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "16364ecdaf8ef167",
                 "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "29bb89c0e70ff14c",
+                "tasks.list": "4e17a8df00a95db0",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "time_entries.log": "ec3999786e835450",
@@ -32452,6 +33865,12 @@
                     "billing_schedules.list role",
                     "capacity_ledger.get role",
                     "clients.archive deployment_disabled",
+                    "clients.contacts.archive deployment_disabled",
+                    "clients.contacts.create deployment_disabled",
+                    "clients.contacts.get role",
+                    "clients.contacts.list role",
+                    "clients.contacts.restore deployment_disabled",
+                    "clients.contacts.update deployment_disabled",
                     "clients.create deployment_disabled",
                     "clients.get role",
                     "clients.list role",
@@ -32569,13 +33988,13 @@
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "3491a5fe8538d824",
-                "projects.list": "1f44e98350cd47a0",
+                "projects.get": "9829dbe314a3c9bb",
+                "projects.list": "d0bd45da44dae87d",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "16364ecdaf8ef167",
                 "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "29bb89c0e70ff14c",
+                "tasks.list": "4e17a8df00a95db0",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "time_entries.log": "ec3999786e835450",
@@ -32618,6 +34037,12 @@
                     "billing_schedules.list role",
                     "capacity_ledger.get role",
                     "clients.archive deployment_disabled",
+                    "clients.contacts.archive deployment_disabled",
+                    "clients.contacts.create deployment_disabled",
+                    "clients.contacts.get role",
+                    "clients.contacts.list role",
+                    "clients.contacts.restore deployment_disabled",
+                    "clients.contacts.update deployment_disabled",
                     "clients.create deployment_disabled",
                     "clients.get role",
                     "clients.list role",
@@ -32735,13 +34160,13 @@
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "3491a5fe8538d824",
-                "projects.list": "1f44e98350cd47a0",
+                "projects.get": "9829dbe314a3c9bb",
+                "projects.list": "d0bd45da44dae87d",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "16364ecdaf8ef167",
                 "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "29bb89c0e70ff14c",
+                "tasks.list": "4e17a8df00a95db0",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "time_entries.log": "ec3999786e835450",
@@ -32784,6 +34209,12 @@
                     "billing_schedules.list role",
                     "capacity_ledger.get role",
                     "clients.archive deployment_disabled",
+                    "clients.contacts.archive deployment_disabled",
+                    "clients.contacts.create deployment_disabled",
+                    "clients.contacts.get role",
+                    "clients.contacts.list role",
+                    "clients.contacts.restore deployment_disabled",
+                    "clients.contacts.update deployment_disabled",
                     "clients.create deployment_disabled",
                     "clients.get role",
                     "clients.list role",
@@ -32901,13 +34332,13 @@
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "3491a5fe8538d824",
-                "projects.list": "1f44e98350cd47a0",
+                "projects.get": "9829dbe314a3c9bb",
+                "projects.list": "d0bd45da44dae87d",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "16364ecdaf8ef167",
                 "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "29bb89c0e70ff14c",
+                "tasks.list": "4e17a8df00a95db0",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "time_entries.log": "ec3999786e835450",
@@ -32950,6 +34381,12 @@
                     "billing_schedules.list role",
                     "capacity_ledger.get role",
                     "clients.archive deployment_disabled",
+                    "clients.contacts.archive deployment_disabled",
+                    "clients.contacts.create deployment_disabled",
+                    "clients.contacts.get role",
+                    "clients.contacts.list role",
+                    "clients.contacts.restore deployment_disabled",
+                    "clients.contacts.update deployment_disabled",
                     "clients.create deployment_disabled",
                     "clients.get role",
                     "clients.list role",
@@ -33067,13 +34504,13 @@
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "3491a5fe8538d824",
-                "projects.list": "1f44e98350cd47a0",
+                "projects.get": "9829dbe314a3c9bb",
+                "projects.list": "d0bd45da44dae87d",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "16364ecdaf8ef167",
                 "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "29bb89c0e70ff14c",
+                "tasks.list": "4e17a8df00a95db0",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "time_entries.log": "ec3999786e835450",
@@ -33103,6 +34540,10 @@
                     "billing_schedules.create deployment_disabled",
                     "billing_schedules.generate deployment_disabled",
                     "clients.archive deployment_disabled",
+                    "clients.contacts.archive deployment_disabled",
+                    "clients.contacts.create deployment_disabled",
+                    "clients.contacts.restore deployment_disabled",
+                    "clients.contacts.update deployment_disabled",
                     "clients.create deployment_disabled",
                     "clients.portal_access.grant deployment_disabled",
                     "clients.portal_access.revoke deployment_disabled",
@@ -33196,8 +34637,10 @@
                 "billing_schedules.get": "5e063c9324f1fbd4",
                 "billing_schedules.list": "91723c13172dc456",
                 "capacity_ledger.get": "4c9eff080780be42",
-                "clients.get": "22dd0d0a447730cc",
-                "clients.list": "5bc552fd02d811ad",
+                "clients.contacts.get": "d4395dfd2b24417d",
+                "clients.contacts.list": "ae54b436bbe52c90",
+                "clients.get": "3b676337de0f1a4c",
+                "clients.list": "05f22c139792a020",
                 "clients.portal_access.list": "629c5ea9b62c442a",
                 "clients.portal_invitations.list": "5eb8398574eb6f46",
                 "companies.payment_reminders.get": "99a82139f0137f28",
@@ -33223,8 +34666,8 @@
                 "invoices.square_candidates": "09693c77227c6c63",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "3491a5fe8538d824",
-                "projects.list": "1f44e98350cd47a0",
+                "projects.get": "9829dbe314a3c9bb",
+                "projects.list": "d0bd45da44dae87d",
                 "projects.members.list": "4d479cecdb3a8834",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
@@ -33244,7 +34687,7 @@
                 "square.series.get": "a337eaf2f901deb6",
                 "square.series.list": "45d8133149067200",
                 "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "29bb89c0e70ff14c",
+                "tasks.list": "4e17a8df00a95db0",
                 "time_entries.list": "f02e3c1ff727c1fd"
             },
             "resources": {
@@ -33269,6 +34712,10 @@
                     "billing_schedules.create deployment_disabled",
                     "billing_schedules.generate deployment_disabled",
                     "clients.archive deployment_disabled",
+                    "clients.contacts.archive deployment_disabled",
+                    "clients.contacts.create deployment_disabled",
+                    "clients.contacts.restore deployment_disabled",
+                    "clients.contacts.update deployment_disabled",
                     "clients.create deployment_disabled",
                     "clients.portal_access.grant deployment_disabled",
                     "clients.portal_access.revoke deployment_disabled",
@@ -33362,8 +34809,10 @@
                 "billing_schedules.get": "5e063c9324f1fbd4",
                 "billing_schedules.list": "91723c13172dc456",
                 "capacity_ledger.get": "4c9eff080780be42",
-                "clients.get": "22dd0d0a447730cc",
-                "clients.list": "5bc552fd02d811ad",
+                "clients.contacts.get": "d4395dfd2b24417d",
+                "clients.contacts.list": "ae54b436bbe52c90",
+                "clients.get": "3b676337de0f1a4c",
+                "clients.list": "05f22c139792a020",
                 "clients.portal_access.list": "629c5ea9b62c442a",
                 "clients.portal_invitations.list": "5eb8398574eb6f46",
                 "companies.payment_reminders.get": "99a82139f0137f28",
@@ -33389,8 +34838,8 @@
                 "invoices.square_candidates": "09693c77227c6c63",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "3491a5fe8538d824",
-                "projects.list": "1f44e98350cd47a0",
+                "projects.get": "9829dbe314a3c9bb",
+                "projects.list": "d0bd45da44dae87d",
                 "projects.members.list": "4d479cecdb3a8834",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
@@ -33410,7 +34859,7 @@
                 "square.series.get": "a337eaf2f901deb6",
                 "square.series.list": "45d8133149067200",
                 "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "29bb89c0e70ff14c",
+                "tasks.list": "4e17a8df00a95db0",
                 "time_entries.list": "f02e3c1ff727c1fd"
             },
             "resources": {
@@ -33450,6 +34899,12 @@
                     "billing_schedules.list role",
                     "capacity_ledger.get role",
                     "clients.archive deployment_disabled",
+                    "clients.contacts.archive deployment_disabled",
+                    "clients.contacts.create deployment_disabled",
+                    "clients.contacts.get role",
+                    "clients.contacts.list role",
+                    "clients.contacts.restore deployment_disabled",
+                    "clients.contacts.update deployment_disabled",
                     "clients.create deployment_disabled",
                     "clients.get role",
                     "clients.list role",
@@ -33570,13 +35025,13 @@
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "3491a5fe8538d824",
-                "projects.list": "1f44e98350cd47a0",
+                "projects.get": "9829dbe314a3c9bb",
+                "projects.list": "d0bd45da44dae87d",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "16364ecdaf8ef167",
                 "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "29bb89c0e70ff14c",
+                "tasks.list": "4e17a8df00a95db0",
                 "time_entries.list": "f02e3c1ff727c1fd"
             },
             "resources": {
@@ -33614,6 +35069,12 @@
                     "billing_schedules.list role",
                     "capacity_ledger.get role",
                     "clients.archive deployment_disabled",
+                    "clients.contacts.archive deployment_disabled",
+                    "clients.contacts.create deployment_disabled",
+                    "clients.contacts.get role",
+                    "clients.contacts.list role",
+                    "clients.contacts.restore deployment_disabled",
+                    "clients.contacts.update deployment_disabled",
                     "clients.create deployment_disabled",
                     "clients.get role",
                     "clients.list role",
@@ -33734,13 +35195,13 @@
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "3491a5fe8538d824",
-                "projects.list": "1f44e98350cd47a0",
+                "projects.get": "9829dbe314a3c9bb",
+                "projects.list": "d0bd45da44dae87d",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "16364ecdaf8ef167",
                 "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "29bb89c0e70ff14c",
+                "tasks.list": "4e17a8df00a95db0",
                 "time_entries.list": "f02e3c1ff727c1fd"
             },
             "resources": {
@@ -33778,6 +35239,12 @@
                     "billing_schedules.list role",
                     "capacity_ledger.get role",
                     "clients.archive deployment_disabled",
+                    "clients.contacts.archive deployment_disabled",
+                    "clients.contacts.create deployment_disabled",
+                    "clients.contacts.get role",
+                    "clients.contacts.list role",
+                    "clients.contacts.restore deployment_disabled",
+                    "clients.contacts.update deployment_disabled",
                     "clients.create deployment_disabled",
                     "clients.get role",
                     "clients.list role",
@@ -33898,13 +35365,13 @@
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "3491a5fe8538d824",
-                "projects.list": "1f44e98350cd47a0",
+                "projects.get": "9829dbe314a3c9bb",
+                "projects.list": "d0bd45da44dae87d",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "16364ecdaf8ef167",
                 "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "29bb89c0e70ff14c",
+                "tasks.list": "4e17a8df00a95db0",
                 "time_entries.list": "f02e3c1ff727c1fd"
             },
             "resources": {
@@ -33942,6 +35409,12 @@
                     "billing_schedules.list role",
                     "capacity_ledger.get role",
                     "clients.archive deployment_disabled",
+                    "clients.contacts.archive deployment_disabled",
+                    "clients.contacts.create deployment_disabled",
+                    "clients.contacts.get role",
+                    "clients.contacts.list role",
+                    "clients.contacts.restore deployment_disabled",
+                    "clients.contacts.update deployment_disabled",
                     "clients.create deployment_disabled",
                     "clients.get role",
                     "clients.list role",
@@ -34062,13 +35535,13 @@
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "3491a5fe8538d824",
-                "projects.list": "1f44e98350cd47a0",
+                "projects.get": "9829dbe314a3c9bb",
+                "projects.list": "d0bd45da44dae87d",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "16364ecdaf8ef167",
                 "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "29bb89c0e70ff14c",
+                "tasks.list": "4e17a8df00a95db0",
                 "time_entries.list": "f02e3c1ff727c1fd"
             },
             "resources": {
@@ -34093,6 +35566,10 @@
                     "billing_schedules.create deployment_disabled",
                     "billing_schedules.generate deployment_disabled",
                     "clients.archive deployment_disabled",
+                    "clients.contacts.archive deployment_disabled",
+                    "clients.contacts.create deployment_disabled",
+                    "clients.contacts.restore deployment_disabled",
+                    "clients.contacts.update deployment_disabled",
                     "clients.create deployment_disabled",
                     "clients.portal_access.grant deployment_disabled",
                     "clients.portal_access.revoke deployment_disabled",
@@ -34183,8 +35660,10 @@
                 "billing_schedules.get": "5e063c9324f1fbd4",
                 "billing_schedules.list": "91723c13172dc456",
                 "capacity_ledger.get": "4c9eff080780be42",
-                "clients.get": "22dd0d0a447730cc",
-                "clients.list": "5bc552fd02d811ad",
+                "clients.contacts.get": "d4395dfd2b24417d",
+                "clients.contacts.list": "ae54b436bbe52c90",
+                "clients.get": "3b676337de0f1a4c",
+                "clients.list": "05f22c139792a020",
                 "clients.portal_access.list": "629c5ea9b62c442a",
                 "clients.portal_invitations.list": "5eb8398574eb6f46",
                 "companies.payment_reminders.get": "99a82139f0137f28",
@@ -34210,8 +35689,8 @@
                 "invoices.square_candidates": "09693c77227c6c63",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "3491a5fe8538d824",
-                "projects.list": "1f44e98350cd47a0",
+                "projects.get": "9829dbe314a3c9bb",
+                "projects.list": "d0bd45da44dae87d",
                 "projects.members.list": "4d479cecdb3a8834",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
@@ -34231,7 +35710,7 @@
                 "square.series.get": "a337eaf2f901deb6",
                 "square.series.list": "45d8133149067200",
                 "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "29bb89c0e70ff14c",
+                "tasks.list": "4e17a8df00a95db0",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "time_entries.log": "ec3999786e835450",
@@ -34261,6 +35740,10 @@
                     "billing_schedules.create deployment_disabled",
                     "billing_schedules.generate deployment_disabled",
                     "clients.archive deployment_disabled",
+                    "clients.contacts.archive deployment_disabled",
+                    "clients.contacts.create deployment_disabled",
+                    "clients.contacts.restore deployment_disabled",
+                    "clients.contacts.update deployment_disabled",
                     "clients.create deployment_disabled",
                     "clients.portal_access.grant deployment_disabled",
                     "clients.portal_access.revoke deployment_disabled",
@@ -34351,8 +35834,10 @@
                 "billing_schedules.get": "5e063c9324f1fbd4",
                 "billing_schedules.list": "91723c13172dc456",
                 "capacity_ledger.get": "4c9eff080780be42",
-                "clients.get": "22dd0d0a447730cc",
-                "clients.list": "5bc552fd02d811ad",
+                "clients.contacts.get": "d4395dfd2b24417d",
+                "clients.contacts.list": "ae54b436bbe52c90",
+                "clients.get": "3b676337de0f1a4c",
+                "clients.list": "05f22c139792a020",
                 "clients.portal_access.list": "629c5ea9b62c442a",
                 "clients.portal_invitations.list": "5eb8398574eb6f46",
                 "companies.payment_reminders.get": "99a82139f0137f28",
@@ -34378,8 +35863,8 @@
                 "invoices.square_candidates": "09693c77227c6c63",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "3491a5fe8538d824",
-                "projects.list": "1f44e98350cd47a0",
+                "projects.get": "9829dbe314a3c9bb",
+                "projects.list": "d0bd45da44dae87d",
                 "projects.members.list": "4d479cecdb3a8834",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
@@ -34399,7 +35884,7 @@
                 "square.series.get": "a337eaf2f901deb6",
                 "square.series.list": "45d8133149067200",
                 "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "29bb89c0e70ff14c",
+                "tasks.list": "4e17a8df00a95db0",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "time_entries.log": "ec3999786e835450",
@@ -34444,6 +35929,12 @@
                     "billing_schedules.list role",
                     "capacity_ledger.get role",
                     "clients.archive deployment_disabled",
+                    "clients.contacts.archive deployment_disabled",
+                    "clients.contacts.create deployment_disabled",
+                    "clients.contacts.get role",
+                    "clients.contacts.list role",
+                    "clients.contacts.restore deployment_disabled",
+                    "clients.contacts.update deployment_disabled",
                     "clients.create deployment_disabled",
                     "clients.get role",
                     "clients.list role",
@@ -34561,13 +36052,13 @@
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "3491a5fe8538d824",
-                "projects.list": "1f44e98350cd47a0",
+                "projects.get": "9829dbe314a3c9bb",
+                "projects.list": "d0bd45da44dae87d",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "16364ecdaf8ef167",
                 "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "29bb89c0e70ff14c",
+                "tasks.list": "4e17a8df00a95db0",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "time_entries.log": "ec3999786e835450",
@@ -34610,6 +36101,12 @@
                     "billing_schedules.list role",
                     "capacity_ledger.get role",
                     "clients.archive deployment_disabled",
+                    "clients.contacts.archive deployment_disabled",
+                    "clients.contacts.create deployment_disabled",
+                    "clients.contacts.get role",
+                    "clients.contacts.list role",
+                    "clients.contacts.restore deployment_disabled",
+                    "clients.contacts.update deployment_disabled",
                     "clients.create deployment_disabled",
                     "clients.get role",
                     "clients.list role",
@@ -34727,13 +36224,13 @@
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "3491a5fe8538d824",
-                "projects.list": "1f44e98350cd47a0",
+                "projects.get": "9829dbe314a3c9bb",
+                "projects.list": "d0bd45da44dae87d",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "16364ecdaf8ef167",
                 "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "29bb89c0e70ff14c",
+                "tasks.list": "4e17a8df00a95db0",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "time_entries.log": "ec3999786e835450",
@@ -34776,6 +36273,12 @@
                     "billing_schedules.list role",
                     "capacity_ledger.get role",
                     "clients.archive deployment_disabled",
+                    "clients.contacts.archive deployment_disabled",
+                    "clients.contacts.create deployment_disabled",
+                    "clients.contacts.get role",
+                    "clients.contacts.list role",
+                    "clients.contacts.restore deployment_disabled",
+                    "clients.contacts.update deployment_disabled",
                     "clients.create deployment_disabled",
                     "clients.get role",
                     "clients.list role",
@@ -34893,13 +36396,13 @@
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "3491a5fe8538d824",
-                "projects.list": "1f44e98350cd47a0",
+                "projects.get": "9829dbe314a3c9bb",
+                "projects.list": "d0bd45da44dae87d",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "16364ecdaf8ef167",
                 "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "29bb89c0e70ff14c",
+                "tasks.list": "4e17a8df00a95db0",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "time_entries.log": "ec3999786e835450",
@@ -34942,6 +36445,12 @@
                     "billing_schedules.list role",
                     "capacity_ledger.get role",
                     "clients.archive deployment_disabled",
+                    "clients.contacts.archive deployment_disabled",
+                    "clients.contacts.create deployment_disabled",
+                    "clients.contacts.get role",
+                    "clients.contacts.list role",
+                    "clients.contacts.restore deployment_disabled",
+                    "clients.contacts.update deployment_disabled",
                     "clients.create deployment_disabled",
                     "clients.get role",
                     "clients.list role",
@@ -35059,13 +36568,13 @@
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "3491a5fe8538d824",
-                "projects.list": "1f44e98350cd47a0",
+                "projects.get": "9829dbe314a3c9bb",
+                "projects.list": "d0bd45da44dae87d",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "16364ecdaf8ef167",
                 "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "29bb89c0e70ff14c",
+                "tasks.list": "4e17a8df00a95db0",
                 "time_entries.delete": "edcdfbb24759c4f5",
                 "time_entries.list": "f02e3c1ff727c1fd",
                 "time_entries.log": "ec3999786e835450",
@@ -35143,10 +36652,16 @@
                 "billing_schedules.get": "5e063c9324f1fbd4",
                 "billing_schedules.list": "91723c13172dc456",
                 "capacity_ledger.get": "4c9eff080780be42",
-                "clients.archive": "f71e1730f3513e31",
-                "clients.create": "3aa0fb3b53ea38cc",
-                "clients.get": "22dd0d0a447730cc",
-                "clients.list": "5bc552fd02d811ad",
+                "clients.archive": "00f0d0b2cb209433",
+                "clients.contacts.archive": "044051d4f4898b1a",
+                "clients.contacts.create": "3403aaa72685e503",
+                "clients.contacts.get": "d4395dfd2b24417d",
+                "clients.contacts.list": "ae54b436bbe52c90",
+                "clients.contacts.restore": "8894c37ed11c72a6",
+                "clients.contacts.update": "90173c636bb5ce6c",
+                "clients.create": "2a3ca7ec089be248",
+                "clients.get": "3b676337de0f1a4c",
+                "clients.list": "05f22c139792a020",
                 "clients.portal_access.grant": "6e26256a12459fa4",
                 "clients.portal_access.list": "629c5ea9b62c442a",
                 "clients.portal_access.revoke": "4c69c78734f42a65",
@@ -35155,8 +36670,8 @@
                 "clients.portal_invitations.list": "5eb8398574eb6f46",
                 "clients.portal_invitations.resend": "65ff566edda3ab94",
                 "clients.portal_invitations.revoke": "dd8e305a10f6bf51",
-                "clients.restore": "3b811be9a4a1a7b0",
-                "clients.update": "c16b0b8a74680255",
+                "clients.restore": "de0ca9638b40973b",
+                "clients.update": "6c48bf0c756ad921",
                 "companies.payment_reminders.get": "99a82139f0137f28",
                 "companies.payment_reminders.set": "28000c3cf407054d",
                 "companies.square_customer.clear": "bb76e8e2174853af",
@@ -35200,8 +36715,8 @@
                 "payments.set_status": "dbf7e8a65c846db0",
                 "projects.archive": "9693f87cf68157c0",
                 "projects.create": "652afb7cd8be7462",
-                "projects.get": "3491a5fe8538d824",
-                "projects.list": "1f44e98350cd47a0",
+                "projects.get": "9829dbe314a3c9bb",
+                "projects.list": "d0bd45da44dae87d",
                 "projects.members.list": "4d479cecdb3a8834",
                 "projects.members.update": "e1fb994f214fca71",
                 "projects.update": "563d43e098ed01db",
@@ -35229,7 +36744,7 @@
                 "square.sync": "107c06a20bae1b8a",
                 "tasks.create": "c060079f00e1e34f",
                 "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "29bb89c0e70ff14c",
+                "tasks.list": "4e17a8df00a95db0",
                 "tasks.update": "f22f524c3f9673e1",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
@@ -35311,10 +36826,16 @@
                 "billing_schedules.get": "5e063c9324f1fbd4",
                 "billing_schedules.list": "91723c13172dc456",
                 "capacity_ledger.get": "4c9eff080780be42",
-                "clients.archive": "f71e1730f3513e31",
-                "clients.create": "3aa0fb3b53ea38cc",
-                "clients.get": "22dd0d0a447730cc",
-                "clients.list": "5bc552fd02d811ad",
+                "clients.archive": "00f0d0b2cb209433",
+                "clients.contacts.archive": "044051d4f4898b1a",
+                "clients.contacts.create": "3403aaa72685e503",
+                "clients.contacts.get": "d4395dfd2b24417d",
+                "clients.contacts.list": "ae54b436bbe52c90",
+                "clients.contacts.restore": "8894c37ed11c72a6",
+                "clients.contacts.update": "90173c636bb5ce6c",
+                "clients.create": "2a3ca7ec089be248",
+                "clients.get": "3b676337de0f1a4c",
+                "clients.list": "05f22c139792a020",
                 "clients.portal_access.grant": "6e26256a12459fa4",
                 "clients.portal_access.list": "629c5ea9b62c442a",
                 "clients.portal_access.revoke": "4c69c78734f42a65",
@@ -35323,8 +36844,8 @@
                 "clients.portal_invitations.list": "5eb8398574eb6f46",
                 "clients.portal_invitations.resend": "65ff566edda3ab94",
                 "clients.portal_invitations.revoke": "dd8e305a10f6bf51",
-                "clients.restore": "3b811be9a4a1a7b0",
-                "clients.update": "c16b0b8a74680255",
+                "clients.restore": "de0ca9638b40973b",
+                "clients.update": "6c48bf0c756ad921",
                 "companies.payment_reminders.get": "99a82139f0137f28",
                 "companies.payment_reminders.set": "28000c3cf407054d",
                 "companies.square_customer.clear": "bb76e8e2174853af",
@@ -35368,8 +36889,8 @@
                 "payments.set_status": "dbf7e8a65c846db0",
                 "projects.archive": "9693f87cf68157c0",
                 "projects.create": "652afb7cd8be7462",
-                "projects.get": "3491a5fe8538d824",
-                "projects.list": "1f44e98350cd47a0",
+                "projects.get": "9829dbe314a3c9bb",
+                "projects.list": "d0bd45da44dae87d",
                 "projects.members.list": "4d479cecdb3a8834",
                 "projects.members.update": "e1fb994f214fca71",
                 "projects.update": "563d43e098ed01db",
@@ -35397,7 +36918,7 @@
                 "square.sync": "107c06a20bae1b8a",
                 "tasks.create": "c060079f00e1e34f",
                 "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "29bb89c0e70ff14c",
+                "tasks.list": "4e17a8df00a95db0",
                 "tasks.update": "f22f524c3f9673e1",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
@@ -35446,6 +36967,12 @@
                     "billing_schedules.list role",
                     "capacity_ledger.get role",
                     "clients.archive role",
+                    "clients.contacts.archive role",
+                    "clients.contacts.create role",
+                    "clients.contacts.get role",
+                    "clients.contacts.list role",
+                    "clients.contacts.restore role",
+                    "clients.contacts.update role",
                     "clients.create role",
                     "clients.get role",
                     "clients.list role",
@@ -35558,15 +37085,15 @@
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "3491a5fe8538d824",
-                "projects.list": "1f44e98350cd47a0",
+                "projects.get": "9829dbe314a3c9bb",
+                "projects.list": "d0bd45da44dae87d",
                 "proposals.accept": "6f660c7d4c51f10e",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "16364ecdaf8ef167",
                 "tasks.create": "c060079f00e1e34f",
                 "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "29bb89c0e70ff14c",
+                "tasks.list": "4e17a8df00a95db0",
                 "tasks.update": "f22f524c3f9673e1",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
@@ -35612,6 +37139,12 @@
                     "billing_schedules.list role",
                     "capacity_ledger.get role",
                     "clients.archive role",
+                    "clients.contacts.archive role",
+                    "clients.contacts.create role",
+                    "clients.contacts.get role",
+                    "clients.contacts.list role",
+                    "clients.contacts.restore role",
+                    "clients.contacts.update role",
                     "clients.create role",
                     "clients.get role",
                     "clients.list role",
@@ -35724,15 +37257,15 @@
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "3491a5fe8538d824",
-                "projects.list": "1f44e98350cd47a0",
+                "projects.get": "9829dbe314a3c9bb",
+                "projects.list": "d0bd45da44dae87d",
                 "proposals.accept": "6f660c7d4c51f10e",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "16364ecdaf8ef167",
                 "tasks.create": "c060079f00e1e34f",
                 "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "29bb89c0e70ff14c",
+                "tasks.list": "4e17a8df00a95db0",
                 "tasks.update": "f22f524c3f9673e1",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
@@ -35778,6 +37311,12 @@
                     "billing_schedules.list role",
                     "capacity_ledger.get role",
                     "clients.archive role",
+                    "clients.contacts.archive role",
+                    "clients.contacts.create role",
+                    "clients.contacts.get role",
+                    "clients.contacts.list role",
+                    "clients.contacts.restore role",
+                    "clients.contacts.update role",
                     "clients.create role",
                     "clients.get role",
                     "clients.list role",
@@ -35890,15 +37429,15 @@
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "3491a5fe8538d824",
-                "projects.list": "1f44e98350cd47a0",
+                "projects.get": "9829dbe314a3c9bb",
+                "projects.list": "d0bd45da44dae87d",
                 "proposals.accept": "6f660c7d4c51f10e",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "16364ecdaf8ef167",
                 "tasks.create": "c060079f00e1e34f",
                 "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "29bb89c0e70ff14c",
+                "tasks.list": "4e17a8df00a95db0",
                 "tasks.update": "f22f524c3f9673e1",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
@@ -35944,6 +37483,12 @@
                     "billing_schedules.list role",
                     "capacity_ledger.get role",
                     "clients.archive role",
+                    "clients.contacts.archive role",
+                    "clients.contacts.create role",
+                    "clients.contacts.get role",
+                    "clients.contacts.list role",
+                    "clients.contacts.restore role",
+                    "clients.contacts.update role",
                     "clients.create role",
                     "clients.get role",
                     "clients.list role",
@@ -36056,15 +37601,15 @@
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "3491a5fe8538d824",
-                "projects.list": "1f44e98350cd47a0",
+                "projects.get": "9829dbe314a3c9bb",
+                "projects.list": "d0bd45da44dae87d",
                 "proposals.accept": "6f660c7d4c51f10e",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "16364ecdaf8ef167",
                 "tasks.create": "c060079f00e1e34f",
                 "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "29bb89c0e70ff14c",
+                "tasks.list": "4e17a8df00a95db0",
                 "tasks.update": "f22f524c3f9673e1",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
@@ -36180,10 +37725,16 @@
                 "billing_schedules.get": "5e063c9324f1fbd4",
                 "billing_schedules.list": "91723c13172dc456",
                 "capacity_ledger.get": "4c9eff080780be42",
-                "clients.archive": "f71e1730f3513e31",
-                "clients.create": "3aa0fb3b53ea38cc",
-                "clients.get": "22dd0d0a447730cc",
-                "clients.list": "5bc552fd02d811ad",
+                "clients.archive": "00f0d0b2cb209433",
+                "clients.contacts.archive": "044051d4f4898b1a",
+                "clients.contacts.create": "3403aaa72685e503",
+                "clients.contacts.get": "d4395dfd2b24417d",
+                "clients.contacts.list": "ae54b436bbe52c90",
+                "clients.contacts.restore": "8894c37ed11c72a6",
+                "clients.contacts.update": "90173c636bb5ce6c",
+                "clients.create": "2a3ca7ec089be248",
+                "clients.get": "3b676337de0f1a4c",
+                "clients.list": "05f22c139792a020",
                 "clients.portal_access.grant": "6e26256a12459fa4",
                 "clients.portal_access.list": "629c5ea9b62c442a",
                 "clients.portal_access.revoke": "4c69c78734f42a65",
@@ -36192,8 +37743,8 @@
                 "clients.portal_invitations.list": "5eb8398574eb6f46",
                 "clients.portal_invitations.resend": "65ff566edda3ab94",
                 "clients.portal_invitations.revoke": "dd8e305a10f6bf51",
-                "clients.restore": "3b811be9a4a1a7b0",
-                "clients.update": "c16b0b8a74680255",
+                "clients.restore": "de0ca9638b40973b",
+                "clients.update": "6c48bf0c756ad921",
                 "companies.payment_reminders.get": "99a82139f0137f28",
                 "companies.payment_reminders.set": "28000c3cf407054d",
                 "companies.square_customer.clear": "bb76e8e2174853af",
@@ -36217,8 +37768,8 @@
                 "invoices.square_candidates": "09693c77227c6c63",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "3491a5fe8538d824",
-                "projects.list": "1f44e98350cd47a0",
+                "projects.get": "9829dbe314a3c9bb",
+                "projects.list": "d0bd45da44dae87d",
                 "projects.members.list": "4d479cecdb3a8834",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
@@ -36238,7 +37789,7 @@
                 "square.series.get": "a337eaf2f901deb6",
                 "square.series.list": "45d8133149067200",
                 "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "29bb89c0e70ff14c",
+                "tasks.list": "4e17a8df00a95db0",
                 "time_entries.list": "f02e3c1ff727c1fd"
             },
             "resources": {
@@ -36346,10 +37897,16 @@
                 "billing_schedules.get": "5e063c9324f1fbd4",
                 "billing_schedules.list": "91723c13172dc456",
                 "capacity_ledger.get": "4c9eff080780be42",
-                "clients.archive": "f71e1730f3513e31",
-                "clients.create": "3aa0fb3b53ea38cc",
-                "clients.get": "22dd0d0a447730cc",
-                "clients.list": "5bc552fd02d811ad",
+                "clients.archive": "00f0d0b2cb209433",
+                "clients.contacts.archive": "044051d4f4898b1a",
+                "clients.contacts.create": "3403aaa72685e503",
+                "clients.contacts.get": "d4395dfd2b24417d",
+                "clients.contacts.list": "ae54b436bbe52c90",
+                "clients.contacts.restore": "8894c37ed11c72a6",
+                "clients.contacts.update": "90173c636bb5ce6c",
+                "clients.create": "2a3ca7ec089be248",
+                "clients.get": "3b676337de0f1a4c",
+                "clients.list": "05f22c139792a020",
                 "clients.portal_access.grant": "6e26256a12459fa4",
                 "clients.portal_access.list": "629c5ea9b62c442a",
                 "clients.portal_access.revoke": "4c69c78734f42a65",
@@ -36358,8 +37915,8 @@
                 "clients.portal_invitations.list": "5eb8398574eb6f46",
                 "clients.portal_invitations.resend": "65ff566edda3ab94",
                 "clients.portal_invitations.revoke": "dd8e305a10f6bf51",
-                "clients.restore": "3b811be9a4a1a7b0",
-                "clients.update": "c16b0b8a74680255",
+                "clients.restore": "de0ca9638b40973b",
+                "clients.update": "6c48bf0c756ad921",
                 "companies.payment_reminders.get": "99a82139f0137f28",
                 "companies.payment_reminders.set": "28000c3cf407054d",
                 "companies.square_customer.clear": "bb76e8e2174853af",
@@ -36383,8 +37940,8 @@
                 "invoices.square_candidates": "09693c77227c6c63",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "3491a5fe8538d824",
-                "projects.list": "1f44e98350cd47a0",
+                "projects.get": "9829dbe314a3c9bb",
+                "projects.list": "d0bd45da44dae87d",
                 "projects.members.list": "4d479cecdb3a8834",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
@@ -36404,7 +37961,7 @@
                 "square.series.get": "a337eaf2f901deb6",
                 "square.series.list": "45d8133149067200",
                 "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "29bb89c0e70ff14c",
+                "tasks.list": "4e17a8df00a95db0",
                 "time_entries.list": "f02e3c1ff727c1fd"
             },
             "resources": {
@@ -36444,6 +38001,12 @@
                     "billing_schedules.list role",
                     "capacity_ledger.get role",
                     "clients.archive role",
+                    "clients.contacts.archive role",
+                    "clients.contacts.create role",
+                    "clients.contacts.get role",
+                    "clients.contacts.list role",
+                    "clients.contacts.restore role",
+                    "clients.contacts.update role",
                     "clients.create role",
                     "clients.get role",
                     "clients.list role",
@@ -36564,13 +38127,13 @@
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "3491a5fe8538d824",
-                "projects.list": "1f44e98350cd47a0",
+                "projects.get": "9829dbe314a3c9bb",
+                "projects.list": "d0bd45da44dae87d",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "16364ecdaf8ef167",
                 "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "29bb89c0e70ff14c",
+                "tasks.list": "4e17a8df00a95db0",
                 "time_entries.list": "f02e3c1ff727c1fd"
             },
             "resources": {
@@ -36608,6 +38171,12 @@
                     "billing_schedules.list role",
                     "capacity_ledger.get role",
                     "clients.archive role",
+                    "clients.contacts.archive role",
+                    "clients.contacts.create role",
+                    "clients.contacts.get role",
+                    "clients.contacts.list role",
+                    "clients.contacts.restore role",
+                    "clients.contacts.update role",
                     "clients.create role",
                     "clients.get role",
                     "clients.list role",
@@ -36728,13 +38297,13 @@
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "3491a5fe8538d824",
-                "projects.list": "1f44e98350cd47a0",
+                "projects.get": "9829dbe314a3c9bb",
+                "projects.list": "d0bd45da44dae87d",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "16364ecdaf8ef167",
                 "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "29bb89c0e70ff14c",
+                "tasks.list": "4e17a8df00a95db0",
                 "time_entries.list": "f02e3c1ff727c1fd"
             },
             "resources": {
@@ -36772,6 +38341,12 @@
                     "billing_schedules.list role",
                     "capacity_ledger.get role",
                     "clients.archive role",
+                    "clients.contacts.archive role",
+                    "clients.contacts.create role",
+                    "clients.contacts.get role",
+                    "clients.contacts.list role",
+                    "clients.contacts.restore role",
+                    "clients.contacts.update role",
                     "clients.create role",
                     "clients.get role",
                     "clients.list role",
@@ -36892,13 +38467,13 @@
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "3491a5fe8538d824",
-                "projects.list": "1f44e98350cd47a0",
+                "projects.get": "9829dbe314a3c9bb",
+                "projects.list": "d0bd45da44dae87d",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "16364ecdaf8ef167",
                 "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "29bb89c0e70ff14c",
+                "tasks.list": "4e17a8df00a95db0",
                 "time_entries.list": "f02e3c1ff727c1fd"
             },
             "resources": {
@@ -36936,6 +38511,12 @@
                     "billing_schedules.list role",
                     "capacity_ledger.get role",
                     "clients.archive role",
+                    "clients.contacts.archive role",
+                    "clients.contacts.create role",
+                    "clients.contacts.get role",
+                    "clients.contacts.list role",
+                    "clients.contacts.restore role",
+                    "clients.contacts.update role",
                     "clients.create role",
                     "clients.get role",
                     "clients.list role",
@@ -37056,13 +38637,13 @@
                 "invoices.pdf": "8c5fa3116a39fcc4",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "3491a5fe8538d824",
-                "projects.list": "1f44e98350cd47a0",
+                "projects.get": "9829dbe314a3c9bb",
+                "projects.list": "d0bd45da44dae87d",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "16364ecdaf8ef167",
                 "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "29bb89c0e70ff14c",
+                "tasks.list": "4e17a8df00a95db0",
                 "time_entries.list": "f02e3c1ff727c1fd"
             },
             "resources": {
@@ -37117,10 +38698,16 @@
                 "billing_schedules.get": "5e063c9324f1fbd4",
                 "billing_schedules.list": "91723c13172dc456",
                 "capacity_ledger.get": "4c9eff080780be42",
-                "clients.archive": "f71e1730f3513e31",
-                "clients.create": "3aa0fb3b53ea38cc",
-                "clients.get": "22dd0d0a447730cc",
-                "clients.list": "5bc552fd02d811ad",
+                "clients.archive": "00f0d0b2cb209433",
+                "clients.contacts.archive": "044051d4f4898b1a",
+                "clients.contacts.create": "3403aaa72685e503",
+                "clients.contacts.get": "d4395dfd2b24417d",
+                "clients.contacts.list": "ae54b436bbe52c90",
+                "clients.contacts.restore": "8894c37ed11c72a6",
+                "clients.contacts.update": "90173c636bb5ce6c",
+                "clients.create": "2a3ca7ec089be248",
+                "clients.get": "3b676337de0f1a4c",
+                "clients.list": "05f22c139792a020",
                 "clients.portal_access.grant": "6e26256a12459fa4",
                 "clients.portal_access.list": "629c5ea9b62c442a",
                 "clients.portal_access.revoke": "4c69c78734f42a65",
@@ -37129,8 +38716,8 @@
                 "clients.portal_invitations.list": "5eb8398574eb6f46",
                 "clients.portal_invitations.resend": "65ff566edda3ab94",
                 "clients.portal_invitations.revoke": "dd8e305a10f6bf51",
-                "clients.restore": "3b811be9a4a1a7b0",
-                "clients.update": "c16b0b8a74680255",
+                "clients.restore": "de0ca9638b40973b",
+                "clients.update": "6c48bf0c756ad921",
                 "companies.payment_reminders.get": "99a82139f0137f28",
                 "companies.payment_reminders.set": "28000c3cf407054d",
                 "companies.square_customer.clear": "bb76e8e2174853af",
@@ -37192,8 +38779,8 @@
                 "payments.set_status": "dbf7e8a65c846db0",
                 "projects.archive": "9693f87cf68157c0",
                 "projects.create": "652afb7cd8be7462",
-                "projects.get": "3491a5fe8538d824",
-                "projects.list": "1f44e98350cd47a0",
+                "projects.get": "9829dbe314a3c9bb",
+                "projects.list": "d0bd45da44dae87d",
                 "projects.members.list": "4d479cecdb3a8834",
                 "projects.members.update": "e1fb994f214fca71",
                 "projects.update": "563d43e098ed01db",
@@ -37221,7 +38808,7 @@
                 "square.sync": "107c06a20bae1b8a",
                 "tasks.create": "c060079f00e1e34f",
                 "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "29bb89c0e70ff14c",
+                "tasks.list": "4e17a8df00a95db0",
                 "tasks.update": "f22f524c3f9673e1",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
@@ -37284,10 +38871,16 @@
                 "billing_schedules.get": "5e063c9324f1fbd4",
                 "billing_schedules.list": "91723c13172dc456",
                 "capacity_ledger.get": "4c9eff080780be42",
-                "clients.archive": "f71e1730f3513e31",
-                "clients.create": "3aa0fb3b53ea38cc",
-                "clients.get": "22dd0d0a447730cc",
-                "clients.list": "5bc552fd02d811ad",
+                "clients.archive": "00f0d0b2cb209433",
+                "clients.contacts.archive": "044051d4f4898b1a",
+                "clients.contacts.create": "3403aaa72685e503",
+                "clients.contacts.get": "d4395dfd2b24417d",
+                "clients.contacts.list": "ae54b436bbe52c90",
+                "clients.contacts.restore": "8894c37ed11c72a6",
+                "clients.contacts.update": "90173c636bb5ce6c",
+                "clients.create": "2a3ca7ec089be248",
+                "clients.get": "3b676337de0f1a4c",
+                "clients.list": "05f22c139792a020",
                 "clients.portal_access.grant": "6e26256a12459fa4",
                 "clients.portal_access.list": "629c5ea9b62c442a",
                 "clients.portal_access.revoke": "4c69c78734f42a65",
@@ -37296,8 +38889,8 @@
                 "clients.portal_invitations.list": "5eb8398574eb6f46",
                 "clients.portal_invitations.resend": "65ff566edda3ab94",
                 "clients.portal_invitations.revoke": "dd8e305a10f6bf51",
-                "clients.restore": "3b811be9a4a1a7b0",
-                "clients.update": "c16b0b8a74680255",
+                "clients.restore": "de0ca9638b40973b",
+                "clients.update": "6c48bf0c756ad921",
                 "companies.payment_reminders.get": "99a82139f0137f28",
                 "companies.payment_reminders.set": "28000c3cf407054d",
                 "companies.square_customer.clear": "bb76e8e2174853af",
@@ -37359,8 +38952,8 @@
                 "payments.set_status": "dbf7e8a65c846db0",
                 "projects.archive": "9693f87cf68157c0",
                 "projects.create": "652afb7cd8be7462",
-                "projects.get": "3491a5fe8538d824",
-                "projects.list": "1f44e98350cd47a0",
+                "projects.get": "9829dbe314a3c9bb",
+                "projects.list": "d0bd45da44dae87d",
                 "projects.members.list": "4d479cecdb3a8834",
                 "projects.members.update": "e1fb994f214fca71",
                 "projects.update": "563d43e098ed01db",
@@ -37388,7 +38981,7 @@
                 "square.sync": "107c06a20bae1b8a",
                 "tasks.create": "c060079f00e1e34f",
                 "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "29bb89c0e70ff14c",
+                "tasks.list": "4e17a8df00a95db0",
                 "tasks.update": "f22f524c3f9673e1",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
@@ -37436,6 +39029,12 @@
                     "billing_schedules.list role",
                     "capacity_ledger.get role",
                     "clients.archive role",
+                    "clients.contacts.archive role",
+                    "clients.contacts.create role",
+                    "clients.contacts.get role",
+                    "clients.contacts.list role",
+                    "clients.contacts.restore role",
+                    "clients.contacts.update role",
                     "clients.create role",
                     "clients.get role",
                     "clients.list role",
@@ -37548,15 +39147,15 @@
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "3491a5fe8538d824",
-                "projects.list": "1f44e98350cd47a0",
+                "projects.get": "9829dbe314a3c9bb",
+                "projects.list": "d0bd45da44dae87d",
                 "proposals.accept": "6f660c7d4c51f10e",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "16364ecdaf8ef167",
                 "tasks.create": "c060079f00e1e34f",
                 "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "29bb89c0e70ff14c",
+                "tasks.list": "4e17a8df00a95db0",
                 "tasks.update": "f22f524c3f9673e1",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
@@ -37603,6 +39202,12 @@
                     "billing_schedules.list role",
                     "capacity_ledger.get role",
                     "clients.archive role",
+                    "clients.contacts.archive role",
+                    "clients.contacts.create role",
+                    "clients.contacts.get role",
+                    "clients.contacts.list role",
+                    "clients.contacts.restore role",
+                    "clients.contacts.update role",
                     "clients.create role",
                     "clients.get role",
                     "clients.list role",
@@ -37715,15 +39320,15 @@
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "3491a5fe8538d824",
-                "projects.list": "1f44e98350cd47a0",
+                "projects.get": "9829dbe314a3c9bb",
+                "projects.list": "d0bd45da44dae87d",
                 "proposals.accept": "6f660c7d4c51f10e",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "16364ecdaf8ef167",
                 "tasks.create": "c060079f00e1e34f",
                 "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "29bb89c0e70ff14c",
+                "tasks.list": "4e17a8df00a95db0",
                 "tasks.update": "f22f524c3f9673e1",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
@@ -37770,6 +39375,12 @@
                     "billing_schedules.list role",
                     "capacity_ledger.get role",
                     "clients.archive role",
+                    "clients.contacts.archive role",
+                    "clients.contacts.create role",
+                    "clients.contacts.get role",
+                    "clients.contacts.list role",
+                    "clients.contacts.restore role",
+                    "clients.contacts.update role",
                     "clients.create role",
                     "clients.get role",
                     "clients.list role",
@@ -37882,15 +39493,15 @@
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "3491a5fe8538d824",
-                "projects.list": "1f44e98350cd47a0",
+                "projects.get": "9829dbe314a3c9bb",
+                "projects.list": "d0bd45da44dae87d",
                 "proposals.accept": "6f660c7d4c51f10e",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "16364ecdaf8ef167",
                 "tasks.create": "c060079f00e1e34f",
                 "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "29bb89c0e70ff14c",
+                "tasks.list": "4e17a8df00a95db0",
                 "tasks.update": "f22f524c3f9673e1",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
@@ -37937,6 +39548,12 @@
                     "billing_schedules.list role",
                     "capacity_ledger.get role",
                     "clients.archive role",
+                    "clients.contacts.archive role",
+                    "clients.contacts.create role",
+                    "clients.contacts.get role",
+                    "clients.contacts.list role",
+                    "clients.contacts.restore role",
+                    "clients.contacts.update role",
                     "clients.create role",
                     "clients.get role",
                     "clients.list role",
@@ -38049,15 +39666,15 @@
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "3491a5fe8538d824",
-                "projects.list": "1f44e98350cd47a0",
+                "projects.get": "9829dbe314a3c9bb",
+                "projects.list": "d0bd45da44dae87d",
                 "proposals.accept": "6f660c7d4c51f10e",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "16364ecdaf8ef167",
                 "tasks.create": "c060079f00e1e34f",
                 "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "29bb89c0e70ff14c",
+                "tasks.list": "4e17a8df00a95db0",
                 "tasks.update": "f22f524c3f9673e1",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
@@ -38124,10 +39741,16 @@
                 "billing_schedules.get": "5e063c9324f1fbd4",
                 "billing_schedules.list": "91723c13172dc456",
                 "capacity_ledger.get": "4c9eff080780be42",
-                "clients.archive": "f71e1730f3513e31",
-                "clients.create": "3aa0fb3b53ea38cc",
-                "clients.get": "22dd0d0a447730cc",
-                "clients.list": "5bc552fd02d811ad",
+                "clients.archive": "00f0d0b2cb209433",
+                "clients.contacts.archive": "044051d4f4898b1a",
+                "clients.contacts.create": "3403aaa72685e503",
+                "clients.contacts.get": "d4395dfd2b24417d",
+                "clients.contacts.list": "ae54b436bbe52c90",
+                "clients.contacts.restore": "8894c37ed11c72a6",
+                "clients.contacts.update": "90173c636bb5ce6c",
+                "clients.create": "2a3ca7ec089be248",
+                "clients.get": "3b676337de0f1a4c",
+                "clients.list": "05f22c139792a020",
                 "clients.portal_access.grant": "6e26256a12459fa4",
                 "clients.portal_access.list": "629c5ea9b62c442a",
                 "clients.portal_access.revoke": "4c69c78734f42a65",
@@ -38136,8 +39759,8 @@
                 "clients.portal_invitations.list": "5eb8398574eb6f46",
                 "clients.portal_invitations.resend": "65ff566edda3ab94",
                 "clients.portal_invitations.revoke": "dd8e305a10f6bf51",
-                "clients.restore": "3b811be9a4a1a7b0",
-                "clients.update": "c16b0b8a74680255",
+                "clients.restore": "de0ca9638b40973b",
+                "clients.update": "6c48bf0c756ad921",
                 "companies.payment_reminders.get": "99a82139f0137f28",
                 "companies.payment_reminders.set": "28000c3cf407054d",
                 "companies.square_customer.clear": "bb76e8e2174853af",
@@ -38197,8 +39820,8 @@
                 "payments.set_status": "dbf7e8a65c846db0",
                 "projects.archive": "9693f87cf68157c0",
                 "projects.create": "652afb7cd8be7462",
-                "projects.get": "3491a5fe8538d824",
-                "projects.list": "1f44e98350cd47a0",
+                "projects.get": "9829dbe314a3c9bb",
+                "projects.list": "d0bd45da44dae87d",
                 "projects.members.list": "4d479cecdb3a8834",
                 "projects.members.update": "e1fb994f214fca71",
                 "projects.update": "563d43e098ed01db",
@@ -38226,7 +39849,7 @@
                 "square.sync": "107c06a20bae1b8a",
                 "tasks.create": "c060079f00e1e34f",
                 "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "29bb89c0e70ff14c",
+                "tasks.list": "4e17a8df00a95db0",
                 "tasks.update": "f22f524c3f9673e1",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
@@ -38290,10 +39913,16 @@
                 "billing_schedules.get": "5e063c9324f1fbd4",
                 "billing_schedules.list": "91723c13172dc456",
                 "capacity_ledger.get": "4c9eff080780be42",
-                "clients.archive": "f71e1730f3513e31",
-                "clients.create": "3aa0fb3b53ea38cc",
-                "clients.get": "22dd0d0a447730cc",
-                "clients.list": "5bc552fd02d811ad",
+                "clients.archive": "00f0d0b2cb209433",
+                "clients.contacts.archive": "044051d4f4898b1a",
+                "clients.contacts.create": "3403aaa72685e503",
+                "clients.contacts.get": "d4395dfd2b24417d",
+                "clients.contacts.list": "ae54b436bbe52c90",
+                "clients.contacts.restore": "8894c37ed11c72a6",
+                "clients.contacts.update": "90173c636bb5ce6c",
+                "clients.create": "2a3ca7ec089be248",
+                "clients.get": "3b676337de0f1a4c",
+                "clients.list": "05f22c139792a020",
                 "clients.portal_access.grant": "6e26256a12459fa4",
                 "clients.portal_access.list": "629c5ea9b62c442a",
                 "clients.portal_access.revoke": "4c69c78734f42a65",
@@ -38302,8 +39931,8 @@
                 "clients.portal_invitations.list": "5eb8398574eb6f46",
                 "clients.portal_invitations.resend": "65ff566edda3ab94",
                 "clients.portal_invitations.revoke": "dd8e305a10f6bf51",
-                "clients.restore": "3b811be9a4a1a7b0",
-                "clients.update": "c16b0b8a74680255",
+                "clients.restore": "de0ca9638b40973b",
+                "clients.update": "6c48bf0c756ad921",
                 "companies.payment_reminders.get": "99a82139f0137f28",
                 "companies.payment_reminders.set": "28000c3cf407054d",
                 "companies.square_customer.clear": "bb76e8e2174853af",
@@ -38363,8 +39992,8 @@
                 "payments.set_status": "dbf7e8a65c846db0",
                 "projects.archive": "9693f87cf68157c0",
                 "projects.create": "652afb7cd8be7462",
-                "projects.get": "3491a5fe8538d824",
-                "projects.list": "1f44e98350cd47a0",
+                "projects.get": "9829dbe314a3c9bb",
+                "projects.list": "d0bd45da44dae87d",
                 "projects.members.list": "4d479cecdb3a8834",
                 "projects.members.update": "e1fb994f214fca71",
                 "projects.update": "563d43e098ed01db",
@@ -38392,7 +40021,7 @@
                 "square.sync": "107c06a20bae1b8a",
                 "tasks.create": "c060079f00e1e34f",
                 "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "29bb89c0e70ff14c",
+                "tasks.list": "4e17a8df00a95db0",
                 "tasks.update": "f22f524c3f9673e1",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
@@ -38438,6 +40067,12 @@
                     "billing_schedules.list role",
                     "capacity_ledger.get role",
                     "clients.archive role",
+                    "clients.contacts.archive role",
+                    "clients.contacts.create role",
+                    "clients.contacts.get role",
+                    "clients.contacts.list role",
+                    "clients.contacts.restore role",
+                    "clients.contacts.update role",
                     "clients.create role",
                     "clients.get role",
                     "clients.list role",
@@ -38551,15 +40186,15 @@
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "3491a5fe8538d824",
-                "projects.list": "1f44e98350cd47a0",
+                "projects.get": "9829dbe314a3c9bb",
+                "projects.list": "d0bd45da44dae87d",
                 "proposals.accept": "6f660c7d4c51f10e",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "16364ecdaf8ef167",
                 "tasks.create": "c060079f00e1e34f",
                 "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "29bb89c0e70ff14c",
+                "tasks.list": "4e17a8df00a95db0",
                 "tasks.update": "f22f524c3f9673e1",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
@@ -38602,6 +40237,12 @@
                     "billing_schedules.list role",
                     "capacity_ledger.get role",
                     "clients.archive role",
+                    "clients.contacts.archive role",
+                    "clients.contacts.create role",
+                    "clients.contacts.get role",
+                    "clients.contacts.list role",
+                    "clients.contacts.restore role",
+                    "clients.contacts.update role",
                     "clients.create role",
                     "clients.get role",
                     "clients.list role",
@@ -38715,15 +40356,15 @@
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "3491a5fe8538d824",
-                "projects.list": "1f44e98350cd47a0",
+                "projects.get": "9829dbe314a3c9bb",
+                "projects.list": "d0bd45da44dae87d",
                 "proposals.accept": "6f660c7d4c51f10e",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "16364ecdaf8ef167",
                 "tasks.create": "c060079f00e1e34f",
                 "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "29bb89c0e70ff14c",
+                "tasks.list": "4e17a8df00a95db0",
                 "tasks.update": "f22f524c3f9673e1",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
@@ -38766,6 +40407,12 @@
                     "billing_schedules.list role",
                     "capacity_ledger.get role",
                     "clients.archive role",
+                    "clients.contacts.archive role",
+                    "clients.contacts.create role",
+                    "clients.contacts.get role",
+                    "clients.contacts.list role",
+                    "clients.contacts.restore role",
+                    "clients.contacts.update role",
                     "clients.create role",
                     "clients.get role",
                     "clients.list role",
@@ -38879,15 +40526,15 @@
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "3491a5fe8538d824",
-                "projects.list": "1f44e98350cd47a0",
+                "projects.get": "9829dbe314a3c9bb",
+                "projects.list": "d0bd45da44dae87d",
                 "proposals.accept": "6f660c7d4c51f10e",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "16364ecdaf8ef167",
                 "tasks.create": "c060079f00e1e34f",
                 "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "29bb89c0e70ff14c",
+                "tasks.list": "4e17a8df00a95db0",
                 "tasks.update": "f22f524c3f9673e1",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
@@ -38930,6 +40577,12 @@
                     "billing_schedules.list role",
                     "capacity_ledger.get role",
                     "clients.archive role",
+                    "clients.contacts.archive role",
+                    "clients.contacts.create role",
+                    "clients.contacts.get role",
+                    "clients.contacts.list role",
+                    "clients.contacts.restore role",
+                    "clients.contacts.update role",
                     "clients.create role",
                     "clients.get role",
                     "clients.list role",
@@ -39043,15 +40696,15 @@
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "3491a5fe8538d824",
-                "projects.list": "1f44e98350cd47a0",
+                "projects.get": "9829dbe314a3c9bb",
+                "projects.list": "d0bd45da44dae87d",
                 "proposals.accept": "6f660c7d4c51f10e",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "16364ecdaf8ef167",
                 "tasks.create": "c060079f00e1e34f",
                 "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "29bb89c0e70ff14c",
+                "tasks.list": "4e17a8df00a95db0",
                 "tasks.update": "f22f524c3f9673e1",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
@@ -39096,6 +40749,12 @@
                     "billing_schedules.list deployment_disabled",
                     "capacity_ledger.get deployment_disabled",
                     "clients.archive deployment_disabled",
+                    "clients.contacts.archive deployment_disabled",
+                    "clients.contacts.create deployment_disabled",
+                    "clients.contacts.get deployment_disabled",
+                    "clients.contacts.list deployment_disabled",
+                    "clients.contacts.restore deployment_disabled",
+                    "clients.contacts.update deployment_disabled",
                     "clients.create deployment_disabled",
                     "clients.get deployment_disabled",
                     "clients.list deployment_disabled",
@@ -39241,6 +40900,12 @@
                     "billing_schedules.list deployment_disabled",
                     "capacity_ledger.get deployment_disabled",
                     "clients.archive deployment_disabled",
+                    "clients.contacts.archive deployment_disabled",
+                    "clients.contacts.create deployment_disabled",
+                    "clients.contacts.get deployment_disabled",
+                    "clients.contacts.list deployment_disabled",
+                    "clients.contacts.restore deployment_disabled",
+                    "clients.contacts.update deployment_disabled",
                     "clients.create deployment_disabled",
                     "clients.get deployment_disabled",
                     "clients.list deployment_disabled",
@@ -39386,6 +41051,12 @@
                     "billing_schedules.list deployment_disabled",
                     "capacity_ledger.get deployment_disabled",
                     "clients.archive deployment_disabled",
+                    "clients.contacts.archive deployment_disabled",
+                    "clients.contacts.create deployment_disabled",
+                    "clients.contacts.get deployment_disabled",
+                    "clients.contacts.list deployment_disabled",
+                    "clients.contacts.restore deployment_disabled",
+                    "clients.contacts.update deployment_disabled",
                     "clients.create deployment_disabled",
                     "clients.get deployment_disabled",
                     "clients.list deployment_disabled",
@@ -39531,6 +41202,12 @@
                     "billing_schedules.list deployment_disabled",
                     "capacity_ledger.get deployment_disabled",
                     "clients.archive deployment_disabled",
+                    "clients.contacts.archive deployment_disabled",
+                    "clients.contacts.create deployment_disabled",
+                    "clients.contacts.get deployment_disabled",
+                    "clients.contacts.list deployment_disabled",
+                    "clients.contacts.restore deployment_disabled",
+                    "clients.contacts.update deployment_disabled",
                     "clients.create deployment_disabled",
                     "clients.get deployment_disabled",
                     "clients.list deployment_disabled",
@@ -39676,6 +41353,12 @@
                     "billing_schedules.list deployment_disabled",
                     "capacity_ledger.get deployment_disabled",
                     "clients.archive deployment_disabled",
+                    "clients.contacts.archive deployment_disabled",
+                    "clients.contacts.create deployment_disabled",
+                    "clients.contacts.get deployment_disabled",
+                    "clients.contacts.list deployment_disabled",
+                    "clients.contacts.restore deployment_disabled",
+                    "clients.contacts.update deployment_disabled",
                     "clients.create deployment_disabled",
                     "clients.get deployment_disabled",
                     "clients.list deployment_disabled",
@@ -39821,6 +41504,12 @@
                     "billing_schedules.list deployment_disabled",
                     "capacity_ledger.get deployment_disabled",
                     "clients.archive deployment_disabled",
+                    "clients.contacts.archive deployment_disabled",
+                    "clients.contacts.create deployment_disabled",
+                    "clients.contacts.get deployment_disabled",
+                    "clients.contacts.list deployment_disabled",
+                    "clients.contacts.restore deployment_disabled",
+                    "clients.contacts.update deployment_disabled",
                     "clients.create deployment_disabled",
                     "clients.get deployment_disabled",
                     "clients.list deployment_disabled",
@@ -39987,16 +41676,22 @@
                 "billing_schedules.get": "5e063c9324f1fbd4",
                 "billing_schedules.list": "91723c13172dc456",
                 "capacity_ledger.get": "4c9eff080780be42",
-                "clients.archive": "f71e1730f3513e31",
-                "clients.create": "3aa0fb3b53ea38cc",
-                "clients.get": "22dd0d0a447730cc",
-                "clients.list": "5bc552fd02d811ad",
+                "clients.archive": "00f0d0b2cb209433",
+                "clients.contacts.archive": "044051d4f4898b1a",
+                "clients.contacts.create": "3403aaa72685e503",
+                "clients.contacts.get": "d4395dfd2b24417d",
+                "clients.contacts.list": "ae54b436bbe52c90",
+                "clients.contacts.restore": "8894c37ed11c72a6",
+                "clients.contacts.update": "90173c636bb5ce6c",
+                "clients.create": "2a3ca7ec089be248",
+                "clients.get": "3b676337de0f1a4c",
+                "clients.list": "05f22c139792a020",
                 "clients.portal_access.grant": "6e26256a12459fa4",
                 "clients.portal_access.list": "629c5ea9b62c442a",
                 "clients.portal_access.revoke": "4c69c78734f42a65",
                 "clients.portal_access.update": "7c94d6dd53da658d",
-                "clients.restore": "3b811be9a4a1a7b0",
-                "clients.update": "c16b0b8a74680255",
+                "clients.restore": "de0ca9638b40973b",
+                "clients.update": "6c48bf0c756ad921",
                 "companies.payment_reminders.get": "99a82139f0137f28",
                 "companies.payment_reminders.set": "28000c3cf407054d",
                 "companies.square_customer.clear": "bb76e8e2174853af",
@@ -40058,8 +41753,8 @@
                 "payments.set_status": "dbf7e8a65c846db0",
                 "projects.archive": "9693f87cf68157c0",
                 "projects.create": "652afb7cd8be7462",
-                "projects.get": "3491a5fe8538d824",
-                "projects.list": "1f44e98350cd47a0",
+                "projects.get": "9829dbe314a3c9bb",
+                "projects.list": "d0bd45da44dae87d",
                 "projects.members.list": "4d479cecdb3a8834",
                 "projects.members.update": "e1fb994f214fca71",
                 "projects.update": "563d43e098ed01db",
@@ -40087,7 +41782,7 @@
                 "square.sync": "107c06a20bae1b8a",
                 "tasks.create": "c060079f00e1e34f",
                 "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "29bb89c0e70ff14c",
+                "tasks.list": "4e17a8df00a95db0",
                 "tasks.update": "f22f524c3f9673e1",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
@@ -40156,16 +41851,22 @@
                 "billing_schedules.get": "5e063c9324f1fbd4",
                 "billing_schedules.list": "91723c13172dc456",
                 "capacity_ledger.get": "4c9eff080780be42",
-                "clients.archive": "f71e1730f3513e31",
-                "clients.create": "3aa0fb3b53ea38cc",
-                "clients.get": "22dd0d0a447730cc",
-                "clients.list": "5bc552fd02d811ad",
+                "clients.archive": "00f0d0b2cb209433",
+                "clients.contacts.archive": "044051d4f4898b1a",
+                "clients.contacts.create": "3403aaa72685e503",
+                "clients.contacts.get": "d4395dfd2b24417d",
+                "clients.contacts.list": "ae54b436bbe52c90",
+                "clients.contacts.restore": "8894c37ed11c72a6",
+                "clients.contacts.update": "90173c636bb5ce6c",
+                "clients.create": "2a3ca7ec089be248",
+                "clients.get": "3b676337de0f1a4c",
+                "clients.list": "05f22c139792a020",
                 "clients.portal_access.grant": "6e26256a12459fa4",
                 "clients.portal_access.list": "629c5ea9b62c442a",
                 "clients.portal_access.revoke": "4c69c78734f42a65",
                 "clients.portal_access.update": "7c94d6dd53da658d",
-                "clients.restore": "3b811be9a4a1a7b0",
-                "clients.update": "c16b0b8a74680255",
+                "clients.restore": "de0ca9638b40973b",
+                "clients.update": "6c48bf0c756ad921",
                 "companies.payment_reminders.get": "99a82139f0137f28",
                 "companies.payment_reminders.set": "28000c3cf407054d",
                 "companies.square_customer.clear": "bb76e8e2174853af",
@@ -40227,8 +41928,8 @@
                 "payments.set_status": "dbf7e8a65c846db0",
                 "projects.archive": "9693f87cf68157c0",
                 "projects.create": "652afb7cd8be7462",
-                "projects.get": "3491a5fe8538d824",
-                "projects.list": "1f44e98350cd47a0",
+                "projects.get": "9829dbe314a3c9bb",
+                "projects.list": "d0bd45da44dae87d",
                 "projects.members.list": "4d479cecdb3a8834",
                 "projects.members.update": "e1fb994f214fca71",
                 "projects.update": "563d43e098ed01db",
@@ -40256,7 +41957,7 @@
                 "square.sync": "107c06a20bae1b8a",
                 "tasks.create": "c060079f00e1e34f",
                 "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "29bb89c0e70ff14c",
+                "tasks.list": "4e17a8df00a95db0",
                 "tasks.update": "f22f524c3f9673e1",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
@@ -40306,6 +42007,12 @@
                     "billing_schedules.list role",
                     "capacity_ledger.get role",
                     "clients.archive role",
+                    "clients.contacts.archive role",
+                    "clients.contacts.create role",
+                    "clients.contacts.get role",
+                    "clients.contacts.list role",
+                    "clients.contacts.restore role",
+                    "clients.contacts.update role",
                     "clients.create role",
                     "clients.get role",
                     "clients.list role",
@@ -40418,15 +42125,15 @@
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "3491a5fe8538d824",
-                "projects.list": "1f44e98350cd47a0",
+                "projects.get": "9829dbe314a3c9bb",
+                "projects.list": "d0bd45da44dae87d",
                 "proposals.accept": "6f660c7d4c51f10e",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "16364ecdaf8ef167",
                 "tasks.create": "c060079f00e1e34f",
                 "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "29bb89c0e70ff14c",
+                "tasks.list": "4e17a8df00a95db0",
                 "tasks.update": "f22f524c3f9673e1",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
@@ -40473,6 +42180,12 @@
                     "billing_schedules.list role",
                     "capacity_ledger.get role",
                     "clients.archive role",
+                    "clients.contacts.archive role",
+                    "clients.contacts.create role",
+                    "clients.contacts.get role",
+                    "clients.contacts.list role",
+                    "clients.contacts.restore role",
+                    "clients.contacts.update role",
                     "clients.create role",
                     "clients.get role",
                     "clients.list role",
@@ -40585,15 +42298,15 @@
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "3491a5fe8538d824",
-                "projects.list": "1f44e98350cd47a0",
+                "projects.get": "9829dbe314a3c9bb",
+                "projects.list": "d0bd45da44dae87d",
                 "proposals.accept": "6f660c7d4c51f10e",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "16364ecdaf8ef167",
                 "tasks.create": "c060079f00e1e34f",
                 "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "29bb89c0e70ff14c",
+                "tasks.list": "4e17a8df00a95db0",
                 "tasks.update": "f22f524c3f9673e1",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
@@ -40640,6 +42353,12 @@
                     "billing_schedules.list role",
                     "capacity_ledger.get role",
                     "clients.archive role",
+                    "clients.contacts.archive role",
+                    "clients.contacts.create role",
+                    "clients.contacts.get role",
+                    "clients.contacts.list role",
+                    "clients.contacts.restore role",
+                    "clients.contacts.update role",
                     "clients.create role",
                     "clients.get role",
                     "clients.list role",
@@ -40752,15 +42471,15 @@
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "3491a5fe8538d824",
-                "projects.list": "1f44e98350cd47a0",
+                "projects.get": "9829dbe314a3c9bb",
+                "projects.list": "d0bd45da44dae87d",
                 "proposals.accept": "6f660c7d4c51f10e",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "16364ecdaf8ef167",
                 "tasks.create": "c060079f00e1e34f",
                 "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "29bb89c0e70ff14c",
+                "tasks.list": "4e17a8df00a95db0",
                 "tasks.update": "f22f524c3f9673e1",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",
@@ -40807,6 +42526,12 @@
                     "billing_schedules.list role",
                     "capacity_ledger.get role",
                     "clients.archive role",
+                    "clients.contacts.archive role",
+                    "clients.contacts.create role",
+                    "clients.contacts.get role",
+                    "clients.contacts.list role",
+                    "clients.contacts.restore role",
+                    "clients.contacts.update role",
                     "clients.create role",
                     "clients.get role",
                     "clients.list role",
@@ -40919,15 +42644,15 @@
                 "invoices.void": "a198545339b21e29",
                 "operations.summary": "08d142f6e474e32c",
                 "payments.list": "a911cc9b30a4c54a",
-                "projects.get": "3491a5fe8538d824",
-                "projects.list": "1f44e98350cd47a0",
+                "projects.get": "9829dbe314a3c9bb",
+                "projects.list": "d0bd45da44dae87d",
                 "proposals.accept": "6f660c7d4c51f10e",
                 "proposals.get": "f2602fc26e943e89",
                 "proposals.list": "5cc73f2ef0e50d5e",
                 "search": "16364ecdaf8ef167",
                 "tasks.create": "c060079f00e1e34f",
                 "tasks.get": "56baa82d4e3111db",
-                "tasks.list": "29bb89c0e70ff14c",
+                "tasks.list": "4e17a8df00a95db0",
                 "tasks.update": "f22f524c3f9673e1",
                 "time_entries.approve": "4ddf61e2a225920d",
                 "time_entries.delete": "edcdfbb24759c4f5",

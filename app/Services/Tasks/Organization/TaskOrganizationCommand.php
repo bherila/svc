@@ -50,9 +50,9 @@ final readonly class TaskOrganizationCommand
             'tasks.create' => ['expected_graph_version' => $version] + $container
                 + ['task' => ['required', 'array:title,description,is_visible_to_client,starts_on,due_on,assignee_ids']]
                 + array_combine(array_map(static fn (string $key): string => 'task.'.$key, array_keys(TaskInputRules::create())), array_values(TaskInputRules::create())),
-            'lists.create' => ['expected_graph_version' => $version, 'name' => ['required', 'string', 'max:255'], 'is_visible_to_client' => ['sometimes', 'boolean']],
+            'lists.create' => ['expected_graph_version' => $version, 'name' => ['required', 'string', 'max:255'], 'is_visible_to_client' => ['sometimes', 'filled', 'boolean']],
             'lists.update' => ['list_id' => $identity, 'expected_version' => $version, 'expected_graph_version' => $version,
-                'name' => ['sometimes', 'filled', 'string', 'min:1', 'max:255'], 'is_visible_to_client' => ['sometimes', 'boolean']],
+                'name' => ['sometimes', 'filled', 'string', 'min:1', 'max:255'], 'is_visible_to_client' => ['sometimes', 'filled', 'boolean']],
             'lists.archive' => ['list_id' => $identity, 'expected_version' => $version, 'expected_graph_version' => $version, 'confirm' => ['required', new ExplicitConfirmation]],
             'lists.restore' => ['list_id' => $identity, 'expected_version' => $version, 'expected_graph_version' => $version],
             'tasks.move' => ['task_id' => $identity, 'expected_version' => $version, 'expected_graph_version' => $version] + $container,

@@ -17,6 +17,7 @@ class StoreClientCompanyRequest extends FormRequest
         return [
             'name' => ['required', 'string', 'max:160'],
             'billing_email' => ['nullable', 'email', 'max:255'],
+            ...(new UpdateCompanyProfileRequest)->rules(),
         ];
     }
 }

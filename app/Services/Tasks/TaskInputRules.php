@@ -2,6 +2,8 @@
 
 namespace App\Services\Tasks;
 
+use Illuminate\Validation\ValidationException;
+
 final class TaskInputRules
 {
     public const MAX_ASSIGNEES = 10;
@@ -16,8 +18,8 @@ final class TaskInputRules
     public static function patch(): array
     {
         return [
-            'title' => ['sometimes', 'string', 'min:1', 'max:255'],
-            'status' => ['sometimes', 'string', 'in:open,in_progress,completed'],
+            'title' => ['filled', 'string', 'max:255'],
+            'status' => ['filled', 'string', 'in:open,in_progress,completed'],
         ] + self::optional();
     }
 
@@ -25,12 +27,24 @@ final class TaskInputRules
     private static function optional(): array
     {
         return [
-            'description' => ['sometimes', 'nullable', 'string', 'max:10000'],
-            'is_visible_to_client' => ['sometimes', 'boolean'],
-            'starts_on' => ['sometimes', 'nullable', 'date_format:Y-m-d'],
-            'due_on' => ['sometimes', 'nullable', 'date_format:Y-m-d'],
-            'assignee_ids' => ['sometimes', 'array', 'list', 'max:'.self::MAX_ASSIGNEES],
+            // Non-implicit validation rules skip absent keys. validated()
+            // therefore keeps omission distinct from explicit nullable clears.
+            'description' => ['nullable', 'string', 'max:10000'],
+            'is_visible_to_client' => ['filled', 'boolean'],
+            'starts_on' => ['nullable', 'date_format:Y-m-d'],
+            'due_on' => ['nullable', 'date_format:Y-m-d'],
+            'assignee_ids' => ['list', 'max:'.self::MAX_ASSIGNEES],
             'assignee_ids.*' => ['required', 'string', 'uuid', 'distinct'],
         ];
+    }
+
+    /** Laravel skips non-implicit array/list rules on empty strings.
+     * @param  array<string, mixed>  $attributes
+     */
+    public static function assertAssigneeArray(array $attributes): void
+    {
+        if (array_key_exists('assignee_ids', $attributes) && ! is_array($attributes['assignee_ids'])) {
+            throw ValidationException::withMessages(['assignee_ids' => 'Assignees must be a list of account IDs; use an empty list to clear them.']);
+        }
     }
 }

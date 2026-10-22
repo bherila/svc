@@ -59,6 +59,13 @@ versions and retry receipts as REST/MCP. Use `--project=PROJECT_UUID` to create 
 filter a list, and `--task=TASK_UUID` to read or update one task. List accepts
 `--limit=1..100` and `--cursor`.
 
+Task pages also respect a serialized byte budget, so a short page can still have
+more rows. Follow `meta.next_cursor` until it is null. REST and MCP project
+details embed at most 25 tasks within the whole project response budget; when
+`tasks:read` is held, follow `tasks_next_href` or pass its `tasks_cursor` to
+`projects.get` to continue. Project-only tokens receive the base project without
+task data or a continuation.
+
 ```bash
 php artisan svc:tasks list WORKSPACE_UUID --actor=USER_UUID --format=json
 php artisan svc:tasks create WORKSPACE_UUID --actor=USER_UUID --project=PROJECT_UUID --input=task.json --key=unique-retry-key --format=json
@@ -76,6 +83,40 @@ permissions are refused.
 Task commands use current internal staff authority. An account that also has
 portal access can use its staff permissions locally; REST/MCP treat that account
 as a portal reader and refuse task mutations.
+
+## Business contacts
+
+Company and business-contact listings apply both a maximum row count and a
+serialized byte budget. Large profiles/notes can produce shorter pages in REST,
+MCP and CLI. Continue with `meta.next_cursor` until it is null; a short page does
+not imply completion. Full notes remain available on every returned record.
+
+`svc:clients:contacts` lists, reads, creates, updates, archives and restores
+business contacts. The acting `--actor` must currently be an owner or admin of
+the workspace. Workspace, company and contact identifiers are public UUIDs.
+These records describe people at a client company; editing them does not create
+login accounts, send invitations or change portal access.
+
+```bash
+php artisan svc:clients:contacts list WORKSPACE_UUID COMPANY_UUID --actor=USER_UUID --format=json
+php artisan svc:clients:contacts get WORKSPACE_UUID COMPANY_UUID --actor=USER_UUID --contact=CONTACT_UUID --format=json
+php artisan svc:clients:contacts create WORKSPACE_UUID COMPANY_UUID --actor=USER_UUID --input=contact.json --key=unique-retry-key --format=json
+```
+
+Mutations preview and roll back by default. Add `--apply` to persist. `--input=-`
+reads a JSON object from standard input; files and standard input accept at most
+1 MiB. Use the same body as `clients.contacts.create`, `update`, `archive` or
+`restore` in REST/MCP. Updates merge only the fields supplied, and explicit
+`null` clears an optional field. At least one name must remain. Update, archive
+and restore require the current opaque `expected_version` returned by reads;
+archive additionally requires `"confirm": true`. Keep the request and `--key`
+unchanged when retrying an applied operation. List accepts `--status=active` or
+`archived`, `--limit=1..100` and a continuation `--cursor` bound to that company
+and status. Local commands use current internal account permissions independently of
+OAuth deployment switches. REST/MCP business-contact operations treat any current
+portal identity in the workspace as the client audience, including dual-role
+accounts, and refuse those private reads and writes. Native CLI authority remains
+internal and is rechecked on each write and replay.
 
 ## Apply Payment
 

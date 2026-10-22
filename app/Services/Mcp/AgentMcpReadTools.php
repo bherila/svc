@@ -106,11 +106,15 @@ final class AgentMcpReadTools
     }
 
     /** @return array<string, mixed> */
-    public function project(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $project_id): array
+    public function project(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $project_id, #[Schema(maxLength: 2048)] ?string $tasks_cursor = null): array
     {
         $context = $this->workspace($workspace_id, 'projects:read');
 
-        return ['data' => $this->reads->project($context->principal->subject, $context->workspace, $project_id, $context->principal->hasScope('tasks:read'))];
+        try {
+            return ['data' => $this->reads->project($context->principal->subject, $context->workspace, $project_id, $context->principal->hasScope('tasks:read'), $tasks_cursor)];
+        } catch (InvalidAgentApiCursor) {
+            throw new ToolCallException('The pagination cursor is not valid for this request.');
+        }
     }
 
     /** @return array<string, mixed> */
