@@ -3,9 +3,11 @@
 namespace Tests\Unit\Mcp;
 
 use App\Services\Mcp\McpFeatureFlags;
+use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
+#[CoversClass(McpFeatureFlags::class)]
 final class McpFeatureFlagsTest extends TestCase
 {
     /** @return iterable<string, array{string, string, array<string, mixed>, bool}> */
