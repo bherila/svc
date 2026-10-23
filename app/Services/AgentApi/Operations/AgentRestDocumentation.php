@@ -264,6 +264,7 @@ final class AgentRestDocumentation
     public static function operations(): array
     {
         return [
+            ...TaskOrganizationOperations::documentation(),
             ...self::collaborationOperations(),
             'agreements.activate' => [
                 'method' => 'POST',

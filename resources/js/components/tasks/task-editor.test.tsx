@@ -80,6 +80,49 @@ async function loadOptions() {
 }
 
 describe('task editor', () => {
+    it('shows the server completion advisory without blocking the parent-only save', async () => {
+        const advisory =
+            'This task has unfinished subtasks. Completing it leaves those subtasks unchanged.';
+        const { rerender } = render(
+            <TaskEditor task={{ ...task, completion_advisory: advisory }} />,
+        );
+        await loadOptions();
+        expect(screen.getByText(advisory)).toBeVisible();
+        fireEvent.click(screen.getByRole('button', { name: 'Save task' }));
+        expect(submit).toHaveBeenCalledOnce();
+        expect(submit.mock.calls[0][0]).toBe('PATCH');
+        expect(submit.mock.calls[0][1]).toBe(task.update_action);
+        expect(submit.mock.calls[0][2]).toEqual({
+            title: task.title,
+            description: task.description,
+            status: 'completed',
+            expected_version: task.version,
+            starts_on: task.starts_on,
+            due_on: task.due_on,
+            assignee_ids: [person.id],
+            is_visible_to_client: false,
+        });
+        rerender(<TaskEditor task={task} />);
+        expect(screen.queryByText(advisory)).not.toBeInTheDocument();
+    });
+
+    it('does not show completion advice while editing an open task', async () => {
+        const advisory =
+            'This task has unfinished subtasks. Completing it leaves those subtasks unchanged.';
+        render(
+            <TaskEditor
+                task={{
+                    ...task,
+                    status: 'open',
+                    completion_advisory: advisory,
+                }}
+            />,
+        );
+        await loadOptions();
+        expect(screen.getByRole('combobox')).toHaveTextContent('Open');
+        expect(screen.queryByText(advisory)).not.toBeInTheDocument();
+    });
+
     it('submits the rendered revision, preserves completion and clears nullable dates explicitly', async () => {
         render(<TaskEditor task={task} />);
         await loadOptions();

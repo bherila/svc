@@ -38,7 +38,8 @@ final class TaskOrganizationMigrationTest extends TestCase
         $upgraded = (array) $db->table('client_tasks')->where('workspace_id', $workspace)->where('id', $task)->first();
         $this->assertNull($upgraded['parent_task_id']);
         $this->assertNull($upgraded['client_task_list_id']);
-        unset($upgraded['parent_task_id'], $upgraded['client_task_list_id']);
+        $this->assertSame(0, $upgraded['organization_position']);
+        unset($upgraded['parent_task_id'], $upgraded['client_task_list_id'], $upgraded['organization_position']);
         $this->assertSame($before, $upgraded);
 
         // Rollback is tested only with no structural data. Once graph writers

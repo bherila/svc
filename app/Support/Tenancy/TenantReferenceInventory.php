@@ -96,6 +96,7 @@ final class TenantReferenceInventory
             TenantReference::enforcedBy('client_expenses', 'client_expense_schedule_id', 'client_expense_schedules', 'cex_ws_schedule_fk'),
 
             // Projects.
+            TenantReference::enforcedBy('client_task_graph_states', 'client_project_id', 'client_projects', 'task_graph_ws_project_fk'),
             TenantReference::enforcedBy('client_tasks', 'client_project_id', 'client_projects', 'ct_ws_project_fk'),
             TenantReference::enforcedBy('client_tasks', 'parent_task_id', 'client_tasks', 'tasks_project_parent_fk', ['client_project_id']),
             TenantReference::enforcedBy('client_tasks', 'client_task_list_id', 'client_task_lists', 'tasks_project_list_fk', ['client_project_id']),

@@ -24,6 +24,7 @@ use App\Http\Controllers\Api\V1\AgentSquareController;
 use App\Http\Controllers\Api\V1\AgentSquareLinkController;
 use App\Http\Controllers\Api\V1\AgentSquareMirrorController;
 use App\Http\Controllers\Api\V1\AgentTaskMutationController;
+use App\Http\Controllers\Api\V1\AgentTaskOrganizationController;
 use App\Http\Controllers\Api\V1\AgentTimeEntryMutationController;
 use App\Http\Controllers\Api\V1\AgentWorkspaceMiscController;
 use App\Http\Controllers\Api\V1\DeferredBuyDownController;
@@ -144,6 +145,12 @@ Route::prefix('v1')
         $workspaceOperation('projects.list', [AgentReadController::class, 'projects']);
         $workspaceOperation('projects.get', [AgentReadController::class, 'project'])
             ->whereUuid('project');
+        $workspaceOperation('task_organization.get', [AgentTaskOrganizationController::class, 'show'])->whereUuid('project');
+        foreach (['lists.create', 'lists.update', 'lists.archive', 'lists.restore', 'lists.reorder', 'tasks.create', 'tasks.move', 'tasks.reorder'] as $organizationOperation) {
+            $workspaceOperation('task_organization.'.$organizationOperation, [AgentTaskOrganizationController::class, $organizationOperation === 'lists.archive' ? 'archiveList' : 'mutate'])
+                ->whereUuid(['project', 'list', 'task'])
+                ->defaults('task_organization_operation', $organizationOperation);
+        }
         $workspaceOperation('tasks.list', [AgentReadController::class, 'tasks']);
         $workspaceOperation('tasks.get', [AgentReadController::class, 'task'])
             ->whereUuid('task');
