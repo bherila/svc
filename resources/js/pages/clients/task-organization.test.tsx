@@ -1,4 +1,5 @@
 import {
+    act,
     fireEvent,
     render,
     screen,
@@ -183,6 +184,30 @@ describe('task organization', () => {
                 'synthetic-stable-retry-key',
             ),
         );
+    });
+
+    it('refreshes the complete organization and keeps controls busy until it arrives', async () => {
+        let finish: (() => void) | undefined;
+        reload.mockImplementationOnce((options) => {
+            finish = options?.onFinish;
+        });
+        render(<TaskOrganizationPage {...fixture()} />);
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Move Second task up' }),
+        );
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Save task order' }),
+        );
+        await waitFor(() => expect(reload).toHaveBeenCalledOnce());
+        expect(reload).toHaveBeenCalledWith(
+            expect.objectContaining({ only: ['organization'] }),
+        );
+        expect(screen.getByRole('button', { name: 'New list' })).toBeDisabled();
+        await act(async () => finish?.());
+        expect(
+            screen.getByRole('button', { name: 'New list' }),
+        ).not.toBeDisabled();
+        expect(request).toHaveBeenCalledOnce();
     });
 
     it('keeps a lost-answer retry key while retaining the entered list name', async () => {
@@ -396,6 +421,9 @@ describe('task organization', () => {
         );
         expect(screen.queryByRole('alert')).not.toBeInTheDocument();
         expect(reload).toHaveBeenCalledOnce();
+        expect(reload).toHaveBeenCalledWith(
+            expect.objectContaining({ only: ['organization'] }),
+        );
     });
 
     it('shows effective sharing and retains hostile names without horizontal overflow risks', () => {

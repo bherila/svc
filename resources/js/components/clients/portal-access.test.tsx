@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -107,6 +107,26 @@ describe('portal access', () => {
         expect(horizontalOverflowRisks(container)).toEqual([]);
     });
 
+    it('keeps access controls busy until the refreshed portal props arrive', async () => {
+        respond([200, { data: {} }]);
+        let finish: (() => void) | undefined;
+        inertia.reload.mockImplementationOnce((options) => {
+            finish = options?.onFinish;
+        });
+        const user = userEvent.setup();
+        render(<PortalAccess {...props()} />);
+        await user.click(screen.getByRole('checkbox', { name: 'Alpha' }));
+        await user.click(screen.getByRole('button', { name: 'Save access' }));
+        await waitFor(() => expect(inertia.reload).toHaveBeenCalledOnce());
+        expect(
+            screen.getByRole('button', { name: 'Save access' }),
+        ).toBeDisabled();
+        await act(async () => finish?.());
+        expect(
+            screen.getByRole('button', { name: 'Save access' }),
+        ).not.toBeDisabled();
+    });
+
     it('says so when nobody can use the portal', () => {
         render(
             <PortalAccess
@@ -130,6 +150,9 @@ describe('portal access', () => {
         await user.click(screen.getByRole('button', { name: 'Save access' }));
 
         await waitFor(() => expect(inertia.reload).toHaveBeenCalledOnce());
+        expect(inertia.reload).toHaveBeenCalledWith(
+            expect.objectContaining({ only: ['portal'] }),
+        );
         const sent = request();
         expect([sent.method, sent.url]).toEqual([
             'PATCH',
@@ -633,6 +656,9 @@ describe('portal access', () => {
             );
             // Access was withdrawn locally, so the page reloads to say so.
             expect(inertia.reload).toHaveBeenCalledOnce();
+            expect(inertia.reload).toHaveBeenCalledWith(
+                expect.objectContaining({ only: ['portal'] }),
+            );
 
             await user.click(screen.getByRole('button', { name: 'Withdraw' }));
             await user.click(

@@ -1,4 +1,3 @@
-import { router } from '@inertiajs/react';
 import { useMemo, useRef, useState } from 'react';
 import { DurationField } from '@/components/time/duration-field';
 import { Button } from '@/components/ui/button';
@@ -24,6 +23,7 @@ import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { apiRequest, newIdempotencyKey } from '@/lib/api';
 import type { ApiSchema } from '@/lib/api';
+import { refreshPageProps } from '@/lib/refresh-page-props';
 import { todayIn } from '@/lib/time';
 import type { CompanyOption, TimeEntry } from '@/types/time-sheet';
 
@@ -241,7 +241,7 @@ export function TimeEntryDialog({
             return;
         }
 
-        router.reload({
+        void refreshPageProps({
             onFinish: () => {
                 setSaving(false);
                 onOpenChange(false);

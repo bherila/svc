@@ -1,4 +1,4 @@
-import { Link, router } from '@inertiajs/react';
+import { Link } from '@inertiajs/react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -8,6 +8,7 @@ import { Switch } from '@/components/ui/switch';
 import { apiRequest, newIdempotencyKey } from '@/lib/api';
 import type { ApiSchema } from '@/lib/api';
 import { formatMoney } from '@/lib/money';
+import { refreshPageProps } from '@/lib/refresh-page-props';
 import { formatDecimalHours } from '@/lib/time';
 
 type Preview = ApiSchema<'DeferredBuyDownPreview'>;
@@ -80,7 +81,7 @@ export function DeferredBuyDownForm({
         if (result.ok) {
             setCreated(result.data.web_url);
             setPreview(null);
-            router.reload({ only: ['deferred_backlog'] });
+            void refreshPageProps({ only: ['deferred_backlog'] });
         } else {
             setError(result.message);
 

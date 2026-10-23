@@ -16,6 +16,7 @@ import { apiRequest } from '@/lib/api';
 import type { ApiSchema } from '@/lib/api';
 import { formatShortDay } from '@/lib/datetime';
 import { formatMoney } from '@/lib/money';
+import { refreshPageProps } from '@/lib/refresh-page-props';
 import { formatHours, todayIn } from '@/lib/time';
 import type { DraftTimeTarget, TimeEntry } from '@/types/time-sheet';
 
@@ -109,7 +110,7 @@ export function InvoiceSelectionDialog({
                                 return;
                             }
 
-                            router.reload({
+                            void refreshPageProps({
                                 onFinish: () => {
                                     setSaving(false);
                                     onSuccess();

@@ -52,6 +52,7 @@ import {
     predatesInvoiceIssue,
     predatesInvoiceIssueWarning,
 } from '@/lib/payments';
+import { refreshPageProps } from '@/lib/refresh-page-props';
 import { todayIn } from '@/lib/time';
 import { cn } from '@/lib/utils';
 import type { CompanyInvoice } from '@/types/clients';
@@ -336,7 +337,7 @@ export default function ClientInvoiceDetail({
         if (result.ok) {
             setNotice(null);
             setEditingDates(false);
-            router.reload({ onFinish: () => setBusy(false) });
+            void refreshPageProps({ onFinish: () => setBusy(false) });
 
             return;
         }
