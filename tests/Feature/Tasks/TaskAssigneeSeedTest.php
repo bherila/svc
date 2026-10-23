@@ -70,6 +70,14 @@ final class TaskAssigneeSeedTest extends TestCase
         });
     }
 
+    public function test_a_company_without_projects_has_no_editor_or_roster_to_preload(): void
+    {
+        [$workspace, , , $owner] = $this->fixture();
+        $empty = ClientCompany::query()->create(['workspace_id' => $workspace->id, 'name' => 'Synthetic no-project client', 'slug' => 'synthetic-empty']);
+        $this->actingAs($owner)->get(route('clients.tasks', [$workspace, $empty]))->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->where('task_management', null)->has('projects', 0)->has('tasks', 0));
+    }
+
     public function test_initial_html_safely_embeds_roster_names_in_the_existing_json_page_payload(): void
     {
         [$workspace, , $project, $owner, $task] = $this->fixture();

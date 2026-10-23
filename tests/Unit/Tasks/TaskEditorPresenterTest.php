@@ -45,6 +45,8 @@ final class TaskEditorPresenterTest extends TestCase
         $presenter = app(TaskEditorPresenter::class);
         $projectView = $presenter->project($workspace, $project, $seed);
         $taskView = $presenter->task($workspace, $task, $seed);
+        $this->assertSame($project->public_id, $projectView['id']);
+        $this->assertSame($task->public_id, $taskView['id']);
         foreach ([$projectView, $taskView] as $view) {
             if ($seed === null) {
                 $this->assertArrayNotHasKey('assignee_options', $view);
